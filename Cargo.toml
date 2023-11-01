@@ -1,0 +1,22 @@
+[package]
+name = "robrix"
+authors = [
+    "Kevin Boos <kevinaboos@gmail.com>",
+    "Robius Project"
+]
+description = "A Matrix chat client written using the Robius app dev framework in Rust."
+documentation = "https://docs.rs/robrix"
+edition = "2021"
+homepage = "https://robius.rs/"
+keywords = ["matrix", "chat", "client", "robrix", "robius"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/project-robius/robrix"
+version = "0.0.1-pre-alpha"
+
+
+[dependencies]
+matrix-sdk = "0.6.2"
+
+[package.metadata.docs.rs]
+all-features = true
