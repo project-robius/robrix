@@ -129,7 +129,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         }
     }
 
-
+    
     Ok((client, token))
 }
 

@@ -3555,8 +3555,10 @@ name = "robrix"
 version = "0.0.1-pre-alpha"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "futures-util",
+ "imbl",
  "makepad-widgets",
  "matrix-sdk",
  "matrix-sdk-ui",

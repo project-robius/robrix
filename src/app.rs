@@ -1,4 +1,9 @@
+use chrono::NaiveDateTime;
 use makepad_widgets::*;
+use matrix_sdk::ruma::MilliSecondsSinceUnixEpoch;
+use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent};
+
+use crate::sliding_sync::CHOSEN_ROOM;
    
 live_design!{
     import makepad_widgets::base::*;
@@ -162,10 +167,9 @@ live_design!{
             color: (COLOR_META_TEXT)
         }
         text: "HH:MMpm"
-        
     }
     
-    PostMenu = <View> {
+    MessageMenu = <View> {
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -173,7 +177,7 @@ live_design!{
         padding: 0.0,
         spacing: 0.0
         
-            <View> {
+        <View> {
             width: Fill,
             height: Fit,
             margin: 0.0
@@ -189,7 +193,7 @@ live_design!{
         }
     }
     
-    Post = <View> {
+    Message = <View> {
         width: Fill,
         height: Fit,
         margin: 0.0
@@ -210,7 +214,6 @@ live_design!{
                 height: Fit,
                 margin: {top: 7.5}
                 flow: Down,
-                padding: 0.0
                 profile_img = <Image> {
                     source: (IMG_PROFILE_A)
                     margin: 0,
@@ -228,6 +231,9 @@ live_design!{
                     }
                 }
                 timestamp = <Timestamp> { }
+                datestamp = <Timestamp> {
+                    padding: { top: 5.0 }
+                }
             }
             content = <View> {
                 width: Fill,
@@ -258,11 +264,43 @@ live_design!{
                     margin: {top: 10.0, bottom: 5.0}
                 }
                 
-                <PostMenu> {}
+                <MessageMenu> {}
             }
         }
         
-        <LineH> {
+        // <LineH> {
+        //     draw_bg: {color: (COLOR_DIVIDER_DARK)}
+        // }
+    }
+
+
+    DayDivider = <View> {
+        width: Fill,
+        height: Fit,
+        margin: 0.0,
+        flow: Right,
+        padding: 0.0,
+        spacing: 0.0,
+        align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+
+        left_line = <LineH> {
+            margin: {top: 10.0, bottom: 10.0}
+            draw_bg: {color: (COLOR_DIVIDER_DARK)}
+        }
+
+        date = <Label> {
+            padding: {left: 8.0, right: 8.0}
+            margin: {bottom: 10.0, top: 10.0}
+            draw_text: {
+                text_style: <TEXT_SUB> {},
+                color: (COLOR_DIVIDER_DARK)
+            }
+            text: "<date>"
+        }
+
+        right_line = <LineH> {
+            margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
     }
@@ -293,8 +331,11 @@ live_design!{
                     height: Fill,
                     width: Fill
                     flow: Down
+
+                    // Below, we must place all of the possible views that can be used in the portal list.
                     TopSpace = <View> {height: 80}
-                    Post = <Post> {}
+                    Message = <Message> {}
+                    DayDivider = <DayDivider> {}
                     BottomSpace = <View> {height: (MENU_BAR_HEIGHT)}
                 }
                 
@@ -325,29 +366,13 @@ impl LiveHook for App {
     } 
 }
 
-static MESSAGES: [(u64, &str, &str); 15] = [
-    (0, "Kevin Boos", "First message"),
-    (1, "Kevin Boos", "Second message"),
-    (2, "Yue Chen", "got it"),
-    (3, "Robius Test", "Send 7:14 PDT"),
-    (4, "Kevin Boos", "Message 4"),
-    (5, "Kevin Boos", "Message 5"),
-    (6, "Kevin Boos", "Message 6"),
-    (7, "Kevin Boos", "Message 7"),
-    (8, "Kevin Boos", "Message 8"),
-    (9, "Kevin Boos", "Message 9"),
-    (10, "Kevin Boos", "Message 10"),
-    (11, "Kevin Boos", "Message 11"),
-    (12, "Kevin Boos", "Message 12"),
-    (13, "Kevin Boos", "Message 13"),
-    (14, "Kevin Boos", "Message 14"),
-];
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if matches!(event, Event::Construct) {
             println!("Construct: starting matrix sdk loop");
-            crate::matrix::start_matrix_tokio().unwrap();
+            // crate::matrix::start_matrix_tokio().unwrap();
+            crate::sliding_sync::start_matrix_tokio().unwrap();
 
             /*
             let message_list = self.ui.portal_list(id!(message_list));
@@ -371,33 +396,120 @@ impl AppMain for App {
             while let Some(next) = self.ui.draw_widget(cx).hook_widget() {
                 if let Some(mut list) = message_list.has_widget(&next).borrow_mut() {
 
-                    let last_item_id = MESSAGES.len() as u64 + 1; // + 1 because we use 0 for the TopSpace
+                    let timeline_items_owned = if let Some(r) = CHOSEN_ROOM.get() {
+                        crate::sliding_sync::get_timeline_items(r)
+                    } else {
+                        None
+                    };
+                    let timeline_items = timeline_items_owned.as_ref();
+                    let last_item_id = timeline_items
+                        .map(|(_tl, items)| items.len() as u64)
+                        .unwrap_or(0);
+                    let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
+
                     // Set the range of all items that exist in the list.
                     // + 1 again because we use the last item for the BottomSpace.
                     list.set_item_range(cx, 0, last_item_id + 1);
                     
-                    println!("-------- Starting next visible item loop --------");
+                    // println!("-------- Starting next visible item loop, last_item: {last_item_id} --------");
                     while let Some(item_id) = list.next_visible_item(cx) {
-                        println!("Drawing item {}", item_id);
+                        // println!("Drawing item {}", item_id);
                         let item = if item_id == 0 {
-                            let template = live_id!(TopSpace);
-                            list.item(cx, item_id, template).unwrap()
+                            list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                         } else if item_id >= last_item_id {
-                            let template = live_id!(BottomSpace);
-                            list.item(cx, item_id, template).unwrap()
+                            list.item(cx, item_id, live_id!(BottomSpace)).unwrap()
                         } else {
-                            let template = live_id!(Post);
-                            let item = list.item(cx, item_id, template).unwrap();
-                            if let Some((msg_id, un, msg)) = MESSAGES.get((item_id - 1) as usize) {
-                                item.label(id!(content.username)).set_text(un);
-                                item.label(id!(profile.timestamp)).set_text(&format!("id: {msg_id}"));
-                                item.label(id!(content.message)).set_text(msg);
-                                item.button(id!(likes)).set_text(&format!("{msg_id}"));
-                                item.button(id!(comments)).set_text(&format!("{msg_id}"));
+                            let tl_idx = (item_id - 1) as usize;
+                            if let Some(timeline_item) = timeline_items.and_then(|(_tl, items)| items.get(tl_idx)) {
+                                match timeline_item.kind() {
+                                    TimelineItemKind::Event(tl_event) => {
+                                        let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+
+                                        // Set sender to the display name if available, otherwise the user id.
+                                        let sender = match tl_event.sender_profile() {
+                                            TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+                                            _ => None,
+                                        }.unwrap_or_else(|| tl_event.sender().as_str());
+                                        item.label(id!(content.username)).set_text(sender);
+
+                                        // Set the timestamp.
+                                        let ts_millis = tl_event.timestamp();
+                                        if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
+                                            // format as AM/PM 12-hour time
+                                            item.label(id!(profile.timestamp)).set_text(
+                                                &format!("{}", dt.time().format("%-I:%M %p"))
+                                            );
+                                            item.label(id!(profile.datestamp)).set_text(
+                                                &format!("{}", dt.date())
+                                            );
+                                        } else {
+                                            item.label(id!(profile.timestamp)).set_text(
+                                                &format!("{}", ts_millis.get())
+                                            );
+                                        }
+
+                                        // Set the content.
+                                        match tl_event.content() {
+                                            TimelineItemContent::Message(message) => {
+                                                item.label(id!(content.message)).set_text(message.body());
+                                            }
+                                            TimelineItemContent::OtherState(other) => {
+                                                let text = match other.content() {
+                                                    AnyOtherFullStateEventContent::PolicyRuleRoom(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::PolicyRuleServer(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::PolicyRuleUser(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomAliases(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomAvatar(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomCanonicalAlias(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomCreate(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomEncryption(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomGuestAccess(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomHistoryVisibility(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomJoinRules(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomName(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomPinnedEvents(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomPowerLevels(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomServerAcl(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomThirdPartyInvite(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomTombstone(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::RoomTopic(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::SpaceChild(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::SpaceParent(fs_content) => format!("{:?}", fs_content),
+                                                    AnyOtherFullStateEventContent::_Custom { event_type } => format!("{:?}", event_type),
+                                                };
+                                                item.label(id!(content.message)).set_text(&text);
+                                            }
+                                            other => {
+                                                item.label(id!(content.message)).set_text(&format!("{:?}", other));
+                                            }
+                                        }
+
+                                        // Temp filler: set the likes and comments count to the item id, just for now.
+                                        item.button(id!(likes)).set_text(&format!("{item_id}"));
+                                        item.button(id!(comments)).set_text(&format!("{item_id}"));
+                                        item
+                                    }
+                                    TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
+                                        let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
+                                        let text = unix_time_millis_to_datetime(millis)
+                                            // format the time as a shortened date (Sat, Sept 5, 2021)
+                                            .map(|dt| format!("{}", dt.date().format("%a %b %-d, %Y")))
+                                            .unwrap_or_else(|| format!("{:?}", millis));
+                                        item.label(id!(date)).set_text(&text);
+                                        item
+                                    }
+                                    TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                                        // reuse the DayDivider view for user read markers.
+                                        let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
+                                        item.label(id!(date)).set_text(&format!("Read marker, {}", timeline_item.unique_id()));
+                                        item
+                                    }
+                                }
                             } else {
                                 println!("\tSkipping setting content for item_id {item_id}");
+                                // This should never happen, so just use a blank Message.
+                                list.item(cx, item_id, live_id!(Message)).unwrap()
                             }
-                            item
                         };
 
                         item.draw_widget_all(cx);
@@ -415,4 +527,10 @@ impl AppMain for App {
             }
         }
     }
+}
+
+
+fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<NaiveDateTime> {
+    let millis: i64 = millis.get().into();
+    NaiveDateTime::from_timestamp_millis(millis)
 }
