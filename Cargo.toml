@@ -2,7 +2,7 @@
 name = "robrix"
 authors = [
     "Kevin Boos <kevinaboos@gmail.com>",
-    "Robius Project"
+    "Robius Project Maintainers",
 ]
 description = "A Matrix chat client written using the Robius app dev framework in Rust."
 documentation = "https://docs.rs/robrix"
@@ -13,10 +13,22 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/project-robius/robrix"
 version = "0.0.1-pre-alpha"
+metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 
 [dependencies]
-matrix-sdk = "0.6.2"
+anyhow = "1.0"
+chrono = "0.4"
+clap = { version = "4.0.16", features = ["derive"] }
+futures-util = "0.3"
+imbl = { version = "2.0.0", features = ["serde"] }  # same as matrix-sdk-ui
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", features = ["experimental-sliding-sync"] }
+matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk" }
+tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = "0.3.17"
+url = "2.2.2"
+
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
 
 [package.metadata.docs.rs]
 all-features = true
