@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use makepad_widgets::*;
-use matrix_sdk::ruma::MilliSecondsSinceUnixEpoch;
-use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent};
+use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, events::{FullStateEventContent, room::{history_visibility::HistoryVisibility, guest_access::GuestAccess, join_rules::JoinRule}}};
+use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent, MembershipChange, self, EventTimelineItem, RoomMembershipChange};
 
 use crate::sliding_sync::CHOSEN_ROOM;
    
@@ -166,7 +166,7 @@ live_design!{
             text_style: <TEXT_SUB> {},
             color: (COLOR_META_TEXT)
         }
-        text: "HH:MMpm"
+        text: " "
     }
     
     MessageMenu = <View> {
@@ -193,6 +193,7 @@ live_design!{
         }
     }
     
+    // The view used for each text-based message event in a room's timeline.
     Message = <View> {
         width: Fill,
         height: Fit,
@@ -210,7 +211,7 @@ live_design!{
             
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: Fit,
+                width: 65.0,
                 height: Fit,
                 margin: {top: 7.5}
                 flow: Down,
@@ -261,7 +262,7 @@ live_design!{
                 }
                 
                 <LineH> {
-                    margin: {top: 10.0, bottom: 5.0}
+                    margin: {top: 13.0, bottom: 5.0}
                 }
                 
                 <MessageMenu> {}
@@ -274,6 +275,72 @@ live_design!{
     }
 
 
+    // The view used for each state event in a room's timeline.
+    // The timestamp, profile picture, and text are all very small.
+    SmallStateEvent = <View> {
+        width: Fill,
+        height: Fit,
+        margin: 0.0
+        flow: Right,
+        padding: 0.0,
+        spacing: 0.0
+        
+        body = <View> {
+            width: Fill,
+            height: Fit
+            flow: Right,
+            padding: 5.0,
+            spacing: 5.0
+            
+            left_container = <View> {
+                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                width: 70.0,
+                // padding: {right: -5.0}
+                height: Fit
+                flow: Right,
+
+                timestamp = <Timestamp> {
+                    padding: {top: 5.0}
+                    draw_text: {
+                        text_style: <TEXT_SUB> {},
+                        color: (COLOR_META_TEXT)
+                    }
+                }
+            }
+
+            profile_img = <Image> {
+                source: (IMG_PROFILE_A)
+                width: 19.0,
+                height: 19.0,
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.y, c.x - 2.)
+                        sdf.fill_keep(self.get_color());
+                        sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
+                        return sdf.result
+                    }
+                }
+            }
+
+            content = <Label> {
+                width: Fill,
+                height: Fit
+                padding: 4.0,
+                draw_text: {
+                    wrap: Word,
+                    text_style: <TEXT_SUB> {},
+                    color: (COLOR_P)
+                }
+                text: "<placeholder room state event>"
+            }
+        }
+    }
+
+
+    // The view used for each day divider in a room's timeline.
+    // The date text is centered between two horizontal lines.
     DayDivider = <View> {
         width: Fill,
         height: Fit,
@@ -283,14 +350,13 @@ live_design!{
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-
         left_line = <LineH> {
             margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
 
         date = <Label> {
-            padding: {left: 8.0, right: 8.0}
+            padding: {left: 7.0, right: 7.0}
             margin: {bottom: 10.0, top: 10.0}
             draw_text: {
                 text_style: <TEXT_SUB> {},
@@ -310,7 +376,6 @@ live_design!{
         ui: <Window> {
             window: {inner_size: vec2(428, 926), dpi_override: 2},
             show_bg: true
-            
             
             draw_bg: {
                 fn pixel(self) -> vec4 {
@@ -335,6 +400,7 @@ live_design!{
                     // Below, we must place all of the possible views that can be used in the portal list.
                     TopSpace = <View> {height: 80}
                     Message = <Message> {}
+                    SmallStateEvent = <SmallStateEvent> {}
                     DayDivider = <DayDivider> {}
                     BottomSpace = <View> {height: (MENU_BAR_HEIGHT)}
                 }
@@ -369,24 +435,13 @@ impl LiveHook for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+
+        // TODO: not sure if this is the correct place to do this.
         if matches!(event, Event::Construct) {
             println!("Construct: starting matrix sdk loop");
             // crate::matrix::start_matrix_tokio().unwrap();
             crate::sliding_sync::start_matrix_tokio().unwrap();
-
-            /*
-            let message_list = self.ui.portal_list(id!(message_list));
-            
-            (cx, MESSAGES.len() as u64);
-
-            if let Some(mut list) = message_list.has_widget(&next).borrow_mut() {
-
-                let last_item_id = MESSAGES.len() as u64;
-                // Set the range of all items that exist in the list.
-                list.set_item_range(cx, 0, last_item_id);
-            }
-            */
-            return
+            return;
         }
 
         let message_list = self.ui.portal_list_set(ids!(message_list));
@@ -422,72 +477,36 @@ impl AppMain for App {
                             let tl_idx = (item_id - 1) as usize;
                             if let Some(timeline_item) = timeline_items.and_then(|(_tl, items)| items.get(tl_idx)) {
                                 match timeline_item.kind() {
-                                    TimelineItemKind::Event(tl_event) => {
-                                        let item = list.item(cx, item_id, live_id!(Message)).unwrap();
-
-                                        // Set sender to the display name if available, otherwise the user id.
-                                        let sender = match tl_event.sender_profile() {
-                                            TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
-                                            _ => None,
-                                        }.unwrap_or_else(|| tl_event.sender().as_str());
-                                        item.label(id!(content.username)).set_text(sender);
-
-                                        // Set the timestamp.
-                                        let ts_millis = tl_event.timestamp();
-                                        if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
-                                            // format as AM/PM 12-hour time
-                                            item.label(id!(profile.timestamp)).set_text(
-                                                &format!("{}", dt.time().format("%-I:%M %p"))
-                                            );
-                                            item.label(id!(profile.datestamp)).set_text(
-                                                &format!("{}", dt.date())
-                                            );
-                                        } else {
-                                            item.label(id!(profile.timestamp)).set_text(
-                                                &format!("{}", ts_millis.get())
-                                            );
-                                        }
-
-                                        // Set the content.
-                                        match tl_event.content() {
-                                            TimelineItemContent::Message(message) => {
-                                                item.label(id!(content.message)).set_text(message.body());
-                                            }
-                                            TimelineItemContent::OtherState(other) => {
-                                                let text = match other.content() {
-                                                    AnyOtherFullStateEventContent::PolicyRuleRoom(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::PolicyRuleServer(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::PolicyRuleUser(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomAliases(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomAvatar(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomCanonicalAlias(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomCreate(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomEncryption(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomGuestAccess(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomHistoryVisibility(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomJoinRules(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomName(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomPinnedEvents(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomPowerLevels(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomServerAcl(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomThirdPartyInvite(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomTombstone(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::RoomTopic(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::SpaceChild(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::SpaceParent(fs_content) => format!("{:?}", fs_content),
-                                                    AnyOtherFullStateEventContent::_Custom { event_type } => format!("{:?}", event_type),
-                                                };
-                                                item.label(id!(content.message)).set_text(&text);
-                                            }
+                                    TimelineItemKind::Event(event_tl_item) => {
+                                        // Choose to draw either a Message or SmallStateEvent based on the timeline event's content.
+                                        match event_tl_item.content() {
+                                            TimelineItemContent::Message(message) => populate_message_view(
+                                                cx,
+                                                &mut list,
+                                                item_id,
+                                                event_tl_item,
+                                                message,
+                                            ),
+                                            TimelineItemContent::OtherState(other) => populate_other_state_view(
+                                                cx,
+                                                &mut list,
+                                                item_id,
+                                                event_tl_item,
+                                                other,
+                                            ),
+                                            TimelineItemContent::MembershipChange(change) => populate_membership_change_view(
+                                                cx,
+                                                &mut list,
+                                                item_id,
+                                                event_tl_item,
+                                                change,
+                                            ),
                                             other => {
-                                                item.label(id!(content.message)).set_text(&format!("{:?}", other));
+                                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                                item.label(id!(content)).set_text(&format!("{:?}", other));
+                                                item
                                             }
                                         }
-
-                                        // Temp filler: set the likes and comments count to the item id, just for now.
-                                        item.button(id!(likes)).set_text(&format!("{item_id}"));
-                                        item.button(id!(comments)).set_text(&format!("{item_id}"));
-                                        item
                                     }
                                     TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
                                         let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
@@ -533,4 +552,198 @@ impl AppMain for App {
 fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<NaiveDateTime> {
     let millis: i64 = millis.get().into();
     NaiveDateTime::from_timestamp_millis(millis)
+}
+
+
+
+/// Creates, populates, and adds a Message liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned `Message` widget is populated with data from the given `message`
+/// and its parent `EventTimelineItem`.
+fn populate_message_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    message: &timeline::Message,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+    item.label(id!(content.message)).set_text(message.body());
+
+    // Set sender to the display name if available, otherwise the user id.
+    let sender = match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+        _ => None,
+    }.unwrap_or_else(|| event_tl_item.sender().as_str());
+    item.label(id!(content.username)).set_text(sender);
+
+    // Set the timestamp.
+    let ts_millis = event_tl_item.timestamp();
+    if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
+        // format as AM/PM 12-hour time
+        item.label(id!(profile.timestamp)).set_text(
+            &format!("{}", dt.time().format("%l:%M %P"))
+        );
+        item.label(id!(profile.datestamp)).set_text(
+            &format!("{}", dt.date())
+        );
+    } else {
+        item.label(id!(profile.timestamp)).set_text(
+            &format!("{}", ts_millis.get())
+        );
+    }
+
+    // Temp filler: set the likes and comments count to the item id, just for now.
+    item.button(id!(likes)).set_text(&format!("{item_id}"));
+    item.button(id!(comments)).set_text(&format!("{item_id}"));
+
+    item
+} 
+
+
+/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned `SmallStateEvent` widget is populated with data from the given `message`
+/// and its parent `EventTimelineItem`.
+fn populate_other_state_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    other_state: &timeline::OtherState,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    // Set the timestamp.
+    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+
+    let text = match other_state.content() {
+        AnyOtherFullStateEventContent::PolicyRuleRoom(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::PolicyRuleServer(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::PolicyRuleUser(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomAliases(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomAvatar(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
+            format!("set the main address of this room to {}", 
+                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("<none>")
+            )
+        }
+        AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
+            format!("created this room (v{})", content.room_version.as_str())
+        }
+        AnyOtherFullStateEventContent::RoomEncryption(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
+            match content.guest_access {
+                GuestAccess::CanJoin => format!("has allowed guests to join this room"),
+                GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room"),
+            }
+        }
+        AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
+            let visibility = match content.history_visibility {
+                HistoryVisibility::Invited => "invited users, since they were invited",
+                HistoryVisibility::Joined => "joined users, since they joined",
+                HistoryVisibility::Shared => "joined users, for all of time",
+                HistoryVisibility::WorldReadable | _ => "anyone for all time",
+            };
+            format!("set this room's history to be visible by {}", visibility)
+        }
+        AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
+            match content.join_rule {
+                JoinRule::Public => format!("set this room to be joinable by anyone"),
+                JoinRule::Knock => format!("set this room to be joinable by invite only or by request"),
+                JoinRule::Private => format!("set this room to be private"),
+                JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions"),
+                JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions"),
+                JoinRule::Invite | _ => format!("set this room to be joinable by invite only"),
+            }
+        }
+        AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+            format!("changed this room's name to {:?}", content.name)
+        }
+        AnyOtherFullStateEventContent::RoomPinnedEvents(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, .. }) => {
+            format!("changed this room's power levels to {:?}", content)
+        }
+        AnyOtherFullStateEventContent::RoomServerAcl(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomThirdPartyInvite(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomTombstone(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
+            format!("changed this room's topic to {:?}", content.topic)
+        }
+        AnyOtherFullStateEventContent::SpaceChild(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::SpaceParent(fs_content) => format!("{:?}", fs_content),
+        other => format!("Unhandled: {:?}", other),
+    };
+
+    item.label(id!(content)).set_text(
+        &format!("{} {}.", event_tl_item.sender(), text)
+    );
+    item
+}
+
+
+/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned `SmallStateEvent` widget is populated with data from the given `message`
+/// and its parent `EventTimelineItem`.
+fn populate_membership_change_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    change: &RoomMembershipChange,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    let text = match change.change() {
+        None 
+        | Some(MembershipChange::NotImplemented)
+        | Some(MembershipChange::None) => "had a redacted/unknown membership change",
+        Some(MembershipChange::Error) => "had a membership change error",
+        Some(MembershipChange::Joined) => "joined this room",
+        Some(MembershipChange::Left) => "left this room",
+        Some(MembershipChange::Banned) => "was banned from this room",
+        Some(MembershipChange::Unbanned) => "was unbanned from this room",
+        Some(MembershipChange::Kicked) => "was kicked from this room",
+        Some(MembershipChange::Invited) => "was invited to this room",
+        Some(MembershipChange::KickedAndBanned) => "was kicked and banned from this room",
+        Some(MembershipChange::InvitationAccepted) => "accepted an invitation to this room",
+        Some(MembershipChange::InvitationRejected) => "rejected an invitation to this room",
+        Some(MembershipChange::InvitationRevoked) => "had their invitation to this room revoked",
+        Some(MembershipChange::Knocked) => "knocked (requested to join this room)",
+        Some(MembershipChange::KnockAccepted) => "had their knock accepted",
+        Some(MembershipChange::KnockRetracted) => "retracted their knock",
+        Some(MembershipChange::KnockDenied) => "had their knock denied",
+    };
+
+    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+    item.label(id!(content)).set_text(
+        // &format!("{} ({}) {}.", event_tl_item.sender(), change.user_id(), text)
+        &format!("{} {}.", event_tl_item.sender(), text) // change.user_id()
+    );
+    item
+}
+
+
+
+/// Sets the text of the `Label` at the given `item`'s live ID path
+/// to a typical 12-hour AM/PM timestamp format.
+fn set_timestamp(
+    item: &WidgetRef,
+    live_id_path: &[LiveId],
+    timestamp: MilliSecondsSinceUnixEpoch,
+) {
+    if let Some(dt) = unix_time_millis_to_datetime(&timestamp) {
+        // format as AM/PM 12-hour time
+        item.label(live_id_path).set_text(
+            &format!("{}", dt.time().format("%l:%M %P"))
+        );
+    } else {
+        item.label(live_id_path).set_text(
+            &format!("{}", timestamp.get())
+        );
+    }
 }
