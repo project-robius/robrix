@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, events::{FullStateEventContent, room::{history_visibility::HistoryVisibility, guest_access::GuestAccess, join_rules::JoinRule}}};
-use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent, MembershipChange, self, EventTimelineItem, RoomMembershipChange};
+use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent, MembershipChange, self, EventTimelineItem, RoomMembershipChange, MemberProfileChange};
 
 use crate::sliding_sync::CHOSEN_ROOM;
    
@@ -193,6 +193,9 @@ live_design!{
         }
     }
     
+    // An empty view that takes up no space in the portal list.
+    Empty = <View> { }
+
     // The view used for each text-based message event in a room's timeline.
     Message = <View> {
         width: Fill,
@@ -289,7 +292,7 @@ live_design!{
             width: Fill,
             height: Fit
             flow: Right,
-            padding: 5.0,
+            padding: { top: 2.0, bottom: 2.0 }
             spacing: 5.0
             
             left_container = <View> {
@@ -401,6 +404,7 @@ live_design!{
                     TopSpace = <View> {height: 80}
                     Message = <Message> {}
                     SmallStateEvent = <SmallStateEvent> {}
+                    Empty = <Empty> {}
                     DayDivider = <DayDivider> {}
                     BottomSpace = <View> {height: (MENU_BAR_HEIGHT)}
                 }
@@ -494,12 +498,19 @@ impl AppMain for App {
                                                 event_tl_item,
                                                 other,
                                             ),
-                                            TimelineItemContent::MembershipChange(change) => populate_membership_change_view(
+                                            TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
                                                 cx,
                                                 &mut list,
                                                 item_id,
                                                 event_tl_item,
-                                                change,
+                                                membership_change,
+                                            ),
+                                            TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
+                                                cx,
+                                                &mut list,
+                                                item_id,
+                                                event_tl_item,
+                                                profile_change,
                                             ),
                                             other => {
                                                 let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
@@ -526,8 +537,8 @@ impl AppMain for App {
                                 }
                             } else {
                                 println!("\tSkipping setting content for item_id {item_id}");
-                                // This should never happen, so just use a blank Message.
-                                list.item(cx, item_id, live_id!(Message)).unwrap()
+                                list.item(cx, item_id, live_id!(Empty)).unwrap();
+                                continue;
                             }
                         };
 
@@ -613,32 +624,34 @@ fn populate_other_state_view(
     item_id: u64,
     event_tl_item: &EventTimelineItem,
     other_state: &timeline::OtherState,
-) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    // Set the timestamp.
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-
+) -> WidgetRef {  
     let text = match other_state.content() {
-        AnyOtherFullStateEventContent::PolicyRuleRoom(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::PolicyRuleServer(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::PolicyRuleUser(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::RoomAliases(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::RoomAvatar(fs_content) => format!("{:?}", fs_content),
+        AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
+            let mut s = format!("set this room's aliases to ");
+            for alias in &content.aliases {
+                s.push_str(alias.as_str());
+                s.push_str(", ");
+            }
+            s.truncate(s.len() - 2); // remove the last trailing ", "
+            Some(s)
+        }
+        AnyOtherFullStateEventContent::RoomAvatar(_) => {
+            // TODO: handle a changed room avatar (picture)
+            None
+        }
         AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
-            format!("set the main address of this room to {}", 
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("<none>")
-            )
+            Some(format!("set the main address of this room to {}", 
+                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("<unknown>")
+            ))
         }
         AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
-            format!("created this room (v{})", content.room_version.as_str())
+            Some(format!("created this room (v{})", content.room_version.as_str()))
         }
-        AnyOtherFullStateEventContent::RoomEncryption(fs_content) => format!("{:?}", fs_content),
         AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
-            match content.guest_access {
+            Some(match content.guest_access {
                 GuestAccess::CanJoin => format!("has allowed guests to join this room"),
                 GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room"),
-            }
+            })
         }
         AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
             let visibility = match content.history_visibility {
@@ -647,48 +660,54 @@ fn populate_other_state_view(
                 HistoryVisibility::Shared => "joined users, for all of time",
                 HistoryVisibility::WorldReadable | _ => "anyone for all time",
             };
-            format!("set this room's history to be visible by {}", visibility)
+            Some(format!("set this room's history to be visible by {}", visibility))
         }
         AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
-            match content.join_rule {
+            Some(match content.join_rule {
                 JoinRule::Public => format!("set this room to be joinable by anyone"),
                 JoinRule::Knock => format!("set this room to be joinable by invite only or by request"),
                 JoinRule::Private => format!("set this room to be private"),
                 JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions"),
                 JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions"),
                 JoinRule::Invite | _ => format!("set this room to be joinable by invite only"),
-            }
+            })
         }
         AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-            format!("changed this room's name to {:?}", content.name)
+            Some(format!("changed this room's name to {:?}", content.name))
         }
-        AnyOtherFullStateEventContent::RoomPinnedEvents(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, .. }) => {
-            format!("changed this room's power levels to {:?}", content)
+        AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
+            None
         }
-        AnyOtherFullStateEventContent::RoomServerAcl(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::RoomThirdPartyInvite(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::RoomTombstone(fs_content) => format!("{:?}", fs_content),
         AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
-            format!("changed this room's topic to {:?}", content.topic)
+            Some(format!("changed this room's topic to {:?}", content.topic))
         }
-        AnyOtherFullStateEventContent::SpaceChild(fs_content) => format!("{:?}", fs_content),
-        AnyOtherFullStateEventContent::SpaceParent(fs_content) => format!("{:?}", fs_content),
-        other => format!("Unhandled: {:?}", other),
+        AnyOtherFullStateEventContent::SpaceParent(_)
+        | AnyOtherFullStateEventContent::SpaceChild(_) => None,
+        other => {
+            println!("*** Unhandled: {:?}", other);
+            None
+        }
     };
 
-    item.label(id!(content)).set_text(
-        &format!("{} {}.", event_tl_item.sender(), text)
-    );
-    item
+    if let Some(text) = text {
+        let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+        item.label(id!(content)).set_text(
+            &format!("{} {}.", event_tl_item.sender(), text)
+        );
+        // Set the timestamp.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        item
+    } else {
+        list.item(cx, item_id, live_id!(Empty)).unwrap()
+    }
 }
 
 
 /// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
 /// with the given `item_id`.
 ///
-/// The content of the returned `SmallStateEvent` widget is populated with data from the given `message`
-/// and its parent `EventTimelineItem`.
+/// The content of the returned `SmallStateEvent` widget is populated with data from the
+/// given room membership change and its parent `EventTimelineItem`.
 fn populate_membership_change_view(
     cx: &mut Cx,
     list: &mut PortalList,
@@ -724,6 +743,46 @@ fn populate_membership_change_view(
         // &format!("{} ({}) {}.", event_tl_item.sender(), change.user_id(), text)
         &format!("{} {}.", event_tl_item.sender(), text) // change.user_id()
     );
+    item
+}
+
+
+
+/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned `SmallStateEvent` widget is populated with data from the
+/// given member profile change and its parent `EventTimelineItem`.
+fn populate_profile_change_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    change: &MemberProfileChange,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    let name_text = if let Some(name_change) = change.displayname_change() {
+        let old = name_change.old.as_deref().unwrap_or(event_tl_item.sender().as_str());
+        let new = name_change.new.as_deref().unwrap_or("");
+        format!("{old} changed their display name to {new:?}")
+    } else {
+        String::new()
+    };
+
+    let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
+        if name_text.is_empty() {
+            format!("{} changed their profile picture.", event_tl_item.sender().as_str())
+        } else {
+            format!(" and changed their profile picture.")
+        }
+        // TODO: handle actual avatar URI change.
+    } else {
+        String::from(".")
+    };
+
+    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+    item.label(id!(content)).set_text(&format!("{}{}", name_text, avatar_text));
     item
 }
 
