@@ -1,7 +1,32 @@
 use chrono::NaiveDateTime;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, events::{FullStateEventContent, room::{history_visibility::HistoryVisibility, guest_access::GuestAccess, join_rules::JoinRule}, AnyMessageLikeEvent, AnyTimelineEvent, AnySyncTimelineEvent, AnySyncMessageLikeEvent, SyncMessageLikeEvent}, OwnedRoomId};
-use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent, MembershipChange, self, EventTimelineItem, RoomMembershipChange, MemberProfileChange};
+use matrix_sdk::ruma::{
+    MilliSecondsSinceUnixEpoch,
+    events::{
+        AnySyncTimelineEvent,
+        AnySyncMessageLikeEvent,
+        FullStateEventContent,
+        room::{
+            guest_access::GuestAccess,
+            history_visibility::HistoryVisibility,
+            join_rules::JoinRule,
+        },
+        SyncMessageLikeEvent,
+    },
+    OwnedRoomId,
+};
+use matrix_sdk_ui::timeline::{
+    self,
+    AnyOtherFullStateEventContent,
+    EventTimelineItem,
+    MembershipChange,
+    MemberProfileChange,
+    RoomMembershipChange,
+    VirtualTimelineItem,
+    TimelineDetails,
+    TimelineItemContent,
+    TimelineItemKind,
+};
 
 use crate::sliding_sync::CHOSEN_ROOM;
    
