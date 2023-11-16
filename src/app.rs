@@ -1,6 +1,6 @@
 use chrono::NaiveDateTime;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, events::{FullStateEventContent, room::{history_visibility::HistoryVisibility, guest_access::GuestAccess, join_rules::JoinRule}}};
+use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, events::{FullStateEventContent, room::{history_visibility::HistoryVisibility, guest_access::GuestAccess, join_rules::JoinRule}, AnyMessageLikeEvent, AnyTimelineEvent, AnySyncTimelineEvent, AnySyncMessageLikeEvent, SyncMessageLikeEvent}, OwnedRoomId};
 use matrix_sdk_ui::timeline::{TimelineItemKind, VirtualTimelineItem, TimelineDetails, TimelineItemContent, AnyOtherFullStateEventContent, MembershipChange, self, EventTimelineItem, RoomMembershipChange, MemberProfileChange};
 
 use crate::sliding_sync::CHOSEN_ROOM;
@@ -479,66 +479,73 @@ impl AppMain for App {
                             list.item(cx, item_id, live_id!(BottomSpace)).unwrap()
                         } else {
                             let tl_idx = (item_id - 1) as usize;
-                            if let Some(timeline_item) = timeline_items.and_then(|(_tl, items)| items.get(tl_idx)) {
-                                match timeline_item.kind() {
-                                    TimelineItemKind::Event(event_tl_item) => {
-                                        // Choose to draw either a Message or SmallStateEvent based on the timeline event's content.
-                                        match event_tl_item.content() {
-                                            TimelineItemContent::Message(message) => populate_message_view(
-                                                cx,
-                                                &mut list,
-                                                item_id,
-                                                event_tl_item,
-                                                message,
-                                            ),
-                                            TimelineItemContent::OtherState(other) => populate_other_state_view(
-                                                cx,
-                                                &mut list,
-                                                item_id,
-                                                event_tl_item,
-                                                other,
-                                            ),
-                                            TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
-                                                cx,
-                                                &mut list,
-                                                item_id,
-                                                event_tl_item,
-                                                membership_change,
-                                            ),
-                                            TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
-                                                cx,
-                                                &mut list,
-                                                item_id,
-                                                event_tl_item,
-                                                profile_change,
-                                            ),
-                                            other => {
-                                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-                                                item.label(id!(content)).set_text(&format!("{:?}", other));
-                                                item
-                                            }
-                                        }
-                                    }
-                                    TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
-                                        let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
-                                        let text = unix_time_millis_to_datetime(millis)
-                                            // format the time as a shortened date (Sat, Sept 5, 2021)
-                                            .map(|dt| format!("{}", dt.date().format("%a %b %-d, %Y")))
-                                            .unwrap_or_else(|| format!("{:?}", millis));
-                                        item.label(id!(date)).set_text(&text);
-                                        item
-                                    }
-                                    TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                                        // reuse the DayDivider view for user read markers.
-                                        let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
-                                        item.label(id!(date)).set_text(&format!("Read marker, {}", timeline_item.unique_id()));
-                                        item
-                                    }
-                                }
-                            } else {
-                                println!("\tSkipping setting content for item_id {item_id}");
+                            let Some(timeline_item) = timeline_items.and_then(|(_tl, items)| items.get(tl_idx)) else {
+                                // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
+                                // but we can always safely fill the item with an empty widget that takes up no space.
                                 list.item(cx, item_id, live_id!(Empty)).unwrap();
                                 continue;
+                            };
+                            match timeline_item.kind() {
+                                TimelineItemKind::Event(event_tl_item) => {
+                                    // Choose to draw either a Message or SmallStateEvent based on the timeline event's content.
+                                    match event_tl_item.content() {
+                                        TimelineItemContent::Message(message) => populate_message_view(
+                                            cx,
+                                            &mut list,
+                                            item_id,
+                                            event_tl_item,
+                                            message,
+                                        ),
+                                        TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+                                            cx,
+                                            &mut list,
+                                            item_id,
+                                            event_tl_item,
+                                            CHOSEN_ROOM.get().unwrap(), // room must exist at this point
+                                        ),
+                                        TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
+                                            cx,
+                                            &mut list,
+                                            item_id,
+                                            event_tl_item,
+                                            membership_change,
+                                        ),
+                                        TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
+                                            cx,
+                                            &mut list,
+                                            item_id,
+                                            event_tl_item,
+                                            profile_change,
+                                        ),
+                                        TimelineItemContent::OtherState(other) => populate_other_state_view(
+                                            cx,
+                                            &mut list,
+                                            item_id,
+                                            event_tl_item,
+                                            other,
+                                        ),
+                                        unhandled => {
+                                            let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                            item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
+                                            item
+                                        }
+                                    }
+                                }
+                                TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
+                                    let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
+                                    let text = unix_time_millis_to_datetime(millis)
+                                        // format the time as a shortened date (Sat, Sept 5, 2021)
+                                        .map(|dt| format!("{}", dt.date().format("%a %b %-d, %Y")))
+                                        .unwrap_or_else(|| format!("{:?}", millis));
+                                    item.label(id!(date)).set_text(&text);
+                                    item
+                                }
+                                TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                                    // reuse the DayDivider view for user read markers.
+                                    let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
+                                    item.label(id!(date)).set_text(&format!("Read marker, {}", timeline_item.unique_id()));
+                                    item
+                                }
                             }
                         };
 
@@ -611,6 +618,156 @@ fn populate_message_view(
 
     item
 } 
+
+
+
+
+/// Creates, populates, and adds a `SmallStateEvent` liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned widget is populated with metadata about the redacted message
+/// the corresponds to the given `EventTimelineItem`.
+fn populate_redacted_message_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    _room_id: &OwnedRoomId
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+    let redactor_and_reason = if let Some(redacted_msg) = event_tl_item.latest_json() {
+        if let Ok(old) = redacted_msg.deserialize() {
+            match old {
+                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(redaction))) => {
+                    Some((
+                        redaction.unsigned.redacted_because.sender,
+                        redaction.unsigned.redacted_because.content.reason,
+                    ))
+                }
+                _ => None,
+            }
+        } else { None }
+    } else { None };
+
+    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+    
+    // Get the display name (or user ID) of the original sender of the now-redacted message.
+    let original_sender = match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+        _ => None,
+    }.unwrap_or_else(|| event_tl_item.sender().as_str());
+    let text = match redactor_and_reason {
+        Some((redactor, Some(reason))) => {
+            format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
+        }
+        Some((redactor, None)) => {
+            format!("{} deleted {}'s message.", redactor, original_sender)
+        }
+        None => {
+            format!("{}'s message was deleted.", original_sender)
+        }
+    };
+    item.label(id!(content)).set_text(&text);
+    item
+} 
+
+
+/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned `SmallStateEvent` widget is populated with data from the
+/// given room membership change and its parent `EventTimelineItem`.
+fn populate_membership_change_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    change: &RoomMembershipChange,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    let text = match change.change() {
+        None 
+        | Some(MembershipChange::NotImplemented)
+        | Some(MembershipChange::None) =>
+            format!("{} had a redacted/unknown membership change.", event_tl_item.sender()),
+        Some(MembershipChange::Error) =>
+            format!("{} had a membership change error.", event_tl_item.sender()),
+        Some(MembershipChange::Joined) =>
+            format!("{} joined this room.", event_tl_item.sender()),
+        Some(MembershipChange::Left) =>
+            format!("{} left this room.", event_tl_item.sender()),
+        Some(MembershipChange::Banned) =>
+            format!("{} banned {} from this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::Unbanned) =>
+            format!("{} unbanned {} from this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::Kicked) =>
+            format!("{} kicked {} from this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::Invited) =>
+            format!("{} invited {} to this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::KickedAndBanned) =>
+            format!("{} kicked and banned {} from this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::InvitationAccepted) =>
+            format!("{} accepted an invitation to this room.", event_tl_item.sender()),
+        Some(MembershipChange::InvitationRejected) =>
+            format!("{} rejected an invitation to this room.", event_tl_item.sender()),
+        Some(MembershipChange::InvitationRevoked) =>
+            format!("{} revoked {}'s invitation to this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::Knocked) =>
+            format!("{} requested to join this room.", event_tl_item.sender()),
+        Some(MembershipChange::KnockAccepted) =>
+            format!("{} accepted {}'s request to join this room.", event_tl_item.sender(), change.user_id()),
+        Some(MembershipChange::KnockRetracted) =>
+            format!("{} retracted their request to join this room.", event_tl_item.sender()),
+        Some(MembershipChange::KnockDenied) =>
+            format!("{} denied {}'s request to join this room.", event_tl_item.sender(), change.user_id()),
+    };
+
+    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+    item.label(id!(content)).set_text(&text);
+    item
+}
+
+
+
+/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
+/// with the given `item_id`.
+///
+/// The content of the returned `SmallStateEvent` widget is populated with data from the
+/// given member profile change and its parent `EventTimelineItem`.
+fn populate_profile_change_view(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: u64,
+    event_tl_item: &EventTimelineItem,
+    change: &MemberProfileChange,
+) -> WidgetRef {
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    let name_text = if let Some(name_change) = change.displayname_change() {
+        let old = name_change.old.as_deref().unwrap_or(event_tl_item.sender().as_str());
+        let new = name_change.new.as_deref().unwrap_or("");
+        format!("{old} changed their display name to {new:?}")
+    } else {
+        String::new()
+    };
+
+    let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
+        if name_text.is_empty() {
+            format!("{} changed their profile picture.", event_tl_item.sender().as_str())
+        } else {
+            format!(" and changed their profile picture.")
+        }
+        // TODO: handle actual avatar URI change.
+    } else {
+        String::from(".")
+    };
+
+    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+    item.label(id!(content)).set_text(&format!("{}{}", name_text, avatar_text));
+    item
+}
+
 
 
 /// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
@@ -700,90 +857,6 @@ fn populate_other_state_view(
     } else {
         list.item(cx, item_id, live_id!(Empty)).unwrap()
     }
-}
-
-
-/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
-/// with the given `item_id`.
-///
-/// The content of the returned `SmallStateEvent` widget is populated with data from the
-/// given room membership change and its parent `EventTimelineItem`.
-fn populate_membership_change_view(
-    cx: &mut Cx,
-    list: &mut PortalList,
-    item_id: u64,
-    event_tl_item: &EventTimelineItem,
-    change: &RoomMembershipChange,
-) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    let text = match change.change() {
-        None 
-        | Some(MembershipChange::NotImplemented)
-        | Some(MembershipChange::None) => "had a redacted/unknown membership change",
-        Some(MembershipChange::Error) => "had a membership change error",
-        Some(MembershipChange::Joined) => "joined this room",
-        Some(MembershipChange::Left) => "left this room",
-        Some(MembershipChange::Banned) => "was banned from this room",
-        Some(MembershipChange::Unbanned) => "was unbanned from this room",
-        Some(MembershipChange::Kicked) => "was kicked from this room",
-        Some(MembershipChange::Invited) => "was invited to this room",
-        Some(MembershipChange::KickedAndBanned) => "was kicked and banned from this room",
-        Some(MembershipChange::InvitationAccepted) => "accepted an invitation to this room",
-        Some(MembershipChange::InvitationRejected) => "rejected an invitation to this room",
-        Some(MembershipChange::InvitationRevoked) => "had their invitation to this room revoked",
-        Some(MembershipChange::Knocked) => "knocked (requested to join this room)",
-        Some(MembershipChange::KnockAccepted) => "had their knock accepted",
-        Some(MembershipChange::KnockRetracted) => "retracted their knock",
-        Some(MembershipChange::KnockDenied) => "had their knock denied",
-    };
-
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    item.label(id!(content)).set_text(
-        // &format!("{} ({}) {}.", event_tl_item.sender(), change.user_id(), text)
-        &format!("{} {}.", event_tl_item.sender(), text) // change.user_id()
-    );
-    item
-}
-
-
-
-/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
-/// with the given `item_id`.
-///
-/// The content of the returned `SmallStateEvent` widget is populated with data from the
-/// given member profile change and its parent `EventTimelineItem`.
-fn populate_profile_change_view(
-    cx: &mut Cx,
-    list: &mut PortalList,
-    item_id: u64,
-    event_tl_item: &EventTimelineItem,
-    change: &MemberProfileChange,
-) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    let name_text = if let Some(name_change) = change.displayname_change() {
-        let old = name_change.old.as_deref().unwrap_or(event_tl_item.sender().as_str());
-        let new = name_change.new.as_deref().unwrap_or("");
-        format!("{old} changed their display name to {new:?}")
-    } else {
-        String::new()
-    };
-
-    let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
-        if name_text.is_empty() {
-            format!("{} changed their profile picture.", event_tl_item.sender().as_str())
-        } else {
-            format!(" and changed their profile picture.")
-        }
-        // TODO: handle actual avatar URI change.
-    } else {
-        String::from(".")
-    };
-
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    item.label(id!(content)).set_text(&format!("{}{}", name_text, avatar_text));
-    item
 }
 
 
