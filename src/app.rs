@@ -700,7 +700,7 @@ fn populate_redacted_message_view(
 /// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
 /// with the given `item_id`.
 ///
-/// The content of the returned `SmallStateEvent` widget is populated with data from the
+/// The content of the returned widget is populated with data from the
 /// given room membership change and its parent `EventTimelineItem`.
 fn populate_membership_change_view(
     cx: &mut Cx,
@@ -714,8 +714,10 @@ fn populate_membership_change_view(
     let text = match change.change() {
         None 
         | Some(MembershipChange::NotImplemented)
-        | Some(MembershipChange::None) =>
-            format!("{} had a redacted/unknown membership change.", event_tl_item.sender()),
+        | Some(MembershipChange::None) => {
+            // Don't actually display anything for nonexistent/unimportant membership changes.
+            return list.item(cx, item_id, live_id!(Empty)).unwrap();
+        }
         Some(MembershipChange::Error) =>
             format!("{} had a membership change error.", event_tl_item.sender()),
         Some(MembershipChange::Joined) =>
