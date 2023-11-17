@@ -300,7 +300,7 @@ async fn async_main() -> Result<()> {
                                 let res = timeline_ref.paginate_backwards(
                                     // PaginationOptions::single_request(u16::MAX)
                                     // PaginationOptions::until_num_items(20, 20)
-                                    PaginationOptions::until_num_items(500, 500)
+                                    PaginationOptions::until_num_items(1000, 1000)
                                 ).await;
                                 let items = timeline_ref.items().await;
                                 println!("    --> Timeline room {room:?} pagination result: {:?}, timeline has {} items", res, items.len());
