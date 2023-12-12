@@ -8,18 +8,20 @@ use matrix_sdk::{
         assign,
         OwnedRoomId,
         api::client::sync::sync_events::v4::{SyncRequestListFilters, self},
-        events::StateEventType,
+        events::{StateEventType, room::message::MessageType},
     }, SlidingSyncList, SlidingSyncMode
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions}, Timeline};
+use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, TimelineItemContent}, Timeline};
 use tokio::runtime::Handle;
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
 use url::Url;
 
+use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate};
+
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// The room id that we should listen for the,
+    /// The room id that we should display the timeline of.
     #[clap(value_parser)]
     room_id: OwnedRoomId,
 
@@ -94,7 +96,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 }
 
 /// A temp hacky way to expose full timeline data obtained from the sliding sync proxy.
-static ROOM_TIMELINES: Mutex<BTreeMap<OwnedRoomId, (Arc<Timeline>, Vector<Arc<TimelineItem>>)>> = Mutex::new(BTreeMap::new());
+pub static ROOM_TIMELINES: Mutex<BTreeMap<OwnedRoomId, (Arc<Timeline>, Vector<Arc<TimelineItem>>)>> = Mutex::new(BTreeMap::new());
 
 pub static CHOSEN_ROOM: OnceLock<OwnedRoomId> = OnceLock::new();
 
@@ -123,7 +125,8 @@ async fn async_main() -> Result<()> {
     let visible_room_list = SlidingSyncList::builder(&visible_room_list_name)
         // Load the most recent rooms, one at a time
         .sort(vec!["by_recency".into()])
-        .sync_mode(SlidingSyncMode::new_growing(1))
+        // .sync_mode(SlidingSyncMode::new_growing(1))
+        .sync_mode(SlidingSyncMode::new_paging(10).maximum_number_of_rooms_to_fetch(20))
         // only load one timeline event per room
         .timeline_limit(10)
         .filters(Some(filter))
@@ -260,11 +263,44 @@ async fn async_main() -> Result<()> {
                     // println!("    --> SlidingSync room: {:?}, timeline: {:#?}", ssroom, timeline);
                     if let Some(timeline) = timeline {
                         let items = timeline.items().await;
+                        let latest_tl = timeline.latest_event().await;
                         let timeline_ref = {
                             let mut room_timelines = ROOM_TIMELINES.lock().unwrap();
                             match room_timelines.entry(room_id.to_owned()) {
                                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                                     println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
+
+                                    let latest = if let Some(ev) = latest_tl {
+                                        let text = match ev.content() {
+                                            TimelineItemContent::Message(msg) => match msg.msgtype() {
+                                                MessageType::Audio(_) => format!("[Audio]"),
+                                                MessageType::Emote(_) => format!("[Emote]"),
+                                                MessageType::File(_) => format!("[File]"),
+                                                MessageType::Image(_) => format!("[Image]"),
+                                                MessageType::Location(_) => format!("[Location]"),
+                                                MessageType::Notice(_) => format!("[Notice]"),
+                                                MessageType::ServerNotice(_) => format!("[Server notice]"),
+                                                MessageType::Text(t) => t.body.clone(),
+                                                MessageType::Video(_) => format!("[Video]"),
+                                                MessageType::VerificationRequest(_) => format!("[Verification request]"),
+                                                _ => format!("[Unknown message type]"),
+                                            },
+                                            TimelineItemContent::RedactedMessage => format!("[Message was redacted]"),
+                                            TimelineItemContent::Sticker(_) => format!("[Sticker]"),
+                                            TimelineItemContent::Poll(_) => format!("[Poll]"),
+                                            _ => format!("[Unknown message type]"),
+                                        };
+                                        Some((ev.timestamp(), text))
+                                    } else {
+                                        None
+                                    };
+
+                                    rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
+                                        room_id: Some(room_id.to_owned()),
+                                        room_name: ssroom.name(),
+                                        latest,
+                                    }));
+                                    
                                     let entry_mut = entry.get_mut();
                                     entry_mut.1 = items;
                                     entry_mut.0.clone()
@@ -300,7 +336,7 @@ async fn async_main() -> Result<()> {
                                 let res = timeline_ref.paginate_backwards(
                                     // PaginationOptions::single_request(u16::MAX)
                                     // PaginationOptions::until_num_items(20, 20)
-                                    PaginationOptions::until_num_items(1000, 1000)
+                                    PaginationOptions::until_num_items(10, 10)
                                 ).await;
                                 let items = timeline_ref.items().await;
                                 println!("    --> Timeline room {room:?} pagination result: {:?}, timeline has {} items", res, items.len());

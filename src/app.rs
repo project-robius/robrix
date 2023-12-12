@@ -1,203 +1,208 @@
+use crate::api::Db;
+use crate::home::rooms_list::RoomListAction;
+use crate::home::chat_screen::*;
+use crate::shared::stack_navigation::*;
+use crate::shared::stack_view_action::StackViewAction;
 use makepad_widgets::*;
-   
-live_design!{
+use std::collections::HashMap;
+
+live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
 
-    import crate::timeline::timeline_view::Timeline;
+    import crate::home::home_screen::HomeScreen
+    import crate::home::chat_screen::RoomScreen
+    import crate::contacts::contacts_screen::ContactsScreen
+    import crate::contacts::add_contact_screen::AddContactScreen
+    import crate::discover::discover_screen::DiscoverScreen
+    import crate::discover::moments_screen::MomentsScreen
+    import crate::profile::profile_screen::ProfileScreen
+    import crate::profile::my_profile_screen::MyProfileScreen
 
-    IMG_A = dep("crate://self/resources/neom-THlO6Mkf5uI-unsplash.jpg")
-    IMG_PROFILE_A = dep("crate://self/resources/profile_1.jpg")
-    IMG_PROFILE_B = dep("crate://self/resources/profile_2.jpg")
-    ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
-    ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
-    ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
-    ICO_HOME = dep("crate://self/resources/icon_home.svg")
-    ICO_FIND = dep("crate://self/resources/icon_find.svg")
-    ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
-    ICO_USER = dep("crate://self/resources/icon_user.svg")
-    ICO_ADD = dep("crate://self/resources/icon_add.svg")
+    import crate::shared::clickable_view::ClickableView
+    import crate::shared::stack_navigation::*;
 
-    MENU_BAR_HEIGHT = 80.0
-    
-    FONT_SIZE_SUB = 9.5
-    FONT_SIZE_P = 12.5
-    
-    TEXT_SUB = {
-        font_size: (FONT_SIZE_SUB),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+    ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
+    ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
+    ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
+    ICON_ME = dep("crate://self/resources/icons/me.svg")
+
+    H3_TEXT_REGULAR = {
+        font_size: 9.0,
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
-    
-    TEXT_P = {
-        font_size: (FONT_SIZE_P),
-        height_factor: 1.65,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-    }
-    
-    COLOR_BG = #xfff8ee
-    COLOR_BRAND = #xf88
-    COLOR_BRAND_HOVER = #xf66
-    COLOR_META_TEXT = #xaaa
-    COLOR_META = #xccc
-    COLOR_META_INV = #xfffa
-    COLOR_OVERLAY_BG = #x000000d8
-    COLOR_DIVIDER = #x00000018
-    COLOR_DIVIDER_DARK = #x00000044
-    COLOR_PROFILE_CIRCLE = #xfff8ee
-    COLOR_P = #x999
-    
-    FillerY = <View> {width: Fill}
-    
-    FillerX = <View> {height: Fill}
-    
-    Logo = <Button> {
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
+
+    AppTab = <RadioButton> {
+        width: Fit,
+        height: Fill,
+        align: {x: 0.0, y: 0.0}
+        draw_radio: {
+            radio_type: Tab,
+            color_active: #fff,
+            color_inactive: #fff,
         }
-        padding: 9.0
-        text: "Testing: For testing Robius app"
-    }
-    
-    IconButton = <Button> {
         draw_text: {
-            instance hover: 0.0
-            instance pressed: 0.0
-            text_style: {
-                font_size: 11.0
-            }
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META_TEXT),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
+            color_selected: #0b0,
+            color_unselected: #000,
+            color_unselected_hover: #111,
+            text_style: <H3_TEXT_REGULAR> {}
         }
-        draw_icon: {
-            svg_file: (ICO_FAV),
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
-        }
-        padding: 9.0
-        text: "1"
-    }
-    
-    // The header bar at the top of each room window.
-    RoomHeader = <RoundedYView> {
-        width: Fill,
-        height: 70
-        flow: Right,
-        padding: 10.0,
-        spacing: 10.0
-        draw_bg: {color: (COLOR_OVERLAY_BG), inset: vec4(-0.5, -0.5, -1.0, 0.0), radius: vec2(0.5, 4.5)}
-        
-        <Logo> {
-            height: Fit,
-            width: Fill,
-            margin: {top: 0.0}
-        }
-        
-    }
-    
-    // The MenuBar bar at the bottom of the window.
-    MenuBar = <RoundedYView> {
-        width: Fill,
-        height: (MENU_BAR_HEIGHT),
-        flow: Right,
-        padding: 10.0,
-        spacing: 10.0
-        draw_bg: {color: (COLOR_OVERLAY_BG), inset: vec4(-0.5, 0.0, -1.0, -1.0), radius: vec2(4.5, 0.5)}
-        
-        <View> {
-            width: Fill,
-            height: Fit,
-            margin: 0.0
-            flow: Right,
-            padding: 0.0,
-            spacing: 25.0,
-            align: {x: 0.5, y: 0.5}
-            
-            <IconButton> {draw_icon: {svg_file: (ICO_HOME)} icon_walk: {width: 30.0, height: Fit}, text: ""}
-            <IconButton> {draw_icon: {svg_file: (ICO_FIND)} icon_walk: {width: 18.0, height: Fit}, text: ""}
-            <IconButton> {draw_icon: {svg_file: (ICO_ADD)} icon_walk: {width: 40.0, height: Fit}, text: ""}
-            <IconButton> {draw_icon: {svg_file: (ICO_LIKES)} icon_walk: {width: 20.0, height: Fit}, text: ""}
-            <IconButton> {draw_icon: {svg_file: (ICO_USER)} icon_walk: {width: 15.0, height: Fit}, text: ""}
-        }
-    }
-    
-    LineH = <RoundedView> {
-        width: Fill,
-        height: 2,
-        margin: 0.0
-        padding: 0.0,
-        spacing: 0.0
-        draw_bg: {color: (COLOR_DIVIDER)}
     }
 
-    Timestamp = <Label> {
-        padding: { top: 10.0, bottom: 0.0, left: 0.0, right: 0.0 }
-        draw_text: {
-            text_style: <TEXT_SUB> {},
-            color: (COLOR_META_TEXT)
-        }
-        text: " "
-    }    
-    
     App = {{App}} {
         ui: <Window> {
-            window: {inner_size: vec2(428, 926), dpi_override: 2},
-            show_bg: true
-            
-            draw_bg: {
-                fn pixel(self) -> vec4 {
-                    return (COLOR_BG);
-                }
-            }
-            body = {
-                flow: Overlay,
-                padding: 0.0
-                spacing: 0,
-                align: {
-                    x: 0.0,
-                    y: 0.0
-                },
+            window: {inner_size: vec2(400, 800)},
+            pass: {clear_color: #2A}
 
-                timeline = <Timeline> {
-                    // just default content for now
-                }
-                
-                <View> {
-                    height: Fill,
-                    width: Fill
-                    flow: Down
-                    
-                    <RoomHeader> {}
-                    <FillerY> {}
-                    <MenuBar> {}
+            body = {
+                navigation = <StackNavigation> {
+                    root_view = {
+                        width: Fill,
+                        height: Fill,
+                        padding: 0, align: {x: 0.0, y: 0.0}, spacing: 0., flow: Down
+
+                        application_pages = <View> {
+                            margin: 0.0,
+                            padding: 0.0
+
+                            tab1_frame = <HomeScreen> {visible: true}
+                            tab2_frame = <ContactsScreen> {visible: false}
+                            tab3_frame = <DiscoverScreen> {visible: false}
+                            tab4_frame = <ProfileScreen> {visible: false}
+                        }
+
+                        mobile_menu = <RoundedView> {
+                            width: Fill,
+                            height: 80,
+                            flow: Right, spacing: 6.0, padding: 10
+                            draw_bg: {
+                                instance radius: 0.0,
+                                instance border_width: 1.0,
+                                instance border_color: #aaa,
+                                color: #fff
+                            }
+
+                            mobile_modes = <View> {
+                                tab1 = <AppTab> {
+                                    animator: {selected = {default: on}}
+                                    label: "Rooms"
+                                    draw_icon: {
+                                        svg_file: (ICON_CHAT),
+                                        fn get_color(self) -> vec4 {
+                                            return mix(
+                                                #000,
+                                                #0b0,
+                                                self.selected
+                                            )
+                                        }
+                                    }
+                                    width: Fill,
+                                    icon_walk: {width: 20, height: 20}
+                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                }
+                                tab2 = <AppTab> {
+                                    label: "DMs",
+                                    draw_icon: {
+                                        svg_file: (ICON_CONTACTS),
+                                        fn get_color(self) -> vec4 {
+                                            return mix(
+                                                #000,
+                                                #0b0,
+                                                self.selected
+                                            )
+                                        }
+                                    }
+                                    width: Fill
+                                    icon_walk: {width: 20, height: 20}
+                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                }
+                                tab3 = <AppTab> {
+                                    label: "Spaces",
+                                    draw_icon: {
+                                        svg_file: (ICON_DISCOVER),
+                                        fn get_color(self) -> vec4 {
+                                            return mix(
+                                                #000,
+                                                #0b0,
+                                                self.selected
+                                            )
+                                        }
+                                    }
+                                    width: Fill
+                                    icon_walk: {width: 20, height: 20}
+                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                }
+                                tab4 = <AppTab> {
+                                    label: "Profile",
+                                    draw_icon: {
+                                        svg_file: (ICON_ME),
+                                        fn get_color(self) -> vec4 {
+                                            return mix(
+                                                #000,
+                                                #0b0,
+                                                self.selected
+                                            )
+                                        }
+                                    }
+                                    width: Fill
+                                    icon_walk: {width: 20, height: 20}
+                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                }
+                            }
+                        }
+                    }
+
+                    moments_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: "Moments"
+                                    }
+                                }
+                            }
+                        }
+                        <MomentsScreen> {}
+                    }
+
+                    add_contact_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: "Add Contact"
+                                    }
+                                }
+                            }
+                        }
+                        <AddContactScreen> {}
+                    }
+
+                    my_profile_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: "My Profile"
+                                    }
+                                }
+                            }
+                        }
+                        <MyProfileScreen> {}
+                    }
+
+                    rooms_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: " "
+                                    }
+                                }
+                            }
+                        }
+                        rooms_screen = <RoomScreen> {}
+                    }
                 }
             }
         }
@@ -208,39 +213,125 @@ app_main!(App);
 
 #[derive(Live)]
 pub struct App {
-    #[live] ui: WidgetRef,
+    #[live]
+    ui: WidgetRef,
+
+    #[rust]
+    navigation_destinations: HashMap<StackViewAction, LiveId>,
 }
 
 impl LiveHook for App {
     fn before_live_design(cx: &mut Cx) {
-        crate::makepad_widgets::live_design(cx);
-        crate::timeline::timeline_view::live_design(cx);
-    } 
-}
+        makepad_widgets::live_design(cx);
 
+        // shared
+        crate::shared::styles::live_design(cx);
+        crate::shared::helpers::live_design(cx);
+        crate::shared::header::live_design(cx);
+        crate::shared::search_bar::live_design(cx);
+        crate::shared::popup_menu::live_design(cx);
+        crate::shared::dropdown_menu::live_design(cx);
+        crate::shared::stack_navigation::live_design(cx);
+        crate::shared::clickable_view::live_design(cx);
+
+        // home - chats
+        crate::home::home_screen::live_design(cx);
+        crate::home::rooms_list::live_design(cx);
+        crate::home::chat_screen::live_design(cx);
+
+        // contacts
+        crate::contacts::contacts_screen::live_design(cx);
+        crate::contacts::contacts_group::live_design(cx);
+        crate::contacts::contacts_list::live_design(cx);
+        crate::contacts::add_contact_screen::live_design(cx);
+
+        // discover
+        crate::discover::discover_screen::live_design(cx);
+        crate::discover::moment_list::live_design(cx);
+        crate::discover::moments_screen::live_design(cx);
+
+        // profile
+        crate::profile::profile_screen::live_design(cx);
+        crate::profile::my_profile_screen::live_design(cx);
+
+        // timeline (list of messages in a room
+        crate::timeline::timeline_view::live_design(cx);
+    }
+
+    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
+        self.init_navigation_destinations();
+
+        println!("after_new_from_doc(): starting matrix sdk loop");
+        // crate::matrix::start_matrix_tokio().unwrap();
+        crate::sliding_sync::start_matrix_tokio().unwrap();
+    }
+}
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-
-        // TODO: not sure if this is the correct place to do this.
-        if matches!(event, Event::Construct) {
-            println!("Construct: starting matrix sdk loop");
-            // crate::matrix::start_matrix_tokio().unwrap();
-            crate::sliding_sync::start_matrix_tokio().unwrap();
-            return;
-        }
-
         if let Event::Draw(event) = event {
-            self.ui.draw_widget_all(&mut Cx2d::new(cx, event));
-            return;
+            return self.ui.draw_widget_all(&mut Cx2d::new(cx, event));
         }
-        
-        let _actions = self.ui.handle_widget_event(cx, event);
-        
-        // for (item_id, item) in message_list.items_with_actions(&actions) {
-        //     if item.button(id!(likes)).clicked(&actions) {
-        //         log!("hello {}", item_id);
-        //     }
-        // }
+
+        let actions = self.ui.handle_widget_event(cx, event);
+
+        self.ui.radio_button_set(ids!(
+            mobile_modes.tab1,
+            mobile_modes.tab2,
+            mobile_modes.tab3,
+            mobile_modes.tab4,
+        ))
+        .selected_to_visible(
+            cx,
+            &self.ui,
+            &actions,
+            ids!(
+                application_pages.tab1_frame,
+                application_pages.tab2_frame,
+                application_pages.tab3_frame,
+                application_pages.tab4_frame,
+            ),
+        );
+
+
+        self.update_rooms_list_info(&actions);
+
+        let mut navigation = self.ui.stack_navigation(id!(navigation));
+        navigation.handle_stack_view_actions(
+            cx,
+            &actions,
+            &self.navigation_destinations
+        );
+    }
+}
+
+impl App {
+    fn init_navigation_destinations(&mut self) {
+        self.navigation_destinations = HashMap::new();
+        self.navigation_destinations.insert(StackViewAction::ShowAddContact, live_id!(add_contact_stack_view));
+        self.navigation_destinations.insert(StackViewAction::ShowMoments, live_id!(moments_stack_view));
+        self.navigation_destinations.insert(StackViewAction::ShowMyProfile, live_id!(my_profile_stack_view));
+        self.navigation_destinations.insert(StackViewAction::ShowRoom, live_id!(rooms_stack_view));
+    }
+
+    fn update_rooms_list_info(&mut self, actions: &WidgetActions) {
+        for action in actions {
+            // Handle the user selecting a room to view.
+            if let RoomListAction::Selected(room_index) = action.action() {
+                let db = Db::new();
+
+                let stack_navigation = self.ui.stack_navigation(id!(navigation));
+                
+                // Update the title of the room screen
+                stack_navigation.set_title(live_id!(rooms_stack_view), &format!("Room Index {room_index}"));
+
+                // Display the the chat data into the view
+                // TODO: FIXME: display the room timeline view, not chats.
+                let room_ref = stack_navigation
+                    .view(id!(rooms_stack_view.rooms_screen))
+                    .chat(id!(chat));
+                room_ref.set_room_index(room_index);
+            }
+        }
     }
 }

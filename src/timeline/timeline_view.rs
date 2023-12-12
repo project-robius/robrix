@@ -1,4 +1,3 @@
-use chrono::NaiveDateTime;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
     MilliSecondsSinceUnixEpoch,
@@ -28,7 +27,7 @@ use matrix_sdk_ui::timeline::{
     TimelineItemKind,
 };
 
-use crate::sliding_sync::CHOSEN_ROOM;
+use crate::{sliding_sync::CHOSEN_ROOM, utils::unix_time_millis_to_datetime};
 
 
 live_design!{
@@ -519,12 +518,6 @@ impl Timeline {
         }
         cx.end_turtle();
     }
-}
-
-
-fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<NaiveDateTime> {
-    let millis: i64 = millis.get().into();
-    NaiveDateTime::from_timestamp_millis(millis)
 }
 
 
