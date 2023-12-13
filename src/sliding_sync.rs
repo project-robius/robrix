@@ -270,6 +270,14 @@ async fn async_main() -> Result<()> {
                                 std::collections::btree_map::Entry::Occupied(mut entry) => {
                                     println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
 
+                                    
+                                    let entry_mut = entry.get_mut();
+                                    entry_mut.1 = items;
+                                    entry_mut.0.clone()
+                                }
+                                std::collections::btree_map::Entry::Vacant(entry) => {
+                                    println!("    --> Adding new timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
+
                                     let latest = if let Some(ev) = latest_tl {
                                         let text = match ev.content() {
                                             TimelineItemContent::Message(msg) => match msg.msgtype() {
@@ -301,12 +309,7 @@ async fn async_main() -> Result<()> {
                                         latest,
                                     }));
                                     
-                                    let entry_mut = entry.get_mut();
-                                    entry_mut.1 = items;
-                                    entry_mut.0.clone()
-                                }
-                                std::collections::btree_map::Entry::Vacant(entry) => {
-                                    println!("    --> Adding new timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
+                                    
                                     let tl_arc = Arc::new(timeline);
                                     entry.insert((Arc::clone(&tl_arc), items));
                                     tl_arc
