@@ -1,6 +1,5 @@
 pub use makepad_widgets;
 pub mod app;
-pub mod api;
 mod contacts;
 mod discover;
 mod home;
@@ -10,10 +9,9 @@ mod shared;
 // Matrix stuff
 pub mod matrix;
 pub mod sliding_sync;
-pub mod message_display;
 
 // UI stuff
 pub mod timeline;
-// pub mod room; // not ready yet
+pub mod message_display;
 
 pub mod utils;

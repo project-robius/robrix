@@ -1,4 +1,3 @@
-use crate::api::Db;
 use crate::home::rooms_list::RoomListAction;
 use crate::home::chat_screen::*;
 use crate::shared::stack_navigation::*;
