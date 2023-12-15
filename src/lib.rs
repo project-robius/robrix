@@ -10,6 +10,7 @@ mod shared;
 // Matrix stuff
 pub mod matrix;
 pub mod sliding_sync;
+pub mod message_display;
 
 // UI stuff
 pub mod timeline;

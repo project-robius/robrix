@@ -133,9 +133,11 @@ pub type RoomIndex = usize;
 
 #[derive(Debug, Clone, WidgetAction)]
 pub enum RoomListAction {
-    /// Contains the index of the `RoomPreviewEntry` that was selected.
-    /// Used to index into the `all_rooms` vector.
-    Selected(RoomIndex),
+    Selected {
+        /// The index (into the `all_rooms` vector) of the selected `RoomPreviewEntry`.
+        room_index: RoomIndex,
+        room_id: OwnedRoomId,
+    },
     None,
 }
 
@@ -207,19 +209,24 @@ impl RoomsList {
         dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
     ) {
         let mut actions = Vec::new();
-        self.list
-            .handle_widget_event_with(cx, event, &mut |_, action| {
-                if let Some(room_index) = self.rooms_list_map.get(&action.widget_uid.0) {
-                    actions.push((room_index.clone(), action));
-                }
-            });
+        self.list.handle_widget_event_with(cx, event, &mut |_, action| {
+            if let Some(room_index) = self.rooms_list_map.get(&action.widget_uid.0) {
+                actions.push((room_index.clone(), action));
+            }
+        });
 
         let widget_uid = self.widget_uid();
         for (room_index, action) in actions {
             if let ClickableViewAction::Click = action.action() {
                 dispatch_action(
                     cx,
-                    WidgetActionItem::new(RoomListAction::Selected(room_index).into(), widget_uid)
+                    WidgetActionItem::new(
+                        RoomListAction::Selected {
+                            room_index,
+                            room_id: self.all_rooms[room_index].room_id.clone().unwrap(),
+                        }.into(),
+                        widget_uid,
+                    )
                 );
                 dispatch_action(
                     cx,

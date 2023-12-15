@@ -201,7 +201,7 @@ live_design! {
                                 }
                             }
                         }
-                        rooms_screen = <RoomScreen> {}
+                        room_screen = <RoomScreen> {}
                     }
                 }
             }
@@ -316,21 +316,21 @@ impl App {
 
     fn update_rooms_list_info(&mut self, actions: &WidgetActions) {
         for action in actions {
-            // Handle the user selecting a room to view.
-            if let RoomListAction::Selected(room_index) = action.action() {
-                let db = Db::new();
-
+            // Handle the user selecting a RoomPreview to view.
+            if let RoomListAction::Selected { room_index, room_id } = action.action() {
                 let stack_navigation = self.ui.stack_navigation(id!(navigation));
                 
                 // Update the title of the room screen
-                stack_navigation.set_title(live_id!(rooms_stack_view), &format!("Room Index {room_index}"));
+                stack_navigation.set_title(
+                    live_id!(rooms_stack_view),
+                    &format!("Room {}", room_id),
+                );
 
-                // Display the the chat data into the view
-                // TODO: FIXME: display the room timeline view, not chats.
-                let room_ref = stack_navigation
-                    .view(id!(rooms_stack_view.rooms_screen))
-                    .chat(id!(chat));
-                room_ref.set_room_index(room_index);
+                // Get a reference to the Timeline within the new RoomScreen to be displayed.
+                let timeline_ref = stack_navigation
+                    .view(id!(rooms_stack_view.room_screen))
+                    .timeline(id!(timeline));
+                timeline_ref.set_room_info(room_index, room_id);
             }
         }
     }

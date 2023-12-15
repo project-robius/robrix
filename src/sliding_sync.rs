@@ -8,15 +8,16 @@ use matrix_sdk::{
         assign,
         OwnedRoomId,
         api::client::sync::sync_events::v4::{SyncRequestListFilters, self},
-        events::{StateEventType, room::message::MessageType},
-    }, SlidingSyncList, SlidingSyncMode
+        events::StateEventType,
+    }, SlidingSyncList, SlidingSyncMode, config::RequestConfig
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, TimelineItemContent}, Timeline};
+use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions}, Timeline};
 use tokio::runtime::Handle;
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
 use url::Url;
 
 use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate};
+use crate::message_display::DisplayerExt;
 
 
 #[derive(Parser, Debug)]
@@ -58,6 +59,12 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     if let Some(proxy) = cli.proxy {
         builder = builder.proxy(proxy);
     }
+
+    // Use a 10-second timeout for all requests to the homeserver.
+    builder = builder.request_config(
+        RequestConfig::new()
+            .timeout(std::time::Duration::from_secs(10))
+    );
 
     let client = builder.build().await?;
 
@@ -268,9 +275,7 @@ async fn async_main() -> Result<()> {
                             let mut room_timelines = ROOM_TIMELINES.lock().unwrap();
                             match room_timelines.entry(room_id.to_owned()) {
                                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                                    println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
-
-                                    
+                                    println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);                                    
                                     let entry_mut = entry.get_mut();
                                     entry_mut.1 = items;
                                     entry_mut.0.clone()
@@ -278,38 +283,12 @@ async fn async_main() -> Result<()> {
                                 std::collections::btree_map::Entry::Vacant(entry) => {
                                     println!("    --> Adding new timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
 
-                                    let latest = if let Some(ev) = latest_tl {
-                                        let text = match ev.content() {
-                                            TimelineItemContent::Message(msg) => match msg.msgtype() {
-                                                MessageType::Audio(_) => format!("[Audio]"),
-                                                MessageType::Emote(_) => format!("[Emote]"),
-                                                MessageType::File(_) => format!("[File]"),
-                                                MessageType::Image(_) => format!("[Image]"),
-                                                MessageType::Location(_) => format!("[Location]"),
-                                                MessageType::Notice(_) => format!("[Notice]"),
-                                                MessageType::ServerNotice(_) => format!("[Server notice]"),
-                                                MessageType::Text(t) => t.body.clone(),
-                                                MessageType::Video(_) => format!("[Video]"),
-                                                MessageType::VerificationRequest(_) => format!("[Verification request]"),
-                                                _ => format!("[Unknown message type]"),
-                                            },
-                                            TimelineItemContent::RedactedMessage => format!("[Message was redacted]"),
-                                            TimelineItemContent::Sticker(_) => format!("[Sticker]"),
-                                            TimelineItemContent::Poll(_) => format!("[Poll]"),
-                                            _ => format!("[Unknown message type]"),
-                                        };
-                                        Some((ev.timestamp(), text))
-                                    } else {
-                                        None
-                                    };
-
                                     rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
                                         room_id: Some(room_id.to_owned()),
                                         room_name: ssroom.name(),
-                                        latest,
+                                        latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
                                     }));
-                                    
-                                    
+
                                     let tl_arc = Arc::new(timeline);
                                     entry.insert((Arc::clone(&tl_arc), items));
                                     tl_arc
