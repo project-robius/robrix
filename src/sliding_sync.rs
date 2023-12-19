@@ -11,9 +11,9 @@ use matrix_sdk::{
         events::StateEventType,
     }, SlidingSyncList, SlidingSyncMode, config::RequestConfig
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, BackPaginationStatus}, Timeline};
+use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions}, Timeline};
 use tokio::{
-    runtime::{Handle, Runtime},
+    runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
@@ -60,10 +60,10 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         builder = builder.proxy(proxy);
     }
 
-    // Use a 5 second timeout for all requests to the homeserver.
+    // Use a 10 second timeout for all requests to the homeserver.
     builder = builder.request_config(
         RequestConfig::new()
-            .timeout(std::time::Duration::from_secs(5))
+            .timeout(std::time::Duration::from_secs(10))
     );
 
     let client = builder.build().await?;
@@ -114,7 +114,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
     println!("async_worker task started, receiver {:?}", receiver);
     while let Some(request) = receiver.recv().await {
         match request {
-            MatrixRequest::PaginateRoomTimeline { room_id, batch_size, max_events } => {
+            MatrixRequest::PaginateRoomTimeline { room_id, batch_size, .. } => {
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -154,11 +154,15 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
-                    timeline.paginate_backwards(
-                        // PaginationOptions::single_request(u16::MAX)
-                        PaginationOptions::until_num_items(batch_size, max_events)
+                    println!("Sending pagination request for room {room_id}...");
+                    let res = timeline.paginate_backwards(
+                        PaginationOptions::single_request(batch_size)
+                        // PaginationOptions::until_num_items(batch_size, max_events)
                     ).await;
-                    println!("Sent off pagination request for room {room_id}");
+                    match res {
+                        Ok(_) => println!("Sent pagination request for room {room_id}"),
+                        Err(e) => eprintln!("Error sending pagination request for room {room_id}: {e:?}"),
+                    }
                 });
             }
         }
@@ -373,7 +377,7 @@ async fn async_main_loop() -> Result<()> {
                             let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                             match all_room_info.entry(room_id.to_owned()) {
                                 std::collections::btree_map::Entry::Occupied(mut entry) => {
-                                    println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);                                    
+                                    println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len());                                    
                                     let entry_mut = entry.get_mut();
                                     entry_mut.timeline_items = items;
                                     entry_mut.timeline.clone()

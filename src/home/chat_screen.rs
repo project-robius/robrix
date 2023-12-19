@@ -435,8 +435,8 @@ impl TimelineRef {
             if !timeline.fully_paginated {
                 submit_async_request(MatrixRequest::PaginateRoomTimeline {
                     room_id,
-                    batch_size: 30,
-                    max_events: u16::MAX,
+                    batch_size: 50,
+                    max_events: 50,
                 })
             }
         }
