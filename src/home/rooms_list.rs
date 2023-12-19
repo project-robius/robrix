@@ -137,6 +137,7 @@ pub enum RoomListAction {
         /// The index (into the `all_rooms` vector) of the selected `RoomPreviewEntry`.
         room_index: RoomIndex,
         room_id: OwnedRoomId,
+        room_name: Option<String>,
     },
     None,
 }
@@ -218,12 +219,14 @@ impl RoomsList {
         let widget_uid = self.widget_uid();
         for (room_index, action) in actions {
             if let ClickableViewAction::Click = action.action() {
+                let room_details = &self.all_rooms[room_index];
                 dispatch_action(
                     cx,
                     WidgetActionItem::new(
                         RoomListAction::Selected {
                             room_index,
-                            room_id: self.all_rooms[room_index].room_id.clone().unwrap(),
+                            room_id: room_details.room_id.clone().unwrap(),
+                            room_name: room_details.room_name.clone(),
                         }.into(),
                         widget_uid,
                     )

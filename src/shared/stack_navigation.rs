@@ -295,10 +295,10 @@ impl StackNavigationRef {
         }
     }
 
-    pub fn set_title(&self, stack_view_id: LiveId, title: &str) {
+    pub fn set_title<S: AsRef<str>>(&self, stack_view_id: LiveId, title: S) {
         if let Some(mut inner) = self.borrow_mut() {
             let stack_view_ref = inner.stack_navigation_view(&[stack_view_id]);
-            stack_view_ref.label(id!(title)).set_text(title);
+            stack_view_ref.label(id!(title)).set_text(title.as_ref());
         }
     }
 }

@@ -1,3 +1,6 @@
+//! A room screen is the UI page that displays a single Room's timeline of events/messages
+//! along with a message input bar at the bottom.
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
     MilliSecondsSinceUnixEpoch,
@@ -343,6 +346,12 @@ live_design! {
         }
     }
 
+    // TODO: in the future, use this to display a loading animation while pagination status is `Paginating`.
+    TopSpace = <View> {
+        width: Fill,
+        height: 0.0
+    }
+
     Timeline = {{Timeline}} {
         width: Fill,
         height: Fill,
@@ -355,7 +364,7 @@ live_design! {
             flow: Down
     
             // Below, we must place all of the possible views that can be used in the portal list.
-            TopSpace = <View> {height: 80}
+            TopSpace = <TopSpace> {}
             Message = <Message> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}

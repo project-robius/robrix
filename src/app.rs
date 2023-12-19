@@ -1,5 +1,5 @@
 use crate::home::rooms_list::RoomListAction;
-use crate::home::chat_screen::*;
+use crate::home::room_screen::*;
 use crate::shared::stack_navigation::*;
 use crate::shared::stack_view_action::StackViewAction;
 use makepad_widgets::*;
@@ -10,7 +10,7 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     import crate::home::home_screen::HomeScreen
-    import crate::home::chat_screen::RoomScreen
+    import crate::home::room_screen::RoomScreen
     import crate::contacts::contacts_screen::ContactsScreen
     import crate::contacts::add_contact_screen::AddContactScreen
     import crate::discover::discover_screen::DiscoverScreen
@@ -236,7 +236,7 @@ impl LiveHook for App {
         // home - chats
         crate::home::home_screen::live_design(cx);
         crate::home::rooms_list::live_design(cx);
-        crate::home::chat_screen::live_design(cx);
+        crate::home::room_screen::live_design(cx);
 
         // contacts
         crate::contacts::contacts_screen::live_design(cx);
@@ -313,13 +313,13 @@ impl App {
     fn update_rooms_list_info(&mut self, actions: &WidgetActions) {
         for action in actions {
             // Handle the user selecting a RoomPreview to view.
-            if let RoomListAction::Selected { room_index, room_id } = action.action() {
+            if let RoomListAction::Selected { room_index, room_id, room_name } = action.action() {
                 let stack_navigation = self.ui.stack_navigation(id!(navigation));
                 
                 // Update the title of the room screen
                 stack_navigation.set_title(
                     live_id!(rooms_stack_view),
-                    &format!("Room {}", room_id),
+                    room_name.unwrap_or_else(|| format!("Room {}", room_id)),
                 );
 
                 // Get a reference to the Timeline within the new RoomScreen to be displayed.
