@@ -252,9 +252,6 @@ impl LiveHook for App {
         // profile
         crate::profile::profile_screen::live_design(cx);
         crate::profile::my_profile_screen::live_design(cx);
-
-        // timeline (list of messages in a room
-        crate::timeline::timeline_view::live_design(cx);
     }
 
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {

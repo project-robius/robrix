@@ -41,7 +41,7 @@ impl<'e> fmt::Display for EventTextPreview<'e> {
             TimelineItemContent::ProfileChange(profile_change) => f.write_str("[Profile change]"),
             TimelineItemContent::OtherState(other) => f.write_str("[Other state]"),
             TimelineItemContent::Sticker(s) => write!(f, "{}: [Sticker: {}]", sender, s.content().body),
-            TimelineItemContent::Poll(p) => write!(f, "{}: [Poll]", sender),
+            TimelineItemContent::Poll(_p) => write!(f, "{}: [Poll]", sender),
             _unhandled => {
                 println!("!!! Found unknown latest event type: {:?}", _unhandled);
                 write!(f, "[Unknown event]")

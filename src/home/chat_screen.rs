@@ -28,7 +28,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    sliding_sync::get_timeline_items,
+    sliding_sync::{get_timeline_items, submit_async_request, MatrixRequest},
     utils::unix_time_millis_to_datetime,
 };
 
@@ -427,11 +427,18 @@ pub struct TimelineRef(WidgetRef);
 
 impl TimelineRef {
     pub fn set_room_info(&self, room_index: usize, room_id: OwnedRoomId) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.room_id = Some(room_id);
-            inner.room_index = room_index;
+        if let Some(mut timeline) = self.borrow_mut() {
+            timeline.room_id = Some(room_id.clone());
+            timeline.room_index = room_index;
 
-            // TODO: kick off a back pagination request for this room
+            // kick off a back pagination request for this room
+            if !timeline.fully_paginated {
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id,
+                    batch_size: 30,
+                    max_events: u16::MAX,
+                })
+            }
         }
     }
 }
@@ -446,6 +453,9 @@ pub struct Timeline {
     // TODO: figure out how to remove the option whilst deriving `Live`.
     #[rust] room_id: Option<OwnedRoomId>,
     #[rust] room_index: usize,
+
+    // Set to `true` once this room's timeline has been fully paginated.
+    #[rust] fully_paginated: bool,
 }
 
 impl LiveHook for Timeline {

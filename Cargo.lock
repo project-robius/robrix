@@ -3568,6 +3568,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossbeam-queue",
+ "eyeball",
  "futures-util",
  "imbl",
  "makepad-widgets",
