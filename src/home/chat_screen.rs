@@ -1,4 +1,3 @@
-use chrono::NaiveDateTime;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
     MilliSecondsSinceUnixEpoch,
@@ -28,13 +27,19 @@ use matrix_sdk_ui::timeline::{
     TimelineItemKind,
 };
 
-use crate::sliding_sync::CHOSEN_ROOM;
+use crate::{
+    sliding_sync::{get_timeline_items, submit_async_request, MatrixRequest},
+    utils::unix_time_millis_to_datetime,
+};
 
-
-live_design!{
+live_design! {
+    import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+
+    import crate::shared::styles::*;
+    import crate::shared::helpers::*;
+    import crate::shared::search_bar::SearchBar;
 
     IMG_A = dep("crate://self/resources/neom-THlO6Mkf5uI-unsplash.jpg")
     IMG_PROFILE_A = dep("crate://self/resources/profile_1.jpg")
@@ -343,7 +348,7 @@ live_design!{
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
 
-        message_list: <PortalList> {
+        list: <PortalList> {
             auto_tail: false, // set to `true` to lock the view to the last item.
             height: Fill,
             width: Fill
@@ -358,6 +363,84 @@ live_design!{
             BottomSpace = <View> {height: 80}
         }    
     }
+
+
+    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
+    IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
+    IMG_PLUS = dep("crate://self/resources/img/plus.png")
+    IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
+
+    RoomScreen = <KeyboardView> {
+        width: Fill, height: Fill
+        flow: Down
+        show_bg: true,
+        draw_bg: {
+            color: #fff
+        }
+
+        // First, display the timeline of all messages/events.
+        timeline = <Timeline> {}
+        
+        // Below that, display a view that holds the message input bar.
+        <View> {
+            width: Fill, height: Fit
+            flow: Right, align: {y: 0.5}, padding: 10.
+            show_bg: true,
+            draw_bg: {
+                color: #fff
+            }
+
+            <Image> {
+                source: (IMG_KEYBOARD_ICON),
+                width: 36., height: 36.
+            }
+            message_input = <SearchBar> {
+                show_bg: false
+                input = {
+                    width: Fill, height: Fit, margin: 0
+                    empty_message: " "
+                    draw_text:{
+                        text_style:<REGULAR_TEXT>{font_size: 11},
+
+                        fn get_color(self) -> vec4 {
+                            return #0
+                        }
+                    }
+                }
+            }
+            <Image> {
+                source: (IMG_SMILEY_FACE_BW),
+                width: 36., height: 36.
+            }
+            <Image> {
+                source: (IMG_PLUS),
+                width: 36., height: 36.
+            }
+        }
+    }
+}
+
+
+/// A reference to a Timeline instance
+#[derive(Debug, Clone, PartialEq, WidgetRef)]
+pub struct TimelineRef(WidgetRef);
+
+impl TimelineRef {
+    pub fn set_room_info(&self, room_index: usize, room_id: OwnedRoomId) {
+        if let Some(mut timeline) = self.borrow_mut() {
+            timeline.room_id = Some(room_id.clone());
+            timeline.room_index = room_index;
+
+            // kick off a back pagination request for this room
+            if !timeline.fully_paginated {
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id,
+                    batch_size: 50,
+                    max_events: 50,
+                })
+            }
+        }
+    }
 }
 
 
@@ -366,9 +449,13 @@ pub struct Timeline {
     #[walk] walk: Walk,
     #[layout] layout: Layout,
 
-    #[live] message_list: PortalList,
+    #[live] list: PortalList,
     // TODO: figure out how to remove the option whilst deriving `Live`.
-    #[rust] _room_id: Option<OwnedRoomId>,
+    #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] room_index: usize,
+
+    // Set to `true` once this room's timeline has been fully paginated.
+    #[rust] fully_paginated: bool,
 }
 
 impl LiveHook for Timeline {
@@ -388,13 +475,13 @@ impl Widget for Timeline {
         event: &Event,
         dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
     ) {
-        let actions = self.message_list.handle_widget_event(cx, event);
+        let actions = self.list.handle_widget_event(cx, event);
         for action in actions {
             dispatch_action(cx, action);
         }
 
         // TODO: handle actions upon an item being clicked.
-        // for (item_id, item) in self.message_list.items_with_actions(&actions) {
+        // for (item_id, item) in self.list.items_with_actions(&actions) {
         //     if item.button(id!(likes)).clicked(&actions) {
         //         log!("hello {}", item_id);
         //     }
@@ -406,7 +493,7 @@ impl Widget for Timeline {
     }
 
     fn redraw(&mut self, cx: &mut Cx) {
-        self.message_list.redraw(cx)
+        self.list.redraw(cx)
     }
 
     fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
@@ -419,13 +506,9 @@ impl Timeline {
     pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
         cx.begin_turtle(walk, self.layout);
         
-        let list = &mut self.message_list;
+        let list = &mut self.list;
         // Set the length of the message portal list based on the number of timeline items.
-        let timeline_items_owned = if let Some(r) = CHOSEN_ROOM.get() {
-            crate::sliding_sync::get_timeline_items(r)
-        } else {
-            None
-        };
+        let timeline_items_owned = self.room_id.as_ref().and_then(|r| get_timeline_items(r));
         let timeline_items = timeline_items_owned.as_ref();
         let last_item_id = timeline_items
             .map(|(_tl, items)| items.len() as u64)
@@ -467,7 +550,7 @@ impl Timeline {
                                     list,
                                     item_id,
                                     event_tl_item,
-                                    CHOSEN_ROOM.get().unwrap(), // room must exist at this point
+                                    self.room_id.as_ref().unwrap(), // room must exist at this point
                                 ),
                                 TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
                                     cx,
@@ -520,13 +603,6 @@ impl Timeline {
         cx.end_turtle();
     }
 }
-
-
-fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<NaiveDateTime> {
-    let millis: i64 = millis.get().into();
-    NaiveDateTime::from_timestamp_millis(millis)
-}
-
 
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
