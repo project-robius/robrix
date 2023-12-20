@@ -81,7 +81,7 @@ live_design! {
     }
 }
 
-#[derive(Live)]
+#[derive(Live, Widget)]
 pub struct WechatDropDown {
     #[animator]
     animator: Animator,
@@ -91,7 +91,7 @@ pub struct WechatDropDown {
     #[layout]
     layout: Layout,
 
-    #[live]
+    #[live] #[redraw]
     draw_bg: DrawQuad,
     #[live]
     draw_icon: DrawIcon,
@@ -124,10 +124,6 @@ pub struct WechatDropDown {
 }
 
 impl LiveHook for WechatDropDown {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, WechatDropDown)
-    }
-
     fn after_apply(&mut self, cx: &mut Cx, from: ApplyFrom, _index: usize, _nodes: &[LiveNode]) {
         if self.popup_menu.is_none() || !from.is_from_doc() {
             return;
@@ -144,7 +140,7 @@ impl LiveHook for WechatDropDown {
         });
     }
 }
-#[derive(Clone, WidgetAction, Debug)]
+#[derive(Clone, DefaultNone, Debug)]
 pub enum WechatDropDownAction {
     Select(usize, LiveValue),
     None,
@@ -180,14 +176,42 @@ impl WechatDropDown {
         self.draw_bg.redraw(cx);
         cx.sweep_unlock(self.draw_bg.area());
     }
+}
 
-    pub fn handle_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WechatDropDownAction),
-    ) {
+// It is named WechatDropDown because DropDown is already a widget in makepad_widgets
+impl Widget for WechatDropDown {
+    fn widget_to_data(
+        &self,
+        _cx: &mut Cx,
+        actions: &Actions,
+        nodes: &mut LiveNodeVec,
+        path: &[LiveId],
+    ) -> bool {
+        match actions.find_widget_action(self.widget_uid()).cast() {
+            WechatDropDownAction::Select(_, value) => {
+                nodes.write_field_value(path, value.clone());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn data_to_widget(&mut self, cx: &mut Cx, nodes: &[LiveNode], path: &[LiveId]) {
+        if let Some(value) = nodes.read_field_value(path) {
+            if let Some(index) = self.values.iter().position(|v| v == value) {
+                if self.selected_item != index {
+                    self.selected_item = index;
+                    self.redraw(cx);
+                }
+            } else {
+                // error!("Value not in values list {:?}", value);
+            }
+        }
+    }
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.animator_handle_event(cx, event);
+        let uid = self.widget_uid();
 
         if self.is_open && self.popup_menu.is_some() {
             let global = cx.global::<PopupMenuGlobal>().clone();
@@ -199,16 +223,17 @@ impl WechatDropDown {
                 event,
                 self.draw_bg.area(),
                 &mut |cx, action| if let PopupMenuAction::WasSelected(node_id) = action {
-                    self.selected_item = node_id.0 .0 as usize;
-                    dispatch_action(
-                        cx,
+                    self.selected_item = node_id.0.0 as usize;
+                    cx.widget_action(
+                        uid,
+                        &scope.path,
                         WechatDropDownAction::Select(
                             self.selected_item,
                             self.values
                                 .get(self.selected_item)
                                 .cloned()
-                                .unwrap_or(LiveValue::None),
-                        ),
+                                .unwrap_or(LiveValue::None)
+                            )
                     );
                     self.draw_bg.redraw(cx);
                     close = true;
@@ -237,12 +262,16 @@ impl WechatDropDown {
                 KeyCode::ArrowUp => {
                     if self.selected_item > 0 {
                         self.selected_item -= 1;
-                        dispatch_action(
-                            cx,
+                        cx.widget_action(
+                            uid,
+                            &scope.path,
                             WechatDropDownAction::Select(
                                 self.selected_item,
-                                self.values[self.selected_item].clone(),
-                            ),
+                                self.values
+                                    .get(self.selected_item)
+                                    .cloned()
+                                    .unwrap_or(LiveValue::None)
+                            )
                         );
                         self.set_closed(cx);
                         self.draw_bg.redraw(cx);
@@ -251,12 +280,16 @@ impl WechatDropDown {
                 KeyCode::ArrowDown => {
                     if !self.values.is_empty() && self.selected_item < self.values.len() - 1 {
                         self.selected_item += 1;
-                        dispatch_action(
-                            cx,
+                        cx.widget_action(
+                            uid,
+                            &scope.path,
                             WechatDropDownAction::Select(
                                 self.selected_item,
-                                self.values[self.selected_item].clone(),
-                            ),
+                                self.values
+                                    .get(self.selected_item)
+                                    .cloned()
+                                    .unwrap_or(LiveValue::None)
+                            )
                         );
                         self.set_closed(cx);
                         self.draw_bg.redraw(cx);
@@ -289,7 +322,7 @@ impl WechatDropDown {
         };
     }
 
-    pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+    fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         // cx.clear_sweep_lock(self.draw_bg.area());
 
         self.draw_bg.begin(cx, walk, self.layout);
@@ -314,73 +347,15 @@ impl WechatDropDown {
 
             popup_menu.end(cx, self.draw_bg.area());
         }
+
+        DrawStep::done()
     }
 }
-
-// It is named WechatDropDown because DropDown is already a widget in makepad_widgets
-impl Widget for WechatDropDown {
-    fn widget_to_data(
-        &self,
-        _cx: &mut Cx,
-        actions: &WidgetActions,
-        nodes: &mut LiveNodeVec,
-        path: &[LiveId],
-    ) -> bool {
-        match actions.single_action(self.widget_uid()) {
-            WechatDropDownAction::Select(_, value) => {
-                nodes.write_field_value(path, value.clone());
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn data_to_widget(&mut self, cx: &mut Cx, nodes: &[LiveNode], path: &[LiveId]) {
-        if let Some(value) = nodes.read_field_value(path) {
-            if let Some(index) = self.values.iter().position(|v| v == value) {
-                if self.selected_item != index {
-                    self.selected_item = index;
-                    self.redraw(cx);
-                }
-            } else {
-                // error!("Value not in values list {:?}", value);
-            }
-        }
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.draw_bg.redraw(cx);
-    }
-
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
-        let uid = self.widget_uid();
-        self.handle_event_with(cx, event, &mut |cx, action| {
-            dispatch_action(cx, WidgetActionItem::new(action.into(), uid))
-        });
-    }
-
-    fn walk(&mut self, _cx: &mut Cx) -> Walk {
-        self.walk
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.draw_walk(cx, walk);
-        WidgetDraw::done()
-    }
-}
-
-#[derive(Clone, PartialEq, WidgetRef)]
-pub struct WechatDropDownRef(WidgetRef);
 
 impl WechatDropDownRef {
-    pub fn item_clicked(&mut self, item_id: &[LiveId], actions: &WidgetActions) -> bool {
-        if let Some(item) = actions.find_single_action(self.widget_uid()) {
-            if let WechatDropDownAction::Select(_id, value) = item.action() {
+    pub fn item_clicked(&mut self, item_id: &[LiveId], actions: &Actions) -> bool {
+        if let Some(item) = actions.find_widget_action(self.widget_uid()) {
+            if let WechatDropDownAction::Select(_id, value) = item.cast() {
                 return LiveValue::Bool(true) == value.enum_eq(item_id)
             }
         }

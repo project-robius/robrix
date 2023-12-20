@@ -123,7 +123,8 @@ live_design! {
     MomentList = {{MomentList}} {
         width: Fill, height: Fill
         flow: Down
-        list: <PortalList> {
+
+        list = <PortalList> {
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
 
@@ -134,29 +135,16 @@ live_design! {
     }
 }
 
-#[derive(Debug, Clone, WidgetAction)]
-pub enum MomentListAction {
-    None,
-}
-
-#[derive(Live)]
+#[derive(Live, Widget)]
 pub struct MomentList {
-    #[walk]
-    walk: Walk,
-    #[layout]
-    layout: Layout,
-
-    #[live]
-    list: PortalList,
+    #[deref]
+    view: View,
+    
     #[rust]
     moment_entries: Vec<MomentEntry>,
 }
 
 impl LiveHook for MomentList {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, MomentList);
-    }
-
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         let entries: Vec<MomentEntry> = vec![
             MomentEntry {
@@ -187,64 +175,38 @@ impl LiveHook for MomentList {
 }
 
 impl Widget for MomentList {
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
-        let _actions = self.list.handle_widget_event(cx, event);
-
-        for action in _actions {
-            dispatch_action(cx, action);
-        }
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
     }
 
-    fn walk(&mut self, _cx: &mut Cx) -> Walk {
-        self.walk
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.list.redraw(cx)
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.draw_walk(cx, walk);
-        WidgetDraw::done()
-    }
-}
-
-impl MomentList {
-    pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let moment_entries_count = self.moment_entries.len() as u64;
 
-        cx.begin_turtle(walk, self.layout);
-        self.list
-            .set_item_range(cx, 0, moment_entries_count + 1);
+        while let Some(item) = self.view.draw_walk(cx, scope, walk).step(){
+            if let Some(mut list) = item.as_portal_list().borrow_mut() {
+                list.set_item_range(cx, 0, moment_entries_count + 1);
+                while let Some(item_id) = list.next_visible_item(cx) {
+                    let template = match item_id {
+                        0 => id!(hero),
+                        x if x % 2 == 0 => id!(text_post),
+                        _ => id!(image_post),
+                    };
+    
+                    let item = list.item(cx, item_id, template[0]).unwrap();
+    
+                    if item_id >= 1 && item_id < moment_entries_count + 1 {
+                        let post = &self.moment_entries[item_id as usize - 1]; // offset by 1 to account for the hero
+                        item.label(id!(content.username))
+                            .set_text(&post.username);
+                        item.label(id!(content.text)).set_text(&post.text);
+                    }
 
-        while self.list.draw_widget(cx).hook_widget().is_some() {
-            while let Some(item_id) = self.list.next_visible_item(cx) {
-                let template = match item_id {
-                    0 => id!(hero),
-                    x if x % 2 == 0 => id!(text_post),
-                    _ => id!(image_post),
-                };
-
-                let item = self.list.item(cx, item_id, template[0]).unwrap();
-
-                if item_id >= 1 && item_id < moment_entries_count + 1 {
-                    let post = &self.moment_entries[item_id as usize - 1]; // offset by 1 to account for the hero
-
-                    item.label(id!(content.username))
-                        .set_text(&post.username);
-                    item.label(id!(content.text)).set_text(&post.text);
+                    item.draw_all(cx, &mut Scope::empty());
                 }
-
-                item.draw_widget_all(cx);
             }
         }
 
-        cx.end_turtle();
+        DrawStep::done()
     }
 }
 

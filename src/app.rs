@@ -219,8 +219,8 @@ pub struct App {
     navigation_destinations: HashMap<StackViewAction, LiveId>,
 }
 
-impl LiveHook for App {
-    fn before_live_design(cx: &mut Cx) {
+impl LiveRegister for App {
+    fn live_register(cx: &mut Cx) {
         makepad_widgets::live_design(cx);
 
         // shared
@@ -253,7 +253,8 @@ impl LiveHook for App {
         crate::profile::profile_screen::live_design(cx);
         crate::profile::my_profile_screen::live_design(cx);
     }
-
+}
+impl LiveHook for App {
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         self.init_navigation_destinations();
 
@@ -263,14 +264,8 @@ impl LiveHook for App {
     }
 }
 
-impl AppMain for App {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        if let Event::Draw(event) = event {
-            return self.ui.draw_widget_all(&mut Cx2d::new(cx, event));
-        }
-
-        let actions = self.ui.handle_widget_event(cx, event);
-
+impl MatchEvent for App {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         self.ui.radio_button_set(ids!(
             mobile_modes.tab1,
             mobile_modes.tab2,
@@ -289,7 +284,6 @@ impl AppMain for App {
             ),
         );
 
-
         self.update_rooms_list_info(&actions);
 
         let mut navigation = self.ui.stack_navigation(id!(navigation));
@@ -298,6 +292,13 @@ impl AppMain for App {
             &actions,
             &self.navigation_destinations
         );
+    }
+}
+
+impl AppMain for App {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        self.match_event(cx, event);
+        self.ui.handle_event(cx, event, &mut Scope::empty());
     }
 }
 
@@ -310,10 +311,10 @@ impl App {
         self.navigation_destinations.insert(StackViewAction::ShowRoom, live_id!(rooms_stack_view));
     }
 
-    fn update_rooms_list_info(&mut self, actions: &WidgetActions) {
+    fn update_rooms_list_info(&mut self, actions: &Actions) {
         for action in actions {
             // Handle the user selecting a RoomPreview to view.
-            if let RoomListAction::Selected { room_index, room_id, room_name } = action.action() {
+            if let RoomListAction::Selected { room_index, room_id, room_name } = action.as_widget_action().cast() {
                 let stack_navigation = self.ui.stack_navigation(id!(navigation));
                 
                 // Update the title of the room screen

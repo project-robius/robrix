@@ -7,47 +7,52 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
     import crate::shared::styles::*;
 
-    DrawBg = {{DrawBg}} {
-        instance color: #4
-        instance color_selected: #5
-        instance border_radius: 4.0
-
-        fn pixel(self) -> vec4 {
-            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-            sdf.box(
-                1.0,
-                1.0,
-                self.rect_size.x,
-                self.rect_size.y,
-                self.border_radius
-            )
-            sdf.fill_keep(mix(self.color, self.color_selected, self.hover))
-            return sdf.result;
-        }
-    }
-
-    DrawName = {{DrawName}} {
-        text_style: <REGULAR_TEXT>{font_size: 9},
-
-        fn get_color(self) -> vec4 {
-            return mix(
-                mix(
-                    THEME_COLOR_TEXT_DEFAULT,
-                    THEME_COLOR_TEXT_SELECTED,
-                    self.selected
-                ),
-                THEME_COLOR_TEXT_HOVER,
-                self.hover
-            )
-        }
-    }
-
     MenuItem = {{MenuItem}} {
         align: {y: 0.5},
         padding: {left: 5., top: 10., bottom: 10., right: 5.},
         spacing: 5.,
         width: Fill,
         height: Fit
+
+        draw_bg: {
+            instance color: #4
+            instance color_selected: #5
+            instance border_radius: 4.0
+
+            instance selected: 0.0
+            instance hover: 0.0
+    
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                sdf.box(
+                    1.0,
+                    1.0,
+                    self.rect_size.x,
+                    self.rect_size.y,
+                    self.border_radius
+                )
+                sdf.fill_keep(mix(self.color, self.color_selected, self.hover))
+                return sdf.result;
+            }
+        }
+    
+        draw_name: {
+            text_style: <REGULAR_TEXT>{font_size: 9},
+            instance selected: 0.0
+            instance hover: 0.0
+    
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        THEME_COLOR_TEXT_DEFAULT,
+                        THEME_COLOR_TEXT_SELECTED,
+                        self.selected
+                    ),
+                    THEME_COLOR_TEXT_HOVER,
+                    self.hover
+                )
+            }
+        }
 
         icon_walk: {width: 15., height: Fit, margin: {bottom: 3.}}
         draw_icon: {
@@ -152,29 +157,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook)]
-#[repr(C)]
-struct DrawBg {
-    #[deref]
-    draw_super: DrawQuad,
-    #[live]
-    selected: f32,
-    #[live]
-    hover: f32,
-}
-
-#[derive(Live, LiveHook)]
-#[repr(C)]
-struct DrawName {
-    #[deref]
-    draw_super: DrawText,
-    #[live]
-    selected: f32,
-    #[live]
-    hover: f32,
-}
-
-#[derive(Live)]
+#[derive(Live, LiveRegister, WidgetWrap)]
 pub struct PopupMenu {
     #[live]
     draw_list: DrawList2d,
@@ -182,9 +165,9 @@ pub struct PopupMenu {
     #[live]
     menu_item: Option<LivePtr>,
 
-    #[live]
+    #[live] #[redraw]
     draw_bg: DrawQuad,
-    #[live]
+    #[live] #[redraw]
     draw_icon: DrawIcon,
     #[live]
     icon_walk: Walk,
@@ -213,10 +196,6 @@ pub struct PopupMenu {
 }
 
 impl LiveHook for PopupMenu {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, PopupMenu)
-    }
-
     fn after_apply(&mut self, cx: &mut Cx, from: ApplyFrom, index: usize, nodes: &[LiveNode]) {
         if let Some(index) = nodes.child_by_name(index, live_id!(list_node).as_field()) {
             for (_, node) in self.menu_items.iter_mut() {
@@ -228,28 +207,14 @@ impl LiveHook for PopupMenu {
 }
 
 impl Widget for PopupMenu {
-    fn handle_widget_event_with(
-        &mut self,
-        _cx: &mut Cx,
-        _event: &Event,
-        _dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
+    fn handle_event(&mut self, _cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
     }
 
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
+    fn draw_walk(&mut self, cx: &mut Cx2d, _scope: &mut Scope, walk: Walk) -> DrawStep {
         self.draw_bg.begin(cx, walk, self.layout);
         self.draw_icon.draw_walk(cx, self.icon_walk);
         self.draw_bg.end(cx);
-        WidgetDraw::done()
-    }
-
-    fn walk(&mut self, _cx: &mut Cx) -> Walk {
-        self.walk
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.draw_bg.redraw(cx);
-        self.draw_icon.redraw(cx);
+        DrawStep::done()
     }
 }
 
@@ -347,19 +312,19 @@ impl PopupMenu {
     }
 }
 
-#[derive(Live, LiveHook)]
+#[derive(Live, LiveHook, LiveRegister, WidgetWrap)]
 pub struct MenuItem {
     #[layout]
     layout: Layout,
     #[walk]
     walk: Walk,
 
-    #[live]
-    draw_bg: DrawBg,
-    #[live]
-    draw_name: DrawName,
+    #[live] #[redraw]
+    draw_bg: DrawQuad,
+    #[live] #[redraw]
+    draw_name: DrawText,
 
-    #[live]
+    #[live] #[redraw]
     draw_icon: DrawIcon,
     #[live]
     icon_walk: Walk,
@@ -377,7 +342,7 @@ pub struct MenuItem {
     selected: f32,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub enum MenuItemAction {
     WasSweeped,
     WasSelected,
@@ -385,7 +350,7 @@ pub enum MenuItemAction {
     None,
 }
 
-#[derive(Clone, WidgetAction, Debug)]
+#[derive(Clone, DefaultNone, Debug)]
 pub enum PopupMenuAction {
     WasSweeped(MenuItemId),
     WasSelected(MenuItemId),

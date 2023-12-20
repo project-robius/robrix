@@ -165,59 +165,23 @@ live_design! {
     }
 }
 
-#[derive(Live)]
+#[derive(Live, LiveHook, Widget)]
 pub struct HeaderDropDownMenu {
     #[deref]
     view: View,
 }
 
-impl LiveHook for HeaderDropDownMenu {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, HeaderDropDownMenu);
-    }
-}
-
 impl Widget for HeaderDropDownMenu {
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
-        self.handle_event_with(cx, event, &mut |cx, action: StackViewAction| {
-            dispatch_action(cx, WidgetActionItem::new(action.into(), uid));
-        });
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.view.redraw(cx);
-    }
-
-    fn walk(&mut self, cx: &mut Cx) -> Walk {
-        self.view.walk(cx)
-    }
-
-    fn find_widgets(&mut self, path: &[LiveId], cached: WidgetCache, results: &mut WidgetSet) {
-        self.view.find_widgets(path, cached, results);
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.view.draw_walk_widget(cx, walk)
-    }
-}
-
-impl HeaderDropDownMenu {
-    pub fn handle_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, StackViewAction),
-    ) {
-        let actions = self.view.handle_widget_event(cx, event);
+        let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
 
         if self.wechat_drop_down(id!(menu)).item_clicked(id!(AddContact), &actions) {
-            dispatch_action(cx, StackViewAction::ShowAddContact);
+            cx.widget_action(uid, &scope.path, StackViewAction::ShowAddContact);
         }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep  {
+        self.view.draw_walk(cx, scope, walk)
     }
 }

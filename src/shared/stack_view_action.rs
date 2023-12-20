@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-#[derive(Clone, WidgetAction, Eq, Hash, PartialEq)]
+#[derive(Clone, DefaultNone, Eq, Hash, PartialEq, Debug)]
 pub enum StackViewAction {
     None,
     ShowAddContact,

@@ -85,7 +85,8 @@ live_design! {
     RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
-        list: <PortalList> {
+
+        list = <PortalList> {
             keep_invisible: false
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
@@ -131,7 +132,7 @@ pub fn update_rooms_list(update: RoomListUpdate) {
 pub type RoomIndex = usize;
 
 
-#[derive(Debug, Clone, WidgetAction)]
+#[derive(Debug, Clone, DefaultNone)]
 pub enum RoomListAction {
     Selected {
         /// The index (into the `all_rooms` vector) of the selected `RoomPreviewEntry`.
@@ -155,12 +156,9 @@ pub struct RoomPreviewEntry {
 }
 
 
-#[derive(Live)]
+#[derive(Live, Widget)]
 pub struct RoomsList {
-    #[walk] walk: Walk,
-    #[layout] layout: Layout,
-
-    #[live] list: PortalList,
+    #[deref] view: View,
 
     // The list of all known rooms and their cached preview info.
     #[rust] all_rooms: Vec<RoomPreviewEntry>,
@@ -169,79 +167,45 @@ pub struct RoomsList {
 }
 
 impl LiveHook for RoomsList {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, RoomsList);
-    }
-
     fn after_new_from_doc(&mut self, _cx: &mut Cx) { }
 }
 
 impl Widget for RoomsList {
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
-        self.handle_event_with(cx, event, &mut |cx, action| {
-            dispatch_action(cx, action);
-        });
-    }
-
-    fn walk(&mut self, _cx: &mut Cx) -> Walk {
-        self.walk
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.list.redraw(cx)
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.draw_walk(cx, walk);
-        WidgetDraw::done()
-    }
-}
-
-impl RoomsList {
-    fn handle_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
-        let mut actions = Vec::new();
-        self.list.handle_widget_event_with(cx, event, &mut |_, action| {
-            if let Some(room_index) = self.rooms_list_map.get(&action.widget_uid.0) {
-                actions.push((room_index.clone(), action));
-            }
-        });
-
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
-        for (room_index, action) in actions {
-            if let ClickableViewAction::Click = action.action() {
-                let room_details = &self.all_rooms[room_index];
-                dispatch_action(
-                    cx,
-                    WidgetActionItem::new(
+
+        for list_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
+            if let ClickableViewAction::Click = list_action.as_widget_action().cast() {
+                let widget_action = list_action.as_widget_action();
+
+                if let Some(room_index) = self.rooms_list_map
+                    .iter()
+                    .find(|&(&room_widget_uid, _)| widget_action.widget_uid_eq(WidgetUid(room_widget_uid)).is_some())
+                    .map(|(_, &room_index)| room_index)
+                {
+                    let room_details = &self.all_rooms[room_index];
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
                         RoomListAction::Selected {
                             room_index,
                             room_id: room_details.room_id.clone().unwrap(),
                             room_name: room_details.room_name.clone(),
-                        }.into(),
+                        }
+                    );
+
+                    cx.widget_action(
                         widget_uid,
-                    )
-                );
-                dispatch_action(
-                    cx,
-                    WidgetActionItem::new(StackViewAction::ShowRoom.into(), widget_uid)
-                );
+                        &scope.path,
+                        StackViewAction::ShowRoom,
+                    );
+                }
             }
         }
     }
-}
 
-impl RoomsList {
-    pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
 
         // process the list of pending updates to the room list before we display the list.
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
@@ -267,36 +231,38 @@ impl RoomsList {
             }
         }
 
-        // todo: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
+        // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
         let count = self.all_rooms.len() as u64;
         let last_item_id = count + 1; // Add 1 for the search bar up top.
 
         // Start the actual drawing procedure.
-        cx.begin_turtle(walk, self.layout);
+        while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
+            // We only care about drawing the portal list.
+            let portal_list_ref = list_item.as_portal_list();
+            let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
+        
+            // Add 1 again for the rooms count label at the bottom.
+            list.set_item_range(cx, 0, last_item_id + 1);
 
-        // Add 1 again for the rooms count label at the bottom.
-        self.list.set_item_range(cx, 0, last_item_id + 1);
-
-        while self.list.draw_widget(cx).hook_widget().is_some() {
-            while let Some(item_id) = self.list.next_visible_item(cx) {
+            while let Some(item_id) = list.next_visible_item(cx) {
                 // Draw the search bar as the top entry.
                 let item = if item_id == 0 {
-                    self.list.item(cx, item_id, live_id!(search_bar)).unwrap()
+                    list.item(cx, item_id, live_id!(search_bar)).unwrap()
                 }
                 // Draw the rooms count as the bottom entry.
                 else if item_id == last_item_id {
-                    let item = self.list.item(cx, item_id, live_id!(rooms_count)).unwrap();
+                    let item = list.item(cx, item_id, live_id!(rooms_count)).unwrap();
                     item.label(id!(label)).set_text(&format!("Found {count} joined rooms."));
                     item
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else if item_id > last_item_id {
-                    self.list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
+                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
                 }
                 // Draw actual room preview entries.
                 else {
-                    let item = self.list.item(cx, item_id, live_id!(room_preview)).unwrap();
+                    let item = list.item(cx, item_id, live_id!(room_preview)).unwrap();
                     let index_of_room = item_id as usize - 1; // -1 to account for the search bar
                     let room_info = &self.all_rooms[index_of_room];
     
@@ -317,11 +283,11 @@ impl RoomsList {
                     item
                 };
 
-                item.draw_widget_all(cx);
+                item.draw_all(cx, &mut Scope::empty());
             }
         }
 
-        cx.end_turtle();
+        DrawStep::done()
     }
 
 }

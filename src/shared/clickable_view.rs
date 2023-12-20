@@ -14,82 +14,41 @@ live_design! {
     }
 }
 
-#[derive(Live)]
+#[derive(Live, LiveHook, Widget)]
 pub struct ClickableView {
     #[deref]
-    view:View,
+    view: View,
 }
-
-impl LiveHook for ClickableView {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, ClickableView);
-    }
-}
-
-#[derive(Clone, WidgetAction)]
+#[derive(Clone, DefaultNone, Debug)]
 pub enum ClickableViewAction {
     None,
     Click,
 }
 
 impl Widget for ClickableView {
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
-        let uid = self.widget_uid();
-        self.handle_event_with(cx, event, &mut |cx, action| {
-            dispatch_action(cx, WidgetActionItem::new(action.into(), uid));
-        });
-    }
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let uid = self.widget_uid().clone();
 
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.view.redraw(cx);
-    }
-
-    fn walk(&mut self, cx: &mut Cx) -> Walk {
-        self.view.walk(cx)
-    }
-
-    fn find_widgets(&mut self, path: &[LiveId], cached: WidgetCache, results: &mut WidgetSet) {
-        self.view.find_widgets(path, cached, results);
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.view.draw_walk_widget(cx, walk)
-    }
-}
-
-impl ClickableView {
-    pub fn handle_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, ClickableViewAction),
-    ) {
         match event.hits(cx, self.view.area()){
             Hit::FingerDown(_fe) => {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) => if fe.was_tap() {
-                dispatch_action(cx, ClickableViewAction::Click);
+                cx.widget_action(uid, &scope.path, ClickableViewAction::Click);
             }
             _ =>()
         }
     }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, WidgetRef)]
-pub struct ClickableViewRef(WidgetRef);
-
 impl ClickableViewRef {
-    pub fn clicked(&self, actions: &WidgetActions) -> bool {
-        if let Some(item) = actions.find_single_action(self.widget_uid()) {
-            if let ClickableViewAction::Click = item.action() {
-                return true;
-            }
+    pub fn clicked(&self, actions: &Actions) -> bool {
+        if let ClickableViewAction::Click = actions.find_widget_action(self.widget_uid()).cast() {
+            return true;
         }
         false
     }
