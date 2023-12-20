@@ -97,14 +97,14 @@ live_design! {
 #[derive(Clone, Debug, Default, Eq, Hash, Copy, PartialEq, FromLiveId)]
 pub struct ContactItemId(pub LiveId);
 
-#[derive(Live)]
+#[derive(Live, LiveHook, Widget)]
 pub struct ContactsGroup {
     #[walk]
     walk: Walk,
     #[layout]
     layout: Layout,
-    #[live]
-    header:View,
+    #[live] #[redraw]
+    header: View,
 
     #[live]
     people_contact_template: Option<LivePtr>,
@@ -119,31 +119,10 @@ pub struct ContactsGroup {
     contacts: ComponentMap<ContactItemId,WidgetRef>,
 }
 
-impl LiveHook for ContactsGroup {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, ContactsGroup);
-    }
-}
-
 impl Widget for ContactsGroup {
-    fn walk(&mut self, _cx: &mut Cx) -> Walk {
-        self.walk
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.header.redraw(cx);
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.draw_walk(cx, walk);
-        WidgetDraw::done()
-    }
-}
-
-impl ContactsGroup {
-    pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
-        let _ = self.header.draw_walk_widget(cx, walk);
+        let _ = self.header.draw_walk(cx, scope, walk);
 
         for contact in self.data.iter() {
             let contact_widget_id = LiveId::from_str(&contact.name).into();
@@ -159,11 +138,15 @@ impl ContactsGroup {
             current_contact
                 .label(id!(content.label))
                 .set_text(&contact.name);
-            let _ = current_contact.draw_walk_widget(cx, walk);
+            let _ = current_contact.draw_walk(cx, scope, walk);
         }
         cx.end_turtle();
-    }
 
+        DrawStep::done()
+    }
+}
+
+impl ContactsGroup {
     pub fn set_header_label(&mut self, text: &str) {
         let label = self.header.label(id!(label));
         label.set_text(text);

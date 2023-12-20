@@ -99,7 +99,7 @@ live_design! {
         height: Fill,
         flow: Down
 
-        list: <PortalList> {
+        list = <PortalList> {
             width: Fill,
             height: Fill,
             flow: Down, spacing: 0.0
@@ -120,31 +120,23 @@ live_design! {
                         color: #777,
                         text_style: <REGULAR_TEXT>{},
                     }
-                    text: "5 friends"
+                    text: "3 friends"
                 }
             }
         }
     }
 }
 
-#[derive(Live)]
+#[derive(Live, Widget)]
 pub struct ContactsList {
-    #[walk]
-    walk: Walk,
-    #[layout]
-    layout: Layout,
+    #[deref]
+    view: View,
 
-    #[live]
-    list: PortalList,
     #[rust]
     data: Vec<ContactInfo>,
 }
 
 impl LiveHook for ContactsList {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, ContactsList);
-    }
-
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         self.data = vec![
             ContactInfo {
@@ -164,10 +156,6 @@ impl LiveHook for ContactsList {
                 kind: ContactKind::People,
             },
             ContactInfo {
-                name: "Mother May".to_string(),
-                kind: ContactKind::People,
-            },
-            ContactInfo {
                 name: "Olive Yew".to_string(),
                 kind: ContactKind::People,
             },
@@ -180,66 +168,45 @@ impl LiveHook for ContactsList {
 }
 
 impl Widget for ContactsList {
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
-        let _actions = self.list.handle_widget_event(cx, event);
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
 
-        for action in _actions {
-            dispatch_action(cx, action);
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let grouped_data = self.group_by_first_letter();
+        let groups_count: u64 = grouped_data.len() as u64;
+
+        while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step(){
+            if let Some(mut list) = list_item.as_portal_list().borrow_mut() {
+                list.set_item_range(cx, 0, groups_count + 3);
+
+                while let Some(item_id) = list.next_visible_item(cx) {
+                    let template = match item_id {
+                        0 => id!(search_bar),
+                        1 => id!(options),
+                        x if x == groups_count + 2 => id!(bottom),
+                        _ => id!(contacts_group),
+                    };
+                    let item = list.item(cx, item_id, template[0]).unwrap();
+
+                    if item_id >= 2 && item_id < groups_count + 2 {
+                        let group = &grouped_data[(item_id - 2) as usize];
+                        if let Some(mut group_widget) = item.borrow_mut::<ContactsGroup>() {
+                            group_widget.set_header_label(&group[0].name[0..1]);
+                            group_widget.set_contacts(group.to_vec());
+                        }
+                    }
+
+                    item.draw_all(cx, &mut Scope::empty());
+                }
+            }
         }
-    }
 
-    fn walk(&mut self, _cx: &mut Cx) -> Walk {
-        self.walk
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.list.redraw(cx)
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.draw_walk(cx, walk);
-        WidgetDraw::done()
+        DrawStep::done()
     }
 }
 
 impl ContactsList {
-    pub fn draw_walk(&mut self, cx: &mut Cx2d, walk: Walk) {
-        let grouped_data = self.group_by_first_letter();
-        let groups_count: u64 = grouped_data.len() as u64;
-
-        cx.begin_turtle(walk, self.layout);
-        self.list.set_item_range(cx, 0, groups_count + 3);
-
-        while self.list.draw_widget(cx).hook_widget().is_some() {
-            while let Some(item_id) = self.list.next_visible_item(cx) {
-                let template = match item_id {
-                    0 => id!(search_bar),
-                    1 => id!(options),
-                    x if x == groups_count + 2 => id!(bottom),
-                    _ => id!(contacts_group),
-                };
-                let item = self.list.item(cx, item_id, template[0]).unwrap();
-
-                if item_id >= 2 && item_id < groups_count + 2 {
-                    let group = &grouped_data[(item_id - 2) as usize];
-                    if let Some(mut group_widget) = item.borrow_mut::<ContactsGroup>() {
-                        group_widget.set_header_label(&group[0].name[0..1]);
-                        group_widget.set_contacts(group.to_vec());
-                    }
-                }
-
-                item.draw_widget_all(cx);
-            }
-        }
-
-        cx.end_turtle();
-    }
-
     pub fn group_by_first_letter(&self) -> Vec<Vec<ContactInfo>> {
         let mut grouped_data: Vec<Vec<ContactInfo>> = vec![];
 

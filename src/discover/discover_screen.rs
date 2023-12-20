@@ -65,99 +65,95 @@ live_design! {
         }
     }
 
-    ClickableOptions = <ClickableView> {
-        width: Fill, height: Fit, margin: {top: 10., bottom: 10.}
-        padding: {bottom: 10.}, spacing: 0., flow: Down
-    }
-
     Discover = {{Discover}} {
-        view: <View> {
-            width: Fill, height: Fit
-            flow: Down, spacing: 0.0
+        width: Fill, height: Fit
+        flow: Down, spacing: 0.0
 
-            moments_link = <ClickableOptions> {
-                <OptionsItem> {
-                    content = {
-                        icon = {
-                            source: (IMG_MOMENTS)
-                        }
+        moments_link = <ClickableView> {
+            width: Fill, height: Fit, margin: {top: 10., bottom: 10.}
+            padding: {bottom: 10.}, spacing: 0., flow: Down
 
-                        label = {
-                            text: "Moments"
-                        }
+            <OptionsItem> {
+                content = {
+                    icon = {
+                        source: (IMG_MOMENTS)
+                    }
+
+                    label = {
+                        text: "Moments"
                     }
                 }
             }
+        }
 
-            <Options> {
-                <OptionsItem> {
-                    content = {
-                        icon = {
-                            source: (IMG_SCAN)
-                        }
-
-                        label = {
-                            text: "Scan"
-                        }
+        <Options> {
+            <OptionsItem> {
+                content = {
+                    icon = {
+                        source: (IMG_SCAN)
                     }
 
-                    divider = <Divider> {
-                        margin: {left: 42.0}
+                    label = {
+                        text: "Scan"
                     }
                 }
 
-                <OptionsItem> {
-                    content = {
-                        icon = {
-                            source: (IMG_SHAKE)
-                        }
-
-                        label = {
-                            text: "Shake"
-                        }
-
-                    }
+                divider = <Divider> {
+                    margin: {left: 42.0}
                 }
             }
 
-            <Options> {
-                <OptionsItem> {
-                    content = {
-                        icon = {
-                            source: (IMG_SEARCH)
-                        }
+            <OptionsItem> {
+                content = {
+                    icon = {
+                        source: (IMG_SHAKE)
+                    }
 
-                        label = {
-                            text: "Search"
-                        }
+                    label = {
+                        text: "Shake"
+                    }
+
+                }
+            }
+        }
+
+        <Options> {
+            <OptionsItem> {
+                content = {
+                    icon = {
+                        source: (IMG_SEARCH)
+                    }
+
+                    label = {
+                        text: "Search"
                     }
                 }
             }
+        }
 
-            <Options> {
-                <OptionsItem> {
-                    content = {
-                        icon = {
-                            source: (IMG_PEOPLE_NEARBY)
-                        }
+        <Options> {
+            <OptionsItem> {
+                content = {
+                    icon = {
+                        source: (IMG_PEOPLE_NEARBY)
+                    }
 
-                        label = {
-                            text: "People Nearby"
-                        }
+                    label = {
+                        text: "People Nearby"
                     }
                 }
             }
+        }
 
-            <Options> {
-                <OptionsItem> {
-                    content = {
-                        icon = {
-                            source: (IMG_MINI_PROGRAMS)
-                        }
+        <Options> {
+            <OptionsItem> {
+                content = {
+                    icon = {
+                        source: (IMG_MINI_PROGRAMS)
+                    }
 
-                        label = {
-                            text: "Mini Programs"
-                        }
+                    label = {
+                        text: "Mini Programs"
                     }
                 }
             }
@@ -187,58 +183,26 @@ live_design! {
     }
 }
 
-#[derive(Live)]
+#[derive(Live, LiveHook, Widget)]
 pub struct Discover {
-    #[live]
-    view:View,
-}
-
-impl LiveHook for Discover {
-    fn before_live_design(cx: &mut Cx) {
-        register_widget!(cx, Discover);
-    }
+    #[deref]
+    view: View
 }
 
 impl Widget for Discover {
-    fn handle_widget_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, WidgetActionItem),
-    ) {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
         let uid = self.widget_uid();
-        self.handle_event_with(cx, event, &mut |cx, action: StackViewAction| {
-            dispatch_action(cx, WidgetActionItem::new(action.into(), uid));
-        });
-    }
-
-    fn redraw(&mut self, cx: &mut Cx) {
-        self.view.redraw(cx);
-    }
-
-    fn find_widgets(&mut self, path: &[LiveId], cached: WidgetCache, results: &mut WidgetSet) {
-        self.view.find_widgets(path, cached, results);
-    }
-
-    fn draw_walk_widget(&mut self, cx: &mut Cx2d, walk: Walk) -> WidgetDraw {
-        self.view.draw_walk_widget(cx, walk)
-    }
-}
-
-impl Discover {
-    fn handle_event_with(
-        &mut self,
-        cx: &mut Cx,
-        event: &Event,
-        dispatch_action: &mut dyn FnMut(&mut Cx, StackViewAction),
-    ) {
-        let actions = self.view.handle_widget_event(cx, event);
 
         if self
             .clickable_view(id!(moments_link))
             .clicked(&actions)
-        {
-            dispatch_action(cx, StackViewAction::ShowMoments);
+        {            
+            cx.widget_action(uid, &scope.path, StackViewAction::ShowMoments);
         }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
     }
 }
