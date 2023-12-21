@@ -438,9 +438,12 @@ pub struct Timeline {
 
     // TODO: figure out how to remove the option whilst deriving `Live`.
     #[rust] room_id: Option<OwnedRoomId>,
+    /// The index in [`RoomsList::all_rooms`] where this room is located.
     #[rust] room_index: usize,
 
-    // Set to `true` once this room's timeline has been fully paginated.
+    /// Whether this room's timeline has been fully paginated, which means
+    /// that the oldest (first) event in the timeline is locally synced and available.
+    /// When `true`, further backwards pagination requests will not be sent.
     #[rust] fully_paginated: bool,
 }
 

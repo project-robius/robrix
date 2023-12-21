@@ -201,6 +201,10 @@ impl StackNavigation {
         }
     }
 
+    /// Returns the list of currently active views.
+    ///
+    /// It is possible for multiple views to be active because
+    /// one view may be animating out while another view is animating in.
     fn get_active_views(&mut self, cx: &mut Cx) -> Vec<WidgetRef> {
         match self.active_stack_view {
             ActiveStackView::None => {
