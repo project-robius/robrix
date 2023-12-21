@@ -160,9 +160,9 @@ pub struct RoomPreviewEntry {
 pub struct RoomsList {
     #[deref] view: View,
 
-    // The list of all known rooms and their cached preview info.
+    /// The list of all known rooms and their cached preview info.
     #[rust] all_rooms: Vec<RoomPreviewEntry>,
-    // Maps the widget uid (of a room preview) to the index in the `all_rooms` vector.
+    /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `all_rooms` vector.
     #[rust] rooms_list_map: HashMap<u64, usize>,
 }
 
@@ -170,10 +170,17 @@ impl LiveHook for RoomsList {
     fn after_new_from_doc(&mut self, _cx: &mut Cx) { }
 }
 
+
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
+        // Currently, a Signal event is only used to tell this widget
+        // that the rooms list has been updated in the background.
+        if let Event::Signal = event {
+            self.redraw(cx);
+        }
 
+        // Now, handle any actions on this widget, e.g., a user selecting a room.
+        let widget_uid = self.widget_uid();
         for list_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
             if let ClickableViewAction::Click = list_action.as_widget_action().cast() {
                 let widget_action = list_action.as_widget_action();

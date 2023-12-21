@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
+use makepad_widgets::Signal;
 use matrix_sdk::{
     Client,
     ruma::{
@@ -398,6 +399,10 @@ async fn async_main_loop() -> Result<()> {
                                         timeline_items: items,
                                         pagination_status_task: None,
                                     });
+
+                                    // now that we've updated the room list, signal the UI to refresh.
+                                    Signal::set_ui_signal();
+
                                     tl_arc
                                 }
                             }

@@ -195,7 +195,7 @@ live_design! {
                             content = {
                                 title_container = {
                                     title = {
-                                        text: " "
+                                        text: ""
                                     }
                                 }
                             }
@@ -297,6 +297,7 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
     }
