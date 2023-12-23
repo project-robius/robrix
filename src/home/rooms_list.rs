@@ -7,9 +7,11 @@ use crate::shared::stack_view_action::StackViewAction;
 use crate::utils::unix_time_millis_to_datetime;
 
 live_design! {
+    import makepad_draw::shader::std::*;
     import makepad_widgets::view::*;
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
+
 
     import crate::shared::search_bar::SearchBar;
     import crate::shared::styles::*;
@@ -23,9 +25,40 @@ live_design! {
         flow: Right, spacing: 10., padding: 10.
         width: Fill, height: Fit
 
-        avatar = <Image> {
-            source: (IMG_DEFAULT_AVATAR),
+        // The avatar image for this room.
+        // By default, this is the first character of the room's name,
+        // but is replaced by the image once it is obtained from the server.
+        avatar = <View> {
             width: 36., height: 36.
+            align: { x: 0.5, y: 0.5 }
+            flow: Overlay
+
+            text_view = <RoundedView> {
+                visible: true,
+                align: { x: 0.5, y: 0.5 }
+                draw_bg: {
+                    instance radius: 4.0,
+                    instance border_width: 1.0,
+                    // instance border_color: #ddd,
+                    color: #dfd
+                }
+                
+                text = <Label> {
+                    width: Fit, height: Fit
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{ font_size: 16. }
+                    }
+                    text: ""
+                }
+            }
+
+            img_view = <View> {
+                visible: false,
+                img = <Image> {
+                    width: Fill, height: Fill,
+                    source: (IMG_DEFAULT_AVATAR),
+                }
+            }
         }
 
         preview = <View> {
@@ -143,7 +176,7 @@ pub enum RoomListAction {
     None,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct RoomPreviewEntry {
     /// The matrix ID of this room.
     pub room_id: Option<OwnedRoomId>,
@@ -151,8 +184,20 @@ pub struct RoomPreviewEntry {
     pub room_name: Option<String>,
     /// The timestamp and text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
-    
-    // TODO: add room avatar image
+    /// The avatar for this room, which is either array of bytes holding the avatar image
+    /// or a string holding the first character of the room name.
+    pub avatar: RoomPreviewAvatar,
+
+}
+#[derive(Debug)]
+pub enum RoomPreviewAvatar {
+    Text(String),
+    Image(Vec<u8>),
+}
+impl Default for RoomPreviewAvatar {
+    fn default() -> Self {
+        RoomPreviewAvatar::Text(String::new())
+    }
 }
 
 
@@ -285,6 +330,18 @@ impl Widget for RoomsList {
                             );
                         }
                         item.label(id!(preview.latest_message)).set_text(msg);
+                    }
+                    match room_info.avatar {
+                        RoomPreviewAvatar::Text(ref text) => {
+                            item.view(id!(avatar.img_view)).set_visible(false);
+                            item.view(id!(avatar.text_view)).set_visible(true);
+                            item.label(id!(avatar.text_view.text)).set_text(text);
+                        }
+                        RoomPreviewAvatar::Image(ref img_bytes) => {
+                            item.view(id!(avatar.img_view)).set_visible(true);
+                            item.view(id!(avatar.text_view)).set_visible(false);
+                            item.image(id!(avatar.img_view.img)).load_png_from_data(cx, img_bytes);
+                        }
                     }
 
                     item

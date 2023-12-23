@@ -7,10 +7,10 @@ mod profile;
 mod shared;
 
 // Matrix stuff
-pub mod matrix;
 pub mod sliding_sync;
 
 // UI stuff
 pub mod message_display;
 
 pub mod utils;
+pub mod temp_storage;
