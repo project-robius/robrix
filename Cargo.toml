@@ -35,5 +35,3 @@ unicode-segmentation = "1.10.1"
 
 [package.metadata.docs.rs]
 all-features = true
-
-makepad-widgets = { path = "../makepad/widgets" }
