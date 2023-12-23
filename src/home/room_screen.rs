@@ -46,7 +46,6 @@ live_design! {
     import crate::shared::helpers::*;
     import crate::shared::search_bar::SearchBar;
 
-    IMG_A = dep("crate://self/resources/neom-THlO6Mkf5uI-unsplash.jpg")
     IMG_PROFILE_A = dep("crate://self/resources/profile_1.jpg")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
@@ -348,10 +347,14 @@ live_design! {
         }
     }
 
-    // TODO: in the future, use this to display a loading animation while pagination status is `Paginating`.
+    // The top space is used to display a loading animation while the room is being paginated.
     TopSpace = <View> {
         width: Fill,
-        height: 0.0
+        height: 0.0,
+
+        label = <Label> {
+            text: "Loading..."
+        }
     }
 
     Timeline = {{Timeline}} {

@@ -17,10 +17,11 @@ use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
+use unicode_segmentation::UnicodeSegmentation;
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
 use url::Url;
 
-use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate};
+use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar};
 use crate::message_display::DisplayerExt;
 
 
@@ -115,7 +116,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
     println!("async_worker task started, receiver {:?}", receiver);
     while let Some(request) = receiver.recv().await {
         match request {
-            MatrixRequest::PaginateRoomTimeline { room_id, batch_size, .. } => {
+            MatrixRequest::PaginateRoomTimeline { room_id, batch_size, max_events: _max_events } => {
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -157,8 +158,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let _paginate_task = Handle::current().spawn(async move {
                     println!("Sending pagination request for room {room_id}...");
                     let res = timeline.paginate_backwards(
-                        PaginationOptions::single_request(batch_size)
-                        // PaginationOptions::until_num_items(batch_size, max_events)
+                        // PaginationOptions::simple_request(batch_size)
+                        PaginationOptions::until_num_items(batch_size, _max_events)
                     ).await;
                     match res {
                         Ok(_) => println!("Sent pagination request for room {room_id}"),
@@ -228,17 +229,16 @@ async fn async_main_loop() -> Result<()> {
     let (client, _token) = login(cli).await?;
 
     let mut filter = SyncRequestListFilters::default();
-    filter.not_room_types = vec!["m.space".into()]; // Note: this is what Element-X does to ignore spaces initially
-    // filter.room_name_like = Some("testing".into()); // temp: only care about robius-testing room for now
+    filter.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
 
     let visible_room_list_name = "VisibleRooms".to_owned();
     let visible_room_list = SlidingSyncList::builder(&visible_room_list_name)
         // Load the most recent rooms, one at a time
         .sort(vec!["by_recency".into()])
+        .sync_mode(SlidingSyncMode::new_paging(5).maximum_number_of_rooms_to_fetch(50))
         // .sync_mode(SlidingSyncMode::new_growing(1))
-        .sync_mode(SlidingSyncMode::new_paging(10).maximum_number_of_rooms_to_fetch(20))
-        // only load one timeline event per room
-        .timeline_limit(10)
+        // only load a few timeline events per room to start with. We'll load more later on demand when a room is first viewed.
+        .timeline_limit(20)
         .filters(Some(filter))
         .required_state(vec![ // we want to know immediately:
             (StateEventType::RoomEncryption, "".to_owned()), // is it encrypted
@@ -348,7 +348,8 @@ async fn async_main_loop() -> Result<()> {
                         history_visibility: {:?},
                         is_public: {:?},
                         join_rule: {:?},
-                        latest_event: {:?},",
+                        latest_event: {:?}
+                        ",
                         room.name(),
                         room.display_name().await,
                         room.topic(),
@@ -386,10 +387,16 @@ async fn async_main_loop() -> Result<()> {
                                 std::collections::btree_map::Entry::Vacant(entry) => {
                                     println!("    --> Adding new timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
 
+                                    let room_name = ssroom.name();
                                     rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
                                         room_id: Some(room_id.to_owned()),
-                                        room_name: ssroom.name(),
                                         latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
+                                        avatar: RoomPreviewAvatar::Text(
+                                            room_name.as_ref()
+                                                .and_then(|name| name.graphemes(true).next().map(ToString::to_string))
+                                                .unwrap_or_default()
+                                        ),
+                                        room_name,
                                     }));
 
                                     let tl_arc = Arc::new(timeline);
