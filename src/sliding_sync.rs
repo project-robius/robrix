@@ -415,6 +415,8 @@ async fn async_main_loop() -> Result<()> {
                                     let room_name = ssroom.name();
                                     let avatar = match fetched_avatar {
                                         Ok(Some(avatar)) => {
+                                            
+                                            // debugging: dump out the avatar image to disk
                                             if true {
                                                 let mut path = get_temp_dir_path().clone();
                                                 path.push(room_name.as_ref().unwrap());

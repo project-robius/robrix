@@ -343,11 +343,12 @@ impl Widget for RoomsList {
                             item.view(id!(avatar.text_view)).set_visible(false);
                             item.image(id!(avatar.img_view.img)).load_png_from_data(cx, img_bytes);
 
+                            // debugging: dump out the avatar image to disk
                             if false {
                                 let mut path = crate::temp_storage::get_temp_dir_path().clone();
                                 let filename = format!("{}_{}",
-                                    room_info.room_name.as_ref().unwrap(),
                                     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+                                    room_info.room_name.as_ref().unwrap(),
                                 );
                                 path.push(filename);
                                 path.set_extension("png");
