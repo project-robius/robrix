@@ -8,9 +8,16 @@ use matrix_sdk::{
     ruma::{
         assign,
         OwnedRoomId,
-        api::client::sync::sync_events::v4::{SyncRequestListFilters, self},
+        api::client::{
+            media::get_content_thumbnail::v3::Method as ThumbnailMethod,
+            sync::sync_events::v4::{SyncRequestListFilters, self},
+        },
         events::StateEventType,
-    }, SlidingSyncList, SlidingSyncMode, config::RequestConfig
+    },
+    SlidingSyncList,
+    SlidingSyncMode,
+    config::RequestConfig,
+    media::{MediaFormat, MediaThumbnailSize},
 };
 use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions}, Timeline};
 use tokio::{
@@ -23,6 +30,19 @@ use url::Url;
 
 use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar};
 use crate::message_display::DisplayerExt;
+use crate::temp_storage::get_temp_dir_path;
+
+
+/// Returns the default thumbnail size (40x40 pixels, scaled) to use for media.
+/// This is implemented as a function instead of a const because the internal `UInt` type
+/// does not support const construction.
+fn media_thumbnail_format() -> MediaFormat {
+    MediaFormat::Thumbnail(MediaThumbnailSize {
+        width: 40u8.into(),
+        height: 40u8.into(),
+        method: ThumbnailMethod::Scale,
+    })
+}
 
 
 #[derive(Parser, Debug)]
@@ -368,14 +388,19 @@ async fn async_main_loop() -> Result<()> {
                     // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
                     // println!("    --> Subscribing to above room {:?}", room_id);
 
-
+                    // Note: we must fetch all the details we need from the updated room
+                    // that require async calls before we obtain the lock on the global state (ALL_ROOM_INFO),
+                    // in order to ensure that lock is not held across an `await` point.
                     let ssroom = sliding_sync.get_room(room_id).await.unwrap();
                     let timeline = ssroom.timeline().await;
+
+
                     // println!("    --> SlidingSync room: {:?}, timeline: {:#?}", ssroom, timeline);
                     if let Some(timeline) = timeline {
                         let items = timeline.items().await;
                         let latest_tl = timeline.latest_event().await;
-                        let timeline_ref = {
+                        let fetched_avatar = room.avatar(media_thumbnail_format()).await;
+                        let _timeline_ref = {
                             let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                             match all_room_info.entry(room_id.to_owned()) {
                                 std::collections::btree_map::Entry::Occupied(mut entry) => {
@@ -388,14 +413,30 @@ async fn async_main_loop() -> Result<()> {
                                     println!("    --> Adding new timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
 
                                     let room_name = ssroom.name();
-                                    rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
-                                        room_id: Some(room_id.to_owned()),
-                                        latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
-                                        avatar: RoomPreviewAvatar::Text(
+                                    let avatar = match fetched_avatar {
+                                        Ok(Some(avatar)) => {
+                                            
+                                            // debugging: dump out the avatar image to disk
+                                            if true {
+                                                let mut path = get_temp_dir_path().clone();
+                                                path.push(room_name.as_ref().unwrap());
+                                                path.set_extension("png");
+                                                println!("Writing avatar image to disk: {:?}", path);
+                                                std::fs::write(path, &avatar)
+                                                    .expect("Failed to write avatar image to disk");
+                                            }
+                                            RoomPreviewAvatar::Image(avatar)
+                                        }
+                                        _ => RoomPreviewAvatar::Text(
                                             room_name.as_ref()
                                                 .and_then(|name| name.graphemes(true).next().map(ToString::to_string))
                                                 .unwrap_or_default()
                                         ),
+                                    };
+                                    rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
+                                        room_id: Some(room_id.to_owned()),
+                                        latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
+                                        avatar,
                                         room_name,
                                     }));
 
