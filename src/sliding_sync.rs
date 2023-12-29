@@ -474,7 +474,7 @@ async fn async_main_loop() -> Result<()> {
                     while let Some(batched_update) = room_subscriber.next().await {
                         { // this block is only needed for the old way of copying the whole timeline into ALL_ROOMS_INFO
                             let new_items = tl_arc2.items().await;
-                            println!("### Timeline {room_id2} got a {}-event batched update, now has {} items.", batched_update.len(), new_items.len());
+                            println!("### Timeline {room_id2} got a batched update of {} changes.", batched_update.len());
                             ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id2).unwrap().timeline_items = new_items;
                         }
 
