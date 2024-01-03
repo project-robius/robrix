@@ -502,7 +502,6 @@ impl Widget for Timeline {
         // Currently, a Signal event is only used to tell this widget that its timeline events
         // have been updated in the background.
         if let Event::Signal = event {
-            println!("Timeline::handle_event(): got Signal event in room {}", self.room_id.as_ref().unwrap());
             let mut num_updates = 0;
             while let Some(batched_update) = self.update_receiver.as_mut().and_then(|r| r.try_recv().ok()) {
                 num_updates += batched_update.len();
@@ -510,7 +509,9 @@ impl Widget for Timeline {
                     diff.apply(&mut self.items);
                 }
             }
-            println!("Timeline::handle_event(): performed {num_updates} updates for room {}", self.room_id.as_ref().unwrap());
+            if num_updates > 0 {
+                println!("Timeline::handle_event(): applied {num_updates} updates for room {}", self.room_id.as_ref().unwrap());
+            }
             
             self.redraw(cx);
         }
