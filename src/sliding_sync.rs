@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use clap::Parser;
+use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
 use makepad_widgets::Signal;
@@ -30,7 +31,6 @@ use url::Url;
 
 use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar};
 use crate::message_display::DisplayerExt;
-use crate::temp_storage::get_temp_dir_path;
 
 
 /// Returns the default thumbnail size (40x40 pixels, scaled) to use for media.
@@ -144,7 +144,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         continue;
                     };
 
-                    println!("--> Timeline {room_id} before pagination had {} items", room_info.timeline_items.len());
                     let room_id2 = room_id.clone();
                     let timeline_ref2 = room_info.timeline.clone();
                     let timeline_ref = room_info.timeline.clone();
@@ -156,11 +155,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 let status = back_pagination_subscriber.next().await;
                                 println!("### Timeline {room_id2} back pagination status: {:?}", status);
                                 
-                                // Temp: obtain the latest timeline items after each pagination request and update the global state.
-                                let new_items = timeline_ref.items().await;
-                                println!("    -- Timeline {room_id2} now has {} items.", new_items.len());
-                                ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id2).unwrap().timeline_items = new_items;
-
                                 // TODO FIXME: send Makepad-level event/action to update this room's timeline UI view.
 
                                 if status == Some(matrix_sdk_ui::timeline::BackPaginationStatus::TimelineStartReached) {
@@ -223,7 +217,24 @@ pub fn start_matrix_tokio() -> Result<()> {
 struct RoomInfo {
     room_id: OwnedRoomId,
     timeline: Arc<Timeline>,
-    timeline_items: Vector<Arc<TimelineItem>>,
+    /// The sender that can be used to send updates to this room's timeline.
+    ///
+    /// Currently, a clone of this sender is owned by the background task that is spawned
+    /// when a new room is first discovered, so we don't actually need to use this sender
+    /// for anything. We just keep it around in case we need it later, e.g., if that
+    /// background task crashes or something or we need to send a timeline update from elsewhere.
+    _timeline_update_sender: crossbeam_channel::Sender<Vec<VectorDiff<Arc<TimelineItem>>>>,
+    /// The initial set of timeline items that were obtained from the server.
+    timeline_initial_items: Vector<Arc<TimelineItem>>,
+    /// The single receiver that can receive updates to this room's timeline.
+    ///
+    /// When a new room is joined, an unbounded crossbeam channel will be created
+    /// and its sender given to a background task that enqueues timeline updates
+    /// as vector diffs when they are received from the server.
+    /// 
+    /// The UI thread can take ownership of these items  receiver in order for a specific
+    /// timeline view (currently room_sccren) to receive and display updates to this room's timeline.
+    timeline_update_receiver: Option<crossbeam_channel::Receiver<Vec<VectorDiff<Arc<TimelineItem>>>>>,
     /// The async task that is subscribed to the timeline's back-pagination status.
     pagination_status_task: Option<JoinHandle<()>>,
 }
@@ -231,14 +242,26 @@ struct RoomInfo {
 /// Information about all of the rooms we currently know about.
 static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
 
-/// A temp hacky way to get the Timeline and list of TimelineItems for a room (in a non-async context).
-pub fn get_timeline_items(
+
+/// Returns the timeline update receiver for the given room, if one exists.
+///
+/// This will only succeed once per room, as only a single channel receiver can exist.
+pub fn take_timeline_update_receiver(
     room_id: &OwnedRoomId,
-) -> Option<(Arc<Timeline>, Vector<Arc<TimelineItem>>)> {
+) -> Option<(
+    Vector<Arc<TimelineItem>>,
+    crossbeam_channel::Receiver<Vec<VectorDiff<Arc<TimelineItem>>>>
+)> {
     ALL_ROOM_INFO.lock().unwrap()
-        .get(room_id)
-        .map(|ri| (ri.timeline.clone(), ri.timeline_items.clone()))
+        .get_mut(room_id)
+        .and_then(|ri| ri.timeline_update_receiver.take()
+            .map(|receiver| (
+                core::mem::take(&mut ri.timeline_initial_items),
+                receiver
+            )
+        ))
 }
+
 
 async fn async_main_loop() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -352,153 +375,122 @@ async fn async_main_loop() -> Result<()> {
                 break;
             }
         };
-        if !update.rooms.is_empty() {
-            println!("Rooms have an update: {:?}", update.rooms);
-            for room_id in &update.rooms {
-                if let Some(room) = client.get_room(room_id) {
-                    println!("\n{room_id:?} --> {:?}
-                        display_name: {:?},
-                        topic: {:?},
-                        is_synced: {:?}, is_state_fully_synced: {:?},
-                        is_space: {:?},
-                        create: {:?},
-                        canonical-alias: {:?},
-                        alt_aliases: {:?},
-                        guest_access: {:?},
-                        history_visibility: {:?},
-                        is_public: {:?},
-                        join_rule: {:?},
-                        latest_event: {:?}
-                        ",
-                        room.name(),
-                        room.display_name().await,
-                        room.topic(),
-                        room.is_synced(), room.is_state_fully_synced(),
-                        room.is_space(),
-                        room.create_content(),
-                        room.canonical_alias(),
-                        room.alt_aliases(),
-                        room.guest_access(),
-                        room.history_visibility(),
-                        room.is_public(),
-                        room.join_rule(),
-                        room.latest_event(),
-                    );
 
-                    // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
-                    // println!("    --> Subscribing to above room {:?}", room_id);
+        for room_id in update.rooms {
+            let Some(room) = client.get_room(&room_id) else {
+                eprintln!("Error: couldn't get Room {room_id:?} that had an update");
+                continue
+            };
 
-                    // Note: we must fetch all the details we need from the updated room
-                    // that require async calls before we obtain the lock on the global state (ALL_ROOM_INFO),
-                    // in order to ensure that lock is not held across an `await` point.
-                    let ssroom = sliding_sync.get_room(room_id).await.unwrap();
-                    let timeline = ssroom.timeline().await;
+            println!("\n{room_id:?} --> {:?} has an update
+                display_name: {:?},
+                topic: {:?},
+                is_synced: {:?}, is_state_fully_synced: {:?},
+                is_space: {:?},
+                create: {:?},
+                canonical-alias: {:?},
+                alt_aliases: {:?},
+                guest_access: {:?},
+                history_visibility: {:?},
+                is_public: {:?},
+                join_rule: {:?},
+                latest_event: {:?}
+                ",
+                room.name(),
+                room.display_name().await,
+                room.topic(),
+                room.is_synced(), room.is_state_fully_synced(),
+                room.is_space(),
+                room.create_content(),
+                room.canonical_alias(),
+                room.alt_aliases(),
+                room.guest_access(),
+                room.history_visibility(),
+                room.is_public(),
+                room.join_rule(),
+                room.latest_event(),
+            );
 
+            // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
+            // println!("    --> Subscribing to above room {:?}", room_id);
 
-                    // println!("    --> SlidingSync room: {:?}, timeline: {:#?}", ssroom, timeline);
-                    if let Some(timeline) = timeline {
-                        let items = timeline.items().await;
-                        let latest_tl = timeline.latest_event().await;
-                        let fetched_avatar = room.avatar(media_thumbnail_format()).await;
-                        let _timeline_ref = {
-                            let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                            match all_room_info.entry(room_id.to_owned()) {
-                                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                                    println!("    --> Updating existing timeline for room {room_id:?}, now has {} items.", items.len());                                    
-                                    let entry_mut = entry.get_mut();
-                                    entry_mut.timeline_items = items;
-                                    entry_mut.timeline.clone()
-                                }
-                                std::collections::btree_map::Entry::Vacant(entry) => {
-                                    println!("    --> Adding new timeline for room {room_id:?}, now has {} items.", items.len(), room_id = room_id);
-
-                                    let room_name = ssroom.name();
-                                    let avatar = match fetched_avatar {
-                                        Ok(Some(avatar)) => {
-                                            
-                                            // debugging: dump out the avatar image to disk
-                                            if true {
-                                                let mut path = get_temp_dir_path().clone();
-                                                path.push(room_name.as_ref().unwrap());
-                                                path.set_extension("png");
-                                                println!("Writing avatar image to disk: {:?}", path);
-                                                std::fs::write(path, &avatar)
-                                                    .expect("Failed to write avatar image to disk");
-                                            }
-                                            RoomPreviewAvatar::Image(avatar)
-                                        }
-                                        _ => RoomPreviewAvatar::Text(
-                                            room_name.as_ref()
-                                                .and_then(|name| name.graphemes(true).next().map(ToString::to_string))
-                                                .unwrap_or_default()
-                                        ),
-                                    };
-                                    rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
-                                        room_id: Some(room_id.to_owned()),
-                                        latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
-                                        avatar,
-                                        room_name,
-                                    }));
-
-                                    let tl_arc = Arc::new(timeline);
-                                    entry.insert(RoomInfo {
-                                        room_id: room_id.to_owned(),
-                                        timeline: Arc::clone(&tl_arc),
-                                        timeline_items: items,
-                                        pagination_status_task: None,
-                                    });
-
-                                    // now that we've updated the room list, signal the UI to refresh.
-                                    Signal::set_ui_signal();
-
-                                    tl_arc
-                                }
-                            }
-                        };
-
-                        /*
-                        // Fetch more events from the room's timeline backwards, in the background.
-                        // println!("Timeline items: {:#?}", items);
-                        Handle::current().spawn(async move {
-                            println!("    --> Timeline room {room:?} before pagination had {} items", timeline_ref.items().await.len());
-
-                            if true {
-                                let mut back_pagination_subscriber = timeline_ref.back_pagination_status();
-                                Handle::current().spawn( async move {
-                                    loop {
-                                        let status = back_pagination_subscriber.next().await;
-                                        println!("### Timeline back pagination status: {:?}", status);
-                                        if status == Some(matrix_sdk_ui::timeline::BackPaginationStatus::TimelineStartReached) {
-                                            break;
-                                        }
-                                    }
-                                });
-                            }
-                            let res = timeline_ref.paginate_backwards(
-                                // PaginationOptions::single_request(u16::MAX)
-                                // PaginationOptions::until_num_items(20, 20)
-                                PaginationOptions::until_num_items(10, 10)
-                            ).await;
-                            let items = timeline_ref.items().await;
-                            println!("    --> Timeline room {room:?} pagination result: {:?}, timeline has {} items", res, items.len());
-                            let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                            match all_room_info.entry(room.clone()) {
-                                std::collections::btree_map::Entry::Occupied(mut entry) => {
-                                    println!("    --> Post-pagination updating existing timeline for room {room:?}, now has {} items.", items.len());
-                                    entry.get_mut().1 = items;
-                                }
-                                std::collections::btree_map::Entry::Vacant(entry) => {
-                                    println!("    --> Post-pagination adding new timeline for room {room:?}, now has {} items.", items.len());
-                                    entry.insert((timeline_ref, items));
-                                }
-                            }
-                        });
-                        */
-                    }
+            let Some(ssroom) = sliding_sync.get_room(&room_id).await else {
+                eprintln!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
+                continue
+            };
+            let Some(timeline) = ssroom.timeline().await else {
+                eprintln!("Error: couldn't get timeline for room {room_id:?} that had an update.");
+                continue
+            };
+            
+            let room_exists = {
+                if let Some(_existing) = ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id) {
+                    true
+                } else {
+                    false
                 }
-            }
+            };
+            
+            if !room_exists {
+                let room_name = ssroom.name();
+                let latest_tl = timeline.latest_event().await;
+                
+                let avatar = match room.avatar(media_thumbnail_format()).await {
+                    Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+                    _ => RoomPreviewAvatar::Text(
+                        room_name.as_ref()
+                            .and_then(|name| name.graphemes(true).next().map(ToString::to_string))
+                            .unwrap_or_default()
+                    ),
+                };
+                
+                let (_timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
+                let (timeline_initial_items, mut room_subscriber) = timeline.subscribe_batched().await;
+                let tl_arc = Arc::new(timeline);
+                let tl_arc2 = Arc::clone(&tl_arc);
+                let room_id2 = room_id.clone();
+                let sender = _timeline_update_sender.clone();
 
+                Handle::current().spawn(async move {
+                    println!("Starting timeline subscriber for room {room_id2}...");
+
+                    while let Some(batched_update) = room_subscriber.next().await {
+                        sender.send(batched_update)
+                            .expect("Error: timeline update sender couldn't send batched update!");
+
+                        // Send a Makepad-level signal to update this room's timeline UI view.
+                        // TODO: should we use an Action or Trigger instead? Signals are too simple for this purpose.
+                        Signal::set_ui_signal();
+                    }
+
+                    println!("Starting timeline subscriber for room {room_id2}...");
+
+                });
+
+                ALL_ROOM_INFO.lock().unwrap().insert(
+                    room_id.clone(),
+                    RoomInfo {
+                        room_id: room_id.clone(),
+                        timeline: tl_arc,
+                        pagination_status_task: None,
+                        timeline_update_receiver: Some(timeline_update_receiver),
+                        _timeline_update_sender,
+                        timeline_initial_items,
+                    },
+                );
+
+                rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
+                    room_id: Some(room_id.clone()),
+                    latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
+                    avatar,
+                    room_name,
+                }));
+
+                // now that we've updated the room list, signal the UI to refresh.
+                Signal::set_ui_signal();
+            }
         }
+
         if !update.lists.is_empty() {
             println!("Lists have an update: {:?}", update.lists);
         }

@@ -17,21 +17,24 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 
 [dependencies]
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+
 anyhow = "1.0"
 chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
+crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
 eyeball = { version = "0.8.7", features = ["tracing"] }
+eyeball-im = "0.4.2"
 futures-util = "0.3"
 imbl = { version = "2.0.0", features = ["serde"] }  # same as matrix-sdk-ui
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", features = [ "experimental-sliding-sync" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk" }
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
+unicode-segmentation = "1.10.1"
 url = "2.2.2"
 
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-unicode-segmentation = "1.10.1"
 
 [package.metadata.docs.rs]
 all-features = true
