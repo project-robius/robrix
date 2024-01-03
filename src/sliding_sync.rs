@@ -31,7 +31,6 @@ use url::Url;
 
 use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar};
 use crate::message_display::DisplayerExt;
-use crate::temp_storage::get_temp_dir_path;
 
 
 /// Returns the default thumbnail size (40x40 pixels, scaled) to use for media.
@@ -145,7 +144,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         continue;
                     };
 
-                    println!("--> Timeline {room_id} before pagination had {} items", room_info.timeline_items.len());
                     let room_id2 = room_id.clone();
                     let timeline_ref2 = room_info.timeline.clone();
                     let timeline_ref = room_info.timeline.clone();
@@ -157,11 +155,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 let status = back_pagination_subscriber.next().await;
                                 println!("### Timeline {room_id2} back pagination status: {:?}", status);
                                 
-                                // Temp: obtain the latest timeline items after each pagination request and update the global state.
-                                let new_items = timeline_ref.items().await;
-                                println!("    -- Timeline {room_id2} now has {} items.", new_items.len());
-                                ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id2).unwrap().timeline_items = new_items;
-
                                 // TODO FIXME: send Makepad-level event/action to update this room's timeline UI view.
 
                                 if status == Some(matrix_sdk_ui::timeline::BackPaginationStatus::TimelineStartReached) {
@@ -224,9 +217,13 @@ pub fn start_matrix_tokio() -> Result<()> {
 struct RoomInfo {
     room_id: OwnedRoomId,
     timeline: Arc<Timeline>,
-    timeline_items: Vector<Arc<TimelineItem>>,
     /// The sender that can be used to send updates to this room's timeline.
-    timeline_update_sender: crossbeam_channel::Sender<Vec<VectorDiff<Arc<TimelineItem>>>>,
+    ///
+    /// Currently, a clone of this sender is owned by the background task that is spawned
+    /// when a new room is first discovered, so we don't actually need to use this sender
+    /// for anything. We just keep it around in case we need it later, e.g., if that
+    /// background task crashes or something or we need to send a timeline update from elsewhere.
+    _timeline_update_sender: crossbeam_channel::Sender<Vec<VectorDiff<Arc<TimelineItem>>>>,
     /// The initial set of timeline items that were obtained from the server.
     timeline_initial_items: Vector<Arc<TimelineItem>>,
     /// The single receiver that can receive updates to this room's timeline.
@@ -245,14 +242,6 @@ struct RoomInfo {
 /// Information about all of the rooms we currently know about.
 static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
 
-/// A temp hacky way to get the Timeline and list of TimelineItems for a room (in a non-async context).
-pub fn get_timeline_items(
-    room_id: &OwnedRoomId,
-) -> Option<(Arc<Timeline>, Vector<Arc<TimelineItem>>)> {
-    ALL_ROOM_INFO.lock().unwrap()
-        .get(room_id)
-        .map(|ri| (ri.timeline.clone(), ri.timeline_items.clone()))
-}
 
 /// Returns the timeline update receiver for the given room, if one exists.
 ///
@@ -433,13 +422,9 @@ async fn async_main_loop() -> Result<()> {
                 eprintln!("Error: couldn't get timeline for room {room_id:?} that had an update.");
                 continue
             };
-            let items = timeline.items().await;
-            let items2 = items.clone();
             
             let room_exists = {
-                if let Some(existing) = ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id) {
-                    println!("    --> Updating existing timeline for room {room_id:?}, from {} to {} items.", existing.timeline_items.len(), items2.len());
-                    existing.timeline_items = items2;
+                if let Some(_existing) = ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id) {
                     true
                 } else {
                     false
@@ -447,8 +432,6 @@ async fn async_main_loop() -> Result<()> {
             };
             
             if !room_exists {
-                println!("    --> Adding new timeline for room {room_id:?}, with {} items.", items.len());
-
                 let room_name = ssroom.name();
                 let latest_tl = timeline.latest_event().await;
                 
@@ -461,27 +444,23 @@ async fn async_main_loop() -> Result<()> {
                     ),
                 };
                 
-                let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
+                let (_timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
                 let (timeline_initial_items, mut room_subscriber) = timeline.subscribe_batched().await;
                 let tl_arc = Arc::new(timeline);
                 let tl_arc2 = Arc::clone(&tl_arc);
                 let room_id2 = room_id.clone();
-                let sender = timeline_update_sender.clone();
+                let sender = _timeline_update_sender.clone();
 
                 Handle::current().spawn(async move {
                     println!("Starting timeline subscriber for room {room_id2}...");
 
                     while let Some(batched_update) = room_subscriber.next().await {
-                        { // this block is only needed for the old way of copying the whole timeline into ALL_ROOMS_INFO
-                            let new_items = tl_arc2.items().await;
-                            println!("### Timeline {room_id2} got a batched update of {} changes.", batched_update.len());
-                            ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id2).unwrap().timeline_items = new_items;
-                        }
-
                         sender.send(batched_update)
                             .expect("Error: timeline update sender couldn't send batched update!");
 
-                        // TODO FIXME: send Makepad-level event/action to update this room's timeline UI view.
+                        // Send a Makepad-level signal to update this room's timeline UI view.
+                        // TODO: should we use an Action or Trigger instead? Signals are too simple for this purpose.
+                        Signal::set_ui_signal();
                     }
 
                     println!("Starting timeline subscriber for room {room_id2}...");
@@ -493,10 +472,9 @@ async fn async_main_loop() -> Result<()> {
                     RoomInfo {
                         room_id: room_id.clone(),
                         timeline: tl_arc,
-                        timeline_items: items,
                         pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
-                        timeline_update_sender,
+                        _timeline_update_sender,
                         timeline_initial_items,
                     },
                 );

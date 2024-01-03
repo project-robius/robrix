@@ -35,7 +35,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    sliding_sync::{get_timeline_items, submit_async_request, MatrixRequest, take_timeline_update_receiver},
+    sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
     utils::unix_time_millis_to_datetime,
 };
 
@@ -376,7 +376,6 @@ live_design! {
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
-            BottomSpace = <View> {height: 80}
         }    
     }
 
@@ -500,7 +499,24 @@ impl LiveHook for Timeline {
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope)
+        // Currently, a Signal event is only used to tell this widget that its timeline events
+        // have been updated in the background.
+        if let Event::Signal = event {
+            println!("Timeline::handle_event(): got Signal event in room {}", self.room_id.as_ref().unwrap());
+            let mut num_updates = 0;
+            while let Some(batched_update) = self.update_receiver.as_mut().and_then(|r| r.try_recv().ok()) {
+                num_updates += batched_update.len();
+                for diff in batched_update {
+                    diff.apply(&mut self.items);
+                }
+            }
+            println!("Timeline::handle_event(): performed {num_updates} updates for room {}", self.room_id.as_ref().unwrap());
+            
+            self.redraw(cx);
+        }
+
+
+        self.view.handle_event(cx, event, scope);
 
         // TODO: handle actions upon an item being clicked.
         // for (item_id, item) in self.list.items_with_actions(&actions) {
@@ -511,12 +527,8 @@ impl Widget for Timeline {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // Determing length of the portal list based on the number of timeline items.
-        let timeline_items_owned = self.room_id.as_ref().and_then(|r| get_timeline_items(r));
-        let timeline_items = timeline_items_owned.as_ref();
-        let last_item_id = timeline_items
-            .map(|(_tl, items)| items.len() as u64)
-            .unwrap_or(0);
+        // Determine length of the portal list based on the number of timeline items.
+        let last_item_id = self.items.len() as u64;
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
         
         // Start the actual drawing procedure.
@@ -526,18 +538,15 @@ impl Widget for Timeline {
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let list = list_ref.deref_mut();
         
-            // + 1 again because we use the last item for the BottomSpace.
-            list.set_item_range(cx, 0, last_item_id + 1);
+            list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 // println!("Drawing item {}", item_id);
                 let item = if item_id == 0 {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
-                } else if item_id >= last_item_id {
-                    list.item(cx, item_id, live_id!(BottomSpace)).unwrap()
                 } else {
                     let tl_idx = (item_id - 1) as usize;
-                    let Some(timeline_item) = timeline_items.and_then(|(_tl, items)| items.get(tl_idx)) else {
+                    let Some(timeline_item) = self.items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
