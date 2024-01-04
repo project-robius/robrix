@@ -573,6 +573,8 @@ impl Widget for Timeline {
         // Determine length of the portal list based on the number of timeline items.
         let last_item_id = self.items.len() as u64;
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
+
+        println!("Drawing timeline for room {:?} with {} items.", self.room_id, last_item_id - 1);
         
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
