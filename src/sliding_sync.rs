@@ -1,6 +1,5 @@
 use anyhow::{Result, bail};
 use clap::Parser;
-use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
 use makepad_widgets::Signal;
@@ -20,7 +19,7 @@ use matrix_sdk::{
     config::RequestConfig,
     media::{MediaFormat, MediaThumbnailSize},
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions}, Timeline};
+use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, BackPaginationStatus}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
@@ -29,7 +28,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
 use url::Url;
 
-use crate::home::rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar};
+use crate::home::{rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar}, room_screen::TimelineUpdate};
 use crate::message_display::DisplayerExt;
 
 
@@ -145,8 +144,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     };
 
                     let room_id2 = room_id.clone();
-                    let timeline_ref2 = room_info.timeline.clone();
                     let timeline_ref = room_info.timeline.clone();
+                    let sender = room_info.timeline_update_sender.clone();
 
                     if room_info.pagination_status_task.is_none() {
                         let mut back_pagination_subscriber = room_info.timeline.back_pagination_status();
@@ -154,18 +153,22 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                             loop {
                                 let status = back_pagination_subscriber.next().await;
                                 println!("### Timeline {room_id2} back pagination status: {:?}", status);
-                                
-                                // TODO FIXME: send Makepad-level event/action to update this room's timeline UI view.
-
-                                if status == Some(matrix_sdk_ui::timeline::BackPaginationStatus::TimelineStartReached) {
-                                    break;
+                                match status {
+                                    Some(BackPaginationStatus::Idle) => {
+                                        sender.send(TimelineUpdate::PaginationIdle).unwrap();
+                                    }
+                                    Some(BackPaginationStatus::TimelineStartReached) => {
+                                        sender.send(TimelineUpdate::TimelineStartReached).unwrap();
+                                        break;
+                                    }
+                                    _ => { }
                                 }
                             }
                         }));
                     }
 
                     // drop the lock on ALL_ROOM_INFO before spawning the actual pagination task.
-                    timeline_ref2
+                    timeline_ref
                 };
 
                 // Spawn a new async task that will make the actual pagination request.
@@ -217,13 +220,8 @@ pub fn start_matrix_tokio() -> Result<()> {
 struct RoomInfo {
     room_id: OwnedRoomId,
     timeline: Arc<Timeline>,
-    /// The sender that can be used to send updates to this room's timeline.
-    ///
-    /// Currently, a clone of this sender is owned by the background task that is spawned
-    /// when a new room is first discovered, so we don't actually need to use this sender
-    /// for anything. We just keep it around in case we need it later, e.g., if that
-    /// background task crashes or something or we need to send a timeline update from elsewhere.
-    _timeline_update_sender: crossbeam_channel::Sender<Vec<VectorDiff<Arc<TimelineItem>>>>,
+    /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
+    timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     /// The initial set of timeline items that were obtained from the server.
     timeline_initial_items: Vector<Arc<TimelineItem>>,
     /// The single receiver that can receive updates to this room's timeline.
@@ -234,7 +232,7 @@ struct RoomInfo {
     /// 
     /// The UI thread can take ownership of these items  receiver in order for a specific
     /// timeline view (currently room_sccren) to receive and display updates to this room's timeline.
-    timeline_update_receiver: Option<crossbeam_channel::Receiver<Vec<VectorDiff<Arc<TimelineItem>>>>>,
+    timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// The async task that is subscribed to the timeline's back-pagination status.
     pagination_status_task: Option<JoinHandle<()>>,
 }
@@ -250,7 +248,7 @@ pub fn take_timeline_update_receiver(
     room_id: &OwnedRoomId,
 ) -> Option<(
     Vector<Arc<TimelineItem>>,
-    crossbeam_channel::Receiver<Vec<VectorDiff<Arc<TimelineItem>>>>
+    crossbeam_channel::Receiver<TimelineUpdate>
 )> {
     ALL_ROOM_INFO.lock().unwrap()
         .get_mut(room_id)
@@ -444,22 +442,20 @@ async fn async_main_loop() -> Result<()> {
                     ),
                 };
                 
-                let (_timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
+                let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
                 let (timeline_initial_items, mut room_subscriber) = timeline.subscribe_batched().await;
                 let tl_arc = Arc::new(timeline);
-                let tl_arc2 = Arc::clone(&tl_arc);
                 let room_id2 = room_id.clone();
-                let sender = _timeline_update_sender.clone();
+                let sender = timeline_update_sender.clone();
 
                 Handle::current().spawn(async move {
                     println!("Starting timeline subscriber for room {room_id2}...");
 
                     while let Some(batched_update) = room_subscriber.next().await {
-                        sender.send(batched_update)
+                        sender.send(TimelineUpdate::DiffBatch(batched_update))
                             .expect("Error: timeline update sender couldn't send batched update!");
 
                         // Send a Makepad-level signal to update this room's timeline UI view.
-                        // TODO: should we use an Action or Trigger instead? Signals are too simple for this purpose.
                         Signal::set_ui_signal();
                     }
 
@@ -474,7 +470,7 @@ async fn async_main_loop() -> Result<()> {
                         timeline: tl_arc,
                         pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
-                        _timeline_update_sender,
+                        timeline_update_sender,
                         timeline_initial_items,
                     },
                 );

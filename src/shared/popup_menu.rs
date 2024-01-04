@@ -220,7 +220,7 @@ impl Widget for PopupMenu {
 
 impl PopupMenu {
     pub fn menu_contains_pos(&self, cx: &mut Cx, pos: DVec2) -> bool {
-        self.draw_bg.area().get_clipped_rect(cx).contains(pos)
+        self.draw_bg.area().clipped_rect(cx).contains(pos)
     }
 
     pub fn begin(&mut self, cx: &mut Cx2d) {
@@ -234,9 +234,9 @@ impl PopupMenu {
 
     pub fn end(&mut self, cx: &mut Cx2d, shift_area: Area) {
         self.draw_bg.end(cx);
-        let area = self.draw_bg.area().get_rect(cx);
+        let area = self.draw_bg.area().rect(cx);
         let shift = DVec2 {
-            x: -area.size.x + (shift_area.get_rect(cx).size.x * 0.7),
+            x: -area.size.x + (shift_area.rect(cx).size.x * 0.7),
             y: 30.,
         };
 

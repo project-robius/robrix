@@ -113,6 +113,7 @@ impl Widget for StackNavigationView {
 
 impl StackNavigationViewRef {
     pub fn show(&mut self, cx: &mut Cx) {
+        println!("Showing StackNavigationView: {:?}", self.0);
         if let Some(mut inner) = self.borrow_mut() {
             inner.apply_over(cx, live! {visible: true});
             inner.animator_play(cx, id!(slide.show));
@@ -240,6 +241,7 @@ impl StackNavigationRef {
         for action in actions {
             let stack_view_action = action.as_widget_action().cast();
             if let Some(stack_view_id) = destinations.get(&stack_view_action) {
+                println!("Showing stack view action: {:?}, id: {:?}", stack_view_action, stack_view_id);
                 self.show_stack_view_by_id(*stack_view_id, cx);
                 break;
             }

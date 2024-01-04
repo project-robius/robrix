@@ -237,6 +237,7 @@ impl Widget for RoomsList {
                     .map(|(_, &room_index)| room_index)
                 {
                     let room_details = &self.all_rooms[room_index];
+                    println!("------------- User clicked room index {room_index}, {}, {} ------------------", room_details.room_id.clone().unwrap(), room_details.room_name.clone().unwrap());
                     cx.widget_action(
                         widget_uid,
                         &scope.path,
