@@ -156,9 +156,11 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 match status {
                                     Some(BackPaginationStatus::Idle) => {
                                         sender.send(TimelineUpdate::PaginationIdle).unwrap();
+                                        SignalToUI::set_ui_signal();
                                     }
                                     Some(BackPaginationStatus::TimelineStartReached) => {
                                         sender.send(TimelineUpdate::TimelineStartReached).unwrap();
+                                        SignalToUI::set_ui_signal();
                                         break;
                                     }
                                     _ => { }
