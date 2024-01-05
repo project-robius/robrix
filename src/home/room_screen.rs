@@ -574,8 +574,6 @@ impl Widget for Timeline {
         let last_item_id = self.items.len() as u64;
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
-        println!("Drawing timeline for room {:?} with {} items.", self.room_id, last_item_id - 1);
-        
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
@@ -926,7 +924,6 @@ fn populate_other_state_view(
             })
         }
         AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-            println!("Displaying: {} changed this room's name to {:?}", event_tl_item.sender(), content.name);
             Some(format!("changed this room's name to {:?}", content.name))
         }
         AnyOtherFullStateEventContent::RoomPowerLevels(_) => {

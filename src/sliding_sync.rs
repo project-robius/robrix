@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use makepad_widgets::Signal;
+use makepad_widgets::{Event::Signal, SignalToUI};
 use matrix_sdk::{
     Client,
     ruma::{
@@ -456,10 +456,10 @@ async fn async_main_loop() -> Result<()> {
                             .expect("Error: timeline update sender couldn't send batched update!");
 
                         // Send a Makepad-level signal to update this room's timeline UI view.
-                        Signal::set_ui_signal();
+                        SignalToUI::set_ui_signal();
                     }
 
-                    println!("Starting timeline subscriber for room {room_id2}...");
+                    eprintln!("Error: unexpectedly ended timeline subscriber for room {room_id2}...");
 
                 });
 
@@ -483,7 +483,7 @@ async fn async_main_loop() -> Result<()> {
                 }));
 
                 // now that we've updated the room list, signal the UI to refresh.
-                Signal::set_ui_signal();
+                SignalToUI::set_ui_signal();
             }
         }
 

@@ -18,8 +18,7 @@ cargo run -- "USERNAME" "PASSWORD" ["HOMESERVER_URL"]
 
 ## Feature status tracker 
 
-- [ ] Username/password login screen
-- [ ] SSO, other auth providers login screen
+
 - [x] View list of joined rooms
 - [x] View timeline of events in a single room
 - [ ] Stable positioning of events view during timeline update
@@ -37,10 +36,14 @@ cargo run -- "USERNAME" "PASSWORD" ["HOMESERVER_URL"]
 - [ ] Reaction button, send reactions
 - [ ] Reply button, send reply
 - [ ] Collapsible/expandable view of contiguous "small" events
-- [ ] Dedicated view of spaces
-- [ ] Dedicated view of direct messages (DMs)
+- [ ] Error display: no connection, failure to login, sync timeout.
 - [ ] Encrypted rooms, decrypting messages
 - [ ] Sending messages
+
+- [ ] Username/password login screen
+- [ ] SSO, other 3rd-party auth providers login screen
+- [ ] Dedicated view of spaces
+- [ ] Dedicated view of direct messages (DMs)
 
 - [ ] Search messages
 - [ ] Room browser / search
