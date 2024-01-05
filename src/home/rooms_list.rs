@@ -76,8 +76,9 @@ live_design! {
             }
 
             latest_message = <Label> {
-                width: Fit, height: Fit
+                width: Fill, height: Fit
                 draw_text:{
+                    wrap: Ellipsis,
                     text_style: <REGULAR_TEXT>{
                         font_size: 10.5
                     },

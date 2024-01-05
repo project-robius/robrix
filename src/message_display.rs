@@ -37,9 +37,9 @@ impl<'e> fmt::Display for EventTextPreview<'e> {
                 _ => Ok(()),
             },
             TimelineItemContent::RedactedMessage => f.write_str("[Message was redacted]"),
-            TimelineItemContent::MembershipChange(membership_change) => f.write_str("[Membership change]"),
-            TimelineItemContent::ProfileChange(profile_change) => f.write_str("[Profile change]"),
-            TimelineItemContent::OtherState(other) => f.write_str("[Other state]"),
+            TimelineItemContent::MembershipChange(_membership_change) => f.write_str("[Membership change]"),
+            TimelineItemContent::ProfileChange(_profile_change) => f.write_str("[Profile change]"),
+            TimelineItemContent::OtherState(_other) => f.write_str("[Other state]"),
             TimelineItemContent::Sticker(s) => write!(f, "{}: [Sticker: {}]", sender, s.content().body),
             TimelineItemContent::Poll(_p) => write!(f, "{}: [Poll]", sender),
             _unhandled => {

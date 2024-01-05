@@ -315,7 +315,7 @@ impl App {
     fn update_rooms_list_info(&mut self, actions: &Actions) {
         for action in actions {
             // Handle the user selecting a RoomPreview to view.
-            if let RoomListAction::Selected { room_index, room_id, room_name } = action.as_widget_action().cast() {
+            if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {
                 let stack_navigation = self.ui.stack_navigation(id!(navigation));
                 
                 // Update the title of the room screen
@@ -328,7 +328,7 @@ impl App {
                 let timeline_ref = stack_navigation
                     .view(id!(rooms_stack_view.room_screen))
                     .timeline(id!(timeline));
-                timeline_ref.set_room_info(room_index, room_id);
+                timeline_ref.set_room_info(room_id);
             }
         }
     }
