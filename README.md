@@ -3,6 +3,8 @@
 Robrix is a Matrix chat client written in Rust to demonstrate the functionality of the Robius, a framework for multi-platform application development in Rust.
 
 > ⚠️ Robrix is just getting started and is not yet fully functional.
+>
+> It is currently based on the [Makepad WeChat example](https://github.com/project-robius/makepad_wechat); only the first "Rooms" tab is in use.
 
 ## Building and Running
 
@@ -18,33 +20,35 @@ cargo run -- "USERNAME" "PASSWORD" ["HOMESERVER_URL"]
 
 ## Feature status tracker 
 
+These are generally sorted in order of priority. If you're interested in helping out with anything here, please reach out via a GitHub issue or on our Robius matrix channel.
 
+### Basic room views and fundamental actions
 - [x] View list of joined rooms
 - [x] View timeline of events in a single room
-- [ ] Stable positioning of events view during timeline update
 - [x] Fetch and display room avatars
-- [ ] Fetch and display user avatars
+- [ ] Fetch and display user avatars, displayable names
 - [x] Backwards pagination (upon viewing a room timeline)
 - [ ] Dynamic backwards pagination based on scroll position/movement
 - [ ] Loading animation while waiting for pagination request
+- [ ] Stable positioning of events view during timeline update
 - [x] Display of simple text-only messages
-- [ ] Rich formatting of messages
-- [ ] Displaying reactions (annotations)
+- [ ] Rich text formatting for message bodies
 - [ ] Display multimedia (non-text) message events
+- [ ] Display reactions (annotations)
 - [ ] Inline link previews
 - [ ] Inline reply view
-- [ ] Reaction button, send reactions
+- [ ] Interactive reaction button, send reactions
 - [ ] Reply button, send reply
+- [ ] Error display banners: no connection, failure to login, sync timeout.
 - [ ] Collapsible/expandable view of contiguous "small" events
-- [ ] Error display: no connection, failure to login, sync timeout.
 - [ ] Encrypted rooms, decrypting messages
 - [ ] Sending messages
 
+### Auxiliary/admin features: login, registration, settings
 - [ ] Username/password login screen
 - [ ] SSO, other 3rd-party auth providers login screen
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs)
-
 - [ ] Search messages
 - [ ] Room browser / search
 - [ ] Room creation

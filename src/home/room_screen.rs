@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::{HashMap, BTreeMap}};
+use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::BTreeMap};
 
 use eyeball_im::VectorDiff;
 use imbl::Vector;
@@ -34,9 +34,10 @@ use matrix_sdk_ui::timeline::{
     TimelineItemKind, TimelineItem,
 };
 
+use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
-    utils::unix_time_millis_to_datetime,
+    utils::unix_time_millis_to_datetime, shared::avatar::AvatarWidgetRefExt,
 };
 
 live_design! {
@@ -47,8 +48,10 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::search_bar::SearchBar;
+    import crate::shared::avatar::Avatar;
 
-    IMG_PROFILE_A = dep("crate://self/resources/profile_1.jpg")
+    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
+
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
     ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
@@ -197,21 +200,19 @@ live_design! {
                 height: Fit,
                 margin: {top: 7.5}
                 flow: Down,
-                profile_img = <Image> {
-                    source: (IMG_PROFILE_A)
-                    margin: 0,
+                avatar = <Avatar> {
                     width: 50.,
                     height: 50.
-                    draw_bg: {
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            let c = self.rect_size * 0.5;
-                            sdf.circle(c.x, c.y, c.x - 2.)
-                            sdf.fill_keep(self.get_color());
-                            sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                            return sdf.result
-                        }
-                    }
+                    // draw_bg: {
+                    //     fn pixel(self) -> vec4 {
+                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    //         let c = self.rect_size * 0.5;
+                    //         sdf.circle(c.x, c.y, c.x - 2.)
+                    //         sdf.fill_keep(self.get_color());
+                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
+                    //         return sdf.result
+                    //     }
+                    // }
                 }
                 timestamp = <Timestamp> { }
                 datestamp = <Timestamp> {
@@ -230,7 +231,7 @@ live_design! {
                         text_style: <TEXT_SUB> {},
                         color: (COLOR_META_TEXT)
                     }
-                    text: "<username>"
+                    text: "<unknown username>"
                 }
                 message = <Label> {
                     width: Fill,
@@ -287,9 +288,9 @@ live_design! {
             }
 
             profile_img = <Image> {
-                source: (IMG_PROFILE_A)
                 width: 19.0,
                 height: 19.0,
+                source: (IMG_DEFAULT_AVATAR),
                 draw_bg: {
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -370,7 +371,7 @@ live_design! {
             width: Fill
             flow: Down
     
-            // Below, we must place all of the possible views that can be used in the portal list.
+            // Below, we must place all of the possible templates (views) that can be used in the portal list.
             TopSpace = <TopSpace> {}
             Message = <Message> {}
             SmallStateEvent = <SmallStateEvent> {}
@@ -380,7 +381,6 @@ live_design! {
     }
 
 
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
@@ -448,6 +448,10 @@ pub enum TimelineUpdate {
     /// meaning that it has completed its recent pagination request(s) and is now waiting
     /// for more requests, but that the start of the timeline has not yet been reached.
     PaginationIdle,
+    /// A notice that the room's members have been fetched from the server,
+    /// though the success or failure of the request is not yet known until the client
+    /// requests the member info via a timeline event's `sender_profile()` method.
+    RoomMembersFetched,
 }
 
 
@@ -503,9 +507,9 @@ impl TimelineRef {
             timeline.room_id = Some(room_id.clone());
         }
             
-        let fully_paginated = match TIMELINE_STATES.lock().unwrap().entry(room_id.clone()) {
+        let (first_time_showing_room, fully_paginated) = match TIMELINE_STATES.lock().unwrap().entry(room_id.clone()) {
             std::collections::btree_map::Entry::Occupied(tl_state) => {
-                tl_state.get().fully_paginated
+                (false, tl_state.get().fully_paginated)
             }
             std::collections::btree_map::Entry::Vacant(entry) => {
                 if let Some((items, update_receiver)) = take_timeline_update_receiver(&room_id) {
@@ -516,19 +520,24 @@ impl TimelineRef {
                         update_receiver,
                     });
                 }
-                false
+                (true, false)
             }
         };
 
         // kick off a back pagination request for this room
         if !fully_paginated {
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                room_id,
+                room_id: room_id.clone(),
                 batch_size: 50,
                 max_events: 50,
             })
         } else {
             println!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
+        }
+
+        // if this is the first time showing this room, then kick off a request to fetch the room's members.
+        if first_time_showing_room {
+            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
         }
     }
 }
@@ -564,8 +573,14 @@ impl Widget for Timeline {
                         TimelineUpdate::PaginationIdle => {
                             done_loading = true;
                         }
+                        TimelineUpdate::RoomMembersFetched => {
+                            println!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
+                            // Here, to be most efficient, we could redraw only the user avatars in the timeline,
+                            // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                        }
                     }
                 }
+
                 if num_updates > 0 {
                     println!("Timeline::handle_event(): applied {num_updates} updates for room {}", tl.room_id);
                 }
@@ -703,12 +718,35 @@ fn populate_message_view(
     let item = list.item(cx, item_id, live_id!(Message)).unwrap();
     item.label(id!(content.message)).set_text(message.body());
 
+    let display_user_id = |user_id: &str| {
+        item.label(id!(content.username)).set_text(user_id);
+        item.avatar(id!(profile.avatar)).set_text(
+            user_id.graphemes(true).skip(1).next().map(ToString::to_string).unwrap_or_default()
+        );
+    };
+
     // Set sender to the display name if available, otherwise the user id.
-    let sender = match event_tl_item.sender_profile() {
-        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
-        _ => None,
-    }.unwrap_or_else(|| event_tl_item.sender().as_str());
-    item.label(id!(content.username)).set_text(sender);
+    match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => {
+            // Set the sender's avatar image (or a text character if no image is available).
+            if let Some(name) = &profile.display_name {
+                item.label(id!(content.username)).set_text(&name);
+                item.avatar(id!(profile.avatar)).set_text(
+                    name.graphemes(true).next().map(ToString::to_string).unwrap_or_default()
+                );
+            } else {
+                display_user_id(event_tl_item.sender().as_str());
+            }
+
+            if let Some(_url) = &profile.avatar_url {
+                // TODO: fetch avatar image based on URL
+            }
+        }
+        _other => {
+            // println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
+            display_user_id(event_tl_item.sender().as_str());
+        }
+    }
 
     // Set the timestamp.
     let ts_millis = event_tl_item.timestamp();

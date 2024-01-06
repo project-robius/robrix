@@ -3,6 +3,7 @@ use std::time::SystemTime;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
+use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
 use crate::shared::stack_view_action::StackViewAction;
 use crate::utils::unix_time_millis_to_datetime;
@@ -13,54 +14,18 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
 
-
     import crate::shared::search_bar::SearchBar;
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::stack_navigation::StackNavigation;
     import crate::shared::clickable_view::ClickableView;
-
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
+    import crate::shared::avatar::Avatar;
 
     RoomPreview = <ClickableView> {
         flow: Right, spacing: 10., padding: 10.
         width: Fill, height: Fit
 
-        // The avatar image for this room.
-        // By default, this is the first character of the room's name,
-        // but is replaced by the image once it is obtained from the server.
-        avatar = <View> {
-            width: 36., height: 36.
-            align: { x: 0.5, y: 0.5 }
-            flow: Overlay
-
-            text_view = <RoundedView> {
-                visible: true,
-                align: { x: 0.5, y: 0.5 }
-                draw_bg: {
-                    instance radius: 4.0,
-                    instance border_width: 1.0,
-                    // instance border_color: #ddd,
-                    color: #dfd
-                }
-                
-                text = <Label> {
-                    width: Fit, height: Fit
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 16. }
-                    }
-                    text: ""
-                }
-            }
-
-            img_view = <View> {
-                visible: false,
-                img = <Image> {
-                    width: Fill, height: Fill,
-                    source: (IMG_DEFAULT_AVATAR),
-                }
-            }
-        }
+        avatar = <Avatar> {}
 
         preview = <View> {
             width: Fill, height: Fit
@@ -335,14 +300,12 @@ impl Widget for RoomsList {
                     }
                     match room_info.avatar {
                         RoomPreviewAvatar::Text(ref text) => {
-                            item.view(id!(avatar.img_view)).set_visible(false);
-                            item.view(id!(avatar.text_view)).set_visible(true);
-                            item.label(id!(avatar.text_view.text)).set_text(text);
+                            item.avatar(id!(avatar)).set_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
-                            item.view(id!(avatar.img_view)).set_visible(true);
-                            item.view(id!(avatar.text_view)).set_visible(false);
-                            item.image(id!(avatar.img_view.img)).load_png_from_data(cx, img_bytes);
+                            item.avatar(id!(avatar)).set_image(
+                                |img| img.load_png_from_data(cx, img_bytes)
+                            );
 
                             // debugging: dump out the avatar image to disk
                             if false {
