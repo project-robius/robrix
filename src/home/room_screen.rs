@@ -743,7 +743,7 @@ fn populate_message_view(
             }
         }
         _other => {
-            println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
+            // println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
             display_user_id(event_tl_item.sender().as_str());
         }
     }
