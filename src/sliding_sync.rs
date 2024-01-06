@@ -2,7 +2,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use makepad_widgets::{Event::Signal, SignalToUI};
+use makepad_widgets::SignalToUI;
 use matrix_sdk::{
     Client,
     ruma::{
@@ -116,6 +116,9 @@ pub enum MatrixRequest {
         batch_size: u16,
         max_events: u16,
     },
+    FetchRoomMembers {
+        room_id: OwnedRoomId,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -139,7 +142,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        println!("BUG: room info not found for PaginationRequest {room_id}");
+                        println!("BUG: room info not found for pagination request {room_id}");
                         continue;
                     };
 
@@ -184,6 +187,27 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         Ok(_) => println!("Sent pagination request for room {room_id}"),
                         Err(e) => eprintln!("Error sending pagination request for room {room_id}: {e:?}"),
                     }
+                });
+            }
+
+            MatrixRequest::FetchRoomMembers { room_id } => {
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        println!("BUG: room info not found for fetch members request {room_id}");
+                        continue;
+                    };
+
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                // Spawn a new async task that will make the actual fetch request.
+                let _fetch_task = Handle::current().spawn(async move {
+                    println!("Sending fetch room members request for room {room_id}...");
+                    timeline.fetch_members().await;
+                    println!("Sent fetch room members request for room {room_id}");
+                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    SignalToUI::set_ui_signal();
                 });
             }
         }
@@ -324,35 +348,6 @@ async fn async_main_loop() -> Result<()> {
     //     ]);
     // sliding_sync.add_cached_list(active_room_list).await?;
 
-    /*
-     *
-    // subscribe to the list APIs for updates
-    let ((_, list_state_stream), list_count_stream, (_, list_stream)) = sliding_sync.on_list(&active_room_list_name, |list| {
-        std::future::ready((list.state_stream(), list.maximum_number_of_rooms_stream(), list.room_list_stream()))
-    }).await.unwrap();
-
-    tokio::spawn(async move {
-        pin_mut!(list_state_stream);
-        while let Some(new_state) = list_state_stream.next().await {
-            println!("### active-list switched state to {new_state:?}");
-        }
-    });
-
-    tokio::spawn(async move {
-        pin_mut!(list_count_stream);
-        while let Some(new_count) = list_count_stream.next().await {
-            println!("### active-list new count: {new_count:?}");
-        }
-    });
-
-    tokio::spawn(async move {
-        pin_mut!(list_stream);
-        while let Some(v_diff) = list_stream.next().await {
-            println!("### active-list room list diff update: {v_diff:?}");
-        }
-    });
-    *
-    */
 
     let stream = sliding_sync.sync();
 
