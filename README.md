@@ -15,7 +15,7 @@ cargo run -- "USERNAME" "PASSWORD" ["HOMESERVER_URL"]
 
 * Robrix only supports a standard username + password login currently.
     * If you created your Matrix account using a third-party Single Sign On (SSO) like a Google account, you can set a standard password by using [Element's password reset form](https://app.element.io/#/forgot_password).
-* The `HOMESERVER_URL` argument is optional and uses the `"https://matrix.org"` URL by default.
+* The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
 
 
 ## Feature status tracker 
