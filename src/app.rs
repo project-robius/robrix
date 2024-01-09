@@ -260,7 +260,6 @@ impl LiveHook for App {
         self.init_navigation_destinations();
 
         println!("after_new_from_doc(): starting matrix sdk loop");
-        // crate::matrix::start_matrix_tokio().unwrap();
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 }

@@ -78,7 +78,7 @@ live_design! {
             draw_text: {
                 text_style: <REGULAR_TEXT>{}
             }
-            text: "Found 0 joined rooms."
+            text: "Couldn't find any joined rooms."
         }
     }
 
@@ -120,6 +120,7 @@ pub enum RoomListUpdate {
         room_name: String,
     },
     RemoveRoom(OwnedRoomId),
+
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomListUpdate> = SegQueue::new();
@@ -272,7 +273,9 @@ impl Widget for RoomsList {
                 // Draw the rooms count as the bottom entry.
                 else if item_id == last_item_id {
                     let item = list.item(cx, item_id, live_id!(rooms_count)).unwrap();
-                    item.label(id!(label)).set_text(&format!("Found {count} joined rooms."));
+                    if count > 0 {
+                        item.label(id!(label)).set_text(&format!("Found {count} joined rooms."));
+                    }
                     item
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.

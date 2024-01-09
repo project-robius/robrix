@@ -10,6 +10,7 @@ use matrix_sdk::{
         OwnedRoomId,
         api::client::{
             media::get_content_thumbnail::v3::Method as ThumbnailMethod,
+            session::get_login_types::v3::LoginType,
             sync::sync_events::v4::{SyncRequestListFilters, self},
         },
         events::StateEventType,
@@ -74,29 +75,38 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     // See the `persist_session` example.
     let homeserver_url = cli.homeserver.as_ref()
         .map(|h| h.as_str())
-        .unwrap_or("https://matrix.org");
+        .unwrap_or("https://matrix-client.matrix.org/");
     let mut builder = Client::builder().homeserver_url(homeserver_url);
 
     if let Some(proxy) = cli.proxy {
         builder = builder.proxy(proxy);
     }
 
-    // Use a 10 second timeout for all requests to the homeserver.
+    // Use a 30 second timeout for all requests to the homeserver.
     builder = builder.request_config(
         RequestConfig::new()
-            .timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(30))
     );
 
     let client = builder.build().await?;
 
     let mut _token = None;
 
-    // If the `user_name` and `password` CLI arguments were provided, try to log in.
-    client
+    // Query the server for supported login types.
+    let login_kinds = client.matrix_auth().get_login_types().await?;
+    if !login_kinds.flows.iter().any(|flow| matches!(flow, LoginType::Password(_))) {
+        bail!("Server does not support username + password login flow.");
+    }
+
+    // Attempt to login using the CLI-provided username & password.
+    let login_result = client
         .matrix_auth()
         .login_username(&cli.user_name, &cli.password)
         .initial_device_display_name("robrix-un-pw")
+        .send()
         .await?;
+
+    println!("Login result: {login_result:?}");
 
     if !client.logged_in() {
         bail!("Failed to login with username and password");
@@ -135,7 +145,8 @@ pub fn submit_async_request(req: MatrixRequest) {
 /// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
 /// and then executes them within an async runtime context.
 async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<()> {
-    println!("async_worker task started, receiver {:?}", receiver);
+    println!("Started async_worker task.");
+    
     while let Some(request) = receiver.recv().await {
         match request {
             MatrixRequest::PaginateRoomTimeline { room_id, batch_size, max_events: _max_events } => {
@@ -214,8 +225,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
     }
 
     eprintln!("async_worker task ended unexpectedly");
-    panic!("async_worker task ended unexpectedly");
-    // bail!("async_worker task ended unexpectedly")
+    bail!("async_worker task ended unexpectedly")
 }
 
 
@@ -234,10 +244,55 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
-    let _worker = rt.spawn(async_worker(receiver));
+    
+    // Start a high-level async task that will start and monitor all other tasks.
+    let _monitor = rt.spawn(async move {
+        // Spawn the actual async worker thread.
+        let mut worker_join_handle = rt.spawn(async_worker(receiver));
 
-    // Start the main loop that drives the Matrix client SDK.
-    let _m = rt.spawn(async_main_loop());
+        // Start the main loop that drives the Matrix client SDK.
+        let mut main_loop_join_handle = rt.spawn(async_main_loop());
+
+        loop {
+            tokio::select! {
+                result = &mut main_loop_join_handle => {
+                    match result {
+                        Ok(Ok(())) => {
+                            eprintln!("BUG: main async loop task ended unexpectedly!");
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("Main async loop task ended with error:\n --> {e:?}");
+                            
+                            // TODO: send error to rooms_list so it can be displayed.
+                            
+                        },
+                        Err(e) => {
+                            eprintln!("BUG: failed to join main async loop task: {e:?}");
+                        }
+                    }
+                    break;
+                }
+                result = &mut worker_join_handle => {
+                    match result {
+                        Ok(Ok(())) => {
+                            eprintln!("BUG: async worker task ended unexpectedly!");
+                        }
+                        Ok(Err(e)) => {
+                            eprintln!("async worker task ended with error:\n --> {e:?}");
+                            
+                            // TODO: send a message to the UI layer so we can display a error dialog box or notification.
+
+                        },
+                        Err(e) => {
+                            eprintln!("BUG: failed to join async worker task: {e:?}");
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    });
+
     Ok(())
 }
 
