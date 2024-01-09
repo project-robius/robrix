@@ -10,10 +10,11 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 
 [Install Rust](https://www.rust-lang.org/tools/install), and then simply run:
 ```sh
-cargo run -- "USERNAME" "PASSWORD" ["HOMESERVER_URL"]
+cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
 ```
 
 * Robrix only supports a standard username + password login currently.
+    * Note the usage of **single quotes** (not double quotes), which will prevent your shell from treating certain symbols as globs/regex patterns.
     * If you created your Matrix account using a third-party Single Sign On (SSO) like a Google account, you can set a standard password by using [Element's password reset form](https://app.element.io/#/forgot_password).
 * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
 
@@ -26,7 +27,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] View list of joined rooms
 - [x] View timeline of events in a single room
 - [x] Fetch and display room avatars
-- [ ] Fetch and display user avatars, displayable names
+- [x] Fetch user profiles (displayable names)
+- [ ] Fetch and display user profile avatars
 - [x] Backwards pagination (upon viewing a room timeline)
 - [ ] Dynamic backwards pagination based on scroll position/movement
 - [ ] Loading animation while waiting for pagination request
