@@ -13,14 +13,14 @@ use matrix_sdk::{
             session::get_login_types::v3::LoginType,
             sync::sync_events::v4::{SyncRequestListFilters, self},
         },
-        events::StateEventType,
+        events::{StateEventType, FullStateEventContent}, MilliSecondsSinceUnixEpoch, UInt,
     },
     SlidingSyncList,
     SlidingSyncMode,
     config::RequestConfig,
-    media::{MediaFormat, MediaThumbnailSize},
+    media::{MediaFormat, MediaThumbnailSize}, Room,
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, BackPaginationStatus}, Timeline};
+use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, BackPaginationStatus, TimelineItemContent, AnyOtherFullStateEventContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
@@ -299,7 +299,11 @@ pub fn start_matrix_tokio() -> Result<()> {
 
 /// Info about a room that our client currently knows about.
 struct RoomInfo {
+    #[allow(unused)]
     room_id: OwnedRoomId,
+    /// The timestamp of the latest event that we've seen for this room.
+    latest_event_timestamp: MilliSecondsSinceUnixEpoch,
+    /// A reference to this room's timeline of events.
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
@@ -364,7 +368,8 @@ async fn async_main_loop() -> Result<()> {
         .filters(Some(filter))
         .required_state(vec![ // we want to know immediately:
             (StateEventType::RoomEncryption, "".to_owned()), // is it encrypted
-            (StateEventType::RoomTopic, "".to_owned()),      // any topic if known
+            (StateEventType::RoomTopic,  "".to_owned()),     // any topic if known
+            (StateEventType::RoomName,   "".to_owned()),     // the room's displayable name
             (StateEventType::RoomAvatar, "".to_owned()),     // avatar if set
             (StateEventType::RoomCreate, "".to_owned()),     // room creation type
         ]);
@@ -473,26 +478,62 @@ async fn async_main_loop() -> Result<()> {
                 continue
             };
             
-            let room_exists = {
-                if let Some(_existing) = ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id) {
-                    true
-                } else {
-                    false
+            let room_name = ssroom.name();
+            let latest_tl = timeline.latest_event().await;
+
+            let mut room_exists = false;
+            let mut room_name_changed = None;
+            let mut latest_event_changed = None;
+            let mut room_avatar_changed = false;
+
+            if let Some(existing) = ALL_ROOM_INFO.lock().unwrap().get_mut(&room_id) {
+                room_exists = true;
+
+                // Obtain the details of any changes to this room based on this its latest timeline event.
+                if let Some(event_tl_item) = &latest_tl {
+                    let timestamp = event_tl_item.timestamp();
+                    if timestamp > existing.latest_event_timestamp {
+                        existing.latest_event_timestamp = timestamp;
+                        latest_event_changed = Some((timestamp, event_tl_item.text_preview().to_string()));
+
+                        match event_tl_item.content() {
+                            TimelineItemContent::OtherState(other) => match other.content() {
+                                AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+                                    room_name_changed = Some(content.name.clone());
+                                }
+                                AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
+                                    room_avatar_changed = true; // we'll fetch the avatar later.
+                                }
+                                _ => { }
+                            }
+                            _ => { }
+                        }
+                    }
                 }
-            };
+            }
+
+            // Send an update to the rooms_list if the latest event for this room has changed.
+            if let Some((timestamp, latest_message_text)) = latest_event_changed {
+                rooms_list::enqueue_rooms_list_update(RoomListUpdate::UpdateLatestEvent {
+                    room_id: room_id.clone(),
+                    timestamp,
+                    latest_message_text,
+                });
+            }
+
+            // Send an update to the rooms_list if the room name has changed.
+            if let Some(room_name) = room_name_changed {
+                rooms_list::enqueue_rooms_list_update(RoomListUpdate::UpdateRoomName {
+                    room_id: room_id.clone(),
+                    room_name,
+                });
+            }
+
             
+            // Handle an entirely new room that we haven't seen before.
             if !room_exists {
-                let room_name = ssroom.name();
-                let latest_tl = timeline.latest_event().await;
-                
-                let avatar = match room.avatar(media_thumbnail_format()).await {
-                    Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
-                    _ => RoomPreviewAvatar::Text(
-                        room_name.as_ref()
-                            .and_then(|name| name.graphemes(true).next().map(ToString::to_string))
-                            .unwrap_or_default()
-                    ),
-                };
+                // Indicate that we'll fetch the avatar for this new room later.
+                room_avatar_changed = true;
                 
                 let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
                 let (timeline_initial_items, mut room_subscriber) = timeline.subscribe_batched().await;
@@ -514,11 +555,21 @@ async fn async_main_loop() -> Result<()> {
                     eprintln!("Error: unexpectedly ended timeline subscriber for room {room_id2}...");
 
                 });
+                
+                rooms_list::enqueue_rooms_list_update(RoomListUpdate::AddRoom(RoomPreviewEntry {
+                    room_id: Some(room_id.clone()),
+                    latest: latest_tl.as_ref().map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
+                    avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+                    room_name: room_name.clone(),
+                }));
 
                 ALL_ROOM_INFO.lock().unwrap().insert(
                     room_id.clone(),
                     RoomInfo {
                         room_id: room_id.clone(),
+                        latest_event_timestamp: latest_tl.as_ref()
+                            .map(|ev| ev.timestamp())
+                            .unwrap_or(MilliSecondsSinceUnixEpoch(UInt::MIN)),
                         timeline: tl_arc,
                         pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
@@ -526,16 +577,20 @@ async fn async_main_loop() -> Result<()> {
                         timeline_initial_items,
                     },
                 );
+            }
 
-                rooms_list::update_rooms_list(RoomListUpdate::AddRoom(RoomPreviewEntry {
-                    room_id: Some(room_id.clone()),
-                    latest: latest_tl.map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
-                    avatar,
-                    room_name,
-                }));
-
-                // now that we've updated the room list, signal the UI to refresh.
-                SignalToUI::set_ui_signal();
+            // Send an update to the rooms_list if the room avatar has changed,
+            // which is done within an async task because we need to fetch the avatar from the server.
+            // This must be done here because we can't hold the lock on ALL_ROOM_INFO across an `.await` call,
+            // and we can't send an `UpdateRoomAvatar` update until after the `AddRoom` update has been sent.
+            if room_avatar_changed {
+                Handle::current().spawn(async move {
+                    let avatar = room_avatar(&room, &room_name).await;
+                    rooms_list::enqueue_rooms_list_update(RoomListUpdate::UpdateRoomAvatar {
+                        room_id,
+                        avatar,
+                    });
+                });
             }
         }
 
@@ -547,3 +602,24 @@ async fn async_main_loop() -> Result<()> {
     bail!("unexpected return from async_main_loop!")
 }
 
+
+
+/// Fetches and returns the avatar image for the given room (if one exists),
+/// otherwise returns a text avatar string of the first character of the room name.
+async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
+    match room.avatar(media_thumbnail_format()).await {
+        Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+        _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+    }
+}
+
+/// Returns a text avatar string containing the first character of the room name.
+fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
+    RoomPreviewAvatar::Text(
+        room_name
+            .graphemes(true)
+            .next()
+            .map(ToString::to_string)
+            .unwrap_or_default()
+    )
+}

@@ -4,7 +4,7 @@ mod contacts;
 mod discover;
 mod home;
 mod profile;
-mod shared;
+pub mod shared;
 
 // Matrix stuff
 pub mod sliding_sync;
