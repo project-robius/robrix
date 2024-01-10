@@ -535,8 +535,10 @@ impl TimelineRef {
             println!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
         }
 
-        // if this is the first time showing this room, then kick off a request to fetch the room's members.
-        if first_time_showing_room {
+        // Note: this isn't required any more because we now specify that room member profiles
+        //       (of any users that sent messages in the room) should be lazy-loaded ("$LAZY" required state)
+        //       by the initial sliding sync request.
+        if false && first_time_showing_room {
             submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
         }
     }
