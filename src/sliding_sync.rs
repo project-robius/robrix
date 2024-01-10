@@ -126,6 +126,8 @@ pub enum MatrixRequest {
         batch_size: u16,
         max_events: u16,
     },
+    /// Request to fetch profile information for all members of a room.
+    /// This can be *very* slow depending on the number of members in the room.
     FetchRoomMembers {
         room_id: OwnedRoomId,
     },
@@ -367,11 +369,12 @@ async fn async_main_loop() -> Result<()> {
         .timeline_limit(20)
         .filters(Some(filter))
         .required_state(vec![ // we want to know immediately:
-            (StateEventType::RoomEncryption, "".to_owned()), // is it encrypted
-            (StateEventType::RoomTopic,  "".to_owned()),     // any topic if known
-            (StateEventType::RoomName,   "".to_owned()),     // the room's displayable name
-            (StateEventType::RoomAvatar, "".to_owned()),     // avatar if set
-            (StateEventType::RoomCreate, "".to_owned()),     // room creation type
+            (StateEventType::RoomEncryption, "".to_owned()),  // is it encrypted
+            (StateEventType::RoomMember, "$LAZY".to_owned()), // lazily fetch room member profiles for users that have sent events
+            (StateEventType::RoomCreate, "".to_owned()),      // room creation type
+            (StateEventType::RoomName,   "".to_owned()),      // the room's displayable name
+            (StateEventType::RoomTopic,  "".to_owned()),      // any topic if known
+            (StateEventType::RoomAvatar, "".to_owned()),      // avatar if set
         ]);
 
     // Now that we're logged in, try to connect to the sliding sync proxy.
@@ -410,7 +413,6 @@ async fn async_main_loop() -> Result<()> {
 
 
     let stream = sliding_sync.sync();
-
     pin_mut!(stream);
 
     loop {
