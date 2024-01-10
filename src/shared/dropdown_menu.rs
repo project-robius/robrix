@@ -40,7 +40,7 @@ live_design! {
                     self.pressed
                 )
             }
-         }
+        }
 
         icon_walk: { width: 20., height: Fit}
 
