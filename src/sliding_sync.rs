@@ -371,6 +371,7 @@ async fn async_main_loop() -> Result<()> {
         .required_state(vec![ // we want to know immediately:
             (StateEventType::RoomEncryption, "".to_owned()),  // is it encrypted
             (StateEventType::RoomMember, "$LAZY".to_owned()), // lazily fetch room member profiles for users that have sent events
+            // (StateEventType::RoomMember, "$ME".to_owned()),   // fetch profile for "me", the currently logged-in user (optiona, not yet needed)
             (StateEventType::RoomCreate, "".to_owned()),      // room creation type
             (StateEventType::RoomName,   "".to_owned()),      // the room's displayable name
             (StateEventType::RoomTopic,  "".to_owned()),      // any topic if known
