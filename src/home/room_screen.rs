@@ -82,6 +82,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_DIVIDER = #x00000018
     COLOR_DIVIDER_DARK = #x00000044
+    COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
     COLOR_P = #x999
     
@@ -350,6 +351,37 @@ live_design! {
         }
     }
 
+    // The view used for the divider indicating where the user's last-viewed message is.
+    ReadMarker = <View> {
+        width: Fill,
+        height: Fit,
+        margin: 0.0,
+        flow: Right,
+        padding: 0.0,
+        spacing: 0.0,
+        align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+        left_line = <LineH> {
+            margin: {top: 10.0, bottom: 10.0}
+            draw_bg: {color: (COLOR_READ_MARKER)}
+        }
+
+        date = <Label> {
+            padding: {left: 7.0, right: 7.0}
+            margin: {bottom: 10.0, top: 10.0}
+            draw_text: {
+                text_style: <TEXT_SUB> {},
+                color: (COLOR_READ_MARKER)
+            }
+            text: "New Messages"
+        }
+
+        right_line = <LineH> {
+            margin: {top: 10.0, bottom: 10.0}
+            draw_bg: {color: (COLOR_READ_MARKER)}
+        }
+    }
+
     // The top space is used to display a loading animation while the room is being paginated.
     TopSpace = <View> {
         width: Fill,
@@ -377,6 +409,7 @@ live_design! {
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
+            ReadMarker = <ReadMarker> {}
         }    
     }
 
@@ -690,10 +723,7 @@ impl Widget for Timeline {
                             item
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            // reuse the DayDivider view for user read markers.
-                            let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
-                            item.label(id!(date)).set_text(&format!("Read marker, {}", timeline_item.unique_id()));
-                            item
+                            list.item(cx, item_id, live_id!(ReadMarker)).unwrap()
                         }
                     }
                 };
