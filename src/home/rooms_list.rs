@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::SystemTime;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
@@ -108,26 +107,42 @@ live_design! {
 }
 
 
+/// The possible updates to the list of all rooms.
+///
+/// These updates are enqueued by the `enqueue_rooms_list_update` function
+/// (which is called from background async tasks that receive updates from the matrix server),
+/// and then dequeued by the `RoomsList` widget's `handle_event` function.
 pub enum RoomListUpdate {
+    /// Add a new room to the list of all rooms.
     AddRoom(RoomPreviewEntry),
-    UpdateRoomMessage {
+    /// Update the latest event content and timestamp for the given room.
+    UpdateLatestEvent {
         room_id: OwnedRoomId,
         timestamp: MilliSecondsSinceUnixEpoch,
-        latext_message_text: String,
+        latest_message_text: String,
     },
+    /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
         room_name: String,
     },
+    /// Update the avatar (image) for the given room.
+    UpdateRoomAvatar {
+        room_id: OwnedRoomId,
+        avatar: RoomPreviewAvatar,
+    },
+    /// Remove the given room from the list of all rooms.
+    #[allow(unused)]
     RemoveRoom(OwnedRoomId),
-
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomListUpdate> = SegQueue::new();
 
-/// Enqueue a new room update for the list of all rooms.
-pub fn update_rooms_list(update: RoomListUpdate) {
+/// Enqueue a new room update for the list of all rooms
+/// and signals the UI that a new update is available to be handled.
+pub fn enqueue_rooms_list_update(update: RoomListUpdate) {
     PENDING_ROOM_UPDATES.push(update);
+    SignalToUI::set_ui_signal();
 }
 
 pub type RoomIndex = usize;
@@ -152,8 +167,8 @@ pub struct RoomPreviewEntry {
     pub room_name: Option<String>,
     /// The timestamp and text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
-    /// The avatar for this room, which is either array of bytes holding the avatar image
-    /// or a string holding the first character of the room name.
+    /// The avatar for this room: either an array of bytes holding the avatar image
+    /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
 
 }
@@ -189,7 +204,48 @@ impl Widget for RoomsList {
         // Currently, a Signal event is only used to tell this widget
         // that the rooms list has been updated in the background.
         if let Event::Signal = event {
-            self.redraw(cx);
+            // Process all pending updates to the list of all rooms, and then redraw it.
+            let mut num_updates: usize = 0;
+            while let Some(update) = PENDING_ROOM_UPDATES.pop() {
+                num_updates += 1;
+                match update {
+                    RoomListUpdate::AddRoom(room) => {
+                        self.all_rooms.push(room);
+                    }
+                    RoomListUpdate::UpdateRoomAvatar { room_id, avatar } => {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                            room.avatar = avatar;
+                        } else {
+                            eprintln!("Error: couldn't find room {room_id} to update avatar");
+                        }
+                    }
+                    RoomListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                            room.latest = Some((timestamp, latest_message_text));
+                        } else {
+                            eprintln!("Error: couldn't find room {room_id} to update latest event");
+                        }
+                    }
+                    RoomListUpdate::UpdateRoomName { room_id, room_name } => {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                            room.room_name = Some(room_name);
+                        } else {
+                            eprintln!("Error: couldn't find room {room_id} to update room name");
+                        }
+                    }
+                    RoomListUpdate::RemoveRoom(room_id) => {
+                        if let Some(idx) = self.all_rooms.iter().position(|r| r.room_id.as_ref() == Some(&room_id)) {
+                            self.all_rooms.remove(idx);
+                        } else {
+                            eprintln!("Error: couldn't find room {room_id} to remove room");
+                        }
+                    }
+                }
+            }
+            if num_updates > 0 {
+                println!("RoomsList: processed {} updates to the list of all rooms", num_updates);
+                self.redraw(cx);
+            }
         }
 
         // Now, handle any actions on this widget, e.g., a user selecting a room.
@@ -226,30 +282,6 @@ impl Widget for RoomsList {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-
-        // process the list of pending updates to the room list before we display the list.
-        while let Some(update) = PENDING_ROOM_UPDATES.pop() {
-            match update {
-                RoomListUpdate::AddRoom(room) => {
-                    self.all_rooms.push(room);
-                }
-                RoomListUpdate::RemoveRoom(room_id) => {
-                    if let Some(idx) = self.all_rooms.iter().position(|r| r.room_id.as_ref() == Some(&room_id)) {
-                        self.all_rooms.remove(idx);
-                    }
-                }
-                RoomListUpdate::UpdateRoomMessage { room_id, timestamp, latext_message_text } => {
-                    if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
-                        room.latest = Some((timestamp, latext_message_text));
-                    }
-                }
-                RoomListUpdate::UpdateRoomName { room_id, room_name } => {
-                    if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
-                        room.room_name = Some(room_name);
-                    }
-                }
-            }
-        }
 
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
@@ -309,20 +341,6 @@ impl Widget for RoomsList {
                             item.avatar(id!(avatar)).set_image(
                                 |img| img.load_png_from_data(cx, img_bytes)
                             );
-
-                            // debugging: dump out the avatar image to disk
-                            if false {
-                                let mut path = crate::temp_storage::get_temp_dir_path().clone();
-                                let filename = format!("{}_{}",
-                                    SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
-                                    room_info.room_name.as_ref().unwrap(),
-                                );
-                                path.push(filename);
-                                path.set_extension("png");
-                                println!("Writing avatar image to disk: {:?}", path);
-                                std::fs::write(path, img_bytes)
-                                    .expect("Failed to write avatar image to disk");
-                            }
                         }
                     }
 
