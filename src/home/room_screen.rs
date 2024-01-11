@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::BTreeMap};
+use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::{BTreeMap, HashMap}};
 
 use eyeball_im::VectorDiff;
 use imbl::Vector;
@@ -392,6 +392,7 @@ live_design! {
         }
     }
 
+    // A view that holds the list of all timeline events for a single room.
     Timeline = {{Timeline}} {
         width: Fill,
         height: Fill,
@@ -414,10 +415,26 @@ live_design! {
     }
 
 
+    // A widget that holds a list of several timelines and displays only the selected "active" one.
+    TimelineList = {{TimelineList}} {
+        width: Fill, height: Fill,
+        flow: Overlay
+
+        // Below, we must place all of the possible widget templates that can be used in timeline list,
+        // which currently is only a Timeline.
+        //
+        // Note: I'm sure there's a better way to do this, but I don't know how to get a LivePtr
+        //       for a Timeline widget specifically without using the template pattern (like in PortalList).
+        Timeline = <Timeline> {}
+    }
+
+
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
 
+    // The view that holds the entire screen (beneath the stack navigation header),
+    // including the timeline of events and the message input bar at the bottom.
     RoomScreen = <KeyboardView> {
         width: Fill, height: Fill
         flow: Down
@@ -427,7 +444,7 @@ live_design! {
         }
 
         // First, display the timeline of all messages/events.
-        timeline = <Timeline> {}
+        timeline_list = <TimelineList> {}
         
         // Below that, display a view that holds the message input bar.
         <View> {
@@ -467,6 +484,158 @@ live_design! {
         }
     }
 }
+
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+
+
+
+#[derive(Live, LiveRegisterWidget, WidgetRef)]
+pub struct TimelineList {
+    #[deref]
+    view: View,
+
+    #[rust]
+    active: Option<WidgetRef>,
+
+    #[rust]
+    templates: ComponentMap<LiveId, LivePtr>,
+
+    #[rust]
+    all_widgets: HashMap<OwnedRoomId, (LiveId, WidgetRef)>,
+}
+
+// This implementation block is based on the PortalList implementation.
+impl LiveHook for TimelineList {
+    fn before_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
+        if let ApplyFrom::UpdateFromDoc {..} = apply.from {
+            self.templates.clear();
+        }
+    }
+    
+    // hook the apply flow to collect our templates and apply to instanced childnodes
+    fn apply_value_instance(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) -> usize {
+        let id = nodes[index].id;
+        match apply.from {
+            ApplyFrom::NewFromDoc {file_id} | ApplyFrom::UpdateFromDoc {file_id} => {
+                if nodes[index].origin.has_prop_type(LivePropType::Instance) {
+                    let live_ptr = cx.live_registry.borrow().file_id_index_to_live_ptr(file_id, index);
+                    self.templates.insert(id, live_ptr);
+                    // Apply the new apply this thing over all our childnodes with that template
+                    for (templ_id, node) in self.all_widgets.values_mut() {
+                        if *templ_id == id {
+                            node.apply(cx, apply, index, nodes);
+                        }
+                    }
+                }
+                else {
+                    cx.apply_error_no_matching_field(live_error_origin!(), index, nodes);
+                }
+            }
+            _ => ()
+        }
+        nodes.skip_node(index)
+    }
+}
+
+impl Widget for TimelineList {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Some(active) = self.active.as_ref() {
+            active.handle_event(cx, event, scope);
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep  {
+        if let Some(active) = self.active.as_ref() {
+            active.draw_walk(cx, scope, walk)?;
+        }
+        DrawStep::done()
+    }
+}
+
+impl WidgetNode for TimelineList {
+    fn walk(&mut self, cx:&mut Cx) -> Walk {
+        self.view.walk(cx)
+    }
+
+    fn redraw(&mut self, cx: &mut Cx) {
+        if let Some(active) = self.active.as_ref() {
+            active.redraw(cx);
+        }
+    }
+    
+    fn find_widgets(&mut self, path: &[LiveId], cached: WidgetCache, results: &mut WidgetSet) {
+        self.view.find_widgets(path, cached, results);
+    }
+}
+
+impl TimelineList {
+    /// Sets the active timeline being displayed to the one with the given `room_id`.
+    pub fn set_active(&mut self, room_id: &OwnedRoomId, cx: &mut Cx) {
+        if let Some((_, widget_ref)) = self.all_widgets.get(room_id) {
+            self.active = Some(widget_ref.clone());
+            self.redraw(cx);
+        }
+    }
+
+    pub fn get_or_insert_timeline(&mut self, cx: &mut Cx, room_id: OwnedRoomId, template: LiveId) -> Option<WidgetRef> {
+        if let Some(ptr) = self.templates.get(&template) {
+            let entry = match self.all_widgets.entry(room_id) {
+                std::collections::hash_map::Entry::Occupied(existing) => existing.into_mut(),
+                std::collections::hash_map::Entry::Vacant(vacant) => vacant.insert(
+                    //
+                    // TODO: Here use new_from_ptr_with_scope() instead of new_from_ptr()
+                    //
+                    (template, WidgetRef::new_from_ptr(cx, Some(*ptr)))
+                ),
+            };
+            return Some(entry.1.clone())
+        }
+        None
+    }
+
+    pub fn get_timeline(&self, room_id: &OwnedRoomId) -> Option<WidgetRef> {
+        self.all_widgets.get(room_id).map(|(_, widget_ref)| widget_ref.clone())
+    }
+
+    pub fn remove_timeline(&mut self, room_id: &OwnedRoomId) -> Option<(LiveId, WidgetRef)> {
+        self.all_widgets.remove(room_id)
+    }
+}
+
+
+impl TimelineListRef {
+    /// Sets the active timeline being displayed to the one with the given `room_id`.
+    pub fn set_active(&self, room_id: &OwnedRoomId, cx: &mut Cx) {
+        self.borrow_mut().map(|mut inner|
+            inner.set_active(room_id, cx)
+        );
+    }
+
+    pub fn get_or_insert_timeline(&self, cx: &mut Cx, room_id: OwnedRoomId, template: LiveId) -> Option<WidgetRef> {
+        self.borrow_mut().and_then(|mut inner|
+            inner.get_or_insert_timeline(cx, room_id, template)
+        )
+    }
+
+    pub fn get_timeline(&self, room_id: &OwnedRoomId) -> Option<WidgetRef> {
+        self.borrow().and_then(|inner|
+            inner.get_timeline(room_id)
+        )
+    }
+
+    pub fn remove_timeline(&self, room_id: &OwnedRoomId) -> Option<(LiveId, WidgetRef)> {
+        self.borrow_mut().and_then(|mut inner|
+            inner.remove_timeline(room_id)
+        )
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
 
 
 /// A message that is sent from a background async task to a room's timeline view
