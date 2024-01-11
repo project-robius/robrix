@@ -284,7 +284,7 @@ impl MatchEvent for App {
             ),
         );
 
-        self.update_rooms_list_info(&actions);
+        self.handle_rooms_list_action(cx, &actions);
 
         let mut navigation = self.ui.stack_navigation(id!(navigation));
         navigation.handle_stack_view_actions(
@@ -312,23 +312,39 @@ impl App {
         self.navigation_destinations.insert(StackViewAction::ShowRoom, live_id!(rooms_stack_view));
     }
 
-    fn update_rooms_list_info(&mut self, actions: &Actions) {
+    fn handle_rooms_list_action(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
-            // Handle the user selecting a RoomPreview to view.
+            // Handle the user selecting a room to view (a RoomPreview in the RoomsList).
             if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {
                 let stack_navigation = self.ui.stack_navigation(id!(navigation));
                 
-                // Update the title of the room screen
+                // Set the title of the RoomScreen's header to the room name.
                 stack_navigation.set_title(
                     live_id!(rooms_stack_view),
-                    room_name.unwrap_or_else(|| format!("Room {}", room_id)),
+                    room_name.unwrap_or_else(|| format!("Room {}", &room_id)),
                 );
 
+                // Get or insert a new Timeline into the RoomScreen's TimelineList,
+                // and then mark it as active in order to display it.
+                let timeline_list = stack_navigation
+                    .view(id!(rooms_stack_view.room_screen))
+                    .timeline_list(id!(timeline_list));
+
+                println!("TimelineList: {:?}", timeline_list);
+                println!("TimelineList active: {:?}, templates: {:?}", timeline_list.get_active(), timeline_list.get_templates());
+                
+                let timeline = timeline_list.get_or_insert_timeline(cx, room_id, live_id!(Timeline)).unwrap();
+                timeline_list.set_active(cx, timeline.into());
+
+                /*
+                 *
                 // Get a reference to the Timeline within the new RoomScreen to be displayed.
                 let timeline_ref = stack_navigation
                     .view(id!(rooms_stack_view.room_screen))
                     .timeline(id!(timeline));
                 timeline_ref.set_room_info(room_id);
+                 *
+                 */
             }
         }
     }

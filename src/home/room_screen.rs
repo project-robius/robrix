@@ -517,11 +517,13 @@ impl LiveHook for TimelineList {
     
     // hook the apply flow to collect our templates and apply to instanced childnodes
     fn apply_value_instance(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) -> usize {
+        println!("TimelineList::apply_value_instance(): apply.from: {:?}, index: {index}, nodes: {:?}", apply.from, nodes);
         let id = nodes[index].id;
         match apply.from {
             ApplyFrom::NewFromDoc {file_id} | ApplyFrom::UpdateFromDoc {file_id} => {
                 if nodes[index].origin.has_prop_type(LivePropType::Instance) {
                     let live_ptr = cx.live_registry.borrow().file_id_index_to_live_ptr(file_id, index);
+                    println!("TimelineList::apply_value_instance(): inserting template with id {:?} and live_ptr {:?}", id, live_ptr);
                     self.templates.insert(id, live_ptr);
                     // Apply the new apply this thing over all our childnodes with that template
                     for (templ_id, node) in self.all_widgets.values_mut() {
@@ -571,28 +573,69 @@ impl WidgetNode for TimelineList {
     }
 }
 
+/// The argument passed into the [`TimelineList::set_active()`] method.
+pub enum RoomIdOrTimeline {
+    RoomId(OwnedRoomId),
+    Timeline(WidgetRef),
+}
+impl From<OwnedRoomId> for RoomIdOrTimeline {
+    fn from(room_id: OwnedRoomId) -> Self {
+        RoomIdOrTimeline::RoomId(room_id)
+    }
+}
+impl From<WidgetRef> for RoomIdOrTimeline {
+    fn from(widget_ref: WidgetRef) -> Self {
+        RoomIdOrTimeline::Timeline(widget_ref)
+    }
+}
+
 impl TimelineList {
-    /// Sets the active timeline being displayed to the one with the given `room_id`.
-    pub fn set_active(&mut self, room_id: &OwnedRoomId, cx: &mut Cx) {
-        if let Some((_, widget_ref)) = self.all_widgets.get(room_id) {
-            self.active = Some(widget_ref.clone());
-            self.redraw(cx);
+    /// Sets the active timeline (by room ID or timeline widget) to be displayed.
+    pub fn set_active(&mut self, cx: &mut Cx, to_display: RoomIdOrTimeline) {
+        match to_display {
+            RoomIdOrTimeline::RoomId(room_id) => {
+                if let Some((_, widget_ref)) = self.all_widgets.get(&room_id) {
+                    self.active = Some(widget_ref.clone());
+                    self.redraw(cx);
+                }
+            }
+            RoomIdOrTimeline::Timeline(widget_ref) => {
+                self.active = Some(widget_ref);
+                self.redraw(cx);
+            }
         }
     }
 
     pub fn get_or_insert_timeline(&mut self, cx: &mut Cx, room_id: OwnedRoomId, template: LiveId) -> Option<WidgetRef> {
+        println!("TimelineList has {} templates:", self.templates.len());
+        self.templates.iter().for_each(|t| println!("\tTemplate: {t:?}"));
         if let Some(ptr) = self.templates.get(&template) {
-            let entry = match self.all_widgets.entry(room_id) {
+            println!("Got timeline template for room {room_id} with id {:?}", template);
+            let entry = match self.all_widgets.entry(room_id.clone()) {
                 std::collections::hash_map::Entry::Occupied(existing) => existing.into_mut(),
-                std::collections::hash_map::Entry::Vacant(vacant) => vacant.insert(
-                    //
-                    // TODO: Here use new_from_ptr_with_scope() instead of new_from_ptr()
-                    //
-                    (template, WidgetRef::new_from_ptr(cx, Some(*ptr)))
-                ),
+                std::collections::hash_map::Entry::Vacant(vacant) => {
+                    let mut timeline_state = take_timeline_update_receiver(&room_id)
+                    .map(|(items, update_receiver)| TimelineState {
+                        room_id: room_id.clone(),
+                        fully_paginated: false,
+                        items,
+                        update_receiver,
+                    });
+                    println!("Vacant entry for timeline room {room_id} with {timeline_state:?}");
+                    let mut scope = Scope::with_data(&mut timeline_state);
+                    vacant.insert((
+                        template,
+                        WidgetRef::new_from_ptr_with_scope(
+                            cx,
+                            &mut scope,
+                            Some(*ptr),
+                        )
+                    ))
+                }
             };
             return Some(entry.1.clone())
         }
+        println!("Failed to get timeline template for room {room_id} with id {:?}", template);
         None
     }
 
@@ -607,10 +650,10 @@ impl TimelineList {
 
 
 impl TimelineListRef {
-    /// Sets the active timeline being displayed to the one with the given `room_id`.
-    pub fn set_active(&self, room_id: &OwnedRoomId, cx: &mut Cx) {
+    /// Sets the active timeline (by room ID or timeline widget) to be displayed.
+    pub fn set_active(&self, cx: &mut Cx, to_display: RoomIdOrTimeline) {
         self.borrow_mut().map(|mut inner|
-            inner.set_active(room_id, cx)
+            inner.set_active(cx, to_display)
         );
     }
 
@@ -630,6 +673,19 @@ impl TimelineListRef {
         self.borrow_mut().and_then(|mut inner|
             inner.remove_timeline(room_id)
         )
+    }
+
+    pub fn get_active(&self) -> Option<WidgetRef> {
+        self.borrow().as_ref().and_then(|inner|
+            inner.active.clone()
+        )
+    }
+
+    pub fn get_templates(&self) -> Vec<(LiveId, LivePtr)> {
+        self.borrow()
+            .as_ref()
+            .map(|inner| inner.templates.iter().map(|(id, ptr)| (*id, *ptr)).collect())
+            .unwrap_or_default()
     }
 }
 
@@ -673,6 +729,7 @@ pub struct Timeline {
     #[rust] room_id: Option<OwnedRoomId>,
 }
 
+#[derive(Debug)]
 struct TimelineState {
     /// The ID of the room that this timeline is for.
     room_id: OwnedRoomId,
@@ -747,6 +804,26 @@ impl TimelineRef {
 }
 
 impl LiveHook for Timeline {
+    fn apply_value_instance(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) -> usize {
+        match (apply.from, apply.scope.as_mut()) {
+            (ApplyFrom::NewFromDoc { .. }, Some(scope)) => {
+                let timeline_state_opt_in_scope: &mut Option<TimelineState> = scope.data.get_mut(); 
+                let timeline_state = timeline_state_opt_in_scope.take().unwrap();
+                self.room_id = Some(timeline_state.room_id);
+                println!("Timeline::apply_value_instance(): new instance from doc, room_id = {:?}", self.room_id);
+                //
+                // TODO: merge `TimelineState` back into `Timeline` and then initialize those states here.
+                //
+                //
+                self.view.apply(cx, apply, index, nodes);
+            }
+            _ => {
+                println!("Skipping Timeline::apply_value_instance() because it's not a new instance from doc or it has no scope.");
+            }
+        }
+        nodes.skip_node(index)
+    }
+
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         println!("@@@@ Timeline::after_new_from_doc()");
     }
