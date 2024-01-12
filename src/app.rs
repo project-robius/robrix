@@ -284,7 +284,7 @@ impl MatchEvent for App {
             ),
         );
 
-        self.update_rooms_list_info(&actions);
+        self.handle_rooms_list_action(&actions);
 
         let mut navigation = self.ui.stack_navigation(id!(navigation));
         navigation.handle_stack_view_actions(
@@ -312,16 +312,16 @@ impl App {
         self.navigation_destinations.insert(StackViewAction::ShowRoom, live_id!(rooms_stack_view));
     }
 
-    fn update_rooms_list_info(&mut self, actions: &Actions) {
+    fn handle_rooms_list_action(&mut self, actions: &Actions) {
         for action in actions {
-            // Handle the user selecting a RoomPreview to view.
+            // Handle the user selecting a room to view (a RoomPreview in the RoomsList).
             if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {
                 let stack_navigation = self.ui.stack_navigation(id!(navigation));
                 
-                // Update the title of the room screen
+                // Set the title of the RoomScreen's header to the room name.
                 stack_navigation.set_title(
                     live_id!(rooms_stack_view),
-                    room_name.unwrap_or_else(|| format!("Room {}", room_id)),
+                    room_name.unwrap_or_else(|| format!("Room {}", &room_id)),
                 );
 
                 // Get a reference to the Timeline within the new RoomScreen to be displayed.
