@@ -3,7 +3,6 @@
 
 use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::BTreeMap};
 
-use eyeball_im::VectorDiff;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
@@ -472,8 +471,9 @@ live_design! {
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
-    /// A batch of diffs that should be applied to a timeline's `items` list.
-    DiffBatch(Vec<VectorDiff<Arc<TimelineItem>>>),
+    /// A update containing the entire list of timeline items for a room,
+    /// indicating that it has been updated in the background.
+    NewItems(Vector<Arc<TimelineItem>>),
     /// A notice that the start of the timeline has been reached, meaning that
     /// there is no need to send further backwards pagination requests.
     TimelineStartReached,
@@ -489,14 +489,9 @@ pub enum TimelineUpdate {
 
 
 /// The global set of all timelines and their states, one entry per room.
-///
-/// Note: in the future this should be stored directly in the `Timeline` widget,
-/// but we cannot yet do that until Makepad supports dynamic widget creation with context
-/// such that we can create new Timeline widgets dynamically with the required state
-/// and then choose from them in the StackNavigation widget's ShowRoom action.
 static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineState>> = Mutex::new(BTreeMap::new());
 
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct Timeline {
     #[deref] view: View,
 
@@ -535,8 +530,6 @@ struct TimelineState {
 impl TimelineRef {
     pub fn set_room_info(&self, room_id: OwnedRoomId) {
         if let Some(mut timeline) = self.borrow_mut() {
-            // TODO: here, in the future when we move timeline state back into the timeline widget,
-            //       we'll initialize all timeline state here.
             timeline.room_id = Some(room_id.clone());
         }
             
@@ -545,11 +538,11 @@ impl TimelineRef {
                 (false, tl_state.get().fully_paginated)
             }
             std::collections::btree_map::Entry::Vacant(entry) => {
-                if let Some((items, update_receiver)) = take_timeline_update_receiver(&room_id) {
+                if let Some(update_receiver) = take_timeline_update_receiver(&room_id) {
                     entry.insert(TimelineState {
                         room_id: room_id.clone(),
                         fully_paginated: false,
-                        items,
+                        items: Vector::new(),
                         update_receiver,
                     });
                 }
@@ -577,12 +570,6 @@ impl TimelineRef {
     }
 }
 
-impl LiveHook for Timeline {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
-        println!("@@@@ Timeline::after_new_from_doc()");
-    }
-}
-
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Currently, a Signal event is only used to tell this widget that its timeline events
@@ -590,15 +577,11 @@ impl Widget for Timeline {
         if let Event::Signal = event {
             let mut timeline_states = TIMELINE_STATES.lock().unwrap();
             if let Some(tl) = timeline_states.get_mut(self.room_id.as_ref().unwrap()) {
-                let mut num_updates = 0;
                 let mut done_loading = false;
                 while let Ok(update) = tl.update_receiver.try_recv() {
                     match update {
-                        TimelineUpdate::DiffBatch(batch) => {
-                            num_updates += batch.len();
-                            for diff in batch {
-                                diff.apply(&mut tl.items);
-                            }
+                        TimelineUpdate::NewItems(items) => {
+                            tl.items = items;
                         }
                         TimelineUpdate::TimelineStartReached => {
                             println!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
@@ -610,15 +593,12 @@ impl Widget for Timeline {
                         }
                         TimelineUpdate::RoomMembersFetched => {
                             println!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
-                            // Here, to be most efficient, we could redraw only the user avatars in the timeline,
+                            // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                             // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                         }
                     }
                 }
 
-                if num_updates > 0 {
-                    println!("Timeline::handle_event(): applied {num_updates} updates for room {}", tl.room_id);
-                }
                 if done_loading {
                     println!("TODO: hide topspace loading animation for room {}", tl.room_id);
                     // TODO FIXME: hide TopSpace loading animation, set it to invisible.

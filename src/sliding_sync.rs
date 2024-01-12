@@ -309,8 +309,6 @@ struct RoomInfo {
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
-    /// The initial set of timeline items that were obtained from the server.
-    timeline_initial_items: Vector<Arc<TimelineItem>>,
     /// The single receiver that can receive updates to this room's timeline.
     ///
     /// When a new room is joined, an unbounded crossbeam channel will be created
@@ -333,18 +331,10 @@ static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeM
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_update_receiver(
     room_id: &OwnedRoomId,
-) -> Option<(
-    Vector<Arc<TimelineItem>>,
-    crossbeam_channel::Receiver<TimelineUpdate>
-)> {
+) -> Option<crossbeam_channel::Receiver<TimelineUpdate>> {
     ALL_ROOM_INFO.lock().unwrap()
         .get_mut(room_id)
-        .and_then(|ri| ri.timeline_update_receiver.take()
-            .map(|receiver| (
-                core::mem::take(&mut ri.timeline_initial_items),
-                receiver
-            )
-        ))
+        .and_then(|ri| ri.timeline_update_receiver.take())
 }
 
 
@@ -539,25 +529,13 @@ async fn async_main_loop() -> Result<()> {
                 room_avatar_changed = true;
                 
                 let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
-                let (timeline_initial_items, mut room_subscriber) = timeline.subscribe_batched().await;
                 let tl_arc = Arc::new(timeline);
-                let room_id2 = room_id.clone();
-                let sender = timeline_update_sender.clone();
 
-                Handle::current().spawn(async move {
-                    println!("Starting timeline subscriber for room {room_id2}...");
-
-                    while let Some(batched_update) = room_subscriber.next().await {
-                        sender.send(TimelineUpdate::DiffBatch(batched_update))
-                            .expect("Error: timeline update sender couldn't send batched update!");
-
-                        // Send a Makepad-level signal to update this room's timeline UI view.
-                        SignalToUI::set_ui_signal();
-                    }
-
-                    eprintln!("Error: unexpectedly ended timeline subscriber for room {room_id2}...");
-
-                });
+                Handle::current().spawn(timeline_subscriber_handler(
+                    room_id.clone(),
+                    tl_arc.clone(),
+                    timeline_update_sender.clone(),
+                ));
                 
                 rooms_list::enqueue_rooms_list_update(RoomListUpdate::AddRoom(RoomPreviewEntry {
                     room_id: Some(room_id.clone()),
@@ -577,7 +555,6 @@ async fn async_main_loop() -> Result<()> {
                         pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
                         timeline_update_sender,
-                        timeline_initial_items,
                     },
                 );
             }
@@ -605,6 +582,37 @@ async fn async_main_loop() -> Result<()> {
     bail!("unexpected return from async_main_loop!")
 }
 
+
+async fn timeline_subscriber_handler(
+    room_id: OwnedRoomId,
+    timeline: Arc<Timeline>,
+    sender: crossbeam_channel::Sender<TimelineUpdate>,
+) {
+    println!("size_of::<Vector<Arc<TimelineItem>>>(): {}", std::mem::size_of::<Vector<Arc<TimelineItem>>>());
+
+    println!("Starting timeline subscriber for room {room_id}...");
+    let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
+
+    sender.send(TimelineUpdate::NewItems(timeline_items.clone()))
+        .expect("Error: timeline update sender couldn't send update with initial items!");
+
+    while let Some(batch) = subscriber.next().await {
+        let num_updates = batch.len();
+        for diff in batch {
+            diff.apply(&mut timeline_items);
+        }
+        if num_updates > 0 {
+            println!("Timeline::handle_event(): applied {num_updates} updates for room {room_id}");
+        }
+        sender.send(TimelineUpdate::NewItems(timeline_items.clone()))
+            .expect("Error: timeline update sender couldn't send update with new items!");
+
+        // Send a Makepad-level signal to update this room's timeline UI view.
+        SignalToUI::set_ui_signal();
+    }
+
+    eprintln!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
+}
 
 
 /// Fetches and returns the avatar image for the given room (if one exists),
