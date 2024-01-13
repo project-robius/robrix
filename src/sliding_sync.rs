@@ -18,7 +18,7 @@ use matrix_sdk::{
     SlidingSyncList,
     SlidingSyncMode,
     config::RequestConfig,
-    media::{MediaFormat, MediaThumbnailSize}, Room,
+    media::{MediaFormat, MediaThumbnailSize, MediaRequest}, Room,
 };
 use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, BackPaginationStatus, TimelineItemContent, AnyOtherFullStateEventContent}, Timeline};
 use tokio::{
@@ -36,7 +36,7 @@ use crate::message_display::DisplayerExt;
 /// Returns the default thumbnail size (40x40 pixels, scaled) to use for media.
 /// This is implemented as a function instead of a const because the internal `UInt` type
 /// does not support const construction.
-fn media_thumbnail_format() -> MediaFormat {
+pub fn media_thumbnail_format() -> MediaFormat {
     MediaFormat::Thumbnail(MediaThumbnailSize {
         width: 40u8.into(),
         height: 40u8.into(),
@@ -131,6 +131,13 @@ pub enum MatrixRequest {
     FetchRoomMembers {
         room_id: OwnedRoomId,
     },
+    /// Request to fetch media from the server.
+    /// Upon completion of the async media request,
+    /// the `on_fetched` callback will be invoked with the result of the media fetch.
+    FetchMedia {
+        media_request: MediaRequest,
+        on_fetched: Box<dyn FnOnce(matrix_sdk::Result<Vec<u8>>) + Send>,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -221,6 +228,17 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     println!("Sent fetch room members request for room {room_id}");
                     sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::FetchMedia { media_request, on_fetched } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let media = client.media();
+                
+                let _fetch_task = Handle::current().spawn(async move {
+                    println!("Sending fetch media request for {media_request:?}...");
+                    let res = media.get_media_content(&media_request, true).await;
+                    on_fetched(res);
                 });
             }
         }
@@ -325,6 +343,8 @@ struct RoomInfo {
 /// Information about all of the rooms we currently know about.
 static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
 
+/// The logged-in Matrix client, which can be freely and cheaply cloned.
+static CLIENT: OnceLock<Client> = OnceLock::new();
 
 /// Returns the timeline update receiver for the given room, if one exists.
 ///
@@ -345,6 +365,7 @@ async fn async_main_loop() -> Result<()> {
 
     let cli = Cli::parse();
     let (client, _token) = login(cli).await?;
+    CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
     let mut filter = SyncRequestListFilters::default();
     filter.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
