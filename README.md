@@ -28,7 +28,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] View timeline of events in a single room
 - [x] Fetch and display room avatars
 - [x] Fetch user profiles (displayable names)
-- [ ] Fetch and display user profile avatars
+- [x] Fetch and display user profile avatars
 - [x] Backwards pagination (upon viewing a room timeline)
 - [ ] Dynamic backwards pagination based on scroll position/movement
 - [ ] Loading animation while waiting for pagination request

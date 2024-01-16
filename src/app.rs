@@ -328,7 +328,7 @@ impl App {
                 let timeline_ref = stack_navigation
                     .view(id!(rooms_stack_view.room_screen))
                     .timeline(id!(timeline));
-                timeline_ref.set_room_info(room_id);
+                timeline_ref.set_displayed_room(room_id);
             }
         }
     }

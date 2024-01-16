@@ -5,7 +5,7 @@ use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
 use crate::shared::stack_view_action::StackViewAction;
-use crate::utils::unix_time_millis_to_datetime;
+use crate::utils::{unix_time_millis_to_datetime, self};
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -338,8 +338,8 @@ impl Widget for RoomsList {
                             item.avatar(id!(avatar)).set_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
-                            item.avatar(id!(avatar)).set_image(
-                                |img| img.load_png_from_data(cx, img_bytes)
+                            let _ = item.avatar(id!(avatar)).set_image(
+                                |img| utils::load_png_or_jpg(&img, cx, img_bytes)
                             );
                         }
                     }
