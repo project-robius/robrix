@@ -62,10 +62,10 @@ fn insert_into_cache(mxc_uri: OwnedMxcUri, data: matrix_sdk::Result<Vec<u8>>) {
         mxc_uri.clone(),
         match data {
             Ok(data) => {
-                println!("Fetched media for {mxc_uri}");
-
+                
                 // debugging: dump out the avatar image to disk
                 if false {
+                    println!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
                         SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),

@@ -236,7 +236,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let media = client.media();
                 
                 let _fetch_task = Handle::current().spawn(async move {
-                    println!("Sending fetch media request for {media_request:?}...");
+                    // println!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(res);
                 });
