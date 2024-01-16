@@ -1542,6 +1542,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "imghdr"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c8b35f3ad95576ac81603375dfe47a0450b70a368aa34d2b6e5bb0a0d7f02428"
+
+[[package]]
 name = "include_dir"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3373,6 +3379,7 @@ dependencies = [
  "eyeball-im",
  "futures-util",
  "imbl",
+ "imghdr",
  "makepad-widgets",
  "matrix-sdk",
  "matrix-sdk-ui",

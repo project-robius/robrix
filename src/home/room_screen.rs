@@ -36,7 +36,7 @@ use matrix_sdk_ui::timeline::{
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
-    utils::unix_time_millis_to_datetime, shared::avatar::AvatarWidgetRefExt, avatar_cache::try_get_avatar_or_fetch,
+    utils::{unix_time_millis_to_datetime, self}, shared::avatar::AvatarWidgetRefExt, avatar_cache::try_get_avatar_or_fetch,
 };
 
 live_design! {
@@ -731,8 +731,7 @@ fn populate_message_view(
     // A closure to set the item's avatar to an image data.
     let mut set_avatar_img = |avatar_img: &[u8]| {
         let _ = item.avatar(id!(profile.avatar)).set_image(
-            |img| img.load_png_from_data(cx, &avatar_img)
-                .or_else(|_| img.load_jpg_from_data(cx, &avatar_img))
+            |img| utils::load_png_or_jpg(&img, cx, avatar_img)
         );
     };
 

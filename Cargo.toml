@@ -29,6 +29,7 @@ eyeball = { version = "0.8.7", features = ["tracing"] }
 eyeball-im = "0.4.2"
 futures-util = "0.3"
 imbl = { version = "2.0.0", features = ["serde"] }  # same as matrix-sdk-ui
+imghdr = "0.7.0"
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", features = [ "experimental-sliding-sync" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk" }
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
