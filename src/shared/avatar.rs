@@ -94,12 +94,20 @@ impl AvatarRef {
     /// * `image_set_function`: - a function that is passed in an [ImageRef] that refers
     ///    to the image that will be displayed in this avatar.
     ///    This allows the caller to set the image contents in any way they want.
-    pub fn set_image<F: FnOnce(ImageRef)>(&mut self, image_set_function: F) {
+    ///    If `image_set_function` returns an error, no change is made to the avatar.
+    pub fn set_image<F, E>(&mut self, image_set_function: F) -> Result<(), E>
+        where F: FnOnce(ImageRef) -> Result<(), E>
+    {
         if let Some(mut inner) = self.borrow_mut() {
             let img_ref = inner.image(id!(img_view.img));
-            image_set_function(img_ref);
-            inner.view(id!(img_view)).set_visible(true);
-            inner.view(id!(text_view)).set_visible(false);
+            let res = image_set_function(img_ref);
+            if res.is_ok() {
+                inner.view(id!(img_view)).set_visible(true);
+                inner.view(id!(text_view)).set_visible(false);
+            }
+            res
+        } else {
+            Ok(())
         }
     }
 

@@ -338,8 +338,9 @@ impl Widget for RoomsList {
                             item.avatar(id!(avatar)).set_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
-                            item.avatar(id!(avatar)).set_image(
+                            let _ = item.avatar(id!(avatar)).set_image(
                                 |img| img.load_png_from_data(cx, img_bytes)
+                                    .or_else(|_| img.load_jpg_from_data(cx, &img_bytes))
                             );
                         }
                     }

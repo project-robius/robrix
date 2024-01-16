@@ -728,7 +728,16 @@ fn populate_message_view(
     let item = list.item(cx, item_id, live_id!(Message)).unwrap();
     item.label(id!(content.message)).set_text(message.body());
 
-    let set_name_and_avatar = |name: &str, skip: usize| {
+    // A closure to set the item's avatar to an image data.
+    let mut set_avatar_img = |avatar_img: &[u8]| {
+        let _ = item.avatar(id!(profile.avatar)).set_image(
+            |img| img.load_png_from_data(cx, &avatar_img)
+                .or_else(|_| img.load_jpg_from_data(cx, &avatar_img))
+        );
+    };
+
+    // A closure to set the item's avatar and username to text data.
+    let set_avatar_text_and_name = |name: &str, skip: usize| {
         item.label(id!(content.username)).set_text(name);
         item.avatar(id!(profile.avatar)).set_text(
             name.graphemes(true).skip(skip).next()
@@ -745,31 +754,27 @@ fn populate_message_view(
             match (avatar_img, &profile.display_name) {
                 // Both the avatar image and display name are available.
                 (Some(avatar_img), Some(name)) => {
-                    item.avatar(id!(profile.avatar)).set_image(
-                        |img| img.load_png_from_data(cx, &avatar_img)
-                    );
+                    set_avatar_img(&avatar_img);
                     item.label(id!(content.username)).set_text(name);
                 }
                 // The avatar image is available, but the display name is not.
                 (Some(avatar_img), None) => {
-                    item.avatar(id!(profile.avatar)).set_image(
-                        |img| img.load_png_from_data(cx, &avatar_img)
-                    );
-                    set_name_and_avatar(event_tl_item.sender().as_str(), 1);
+                    set_avatar_img(&avatar_img);
+                    item.label(id!(content.username)).set_text(event_tl_item.sender().as_str());
                 }
                 // The avatar image is not available, but the display name is.
                 (None, Some(name)) => {
-                    set_name_and_avatar(name, 0);
+                    set_avatar_text_and_name(name, 0);
                 }
                 // Neither the avatar image nor the display name are available.
                 (None, None) => {
-                    set_name_and_avatar(event_tl_item.sender().as_str(), 1);
+                    set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
                 }
             }
         }
         _other => {
             // println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
-            set_name_and_avatar(event_tl_item.sender().as_str(), 1);
+            set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
         }
     }
 
