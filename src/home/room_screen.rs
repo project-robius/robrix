@@ -809,10 +809,7 @@ fn populate_redacted_message_view(
         }
     };
 
-    println!("DEBUG: writing timeline message content {text}");
     item.label(id!(content)).set_text(&text);
-    println!("\tDEBUG: wrote timeline message content {text}");
-
     item
 } 
 

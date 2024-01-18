@@ -311,13 +311,9 @@ impl Widget for RoomsList {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     if count > 0 {
                         let text = format!("Found {count} joined rooms.");
-                        println!("DEBUG: writing status label {text}");
                         item.label(id!(label)).set_text(&text);
-                        println!("\t DEBUG: wrote status label {text}");
                     } else {
-                        println!("DEBUG: writing status label {}", self.status);
                         item.label(id!(label)).set_text(&self.status);
-                        println!("\t DEBUG: wrote status label {}", self.status);
                     }
                     item
                 }
@@ -334,21 +330,17 @@ impl Widget for RoomsList {
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
     
                     if let Some(ref name) = room_info.room_name {
-                        println!("DEBUG: writing room name {name}");
                         item.label(id!(preview.room_name)).set_text(name);
                     }
                     if let Some((ts, msg)) = room_info.latest.as_ref() {
                         if let Some(dt) = unix_time_millis_to_datetime(ts) {
                             let text = format!("{} {}", dt.date(), dt.time().format("%l:%M %P"));
-                            println!("DEBUG: writing datetime {text}");
                             item.label(id!(timestamp)).set_text(&text);
                         }
-                        println!("DEBUG: writing latest message {msg}");
                         item.label(id!(preview.latest_message)).set_text(msg);
                     }
                     match room_info.avatar {
                         RoomPreviewAvatar::Text(ref text) => {
-                            println!("DEBUG: writing avatar text {text}");
                             item.avatar(id!(avatar)).set_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
