@@ -65,7 +65,7 @@ live_design! {
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
 
-    RoomsCount = <View> {
+    StatusLabel = <View> {
         width: Fill, height: 80.0,
         align: { x: 0.5, y: 0.5 }
         draw_bg: {
@@ -77,7 +77,7 @@ live_design! {
             draw_text: {
                 text_style: <REGULAR_TEXT>{}
             }
-            text: "Couldn't find any joined rooms."
+            text: "Loading joined rooms..."
         }
     }
 
@@ -93,7 +93,7 @@ live_design! {
             search_bar = <SearchBar> {}
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
-            rooms_count = <RoomsCount> {}
+            status_label = <StatusLabel> {}
             bottom_filler = <View> {
                 width: Fill,
                 height: 100.0,
@@ -107,12 +107,12 @@ live_design! {
 }
 
 
-/// The possible updates to the list of all rooms.
+/// The possible updates that should be displayed by the single list of all rooms.
 ///
 /// These updates are enqueued by the `enqueue_rooms_list_update` function
 /// (which is called from background async tasks that receive updates from the matrix server),
 /// and then dequeued by the `RoomsList` widget's `handle_event` function.
-pub enum RoomListUpdate {
+pub enum RoomsListUpdate {
     /// Add a new room to the list of all rooms.
     AddRoom(RoomPreviewEntry),
     /// Update the latest event content and timestamp for the given room.
@@ -134,13 +134,17 @@ pub enum RoomListUpdate {
     /// Remove the given room from the list of all rooms.
     #[allow(unused)]
     RemoveRoom(OwnedRoomId),
+    /// Update the status label at the bottom of the list of all rooms.
+    Status {
+        status: String,
+    },
 }
 
-static PENDING_ROOM_UPDATES: SegQueue<RoomListUpdate> = SegQueue::new();
+static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
 
 /// Enqueue a new room update for the list of all rooms
 /// and signals the UI that a new update is available to be handled.
-pub fn enqueue_rooms_list_update(update: RoomListUpdate) {
+pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
     PENDING_ROOM_UPDATES.push(update);
     SignalToUI::set_ui_signal();
 }
@@ -184,7 +188,7 @@ impl Default for RoomPreviewAvatar {
 }
 
 
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
 
@@ -192,12 +196,9 @@ pub struct RoomsList {
     #[rust] all_rooms: Vec<RoomPreviewEntry>,
     /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `all_rooms` vector.
     #[rust] rooms_list_map: HashMap<u64, usize>,
+    /// The latest status message that should be displayed in the bottom status label.
+    #[rust] status: String,
 }
-
-impl LiveHook for RoomsList {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) { }
-}
-
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -209,36 +210,39 @@ impl Widget for RoomsList {
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;
                 match update {
-                    RoomListUpdate::AddRoom(room) => {
+                    RoomsListUpdate::AddRoom(room) => {
                         self.all_rooms.push(room);
                     }
-                    RoomListUpdate::UpdateRoomAvatar { room_id, avatar } => {
+                    RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
                             room.avatar = avatar;
                         } else {
                             eprintln!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
-                    RoomListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
+                    RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
                             room.latest = Some((timestamp, latest_message_text));
                         } else {
                             eprintln!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
-                    RoomListUpdate::UpdateRoomName { room_id, room_name } => {
+                    RoomsListUpdate::UpdateRoomName { room_id, room_name } => {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
                             room.room_name = Some(room_name);
                         } else {
                             eprintln!("Error: couldn't find room {room_id} to update room name");
                         }
                     }
-                    RoomListUpdate::RemoveRoom(room_id) => {
+                    RoomsListUpdate::RemoveRoom(room_id) => {
                         if let Some(idx) = self.all_rooms.iter().position(|r| r.room_id.as_ref() == Some(&room_id)) {
                             self.all_rooms.remove(idx);
                         } else {
                             eprintln!("Error: couldn't find room {room_id} to remove room");
                         }
+                    }
+                    RoomsListUpdate::Status { status } => {
+                        self.status = status;
                     }
                 }
             }
@@ -294,7 +298,7 @@ impl Widget for RoomsList {
             let portal_list_ref = list_item.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
         
-            // Add 1 again for the rooms count label at the bottom.
+            // Add 1 again for the status label at the bottom.
             list.set_item_range(cx, 0, last_item_id + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
@@ -302,11 +306,18 @@ impl Widget for RoomsList {
                 let item = if item_id == 0 {
                     list.item(cx, item_id, live_id!(search_bar)).unwrap()
                 }
-                // Draw the rooms count as the bottom entry.
+                // Draw the status label as the bottom entry.
                 else if item_id == last_item_id {
-                    let item = list.item(cx, item_id, live_id!(rooms_count)).unwrap();
+                    let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     if count > 0 {
-                        item.label(id!(label)).set_text(&format!("Found {count} joined rooms."));
+                        let text = format!("Found {count} joined rooms.");
+                        println!("DEBUG: writing status label {text}");
+                        item.label(id!(label)).set_text(&text);
+                        println!("\t DEBUG: wrote status label {text}");
+                    } else {
+                        println!("DEBUG: writing status label {}", self.status);
+                        item.label(id!(label)).set_text(&self.status);
+                        println!("\t DEBUG: wrote status label {}", self.status);
                     }
                     item
                 }
@@ -323,18 +334,21 @@ impl Widget for RoomsList {
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
     
                     if let Some(ref name) = room_info.room_name {
+                        println!("DEBUG: writing room name {name}");
                         item.label(id!(preview.room_name)).set_text(name);
                     }
                     if let Some((ts, msg)) = room_info.latest.as_ref() {
                         if let Some(dt) = unix_time_millis_to_datetime(ts) {
-                            item.label(id!(timestamp)).set_text(
-                                &format!("{} {}", dt.date(), dt.time().format("%l:%M %P"))
-                            );
+                            let text = format!("{} {}", dt.date(), dt.time().format("%l:%M %P"));
+                            println!("DEBUG: writing datetime {text}");
+                            item.label(id!(timestamp)).set_text(&text);
                         }
+                        println!("DEBUG: writing latest message {msg}");
                         item.label(id!(preview.latest_message)).set_text(msg);
                     }
                     match room_info.avatar {
                         RoomPreviewAvatar::Text(ref text) => {
+                            println!("DEBUG: writing avatar text {text}");
                             item.avatar(id!(avatar)).set_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {

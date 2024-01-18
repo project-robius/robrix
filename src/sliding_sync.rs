@@ -1,7 +1,6 @@
 use anyhow::{Result, bail};
 use clap::Parser;
 use futures_util::{StreamExt, pin_mut};
-use imbl::Vector;
 use makepad_widgets::SignalToUI;
 use matrix_sdk::{
     Client,
@@ -20,7 +19,7 @@ use matrix_sdk::{
     config::RequestConfig,
     media::{MediaFormat, MediaThumbnailSize, MediaRequest}, Room,
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, TimelineItem, PaginationOptions, BackPaginationStatus, TimelineItemContent, AnyOtherFullStateEventContent}, Timeline};
+use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, PaginationOptions, BackPaginationStatus, TimelineItemContent, AnyOtherFullStateEventContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
@@ -29,7 +28,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
 use url::Url;
 
-use crate::home::{rooms_list::{self, RoomPreviewEntry, RoomListUpdate, RoomPreviewAvatar}, room_screen::TimelineUpdate};
+use crate::home::{rooms_list::{self, RoomPreviewEntry, RoomsListUpdate, RoomPreviewAvatar, enqueue_rooms_list_update}, room_screen::TimelineUpdate};
 use crate::message_display::DisplayerExt;
 
 
@@ -82,10 +81,11 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         builder = builder.proxy(proxy);
     }
 
-    // Use a 30 second timeout for all requests to the homeserver.
+    // Use a 60 second timeout for all requests to the homeserver.
+    // Yes, this is a long timeout, but the standard matrix homeserver is often very slow.
     builder = builder.request_config(
         RequestConfig::new()
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(60))
     );
 
     let client = builder.build().await?;
@@ -108,12 +108,18 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
 
     println!("Login result: {login_result:?}");
 
-    if !client.logged_in() {
-        bail!("Failed to login with username and password");
+    if client.logged_in() {
+        println!("Logged in successfully? {:?}", client.logged_in());
+        enqueue_rooms_list_update(RoomsListUpdate::Status {
+            status: format!("Logged in as {}. Loading rooms...", &cli.user_name),
+        });
+        Ok((client, _token))
+    } else {
+        enqueue_rooms_list_update(RoomsListUpdate::Status {
+            status: format!("Failed to login as {}: {:?}", &cli.user_name, login_result),
+        });
+        bail!("Failed to login as {}: {login_result:?}", &cli.user_name)
     }
-    println!("Logged in successfully? {:?}", client.logged_in());
-    
-    Ok((client, _token))
 }
 
 
@@ -204,7 +210,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         PaginationOptions::until_num_items(batch_size, _max_events)
                     ).await;
                     match res {
-                        Ok(_) => println!("Sent pagination request for room {room_id}"),
+                        Ok(_) => println!("Completed pagination request for room {room_id}."),
                         Err(e) => eprintln!("Error sending pagination request for room {room_id}: {e:?}"),
                     }
                 });
@@ -225,7 +231,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let _fetch_task = Handle::current().spawn(async move {
                     println!("Sending fetch room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    println!("Sent fetch room members request for room {room_id}");
+                    println!("Completed fetch room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
                     SignalToUI::set_ui_signal();
                 });
@@ -364,6 +370,10 @@ async fn async_main_loop() -> Result<()> {
     let start = std::time::Instant::now();
 
     let cli = Cli::parse();
+    enqueue_rooms_list_update(RoomsListUpdate::Status {
+        status: format!("Logging in as {}...", &cli.user_name)
+    });
+
     let (client, _token) = login(cli).await?;
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
@@ -382,11 +392,11 @@ async fn async_main_loop() -> Result<()> {
         .required_state(vec![ // we want to know immediately:
             (StateEventType::RoomEncryption, "".to_owned()),  // is it encrypted
             (StateEventType::RoomMember, "$LAZY".to_owned()), // lazily fetch room member profiles for users that have sent events
-            // (StateEventType::RoomMember, "$ME".to_owned()),   // fetch profile for "me", the currently logged-in user (optiona, not yet needed)
+            (StateEventType::RoomMember, "$ME".to_owned()),   // fetch profile for "me", the currently logged-in user (optional)
             (StateEventType::RoomCreate, "".to_owned()),      // room creation type
             (StateEventType::RoomName,   "".to_owned()),      // the room's displayable name
-            (StateEventType::RoomTopic,  "".to_owned()),      // any topic if known
             (StateEventType::RoomAvatar, "".to_owned()),      // avatar if set
+            // (StateEventType::RoomTopic,  "".to_owned()),      // any topic if known (optional, can be fetched later)
         ]);
 
     // Now that we're logged in, try to connect to the sliding sync proxy.
@@ -528,7 +538,7 @@ async fn async_main_loop() -> Result<()> {
 
             // Send an update to the rooms_list if the latest event for this room has changed.
             if let Some((timestamp, latest_message_text)) = latest_event_changed {
-                rooms_list::enqueue_rooms_list_update(RoomListUpdate::UpdateLatestEvent {
+                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
                     room_id: room_id.clone(),
                     timestamp,
                     latest_message_text,
@@ -537,7 +547,7 @@ async fn async_main_loop() -> Result<()> {
 
             // Send an update to the rooms_list if the room name has changed.
             if let Some(room_name) = room_name_changed {
-                rooms_list::enqueue_rooms_list_update(RoomListUpdate::UpdateRoomName {
+                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: room_id.clone(),
                     room_name,
                 });
@@ -558,7 +568,7 @@ async fn async_main_loop() -> Result<()> {
                     timeline_update_sender.clone(),
                 ));
                 
-                rooms_list::enqueue_rooms_list_update(RoomListUpdate::AddRoom(RoomPreviewEntry {
+                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
                     room_id: Some(room_id.clone()),
                     latest: latest_tl.as_ref().map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
                     avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
@@ -587,7 +597,7 @@ async fn async_main_loop() -> Result<()> {
             if room_avatar_changed {
                 Handle::current().spawn(async move {
                     let avatar = room_avatar(&room, &room_name).await;
-                    rooms_list::enqueue_rooms_list_update(RoomListUpdate::UpdateRoomAvatar {
+                    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
                         room_id,
                         avatar,
                     });
@@ -609,8 +619,6 @@ async fn timeline_subscriber_handler(
     timeline: Arc<Timeline>,
     sender: crossbeam_channel::Sender<TimelineUpdate>,
 ) {
-    println!("size_of::<Vector<Arc<TimelineItem>>>(): {}", std::mem::size_of::<Vector<Arc<TimelineItem>>>());
-
     println!("Starting timeline subscriber for room {room_id}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
 

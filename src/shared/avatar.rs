@@ -47,6 +47,7 @@ live_design! {
 
         img_view = <View> {
             visible: false,
+            align: { x: 0.5, y: 0.5 }
             img = <Image> {
                 width: Fill, height: Fill,
                 source: (IMG_DEFAULT_AVATAR),

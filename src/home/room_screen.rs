@@ -36,7 +36,7 @@ use matrix_sdk_ui::timeline::{
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
-    utils::{unix_time_millis_to_datetime, self}, shared::avatar::AvatarWidgetRefExt, avatar_cache::try_get_avatar_or_fetch,
+    utils::{unix_time_millis_to_datetime, self}, shared::avatar::{AvatarWidgetRefExt, AvatarRef}, avatar_cache::try_get_avatar_or_fetch,
 };
 
 live_design! {
@@ -254,7 +254,7 @@ live_design! {
     }
 
 
-    // The view used for each state event in a room's timeline.
+    // The view used for each state event (non-messages) in a room's timeline.
     // The timestamp, profile picture, and text are all very small.
     SmallStateEvent = <View> {
         width: Fill,
@@ -274,7 +274,6 @@ live_design! {
             left_container = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 70.0,
-                // padding: {right: -5.0}
                 height: Fit
                 flow: Right,
 
@@ -287,18 +286,15 @@ live_design! {
                 }
             }
 
-            profile_img = <Image> {
-                width: 19.0,
-                height: 19.0,
-                source: (IMG_DEFAULT_AVATAR),
-                draw_bg: {
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.y, c.x - 2.)
-                        sdf.fill_keep(self.get_color());
-                        sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                        return sdf.result
+            avatar = <Avatar> {
+                width: 19.,
+                height: 19.,
+
+                text_view = {
+                    text = {
+                        draw_text: {
+                            text_style: <TITLE_TEXT>{ font_size: 8. }
+                        }
                     }
                 }
             }
@@ -306,13 +302,13 @@ live_design! {
             content = <Label> {
                 width: Fill,
                 height: Fit
-                padding: 4.0,
+                padding: {top: 5.0},
                 draw_text: {
                     wrap: Word,
                     text_style: <TEXT_SUB> {},
                     color: (COLOR_P)
                 }
-                text: "<placeholder room state event>"
+                text: ""
             }
         }
     }
@@ -557,10 +553,10 @@ impl TimelineRef {
             println!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
         }
 
-        // Note: this isn't required any more because we now specify that room member profiles
-        //       (of any users that sent messages in the room) should be lazy-loaded ("$LAZY" required state)
-        //       by the initial sliding sync request.
-        if false && first_time_showing_room {
+        // Even though we specify that room member profiles should be lazy-loaded,
+        // the matrix server still doesn't consistently send them to our client properly.
+        // So we kick off a request to fetch the room members here upon first viewing the room.
+        if first_time_showing_room {
             submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
         }
     }
@@ -728,54 +724,12 @@ fn populate_message_view(
     let item = list.item(cx, item_id, live_id!(Message)).unwrap();
     item.label(id!(content.message)).set_text(message.body());
 
-    // A closure to set the item's avatar to an image data.
-    let mut set_avatar_img = |avatar_img: &[u8]| {
-        let _ = item.avatar(id!(profile.avatar)).set_image(
-            |img| utils::load_png_or_jpg(&img, cx, avatar_img)
-        );
-    };
-
-    // A closure to set the item's avatar and username to text data.
-    let set_avatar_text_and_name = |name: &str, skip: usize| {
-        item.label(id!(content.username)).set_text(name);
-        item.avatar(id!(profile.avatar)).set_text(
-            name.graphemes(true).skip(skip).next()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        );
-    };
-
-    // Set sender to the display name if available, otherwise the user id.
-    match event_tl_item.sender_profile() {
-        TimelineDetails::Ready(profile) => {
-            // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = profile.avatar_url.as_ref().and_then(try_get_avatar_or_fetch);
-            match (avatar_img, &profile.display_name) {
-                // Both the avatar image and display name are available.
-                (Some(avatar_img), Some(name)) => {
-                    set_avatar_img(&avatar_img);
-                    item.label(id!(content.username)).set_text(name);
-                }
-                // The avatar image is available, but the display name is not.
-                (Some(avatar_img), None) => {
-                    set_avatar_img(&avatar_img);
-                    item.label(id!(content.username)).set_text(event_tl_item.sender().as_str());
-                }
-                // The avatar image is not available, but the display name is.
-                (None, Some(name)) => {
-                    set_avatar_text_and_name(name, 0);
-                }
-                // Neither the avatar image nor the display name are available.
-                (None, None) => {
-                    set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
-                }
-            }
-        }
-        _other => {
-            // println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
-            set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
-        }
-    }
+    let username = set_avatar_and_get_username(
+        cx,
+        item.avatar(id!(profile.avatar)),
+        event_tl_item,
+    );
+    item.label(id!(content.username)).set_text(&username);
 
     // Set the timestamp.
     let ts_millis = event_tl_item.timestamp();
@@ -833,22 +787,32 @@ fn populate_redacted_message_view(
     set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
     
     // Get the display name (or user ID) of the original sender of the now-redacted message.
-    let original_sender = match event_tl_item.sender_profile() {
-        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
-        _ => None,
-    }.unwrap_or_else(|| event_tl_item.sender().as_str());
+    let original_sender = set_avatar_and_get_username(
+        cx,
+        item.avatar(id!(avatar)),
+        event_tl_item,
+    );
     let text = match redactor_and_reason {
         Some((redactor, Some(reason))) => {
+            // TODO: get the redactor's display name if possible
             format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
         }
         Some((redactor, None)) => {
-            format!("{} deleted {}'s message.", redactor, original_sender)
+            if redactor == event_tl_item.sender() {
+                format!("{} deleted their own message.", original_sender)
+            } else {
+                format!("{} deleted {}'s message.", redactor, original_sender)
+            }
         }
         None => {
             format!("{}'s message was deleted.", original_sender)
         }
     };
+
+    println!("DEBUG: writing timeline message content {text}");
     item.label(id!(content)).set_text(&text);
+    println!("\tDEBUG: wrote timeline message content {text}");
+
     item
 } 
 
@@ -865,49 +829,57 @@ fn populate_membership_change_view(
     event_tl_item: &EventTimelineItem,
     change: &RoomMembershipChange,
 ) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    let change_user_id = change.user_id();
 
     let text = match change.change() {
-        None 
+        None
         | Some(MembershipChange::NotImplemented)
         | Some(MembershipChange::None) => {
             // Don't actually display anything for nonexistent/unimportant membership changes.
             return list.item(cx, item_id, live_id!(Empty)).unwrap();
         }
         Some(MembershipChange::Error) =>
-            format!("{} had a membership change error.", event_tl_item.sender()),
+            format!("had a membership change error."),
         Some(MembershipChange::Joined) =>
-            format!("{} joined this room.", event_tl_item.sender()),
+            format!("joined this room."),
         Some(MembershipChange::Left) =>
-            format!("{} left this room.", event_tl_item.sender()),
+            format!("left this room."),
         Some(MembershipChange::Banned) =>
-            format!("{} banned {} from this room.", event_tl_item.sender(), change.user_id()),
+            format!("banned {} from this room.", change_user_id),
         Some(MembershipChange::Unbanned) =>
-            format!("{} unbanned {} from this room.", event_tl_item.sender(), change.user_id()),
+            format!("unbanned {} from this room.", change_user_id),
         Some(MembershipChange::Kicked) =>
-            format!("{} kicked {} from this room.", event_tl_item.sender(), change.user_id()),
+            format!("kicked {} from this room.", change_user_id),
         Some(MembershipChange::Invited) =>
-            format!("{} invited {} to this room.", event_tl_item.sender(), change.user_id()),
+            format!("invited {} to this room.", change_user_id),
         Some(MembershipChange::KickedAndBanned) =>
-            format!("{} kicked and banned {} from this room.", event_tl_item.sender(), change.user_id()),
+            format!("kicked and banned {} from this room.", change_user_id),
         Some(MembershipChange::InvitationAccepted) =>
-            format!("{} accepted an invitation to this room.", event_tl_item.sender()),
+            format!("accepted an invitation to this room."),
         Some(MembershipChange::InvitationRejected) =>
-            format!("{} rejected an invitation to this room.", event_tl_item.sender()),
+            format!("rejected an invitation to this room."),
         Some(MembershipChange::InvitationRevoked) =>
-            format!("{} revoked {}'s invitation to this room.", event_tl_item.sender(), change.user_id()),
+            format!("revoked {}'s invitation to this room.", change_user_id),
         Some(MembershipChange::Knocked) =>
-            format!("{} requested to join this room.", event_tl_item.sender()),
+            format!("requested to join this room."),
         Some(MembershipChange::KnockAccepted) =>
-            format!("{} accepted {}'s request to join this room.", event_tl_item.sender(), change.user_id()),
+            format!("accepted {}'s request to join this room.", change_user_id),
         Some(MembershipChange::KnockRetracted) =>
-            format!("{} retracted their request to join this room.", event_tl_item.sender()),
+            format!("retracted their request to join this room."),
         Some(MembershipChange::KnockDenied) =>
-            format!("{} denied {}'s request to join this room.", event_tl_item.sender(), change.user_id()),
+            format!("denied {}'s request to join this room.", change_user_id),
     };
 
+    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
     set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    item.label(id!(content)).set_text(&text);
+    let username = set_avatar_and_get_username(
+        cx,
+        item.avatar(id!(avatar)),
+        event_tl_item,
+    );
+    
+    item.label(id!(content)).set_text(&format!("{username} {text}"));
     item
 }
 
@@ -926,28 +898,35 @@ fn populate_profile_change_view(
     change: &MemberProfileChange,
 ) -> WidgetRef {
     let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+    let username = set_avatar_and_get_username(
+        cx,
+        item.avatar(id!(avatar)),
+        event_tl_item,
+    );
 
     let name_text = if let Some(name_change) = change.displayname_change() {
-        let old = name_change.old.as_deref().unwrap_or(event_tl_item.sender().as_str());
-        let new = name_change.new.as_deref().unwrap_or("");
-        format!("{old} changed their display name to {new:?}")
+        let old = name_change.old.as_deref().unwrap_or(&username);
+        if let Some(new) = name_change.new.as_ref() {
+            format!("{old} changed their display name to {new:?}")
+        } else {
+            format!("{old} removed their display name")
+        }
     } else {
         String::new()
     };
 
     let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
         if name_text.is_empty() {
-            format!("{} changed their profile picture.", event_tl_item.sender().as_str())
+            format!("{} changed their profile picture", username)
         } else {
-            format!(" and changed their profile picture.")
+            format!(" and changed their profile picture")
         }
-        // TODO: handle actual avatar URI change.
     } else {
-        String::from(".")
+        String::new()
     };
 
+    item.label(id!(content)).set_text(&format!("{}{}.", name_text, avatar_text));
     set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    item.label(id!(content)).set_text(&format!("{}{}", name_text, avatar_text));
     item
 }
 
@@ -964,77 +943,81 @@ fn populate_other_state_view(
     item_id: u64,
     event_tl_item: &EventTimelineItem,
     other_state: &timeline::OtherState,
-) -> WidgetRef {  
+) -> WidgetRef {
     let text = match other_state.content() {
         AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
             let mut s = format!("set this room's aliases to ");
-            for alias in &content.aliases {
+            let last_alias = content.aliases.len() - 1;
+            for (i, alias) in content.aliases.iter().enumerate() {
                 s.push_str(alias.as_str());
-                s.push_str(", ");
+                if i != last_alias {
+                    s.push_str(", ");
+                }
             }
-            s.truncate(s.len() - 2); // remove the last trailing ", "
+            s.push_str(".");
             Some(s)
         }
         AnyOtherFullStateEventContent::RoomAvatar(_) => {
-            // TODO: handle a changed room avatar (picture)
-            None
+            Some(format!("set this room's avatar picture."))
         }
         AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("set the main address of this room to {}", 
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("<unknown>")
+            Some(format!("set the main address of this room to {}.",
+                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
             ))
         }
         AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("created this room (v{})", content.room_version.as_str()))
+            Some(format!("created this room (v{}).", content.room_version.as_str()))
         }
         AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
             Some(match content.guest_access {
-                GuestAccess::CanJoin => format!("has allowed guests to join this room"),
-                GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room"),
+                GuestAccess::CanJoin => format!("has allowed guests to join this room."),
+                GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room."),
             })
         }
         AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
             let visibility = match content.history_visibility {
-                HistoryVisibility::Invited => "invited users, since they were invited",
-                HistoryVisibility::Joined => "joined users, since they joined",
-                HistoryVisibility::Shared => "joined users, for all of time",
-                HistoryVisibility::WorldReadable | _ => "anyone for all time",
+                HistoryVisibility::Invited => "invited users, since they were invited.",
+                HistoryVisibility::Joined => "joined users, since they joined.",
+                HistoryVisibility::Shared => "joined users, for all of time.",
+                HistoryVisibility::WorldReadable | _ => "anyone for all time.",
             };
-            Some(format!("set this room's history to be visible by {}", visibility))
+            Some(format!("set this room's history to be visible by {}.", visibility))
         }
         AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
             Some(match content.join_rule {
-                JoinRule::Public => format!("set this room to be joinable by anyone"),
-                JoinRule::Knock => format!("set this room to be joinable by invite only or by request"),
-                JoinRule::Private => format!("set this room to be private"),
-                JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions"),
-                JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions"),
-                JoinRule::Invite | _ => format!("set this room to be joinable by invite only"),
+                JoinRule::Public => format!("set this room to be joinable by anyone."),
+                JoinRule::Knock => format!("set this room to be joinable by invite only or by request."),
+                JoinRule::Private => format!("set this room to be private."),
+                JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions."),
+                JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions."),
+                JoinRule::Invite | _ => format!("set this room to be joinable by invite only."),
             })
         }
         AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's name to {:?}", content.name))
+            Some(format!("changed this room's name to {:?}.", content.name))
         }
         AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
             None
         }
         AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's topic to {:?}", content.topic))
+            Some(format!("changed this room's topic to {:?}.", content.topic))
         }
         AnyOtherFullStateEventContent::SpaceParent(_)
         | AnyOtherFullStateEventContent::SpaceChild(_) => None,
         _other => {
-            // println!("*** Unhandled: {:?}", _other);
+            // println!("*** Unhandled: {:?}.", _other);
             None
         }
     };
 
     if let Some(text) = text {
         let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-        item.label(id!(content)).set_text(
-            &format!("{} {}.", event_tl_item.sender(), text)
+        let username = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
         );
-        // Set the timestamp.
+        item.label(id!(content)).set_text(&format!("{username} {text}"));
         set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
         item
     } else {
@@ -1061,4 +1044,71 @@ fn set_timestamp(
             &format!("{}", timestamp.get())
         );
     }
+}
+
+
+/// Sets the given avatar returns a displayable username, based on the info from the given timeline event.
+///
+/// This function will always choose a nice, displayable username and avatar.
+///
+/// The specific behavior is as follows:
+/// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
+///   will be the user's display name and avatar image, if available.
+/// * If no avatar image is available, then the `avatar` will be set to the first character
+///   of the user's display name, if available.
+/// * If the user's display name is not available or has not been set, the user ID
+///   will be used for the `username`, and the first character of the user ID for the `avatar`.
+/// * If the timeline event's sender profile is not yet ready, then the `username` and `avatar`
+///   will be the user ID and the first character of that user ID, respectively.
+fn set_avatar_and_get_username(
+    cx: &mut Cx,
+    mut avatar: AvatarRef,
+    event_tl_item: &EventTimelineItem,
+) -> String {
+    let mut username = String::new();
+
+    // A closure to set the item's avatar and username to text data,
+    // skipping the first `skip` characters of the given `name` for the avatar text.
+    let mut set_avatar_text_and_name = |name: &str, skip: usize| {
+        username = name.to_owned();
+        avatar.set_text(
+            name.graphemes(true).skip(skip).next()
+                .map(ToString::to_string)
+                .unwrap_or_default()
+        );
+    };
+
+    // Set sender to the display name if available, otherwise the user id.
+    match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => {
+            // Set the sender's avatar image, or use a text character if no image is available.
+            let avatar_img = profile.avatar_url.as_ref().and_then(try_get_avatar_or_fetch);
+            match (avatar_img, &profile.display_name) {
+                // Both the avatar image and display name are available.
+                (Some(avatar_img), Some(name)) => {
+                    let _ = avatar.set_image(|img| utils::load_png_or_jpg(&img, cx, &avatar_img));
+                    username = name.to_owned();
+                }
+                // The avatar image is available, but the display name is not.
+                (Some(avatar_img), None) => {
+                    let _ = avatar.set_image(|img| utils::load_png_or_jpg(&img, cx, &avatar_img));
+                    username = event_tl_item.sender().as_str().to_owned();
+                }
+                // The avatar image is not available, but the display name is.
+                (None, Some(name)) => {
+                    set_avatar_text_and_name(name, 0);
+                }
+                // Neither the avatar image nor the display name are available.
+                (None, None) => {
+                    set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
+                }
+            }
+        }
+        _other => {
+            // println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
+            set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
+        }
+    }
+
+    username
 }
