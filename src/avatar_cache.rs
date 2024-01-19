@@ -4,10 +4,13 @@ use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::MediaReq
 
 use crate::sliding_sync::{self, MatrixRequest};
 
+/// An entry in the avatar cache.
 enum AvatarCacheEntry {
     /// A request has been issued and we're waiting for it to complete.
     Requested,
+    /// The avatar has been successfully loaded from the server.
     Loaded(Arc<[u8]>),
+    /// The avatar failed to load from the server.
     Failed,
 }
 impl AvatarCacheEntry {

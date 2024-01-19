@@ -11,7 +11,7 @@ live_design! {
 
     REGULAR_TEXT = {
         font_size: (12),
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
     Divider = <View> {

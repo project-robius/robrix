@@ -28,7 +28,7 @@ live_design! {
 
     H3_TEXT_REGULAR = {
         font_size: 9.0,
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
     AppTab = <RadioButton> {
