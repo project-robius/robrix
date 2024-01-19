@@ -3,6 +3,8 @@ use makepad_widgets::*;
 use crate::shared::stack_view_action::StackViewAction;
 use std::collections::HashMap;
 
+use super::stack_view_action::StackViewSubWidgetAction;
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -88,8 +90,27 @@ impl Widget for StackNavigationView {
         }
 
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
-        if self.button(id!(left_button)).clicked(&actions) {
+        
+        // Handle "back navigation": going back to the previous (parent) root_view. This includes:
+        // * Clicking the left (back) button in the header
+        // * Clicking the "back" button on the mouse
+        // * TODO: in the future, a swipe right gesture on the screen or touchpad
+        let left_button_clicked = self.button(id!(left_button)).clicked(&actions);
+        let back_mouse_released = match event {
+            Event::MouseUp(mouse) => {
+                // println!("Mouse button released: {}", mouse.button);
+                // TODO: this is non-standard, it should be `8`, but Makepad doesn't handle mouse button IDs correctly.
+                mouse.button == 2
+            }
+            _ => false,
+        };
+        if left_button_clicked || back_mouse_released {
             self.animator_play(cx, id!(slide.hide));
+            cx.widget_action(
+                self.widget_uid(),
+                &HeapLiveIdPath::default(),
+                StackViewSubWidgetAction::Hide,
+            );
         }
 
         if self.animator.animator_in_state(cx, id!(slide.hide))
@@ -97,6 +118,8 @@ impl Widget for StackNavigationView {
         {
             self.apply_over(cx, live! {visible: false});
         }
+
+        
     }
 
     fn draw_walk(&mut self, cx:&mut Cx2d, scope:&mut Scope, walk:Walk) -> DrawStep{
@@ -197,6 +220,12 @@ impl StackNavigation {
             let mut stack_view_ref = self.stack_navigation_view(&[stack_view_id]);
             stack_view_ref.show(cx);
             self.active_stack_view = ActiveStackView::Active(stack_view_id);
+            // Send a `Show` action to the view being shown so it can be aware of the transition.
+            cx.widget_action(
+                stack_view_ref.widget_uid(),
+                &HeapLiveIdPath::default(),
+                StackViewSubWidgetAction::Show,
+            );
             self.redraw(cx);
         }
     }
