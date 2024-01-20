@@ -94,17 +94,13 @@ impl Widget for StackNavigationView {
         // Handle "back navigation": going back to the previous (parent) root_view. This includes:
         // * Clicking the left (back) button in the header
         // * Clicking the "back" button on the mouse
-        // * TODO: in the future, a swipe right gesture on the screen or touchpad
+        // * TODO: in the future, a swipe right gesture on touchscreen, or two-finger swipe on tracpad
         let left_button_clicked = self.button(id!(left_button)).clicked(&actions);
-        let back_mouse_released = match event {
-            Event::MouseUp(mouse) => {
-                // println!("Mouse button released: {}", mouse.button);
-                // TODO: this is non-standard, it should be `8`, but Makepad doesn't handle mouse button IDs correctly.
-                mouse.button == 2
-            }
+        let back_mouse_button_released = match event {
+            Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
             _ => false,
         };
-        if left_button_clicked || back_mouse_released {
+        if left_button_clicked || back_mouse_button_released {
             self.animator_play(cx, id!(slide.hide));
             cx.widget_action(
                 self.widget_uid(),
