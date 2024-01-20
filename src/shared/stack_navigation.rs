@@ -94,7 +94,7 @@ impl Widget for StackNavigationView {
         // Handle "back navigation": going back to the previous (parent) root_view. This includes:
         // * Clicking the left (back) button in the header
         // * Clicking the "back" button on the mouse
-        // * TODO: in the future, a swipe right gesture on touchscreen, or two-finger swipe on tracpad
+        // * TODO: in the future, a swipe right gesture on touchscreen, or two-finger swipe on trackpad
         let left_button_clicked = self.button(id!(left_button)).clicked(&actions);
         let back_mouse_button_released = match event {
             Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
