@@ -45,9 +45,15 @@ live_design! {
             }
         }
 
-        img_view = <View> {
+        img_view = <RoundedView> {
             visible: false,
             align: { x: 0.5, y: 0.5 }
+            draw_bg: {
+                instance radius: 4.0,
+                instance border_width: 1.0,
+                // instance border_color: #ddd,
+                color: #dfd
+            }
             img = <Image> {
                 width: Fill, height: Fill,
                 source: (IMG_DEFAULT_AVATAR),

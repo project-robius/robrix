@@ -14,7 +14,7 @@ use matrix_sdk::ruma::{
         room::{
             guest_access::GuestAccess,
             history_visibility::HistoryVisibility,
-            join_rules::JoinRule,
+            join_rules::JoinRule, message::MessageType, MediaSource,
         },
         SyncMessageLikeEvent,
     },
@@ -55,7 +55,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-
+    IMG_LOADING = dep("crate://self/resources/img/loading.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
     ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
@@ -236,7 +236,7 @@ live_design! {
                         text_style: <TEXT_SUB> {},
                         color: (COLOR_META_TEXT)
                     }
-                    text: "<unknown username>"
+                    text: "<Username not available>"
                 }
                 message = <Label> {
                     width: Fill,
@@ -256,6 +256,112 @@ live_design! {
                 <MessageMenu> {}
             }
         }
+    }
+
+    // The view used for each static image-based message event in a room's timeline.
+    // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
+    ImageMessage = <View> {
+        width: Fill,
+        height: Fit,
+        margin: 0.0
+        flow: Down,
+        padding: 0.0,
+        spacing: 0.0
+        
+        body = <View> {
+            width: Fill,
+            height: Fit
+            flow: Right,
+            padding: 10.0,
+            spacing: 10.0
+            
+            profile = <View> {
+                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                width: 65.0,
+                height: Fit,
+                margin: {top: 7.5}
+                flow: Down,
+                avatar = <Avatar> {
+                    width: 50.,
+                    height: 50.
+                    // draw_bg: {
+                    //     fn pixel(self) -> vec4 {
+                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    //         let c = self.rect_size * 0.5;
+                    //         sdf.circle(c.x, c.y, c.x - 2.)
+                    //         sdf.fill_keep(self.get_color());
+                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
+                    //         return sdf.result
+                    //     }
+                    // }
+                }
+                timestamp = <Timestamp> { }
+                datestamp = <Timestamp> {
+                    padding: { top: 5.0 }
+                }
+            }
+            content = <View> {
+                width: Fill,
+                height: Fit
+                flow: Down,
+                padding: 0.0
+                
+                username = <Label> {
+                    margin: {bottom: 10.0, top: 10.0}
+                    draw_text: {
+                        text_style: <TEXT_SUB> {},
+                        color: (COLOR_META_TEXT)
+                    }
+                    text: "<Username not available>"
+                }
+                img = <Image> {
+                    width: 800, height: 400,
+                    min_width: 1., min_height: 1.,
+                    fit: Horizontal,
+                    source: (IMG_LOADING),
+                }
+                
+                // message = <RoundedView> {
+                //     width: Fill,
+                //     height: Fit,
+                //     align: { x: 0.5, y: 0.5 }
+                //     draw_bg: {
+                //         instance radius: 4.0,
+                //         instance border_width: 1.0,
+                //         // instance border_color: #ddd,
+                //         color: #dfd
+                //     }
+                //     img = <Image> {
+                //         width: 200., height: 200.0, // TODO FIXME: use actual image dimensions
+                //         source: (IMG_LOADING),
+                //     }
+                // }
+                
+                <LineH> {
+                    margin: {top: 13.0, bottom: 5.0}
+                }
+                
+                <MessageMenu> {}
+            }
+        }
+
+        // body = {
+        //     content = {
+        //         message = <RoundedView> {
+        //             align: { x: 0.5, y: 0.5 }
+        //             draw_bg: {
+        //                 instance radius: 4.0,
+        //                 instance border_width: 1.0,
+        //                 // instance border_color: #ddd,
+        //                 color: #dfd
+        //             }
+        //             img = <Image> {
+        //                 width: Fill, height: 100.0, // TODO FIXME: use actual image dimensions
+        //                 source: (IMG_LOADING),
+        //             }
+        //         }
+        //     }
+        // }
     }
 
 
@@ -406,6 +512,7 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             TopSpace = <TopSpace> {}
             Message = <Message> {}
+            ImageMessage = <ImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
@@ -780,8 +887,66 @@ fn populate_message_view(
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
 ) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(Message)).unwrap();
-    item.label(id!(content.message)).set_text(message.body());
+    let item = match message.msgtype() {
+        MessageType::Text(text) => {
+            let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+            item.label(id!(content.message)).set_text(&text.body);
+            item
+        }
+        MessageType::Image(image) => {
+            // We don't use thumbnails, as their resolution is too low to be visually useful.
+            let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                (
+                    info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
+                    info.width,
+                    info.height,
+                )
+            } else {
+                (None, None, None)
+            };
+            let uri = match &image.source {
+                MediaSource::Plain(mxc_uri) => Some(mxc_uri.clone()),
+                MediaSource::Encrypted(_) => None,
+            };
+            // now that we've obtained the image URI and its mimetype, try to fetch the image.
+            let item_result = if let Some(mxc_uri) = uri {
+                let item = list.item(cx, item_id, live_id!(ImageMessage)).unwrap();
+
+                let img_ref = item.image(id!(body.content.img));
+                if let Some(data) = try_get_avatar_or_fetch(&mxc_uri) {
+                    match mimetype {
+                        Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
+                        Some(utils::ImageFormat::Jpeg) => img_ref.load_jpg_from_data(cx, &data),
+                        _unknown => utils::load_png_or_jpg(&img_ref, cx, &data),
+                    }.map(|_| item)
+                } else {
+                    // waiting for the image to be fetched
+                    Ok(item)
+                }
+            } else {
+                Err(ImageError::EmptyData)
+            };
+
+            match item_result {
+                Ok(item) => item,
+                Err(e) => {
+                    let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+                    if let MediaSource::Encrypted(encrypted) = &image.source {
+                        item.label(id!(content.message)).set_text(&format!("[TODO] Display encrypted image at {:?}", encrypted.url));
+                    } else {
+                        item.label(id!(content.message)).set_text(&format!("Failed to get image: {e:?}:\n {:#?}", image));
+                    }
+                    item
+                }
+            }
+        }
+        other => {
+            let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+            item.label(id!(content.message)).set_text(&format!("[TODO] {}", other.body()));
+            item
+        }
+
+    };
 
     let username = set_avatar_and_get_username(
         cx,

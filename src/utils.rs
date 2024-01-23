@@ -4,6 +4,20 @@ use chrono::NaiveDateTime;
 use makepad_widgets::{ImageRef, ImageError, Cx};
 use matrix_sdk::ruma::MilliSecondsSinceUnixEpoch;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ImageFormat {
+    Png,
+    Jpeg,
+}
+impl ImageFormat {
+    pub fn from_mimetype(mimetype: &str) -> Option<Self> {
+        match mimetype {
+            "image/png" => Some(Self::Png),
+            "image/jpeg" => Some(Self::Jpeg),
+            _ => None,
+        }
+    }
+}
 
 /// Loads the given image `data` into the given `ImageRef` as either a
 /// PNG or JPEG, using the `imghdr` library to determine which format it is.
