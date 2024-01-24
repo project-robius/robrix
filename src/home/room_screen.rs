@@ -401,9 +401,9 @@ live_design! {
                 width: 19.,
                 height: 19.,
 
-                text_view = { inner = { text = { draw_text: {
+                text_view = { text = { draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 7. }
-                }}}}
+                }}}
             }
 
             content = <Label> {
