@@ -1,5 +1,7 @@
 //! An avatar holds either an image thumbnail or a single-character text label.
 //!
+//! The Avatar view (either text or image) is masked by a circle.
+//! 
 //! By default, an avatar displays the one-character text label.
 //! You can use [AvatarRef::set_text] to set the content of that text label,
 //! or [AvatarRef::set_image] to display an image instead of the text.
@@ -18,6 +20,8 @@ live_design! {
     // An avatar view holds either an image thumbnail or a single character of text.
     // By default, the text label is visible, but can be replaced by an image
     // once it is available.
+    //
+    // The Avatar view (either text or image) is masked by a circle.
     Avatar = {{Avatar}} {
         width: 36.0,
         height: 36.0,
@@ -28,44 +32,46 @@ live_design! {
 
         text_view = <View> {
             visible: true,
-            inner = <CircleView> {
-                align: { x: 0.5, y: 0.5 }
-                draw_bg: {
-                    instance radius: 23.0,
-                    instance border_width: 0.0,
-                    // instance border_color: #ddd,
-                    color: #dfd
+            align: { x: 0.5, y: 0.5 }
+            show_bg: true,
+            draw_bg: {
+                instance background_color: #bfb,
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    let c = self.rect_size * 0.5;
+                    sdf.circle(c.x, c.x, c.x)
+                    sdf.fill_keep(self.background_color);
+                    return sdf.result
                 }
-                
-                text = <Label> {
-                    width: Fit, height: Fit
-                    draw_text: {
-                        text_style: <TITLE_TEXT>{ font_size: 15. }
-                    }
-                    text: ""
+            }
+            
+            text = <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    text_style: <TITLE_TEXT>{ font_size: 15. }
                 }
+                text: ""
             }
         }
 
         img_view = <View> {
             visible: false,
             align: { x: 0.5, y: 0.5 }
-            flow: Overlay
-
             img = <Image> {
                 fit: Smallest,
                 width: Fill, height: Fill,
                 source: (IMG_DEFAULT_AVATAR),
-            }
-            mask = <CircleView> {
                 draw_bg: {
-                    instance radius: 32.0,
-                    instance border_width: 9.0,
-                    instance border_color: #ffffffff,
-                    color: #0000
+                    fn pixel(self) -> vec4 {
+                        let maxed = max(self.rect_size.x, self.rect_size.y);
+                        let sdf = Sdf2d::viewport(self.pos * vec2(maxed, maxed));
+                        let r = maxed * 0.5;
+                        sdf.circle(r, r, r);
+                        sdf.fill_keep(self.get_color());
+                        return sdf.result
+                    }
                 }
             }
-            
         }
     }
 }
