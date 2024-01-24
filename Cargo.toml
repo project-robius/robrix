@@ -40,3 +40,8 @@ url = "2.2.2"
 
 [package.metadata.docs.rs]
 all-features = true
+
+
+# Temporarily include all debug info even for release builds.
+[profile.release]
+debug = "full"

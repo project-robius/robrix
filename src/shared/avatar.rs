@@ -26,32 +26,46 @@ live_design! {
         // the text_view and img_view are overlaid on top of each other.
         flow: Overlay
 
-        text_view = <RoundedView> {
+        text_view = <View> {
             visible: true,
-            align: { x: 0.5, y: 0.5 }
-            draw_bg: {
-                instance radius: 4.0,
-                instance border_width: 1.0,
-                // instance border_color: #ddd,
-                color: #dfd
-            }
-            
-            text = <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 16. }
+            inner = <CircleView> {
+                align: { x: 0.5, y: 0.5 }
+                draw_bg: {
+                    instance radius: 23.0,
+                    instance border_width: 0.0,
+                    // instance border_color: #ddd,
+                    color: #dfd
                 }
-                text: ""
+                
+                text = <Label> {
+                    width: Fit, height: Fit
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{ font_size: 15. }
+                    }
+                    text: ""
+                }
             }
         }
 
         img_view = <View> {
             visible: false,
             align: { x: 0.5, y: 0.5 }
+            flow: Overlay
+
             img = <Image> {
+                fit: Smallest,
                 width: Fill, height: Fill,
                 source: (IMG_DEFAULT_AVATAR),
             }
+            mask = <CircleView> {
+                draw_bg: {
+                    instance radius: 32.0,
+                    instance border_width: 9.0,
+                    instance border_color: #ffffffff,
+                    color: #0000
+                }
+            }
+            
         }
     }
 }

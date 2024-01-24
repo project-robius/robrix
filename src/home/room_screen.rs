@@ -14,7 +14,7 @@ use matrix_sdk::ruma::{
         room::{
             guest_access::GuestAccess,
             history_visibility::HistoryVisibility,
-            join_rules::JoinRule,
+            join_rules::JoinRule, message::MessageType, MediaSource,
         },
         SyncMessageLikeEvent,
     },
@@ -35,13 +35,13 @@ use matrix_sdk_ui::timeline::{
 
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
-    avatar_cache::try_get_avatar_or_fetch,
+    media_cache::{MediaCache, AVATAR_CACHE},
     shared::{
         avatar::{AvatarWidgetRefExt, AvatarRef},
         stack_view_action::StackViewSubWidgetAction,
     },
     sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
-    utils::{unix_time_millis_to_datetime, self},
+    utils::{unix_time_millis_to_datetime, self, MediaFormatConst},
 };
 
 live_design! {
@@ -55,7 +55,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-
+    IMG_LOADING = dep("crate://self/resources/img/loading.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
     ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
@@ -236,7 +236,7 @@ live_design! {
                         text_style: <TEXT_SUB> {},
                         color: (COLOR_META_TEXT)
                     }
-                    text: "<unknown username>"
+                    text: "<Username not available>"
                 }
                 message = <Label> {
                     width: Fill,
@@ -256,6 +256,112 @@ live_design! {
                 <MessageMenu> {}
             }
         }
+    }
+
+    // The view used for each static image-based message event in a room's timeline.
+    // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
+    ImageMessage = <View> {
+        width: Fill,
+        height: Fit,
+        margin: 0.0
+        flow: Down,
+        padding: 0.0,
+        spacing: 0.0
+        
+        body = <View> {
+            width: Fill,
+            height: Fit
+            flow: Right,
+            padding: 10.0,
+            spacing: 10.0
+            
+            profile = <View> {
+                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                width: 65.0,
+                height: Fit,
+                margin: {top: 7.5}
+                flow: Down,
+                avatar = <Avatar> {
+                    width: 50.,
+                    height: 50.
+                    // draw_bg: {
+                    //     fn pixel(self) -> vec4 {
+                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    //         let c = self.rect_size * 0.5;
+                    //         sdf.circle(c.x, c.y, c.x - 2.)
+                    //         sdf.fill_keep(self.get_color());
+                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
+                    //         return sdf.result
+                    //     }
+                    // }
+                }
+                timestamp = <Timestamp> { }
+                datestamp = <Timestamp> {
+                    padding: { top: 5.0 }
+                }
+            }
+            content = <View> {
+                width: Fill,
+                height: Fit
+                flow: Down,
+                padding: 0.0
+                
+                username = <Label> {
+                    margin: {bottom: 10.0, top: 10.0}
+                    draw_text: {
+                        text_style: <TEXT_SUB> {},
+                        color: (COLOR_META_TEXT)
+                    }
+                    text: "<Username not available>"
+                }
+                img = <Image> {
+                    width: Fill, height: 200,
+                    min_width: 10., min_height: 10.,
+                    fit: Horizontal,
+                    source: (IMG_LOADING),
+                }
+                
+                // message = <RoundedView> {
+                //     width: Fill,
+                //     height: Fit,
+                //     align: { x: 0.5, y: 0.5 }
+                //     draw_bg: {
+                //         instance radius: 4.0,
+                //         instance border_width: 1.0,
+                //         // instance border_color: #ddd,
+                //         color: #dfd
+                //     }
+                //     img = <Image> {
+                //         width: 200., height: 200.0, // TODO FIXME: use actual image dimensions
+                //         source: (IMG_LOADING),
+                //     }
+                // }
+                
+                <LineH> {
+                    margin: {top: 13.0, bottom: 5.0}
+                }
+                
+                <MessageMenu> {}
+            }
+        }
+
+        // body = {
+        //     content = {
+        //         message = <RoundedView> {
+        //             align: { x: 0.5, y: 0.5 }
+        //             draw_bg: {
+        //                 instance radius: 4.0,
+        //                 instance border_width: 1.0,
+        //                 // instance border_color: #ddd,
+        //                 color: #dfd
+        //             }
+        //             img = <Image> {
+        //                 width: Fill, height: 100.0, // TODO FIXME: use actual image dimensions
+        //                 source: (IMG_LOADING),
+        //             }
+        //         }
+        //     }
+        // }
     }
 
 
@@ -295,13 +401,9 @@ live_design! {
                 width: 19.,
                 height: 19.,
 
-                text_view = {
-                    text = {
-                        draw_text: {
-                            text_style: <TITLE_TEXT>{ font_size: 8. }
-                        }
-                    }
-                }
+                text_view = { inner = { text = { draw_text: {
+                    text_style: <TITLE_TEXT>{ font_size: 7. }
+                }}}}
             }
 
             content = <Label> {
@@ -406,6 +508,7 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             TopSpace = <TopSpace> {}
             Message = <Message> {}
+            ImageMessage = <ImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
@@ -521,6 +624,11 @@ struct TimelineUiState {
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
 
+    /// The cache of media items (images, videos, etc.) that appear in this timeline.
+    ///
+    /// Currently this excludes avatars, as those are shared across multiple rooms.
+    media_cache: MediaCache,
+
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
@@ -574,6 +682,7 @@ impl TimelineRef {
                         fully_paginated: false,
                         items: Vector::new(),
                         update_receiver,
+                        media_cache: MediaCache::new(MediaFormatConst::File),
                         saved_state: SavedState::default(),
                     });
                 }
@@ -671,12 +780,14 @@ impl Widget for Timeline {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let tl_items = TIMELINE_STATES.lock().unwrap()
-            .get(self.room_id.as_ref().unwrap())
-            .map(|tl| tl.items.clone());
+        let mut timeline_states = TIMELINE_STATES.lock().unwrap();
+        let Some(tl_state) = timeline_states.get_mut(self.room_id.as_ref().unwrap()) else {
+            return DrawStep::done()
+        };
+        let tl_items = &tl_state.items;
 
         // Determine length of the portal list based on the number of timeline items.
-        let last_item_id = tl_items.as_ref().map(|i| i.len() as u64).unwrap_or(0);
+        let last_item_id = tl_items.len() as u64;
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
         // Start the actual drawing procedure.
@@ -694,7 +805,7 @@ impl Widget for Timeline {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                 } else {
                     let tl_idx = (item_id - 1) as usize;
-                    let Some(timeline_item) = tl_items.as_ref().and_then(|t| t.get(tl_idx)) else {
+                    let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
@@ -710,6 +821,7 @@ impl Widget for Timeline {
                                     item_id,
                                     event_tl_item,
                                     message,
+                                    &mut tl_state.media_cache,
                                 ),
                                 TimelineItemContent::RedactedMessage => populate_redacted_message_view(
                                     cx,
@@ -779,9 +891,68 @@ fn populate_message_view(
     item_id: u64,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
+    media_cache: &mut MediaCache,
 ) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(Message)).unwrap();
-    item.label(id!(content.message)).set_text(message.body());
+    let item = match message.msgtype() {
+        MessageType::Text(text) => {
+            let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+            item.label(id!(content.message)).set_text(&text.body);
+            item
+        }
+        MessageType::Image(image) => {
+            // We don't use thumbnails, as their resolution is too low to be visually useful.
+            let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                (
+                    info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
+                    info.width,
+                    info.height,
+                )
+            } else {
+                (None, None, None)
+            };
+            let uri = match &image.source {
+                MediaSource::Plain(mxc_uri) => Some(mxc_uri.clone()),
+                MediaSource::Encrypted(_) => None,
+            };
+            // now that we've obtained the image URI and its mimetype, try to fetch the image.
+            let item_result = if let Some(mxc_uri) = uri {
+                let item = list.item(cx, item_id, live_id!(ImageMessage)).unwrap();
+
+                let img_ref = item.image(id!(body.content.img));
+                if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
+                    match mimetype {
+                        Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
+                        Some(utils::ImageFormat::Jpeg) => img_ref.load_jpg_from_data(cx, &data),
+                        _unknown => utils::load_png_or_jpg(&img_ref, cx, &data),
+                    }.map(|_| item)
+                } else {
+                    // waiting for the image to be fetched
+                    Ok(item)
+                }
+            } else {
+                Err(ImageError::EmptyData)
+            };
+
+            match item_result {
+                Ok(item) => item,
+                Err(e) => {
+                    let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+                    if let MediaSource::Encrypted(encrypted) = &image.source {
+                        item.label(id!(content.message)).set_text(&format!("[TODO] Display encrypted image at {:?}", encrypted.url));
+                    } else {
+                        item.label(id!(content.message)).set_text(&format!("Failed to get image: {e:?}:\n {:#?}", image));
+                    }
+                    item
+                }
+            }
+        }
+        other => {
+            let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+            item.label(id!(content.message)).set_text(&format!("[TODO] {}", other.body()));
+            item
+        }
+
+    };
 
     let username = set_avatar_and_get_username(
         cx,
@@ -1138,7 +1309,8 @@ fn set_avatar_and_get_username(
     match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
             // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = profile.avatar_url.as_ref().and_then(try_get_avatar_or_fetch);
+            let avatar_img = profile.avatar_url.as_ref()
+                .and_then(|uri| AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None));
             match (avatar_img, &profile.display_name) {
                 // Both the avatar image and display name are available.
                 (Some(avatar_img), Some(name)) => {

@@ -8,7 +8,7 @@ pub mod shared;
 
 // Matrix stuff
 pub mod sliding_sync;
-pub mod avatar_cache;
+pub mod media_cache;
 
 // UI stuff
 pub mod message_display;

@@ -3728,9 +3728,9 @@ dependencies = [
 
 [[package]]
 name = "sdfer"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9acf3ce71a1e6a5cca5bbfea4ccc19e7a2a4ecfe7ea2bb2cb6b862a23e21d3d9"
+checksum = "27fd75ebc7c721a70d202c7cdd2beb108bbe5dfaaea68e06aff4de2f4cc240ed"
 
 [[package]]
 name = "sec1"
