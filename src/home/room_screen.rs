@@ -35,13 +35,13 @@ use matrix_sdk_ui::timeline::{
 
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
-    avatar_cache::try_get_avatar_or_fetch,
+    media_cache::{MediaCache, AVATAR_CACHE},
     shared::{
         avatar::{AvatarWidgetRefExt, AvatarRef},
         stack_view_action::StackViewSubWidgetAction,
     },
     sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
-    utils::{unix_time_millis_to_datetime, self},
+    utils::{unix_time_millis_to_datetime, self, MediaFormatConst},
 };
 
 live_design! {
@@ -315,8 +315,8 @@ live_design! {
                     text: "<Username not available>"
                 }
                 img = <Image> {
-                    width: 800, height: 400,
-                    min_width: 1., min_height: 1.,
+                    width: Fill, height: 200,
+                    min_width: 10., min_height: 10.,
                     fit: Horizontal,
                     source: (IMG_LOADING),
                 }
@@ -401,13 +401,9 @@ live_design! {
                 width: 19.,
                 height: 19.,
 
-                text_view = {
-                    text = {
-                        draw_text: {
-                            text_style: <TITLE_TEXT>{ font_size: 8. }
-                        }
-                    }
-                }
+                text_view = { inner = { text = { draw_text: {
+                    text_style: <TITLE_TEXT>{ font_size: 7. }
+                }}}}
             }
 
             content = <Label> {
@@ -628,6 +624,11 @@ struct TimelineUiState {
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
 
+    /// The cache of media items (images, videos, etc.) that appear in this timeline.
+    ///
+    /// Currently this excludes avatars, as those are shared across multiple rooms.
+    media_cache: MediaCache,
+
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
@@ -681,6 +682,7 @@ impl TimelineRef {
                         fully_paginated: false,
                         items: Vector::new(),
                         update_receiver,
+                        media_cache: MediaCache::new(MediaFormatConst::File),
                         saved_state: SavedState::default(),
                     });
                 }
@@ -778,12 +780,14 @@ impl Widget for Timeline {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let tl_items = TIMELINE_STATES.lock().unwrap()
-            .get(self.room_id.as_ref().unwrap())
-            .map(|tl| tl.items.clone());
+        let mut timeline_states = TIMELINE_STATES.lock().unwrap();
+        let Some(tl_state) = timeline_states.get_mut(self.room_id.as_ref().unwrap()) else {
+            return DrawStep::done()
+        };
+        let tl_items = &tl_state.items;
 
         // Determine length of the portal list based on the number of timeline items.
-        let last_item_id = tl_items.as_ref().map(|i| i.len() as u64).unwrap_or(0);
+        let last_item_id = tl_items.len() as u64;
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
         // Start the actual drawing procedure.
@@ -801,7 +805,7 @@ impl Widget for Timeline {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                 } else {
                     let tl_idx = (item_id - 1) as usize;
-                    let Some(timeline_item) = tl_items.as_ref().and_then(|t| t.get(tl_idx)) else {
+                    let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
@@ -817,6 +821,7 @@ impl Widget for Timeline {
                                     item_id,
                                     event_tl_item,
                                     message,
+                                    &mut tl_state.media_cache,
                                 ),
                                 TimelineItemContent::RedactedMessage => populate_redacted_message_view(
                                     cx,
@@ -886,6 +891,7 @@ fn populate_message_view(
     item_id: u64,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
+    media_cache: &mut MediaCache,
 ) -> WidgetRef {
     let item = match message.msgtype() {
         MessageType::Text(text) => {
@@ -913,7 +919,7 @@ fn populate_message_view(
                 let item = list.item(cx, item_id, live_id!(ImageMessage)).unwrap();
 
                 let img_ref = item.image(id!(body.content.img));
-                if let Some(data) = try_get_avatar_or_fetch(&mxc_uri) {
+                if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
                     match mimetype {
                         Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
                         Some(utils::ImageFormat::Jpeg) => img_ref.load_jpg_from_data(cx, &data),
@@ -1303,7 +1309,8 @@ fn set_avatar_and_get_username(
     match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
             // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = profile.avatar_url.as_ref().and_then(try_get_avatar_or_fetch);
+            let avatar_img = profile.avatar_url.as_ref()
+                .and_then(|uri| AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None));
             match (avatar_img, &profile.display_name) {
                 // Both the avatar image and display name are available.
                 (Some(avatar_img), Some(name)) => {

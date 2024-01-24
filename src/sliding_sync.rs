@@ -8,7 +8,6 @@ use matrix_sdk::{
         assign,
         OwnedRoomId,
         api::client::{
-            media::get_content_thumbnail::v3::Method as ThumbnailMethod,
             session::get_login_types::v3::LoginType,
             sync::sync_events::v4::{SyncRequestListFilters, self},
         },
@@ -17,7 +16,8 @@ use matrix_sdk::{
     SlidingSyncList,
     SlidingSyncMode,
     config::RequestConfig,
-    media::{MediaFormat, MediaThumbnailSize, MediaRequest}, Room,
+    media::MediaRequest,
+    Room,
 };
 use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, PaginationOptions, BackPaginationStatus, TimelineItemContent, AnyOtherFullStateEventContent}, Timeline};
 use tokio::{
@@ -28,20 +28,8 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
 use url::Url;
 
-use crate::home::{rooms_list::{self, RoomPreviewEntry, RoomsListUpdate, RoomPreviewAvatar, enqueue_rooms_list_update}, room_screen::TimelineUpdate};
+use crate::{home::{rooms_list::{self, RoomPreviewEntry, RoomsListUpdate, RoomPreviewAvatar, enqueue_rooms_list_update}, room_screen::TimelineUpdate}, media_cache::MediaCacheEntry, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
-
-
-/// Returns the default thumbnail size (40x40 pixels, scaled) to use for media.
-/// This is implemented as a function instead of a const because the internal `UInt` type
-/// does not support const construction.
-pub fn media_thumbnail_format() -> MediaFormat {
-    MediaFormat::Thumbnail(MediaThumbnailSize {
-        width: 40u8.into(),
-        height: 40u8.into(),
-        method: ThumbnailMethod::Scale,
-    })
-}
 
 
 #[derive(Parser, Debug)]
@@ -138,11 +126,12 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
     },
     /// Request to fetch media from the server.
-    /// Upon completion of the async media request,
-    /// the `on_fetched` callback will be invoked with the result of the media fetch.
+    /// Upon completion of the async media request, the `on_fetched` function
+    /// will be invoked with the `destination` and the result of the media fetch.
     FetchMedia {
         media_request: MediaRequest,
-        on_fetched: Box<dyn FnOnce(matrix_sdk::Result<Vec<u8>>) + Send>,
+        on_fetched: fn(&Mutex<MediaCacheEntry>, MediaRequest, matrix_sdk::Result<Vec<u8>>),
+        destination: Arc<Mutex<MediaCacheEntry>>,
     },
 }
 
@@ -237,14 +226,14 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 });
             }
 
-            MatrixRequest::FetchMedia { media_request, on_fetched } => {
+            MatrixRequest::FetchMedia { media_request, on_fetched, destination } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let media = client.media();
                 
                 let _fetch_task = Handle::current().spawn(async move {
                     // println!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
-                    on_fetched(res);
+                    on_fetched(&destination, media_request, res);
                 });
             }
         }
@@ -647,7 +636,7 @@ async fn timeline_subscriber_handler(
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
-    match room.avatar(media_thumbnail_format()).await {
+    match room.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
         _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
     }

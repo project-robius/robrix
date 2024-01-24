@@ -2,7 +2,7 @@ use std::time::SystemTime;
 
 use chrono::NaiveDateTime;
 use makepad_widgets::{ImageRef, ImageError, Cx};
-use matrix_sdk::ruma::MilliSecondsSinceUnixEpoch;
+use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, api::client::media::get_content_thumbnail::v3::Method}, media::{MediaThumbnailSize, MediaFormat}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
@@ -56,3 +56,53 @@ pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Opti
     let millis: i64 = millis.get().into();
     NaiveDateTime::from_timestamp_millis(millis)
 }
+
+
+/// A const-compatible version of [`MediaFormat`].
+#[derive(Clone, Debug)]
+pub enum MediaFormatConst {
+    /// The file that was uploaded.
+    File,
+    /// A thumbnail of the file that was uploaded.
+    Thumbnail(MediaThumbnailSizeConst),
+}
+impl From<MediaFormatConst> for MediaFormat {
+    fn from(constant: MediaFormatConst) -> Self {
+        match constant {
+            MediaFormatConst::File => Self::File,
+            MediaFormatConst::Thumbnail(size) => Self::Thumbnail(size.into()),
+        }
+    }
+}
+
+/// A const-compatible version of [`MediaThumbnailSize`].
+#[derive(Clone, Debug)]
+pub struct MediaThumbnailSizeConst {
+    /// The desired resizing method.
+    pub method: Method,
+
+    /// The desired width of the thumbnail. The actual thumbnail may not match
+    /// the size specified.
+    pub width: u32,
+
+    /// The desired height of the thumbnail. The actual thumbnail may not match
+    /// the size specified.
+    pub height: u32,
+}
+impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
+    fn from(constant: MediaThumbnailSizeConst) -> Self {
+        Self {
+            method: constant.method,
+            width: constant.width.into(),
+            height: constant.height.into(),
+        }
+    }
+}
+
+/// The default media format to use for thumbnail requests.
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(MediaThumbnailSizeConst {
+    method: Method::Scale,
+    width: 40,
+    height: 40,
+});
+
