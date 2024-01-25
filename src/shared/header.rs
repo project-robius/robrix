@@ -1,6 +1,5 @@
 use makepad_widgets::widget::WidgetCache;
 use makepad_widgets::*;
-use crate::shared::stack_view_action::StackViewAction;
 use crate::shared::dropdown_menu::*;
 
 live_design! {
@@ -42,72 +41,6 @@ live_design! {
         }
 
         content = <SimpleHeaderContent> {}
-    }
-
-    HeaderWithLeftActionButton = <SimpleHeader> {
-        content = {
-            flow: Overlay
-
-            button_container = <View> {
-                left_button = <Button> {
-                    width: Fit, height: 68
-                    icon_walk: {width: 20, height: 68}
-                    draw_bg: {
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            return sdf.result
-                        }
-                    }
-                    draw_icon: {
-                        color: #000;
-                        brightness: 0.8;
-                    }
-                }
-                divider = <View> {
-                    width: Fill, height: Fit
-                    right_button = <Button> {
-                        width: Fit, height: 68
-                        icon_walk: {width: 20, height: 68}
-                        draw_bg: {
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                return sdf.result
-                            }
-                        }
-                        draw_icon: {
-                            color: #000;
-                            brightness: 0.8;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    HeaderWithRightActionButton = <SimpleHeader> {
-        content = {
-            flow: Overlay
-
-            button_container = <View> {
-                spacer = <View> {
-                    width: Fill, height: Fit
-                    right_button = <Button> {
-                        width: Fit, height: 68
-                        icon_walk: {width: 20, height: 68}
-                        draw_bg: {
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                return sdf.result
-                            }
-                        }
-                        draw_icon: {
-                            color: #000;
-                            brightness: 0.8;
-                        }
-                    }
-                }
-            }
-        }
     }
 
     HeaderDropDownMenu = {{HeaderDropDownMenu}} {
@@ -177,7 +110,7 @@ impl Widget for HeaderDropDownMenu {
         let actions = cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
 
         if self.wechat_drop_down(id!(menu)).item_clicked(id!(AddContact), &actions) {
-            cx.widget_action(uid, &scope.path, StackViewAction::ShowAddContact);
+            cx.widget_action(uid, &scope.path, StackNavigationAction::NavigateTo(live_id!(add_contact_stack_view)));
         }
     }
 

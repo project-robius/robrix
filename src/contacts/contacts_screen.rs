@@ -8,7 +8,6 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::header::HeaderDropDownMenu;
     import crate::shared::search_bar::SearchBar;
-    import crate::shared::stack_navigation::StackNavigation;
     import crate::contacts::add_contact_screen::AddContactScreen;
     import crate::contacts::contacts_list::ContactsList;
 

@@ -1,5 +1,4 @@
 use crate::shared::clickable_view::*;
-use crate::shared::stack_view_action::StackViewAction;
 use makepad_widgets::widget::WidgetCache;
 use makepad_widgets::*;
 
@@ -305,7 +304,7 @@ impl Widget for Profile {
             .clicked(&actions)
         {
             let uid = self.widget_uid();
-            cx.widget_action(uid, &scope.path, StackViewAction::ShowMyProfile);
+            cx.widget_action(uid, &scope.path, StackNavigationAction::NavigateTo(live_id!(my_profile_stack_view)));
         }
     }
 

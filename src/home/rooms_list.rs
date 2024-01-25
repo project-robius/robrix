@@ -4,7 +4,6 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
-use crate::shared::stack_view_action::StackViewAction;
 use crate::utils::{unix_time_millis_to_datetime, self};
 
 live_design! {
@@ -16,7 +15,6 @@ live_design! {
     import crate::shared::search_bar::SearchBar;
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
-    import crate::shared::stack_navigation::StackNavigation;
     import crate::shared::clickable_view::ClickableView;
     import crate::shared::avatar::Avatar;
 
@@ -274,11 +272,7 @@ impl Widget for RoomsList {
                         }
                     );
 
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        StackViewAction::ShowRoom,
-                    );
+                    cx.widget_action(widget_uid, &scope.path, StackNavigationAction::NavigateTo(live_id!(rooms_stack_view)));
                 }
             }
         }
