@@ -16,7 +16,6 @@ live_design! {
     import crate::profile::my_profile_screen::MyProfileScreen
 
     import crate::shared::clickable_view::ClickableView
-    import crate::shared::stack_navigation::*;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
