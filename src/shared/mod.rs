@@ -4,7 +4,5 @@ pub mod header;
 pub mod helpers;
 pub mod popup_menu;
 pub mod search_bar;
-pub mod stack_navigation;
-pub mod stack_view_action;
 pub mod styles;
 pub mod avatar;

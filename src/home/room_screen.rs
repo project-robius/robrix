@@ -36,10 +36,7 @@ use matrix_sdk_ui::timeline::{
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, AVATAR_CACHE},
-    shared::{
-        avatar::{AvatarWidgetRefExt, AvatarRef},
-        stack_view_action::StackViewSubWidgetAction,
-    },
+    shared::avatar::{AvatarWidgetRefExt, AvatarRef},
     sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
     utils::{unix_time_millis_to_datetime, self, MediaFormatConst},
 };
@@ -753,16 +750,17 @@ impl Widget for Timeline {
             for action in actions {
                 let stack_view_subwidget_action = action.as_widget_action().cast();
                 match stack_view_subwidget_action {
-                    StackViewSubWidgetAction::Hide => {
+                    StackNavigationTransitionAction::HideBegin => {
                         self.save_state();
                         continue;
                     }
-                    StackViewSubWidgetAction::Show => {
+                    StackNavigationTransitionAction::Show => {
                         self.restore_state();
                         self.redraw(cx);
                         continue;
                     }
-                    StackViewSubWidgetAction::None => { }
+                    StackNavigationTransitionAction::HideEnd => { }
+                    StackNavigationTransitionAction::None => { }
                 }
 
                 // Handle other actions here
