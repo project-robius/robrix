@@ -197,7 +197,7 @@ live_design! {
                             content = {
                                 title_container = {
                                     title = {
-                                        text: ""
+                                        text: "Loading room..."
                                     }
                                 }
                             }
@@ -310,11 +310,10 @@ impl App {
                     &room_name.unwrap_or_else(|| format!("Room {}", &room_id)),
                 );
 
-                // Get a reference to the Timeline within the new RoomScreen to be displayed.
-                let timeline_ref = stack_navigation
-                    .view(id!(rooms_stack_view.room_screen))
-                    .timeline(id!(timeline));
-                timeline_ref.set_displayed_room(room_id);
+                // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
+                stack_navigation
+                    .room_screen(id!(rooms_stack_view.room_screen))
+                    .set_displayed_room(room_id);
             }
         }
     }

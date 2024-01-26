@@ -11,7 +11,7 @@ use matrix_sdk::{
             session::get_login_types::v3::LoginType,
             sync::sync_events::v4::{SyncRequestListFilters, self},
         },
-        events::{StateEventType, FullStateEventContent}, MilliSecondsSinceUnixEpoch, UInt,
+        events::{StateEventType, FullStateEventContent, room::message::RoomMessageEventContent}, MilliSecondsSinceUnixEpoch, UInt,
     },
     SlidingSyncList,
     SlidingSyncMode,
@@ -133,6 +133,11 @@ pub enum MatrixRequest {
         on_fetched: fn(&Mutex<MediaCacheEntry>, MediaRequest, matrix_sdk::Result<Vec<u8>>),
         destination: Arc<Mutex<MediaCacheEntry>>,
     },
+    /// Request to send a message to the given room's timeline.
+    SendMessage {
+        room_id: OwnedRoomId,
+        message: RoomMessageEventContent,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -236,6 +241,27 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     on_fetched(&destination, media_request, res);
                 });
             }
+
+            MatrixRequest::SendMessage { room_id, message } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        println!("BUG: room info not found for send message request {room_id}");
+                        continue;
+                    };
+
+                    room_info.timeline.clone()
+                };
+
+                // Spawn a new async task that will send the actual message.
+                let _send_message_task = Handle::current().spawn(async move {
+                    println!("Sending message to room {room_id}: {message:?}...");
+                    timeline.send(message.into()).await;
+                    println!("Sent message to room {room_id}.");
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
         }
     }
 
@@ -276,10 +302,10 @@ pub fn start_matrix_tokio() -> Result<()> {
                             eprintln!("BUG: main async loop task ended unexpectedly!");
                         }
                         Ok(Err(e)) => {
-                            eprintln!("Main async loop task ended with error:\n --> {e:?}");
-                            
-                            // TODO: send error to rooms_list so it can be displayed.
-                            
+                            eprintln!("Error: main async loop task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
                         },
                         Err(e) => {
                             eprintln!("BUG: failed to join main async loop task: {e:?}");
@@ -293,10 +319,10 @@ pub fn start_matrix_tokio() -> Result<()> {
                             eprintln!("BUG: async worker task ended unexpectedly!");
                         }
                         Ok(Err(e)) => {
-                            eprintln!("async worker task ended with error:\n --> {e:?}");
-                            
-                            // TODO: send a message to the UI layer so we can display a error dialog box or notification.
-
+                            eprintln!("Error: async worker task ended:\n\t{e:?}");
+                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: e.to_string(),
+                            });
                         },
                         Err(e) => {
                             eprintln!("BUG: failed to join async worker task: {e:?}");
