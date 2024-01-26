@@ -14,7 +14,7 @@ use matrix_sdk::ruma::{
         room::{
             guest_access::GuestAccess,
             history_visibility::HistoryVisibility,
-            join_rules::JoinRule, message::MessageType, MediaSource,
+            join_rules::JoinRule, message::{MessageType, RoomMessageEventContent}, MediaSource,
         },
         SyncMessageLikeEvent,
     },
@@ -518,7 +518,7 @@ live_design! {
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
 
-    RoomScreen = <KeyboardView> {
+    RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill
         flow: Down
         show_bg: true,
@@ -553,42 +553,42 @@ live_design! {
                     }
                 }
 
-            // TODO find a way to override colors
-            draw_cursor: {
-                instance focus: 0.0
-                uniform border_radius: 0.5
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(
-                        0.,
-                        0.,
-                        self.rect_size.x,
-                        self.rect_size.y,
-                        self.border_radius
-                    )
-                    sdf.fill(mix(#0f0, #0b0, self.focus));
-                    return sdf.result
+                // TODO find a way to override colors
+                draw_cursor: {
+                    instance focus: 0.0
+                    uniform border_radius: 0.5
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        sdf.box(
+                            0.,
+                            0.,
+                            self.rect_size.x,
+                            self.rect_size.y,
+                            self.border_radius
+                        )
+                        sdf.fill(mix(#0f0, #0b0, self.focus));
+                        return sdf.result
+                    }
                 }
-            }
 
-            // TODO find a way to override colors
-            draw_select: {
-                instance hover: 0.0
-                instance focus: 0.0
-                uniform border_radius: 2.0
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(
-                        0.,
-                        0.,
-                        self.rect_size.x,
-                        self.rect_size.y,
-                        self.border_radius
-                    )
-                    sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
-                    return sdf.result
+                // TODO find a way to override colors
+                draw_select: {
+                    instance hover: 0.0
+                    instance focus: 0.0
+                    uniform border_radius: 2.0
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        sdf.box(
+                            0.,
+                            0.,
+                            self.rect_size.x,
+                            self.rect_size.y,
+                            self.border_radius
+                        )
+                        sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
+                        return sdf.result
+                    }
                 }
-            }
             }
             <Image> {
                 source: (IMG_SMILEY_FACE_BW),
@@ -604,6 +604,46 @@ live_design! {
                 text: "Send",
             }
         }
+    }
+}
+
+/// A simple deref wrapper around the `RoomScreen` widget that enables us to handle its events.
+#[derive(Live, LiveHook, Widget)]
+struct RoomScreen {
+    #[deref] view: View,
+    #[rust] room_id: Option<OwnedRoomId>,
+}
+impl Widget for RoomScreen {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
+        // Handle actions on this widget, e.g., it being hidden or shown.
+        if let Event::Actions(actions) = event {
+            if self.button(id!(send_message_button)).clicked(&actions) {
+                let entered_text = self.text_input(id!(message_input)).text();
+                if !entered_text.is_empty() {
+                    let room_id = self.room_id.clone().unwrap();
+                    println!("Sending message to room {}: {:?}", room_id, entered_text);
+                    submit_async_request(MatrixRequest::SendMessage {
+                        room_id,
+                        message: RoomMessageEventContent::text_plain(entered_text),
+                        // TODO: support replies to specific messages, attaching mentions, etc.
+                    });
+                }
+            }
+        }
+        // Forward the event to the inner view, and thus, the inner timeline.
+        self.view.handle_event(cx, event, scope)
+    }
+}
+impl RoomScreenRef {
+    /// Sets this `RoomScreen` widget to display the timeline for the given room.
+    pub fn set_displayed_room(&self, room_id: OwnedRoomId) {
+        let Some(mut room_screen) = self.borrow_mut() else { return };
+        room_screen.room_id = Some(room_id.clone());
+        self.timeline(id!(timeline)).set_room(room_id);
     }
 }
 
@@ -633,7 +673,7 @@ pub enum TimelineUpdate {
 pub struct Timeline {
     #[deref] view: View,
     
-    /// The UI-relevant states for the room that this timeline widget is currently displaying.
+    /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 }
 
@@ -704,14 +744,13 @@ impl Timeline {
     }
 }
 
-// This struct is auto-generated by deriving `Widget` on `Timeline`.
 impl TimelineRef {
     /// Sets this timeline widget to display the timeline for the given room.
-    pub fn set_displayed_room(&self, room_id: OwnedRoomId) {
+    fn set_room(&self, room_id: OwnedRoomId) {
         let Some(mut timeline) = self.borrow_mut() else { return };
         debug_assert!( // just an optional sanity check
             timeline.tl_state.is_none(),
-            "BUG: tried to set_displayed_room() on a timeline with existing state. \
+            "BUG: tried to set_room() on a timeline with existing state. \
             Did you forget to restore the timeline state to the global map of states?",
         );
 
