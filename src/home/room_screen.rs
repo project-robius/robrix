@@ -538,23 +538,57 @@ live_design! {
                 color: #fff
             }
 
-            <Image> {
-                source: (IMG_KEYBOARD_ICON),
-                width: 36., height: 36.
-            }
-            message_input = <SearchBar> {
-                show_bg: false
-                input = {
-                    width: Fill, height: Fit, margin: 0
-                    empty_message: " "
-                    draw_text:{
-                        text_style:<REGULAR_TEXT>{font_size: 11},
-
-                        fn get_color(self) -> vec4 {
-                            return #0
-                        }
+            message_input = <TextInput> {
+                width: Fill, height: Fit, margin: 0
+                align: {y: 0.5}
+                empty_message: "Write a message..."
+                draw_bg: {
+                    color: #fff
+                }
+                draw_text: {
+                    text_style:<REGULAR_TEXT>{},
+    
+                    fn get_color(self) -> vec4 {
+                        return #ccc
                     }
                 }
+
+            // TODO find a way to override colors
+            draw_cursor: {
+                instance focus: 0.0
+                uniform border_radius: 0.5
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(
+                        0.,
+                        0.,
+                        self.rect_size.x,
+                        self.rect_size.y,
+                        self.border_radius
+                    )
+                    sdf.fill(mix(#0f0, #0b0, self.focus));
+                    return sdf.result
+                }
+            }
+
+            // TODO find a way to override colors
+            draw_select: {
+                instance hover: 0.0
+                instance focus: 0.0
+                uniform border_radius: 2.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(
+                        0.,
+                        0.,
+                        self.rect_size.x,
+                        self.rect_size.y,
+                        self.border_radius
+                    )
+                    sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
+                    return sdf.result
+                }
+            }
             }
             <Image> {
                 source: (IMG_SMILEY_FACE_BW),
@@ -563,6 +597,11 @@ live_design! {
             <Image> {
                 source: (IMG_PLUS),
                 width: 36., height: 36.
+            }
+            send_message_button = <IconButton> {
+                draw_icon: {svg_file: (ICO_REPLY)},
+                icon_walk: {width: 15.0, height: Fit},
+                text: "Send",
             }
         }
     }
@@ -594,8 +633,8 @@ pub enum TimelineUpdate {
 pub struct Timeline {
     #[deref] view: View,
     
-    /// The ID of the room that this timeline widget is currently displaying.
-    #[rust] room_id: Option<OwnedRoomId>,
+    /// The UI-relevant states for the room that this timeline widget is currently displaying.
+    #[rust] tl_state: Option<TimelineUiState>,
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -625,7 +664,7 @@ struct TimelineUiState {
     ///
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
-
+    
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
@@ -644,19 +683,24 @@ struct SavedState {
 }
 
 impl Timeline {
-    /// Saves the current visual UI state of this timeline so that it can be restored later.
+    /// Removes this Timeline's current visual UI state from this Timeline widget
+    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
+    ///
+    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
     fn save_state(&mut self) {
-        if let Some(tl) = TIMELINE_STATES.lock().unwrap().get_mut(self.room_id.as_ref().unwrap()) {
-            let first_id = self.portal_list(id!(list)).first_id();
-            tl.saved_state.first_id = first_id;
-        }
+        println!("Saving state for room {}", self.tl_state.as_ref().unwrap().room_id);
+        let first_id = self.portal_list(id!(list)).first_id();
+        let Some(mut tl) = self.tl_state.take() else { return };
+        tl.saved_state.first_id = first_id;
+        // Store this Timeline's `TimelineUiState` in the global map of states.
+        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
     }
 
     /// Restores the previously-saved visual UI state of this timeline.
     fn restore_state(&mut self) {
-        if let Some(tl) = TIMELINE_STATES.lock().unwrap().get_mut(self.room_id.as_ref().unwrap()) {
-            self.portal_list(id!(list)).set_first_id(tl.saved_state.first_id);
-        }
+        let Some(tl) = self.tl_state.as_ref() else { return };
+        let first_id = tl.saved_state.first_id;
+        self.portal_list(id!(list)).set_first_id(first_id);
     }
 }
 
@@ -664,31 +708,32 @@ impl Timeline {
 impl TimelineRef {
     /// Sets this timeline widget to display the timeline for the given room.
     pub fn set_displayed_room(&self, room_id: OwnedRoomId) {
-        if let Some(mut timeline) = self.borrow_mut() {
-            timeline.room_id = Some(room_id.clone());
-        }
-            
-        let (first_time_showing_room, fully_paginated) = match TIMELINE_STATES.lock().unwrap().entry(room_id.clone()) {
-            std::collections::btree_map::Entry::Occupied(tl_state) => {
-                (false, tl_state.get().fully_paginated)
-            }
-            std::collections::btree_map::Entry::Vacant(entry) => {
-                if let Some(update_receiver) = take_timeline_update_receiver(&room_id) {
-                    entry.insert(TimelineUiState {
-                        room_id: room_id.clone(),
-                        fully_paginated: false,
-                        items: Vector::new(),
-                        update_receiver,
-                        media_cache: MediaCache::new(MediaFormatConst::File),
-                        saved_state: SavedState::default(),
-                    });
-                }
-                (true, false)
-            }
+        let Some(mut timeline) = self.borrow_mut() else { return };
+        debug_assert!( // just an optional sanity check
+            timeline.tl_state.is_none(),
+            "BUG: tried to set_displayed_room() on a timeline with existing state. \
+            Did you forget to restore the timeline state to the global map of states?",
+        );
+
+        let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
+            (existing, false)
+        } else {
+            let update_receiver = take_timeline_update_receiver(&room_id)
+                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let new_tl_state = TimelineUiState {
+                room_id: room_id.clone(),
+                // We assume timelines being viewed for the first time haven't been fully paginated.
+                fully_paginated: false,
+                items: Vector::new(),
+                update_receiver,
+                media_cache: MediaCache::new(MediaFormatConst::File),
+                saved_state: SavedState::default(),
+            };
+            (new_tl_state, true)
         };
 
         // kick off a back pagination request for this room
-        if !fully_paginated {
+        if !tl_state.fully_paginated {
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: room_id.clone(),
                 batch_size: 50,
@@ -704,6 +749,10 @@ impl TimelineRef {
         if first_time_showing_room {
             submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
         }
+
+        // Finally, store the tl_state for this room into the Timeline widget,
+        // such that it can be accessed in future event/draw handlers.
+        timeline.tl_state = Some(tl_state);
     }
 }
 
@@ -712,37 +761,35 @@ impl Widget for Timeline {
         // Currently, a Signal event is only used to tell this widget that its timeline events
         // have been updated in the background.
         if let Event::Signal = event {
-            let mut timeline_states = TIMELINE_STATES.lock().unwrap();
-            if let Some(tl) = timeline_states.get_mut(self.room_id.as_ref().unwrap()) {
-                let mut done_loading = false;
-                while let Ok(update) = tl.update_receiver.try_recv() {
-                    match update {
-                        TimelineUpdate::NewItems(items) => {
-                            tl.items = items;
-                        }
-                        TimelineUpdate::TimelineStartReached => {
-                            println!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
-                            tl.fully_paginated = true;
-                            done_loading = true;
-                        }
-                        TimelineUpdate::PaginationIdle => {
-                            done_loading = true;
-                        }
-                        TimelineUpdate::RoomMembersFetched => {
-                            println!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
-                            // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
-                            // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                        }
+            let Some(tl) = self.tl_state.as_mut() else { return };
+            let mut done_loading = false;
+            while let Ok(update) = tl.update_receiver.try_recv() {
+                match update {
+                    TimelineUpdate::NewItems(items) => {
+                        tl.items = items;
+                    }
+                    TimelineUpdate::TimelineStartReached => {
+                        println!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
+                        tl.fully_paginated = true;
+                        done_loading = true;
+                    }
+                    TimelineUpdate::PaginationIdle => {
+                        done_loading = true;
+                    }
+                    TimelineUpdate::RoomMembersFetched => {
+                        println!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
+                        // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
+                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
                 }
-
-                if done_loading {
-                    println!("TODO: hide topspace loading animation for room {}", tl.room_id);
-                    // TODO FIXME: hide TopSpace loading animation, set it to invisible.
-                }
-                
-                self.redraw(cx);
             }
+
+            if done_loading {
+                println!("TODO: hide topspace loading animation for room {}", tl.room_id);
+                // TODO FIXME: hide TopSpace loading animation, set it to invisible.
+            }
+            
+            self.redraw(cx);
         }
 
         // Handle actions on this widget, e.g., it being hidden or shown.
@@ -750,6 +797,8 @@ impl Widget for Timeline {
             for action in actions {
                 let stack_view_subwidget_action = action.as_widget_action().cast();
                 match stack_view_subwidget_action {
+                    // TODO: this should be `HideEnd`, but we don't currently receive any `HideEnd` events
+                    //       at all due to a presumed bug with the Stack Navigation widget.
                     StackNavigationTransitionAction::HideBegin => {
                         self.save_state();
                         continue;
@@ -759,8 +808,8 @@ impl Widget for Timeline {
                         self.redraw(cx);
                         continue;
                     }
-                    StackNavigationTransitionAction::HideEnd => { }
-                    StackNavigationTransitionAction::None => { }
+                    StackNavigationTransitionAction::HideEnd
+                    | StackNavigationTransitionAction::None => { }
                 }
 
                 // Handle other actions here
@@ -778,8 +827,7 @@ impl Widget for Timeline {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mut timeline_states = TIMELINE_STATES.lock().unwrap();
-        let Some(tl_state) = timeline_states.get_mut(self.room_id.as_ref().unwrap()) else {
+        let Some(tl_state) = self.tl_state.as_mut() else {
             return DrawStep::done()
         };
         let tl_items = &tl_state.items;
@@ -826,7 +874,7 @@ impl Widget for Timeline {
                                     list,
                                     item_id,
                                     event_tl_item,
-                                    self.room_id.as_ref().unwrap(), // room must exist at this point
+                                    &tl_state.room_id,
                                 ),
                                 TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
                                     cx,
