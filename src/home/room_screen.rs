@@ -510,7 +510,7 @@ live_design! {
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
             ReadMarker = <ReadMarker> {}
-        }    
+        }
     }
 
 
@@ -643,7 +643,7 @@ impl RoomScreenRef {
     pub fn set_displayed_room(&self, room_id: OwnedRoomId) {
         let Some(mut room_screen) = self.borrow_mut() else { return };
         room_screen.room_id = Some(room_id.clone());
-        self.timeline(id!(timeline)).set_room(room_id);
+        room_screen.timeline(id!(timeline)).set_room(room_id);
     }
 }
 
