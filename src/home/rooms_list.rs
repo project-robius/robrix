@@ -64,7 +64,7 @@ live_design! {
     Empty = <View> { }
 
     StatusLabel = <View> {
-        width: Fill, height: 80.0,
+        width: Fill, height: Fit,
         align: { x: 0.5, y: 0.5 }
         draw_bg: {
             color: #f4f4f4
@@ -73,6 +73,7 @@ live_design! {
 
         label = <Label> {
             draw_text: {
+                wrap: Word,
                 text_style: <REGULAR_TEXT>{}
             }
             text: "Loading joined rooms..."
