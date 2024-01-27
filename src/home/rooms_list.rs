@@ -64,7 +64,7 @@ live_design! {
     Empty = <View> { }
 
     StatusLabel = <View> {
-        width: Fill, height: Fit,
+        width: Fill, height: 80.0,
         align: { x: 0.5, y: 0.5 }
         draw_bg: {
             color: #f4f4f4
