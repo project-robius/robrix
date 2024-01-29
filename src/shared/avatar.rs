@@ -46,7 +46,8 @@ live_design! {
             }
             
             text = <Label> {
-                width: Fit, height: Fit
+                padding: { top: 3.0 }
+                // width: Fit, height: Fit,
                 draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 15. }
                 }

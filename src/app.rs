@@ -57,6 +57,7 @@ live_design! {
                         padding: 0, align: {x: 0.0, y: 0.0}, spacing: 0., flow: Down
 
                         application_pages = <View> {
+                            width: Fill,
                             margin: 0.0,
                             padding: 0.0
 
