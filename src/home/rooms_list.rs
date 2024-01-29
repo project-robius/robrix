@@ -64,14 +64,16 @@ live_design! {
     Empty = <View> { }
 
     StatusLabel = <View> {
-        width: Fill, height: 80.0,
+        width: Fill, height: Fit,
         align: { x: 0.5, y: 0.5 }
+        padding: 15.0,
         draw_bg: {
             color: #f4f4f4
         }
         show_bg: true,
 
         label = <Label> {
+            align: { x: 0.5, y: 0.5 }
             draw_text: {
                 wrap: Word,
                 text_style: <REGULAR_TEXT>{}
@@ -306,9 +308,15 @@ impl Widget for RoomsList {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     if count > 0 {
                         let text = format!("Found {count} joined rooms.");
-                        item.label(id!(label)).set_text(&text);
+                        item.as_view().apply_over(cx, live!{
+                            height: 80.0,
+                            label = { text: (text) }
+                        });
                     } else {
-                        item.label(id!(label)).set_text(&self.status);
+                        item.as_view().apply_over(cx, live!{
+                            height: 500.0,
+                            label = { text: (&self.status) }
+                        });
                     }
                     item
                 }

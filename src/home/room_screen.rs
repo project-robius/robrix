@@ -497,7 +497,7 @@ live_design! {
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
 
         list = <PortalList> {
-            auto_tail: false, // set to `true` to lock the view to the last item.
+            auto_tail: true, // set to `true` to lock the view to the last item.
             height: Fill,
             width: Fill
             flow: Down
@@ -622,7 +622,9 @@ impl Widget for RoomScreen {
         // Handle actions on this widget, e.g., it being hidden or shown.
         if let Event::Actions(actions) = event {
             if self.button(id!(send_message_button)).clicked(&actions) {
-                let entered_text = self.text_input(id!(message_input)).text();
+                let msg_input_widget = self.text_input(id!(message_input));
+                let entered_text = msg_input_widget.text();
+                msg_input_widget.set_text_and_redraw(cx, "");
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     println!("Sending message to room {}: {:?}", room_id, entered_text);
