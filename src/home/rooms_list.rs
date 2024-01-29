@@ -73,6 +73,7 @@ live_design! {
         show_bg: true,
 
         label = <Label> {
+            width: Fill,
             align: { x: 0.5, y: 0.5 }
             draw_text: {
                 wrap: Word,
@@ -314,7 +315,7 @@ impl Widget for RoomsList {
                         });
                     } else {
                         item.as_view().apply_over(cx, live!{
-                            height: 500.0,
+                            height: Fit,
                             label = { text: (&self.status) }
                         });
                     }
