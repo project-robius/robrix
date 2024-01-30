@@ -315,7 +315,7 @@ impl Widget for RoomsList {
                         });
                     } else {
                         item.as_view().apply_over(cx, live!{
-                            height: Fit,
+                            // height: Fit,
                             label = { text: (&self.status) }
                         });
                     }

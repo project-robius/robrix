@@ -40,12 +40,12 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Display reactions (annotations)
 - [ ] Inline link previews
 - [ ] Inline reply view
+- [x] Send messages (standalone, no replies)
 - [ ] Interactive reaction button, send reactions
 - [ ] Reply button, send reply
 - [ ] Error display banners: no connection, failure to login, sync timeout.
 - [ ] Collapsible/expandable view of contiguous "small" events
 - [ ] Encrypted rooms, decrypting messages
-- [ ] Sending messages
 
 ### Auxiliary/admin features: login, registration, settings
 - [ ] Username/password login screen
