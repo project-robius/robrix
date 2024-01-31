@@ -180,7 +180,7 @@ impl Widget for MomentList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let moment_entries_count = self.moment_entries.len() as u64;
+        let moment_entries_count = self.moment_entries.len();
 
         while let Some(item) = self.view.draw_walk(cx, scope, walk).step(){
             if let Some(mut list) = item.as_portal_list().borrow_mut() {
