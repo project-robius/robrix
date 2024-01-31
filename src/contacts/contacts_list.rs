@@ -174,7 +174,7 @@ impl Widget for ContactsList {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let grouped_data = self.group_by_first_letter();
-        let groups_count: u64 = grouped_data.len() as u64;
+        let groups_count = grouped_data.len();
 
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step(){
             if let Some(mut list) = list_item.as_portal_list().borrow_mut() {

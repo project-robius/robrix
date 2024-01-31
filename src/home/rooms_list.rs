@@ -287,7 +287,7 @@ impl Widget for RoomsList {
 
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
-        let count = self.all_rooms.len() as u64;
+        let count = self.all_rooms.len();
         let last_item_id = count + 1; // Add 1 for the search bar up top.
 
         // Start the actual drawing procedure.
@@ -315,7 +315,7 @@ impl Widget for RoomsList {
                         });
                     } else {
                         item.as_view().apply_over(cx, live!{
-                            height: Fit,
+                            // height: Fit,
                             label = { text: (&self.status) }
                         });
                     }

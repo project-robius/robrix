@@ -721,7 +721,7 @@ struct SavedState {
     /// The ID of the first item in the timeline's PortalList that is currently visible.
     ///
     /// TODO: expose scroll position from PortalList and use that instead, which is more accurate.
-    first_id: u64,
+    first_id: usize,
 }
 
 impl Timeline {
@@ -838,18 +838,17 @@ impl Widget for Timeline {
             for action in actions {
                 let stack_view_subwidget_action = action.as_widget_action().cast();
                 match stack_view_subwidget_action {
-                    // TODO: this should be `HideEnd`, but we don't currently receive any `HideEnd` events
-                    //       at all due to a presumed bug with the Stack Navigation widget.
-                    StackNavigationTransitionAction::HideBegin => {
+                    StackNavigationTransitionAction::HideEnd => {
                         self.save_state();
                         continue;
                     }
-                    StackNavigationTransitionAction::Show => {
+                    StackNavigationTransitionAction::ShowBegin => {
                         self.restore_state();
                         self.redraw(cx);
                         continue;
                     }
-                    StackNavigationTransitionAction::HideEnd
+                    StackNavigationTransitionAction::HideBegin
+                    | StackNavigationTransitionAction::ShowDone
                     | StackNavigationTransitionAction::None => { }
                 }
 
@@ -874,7 +873,7 @@ impl Widget for Timeline {
         let tl_items = &tl_state.items;
 
         // Determine length of the portal list based on the number of timeline items.
-        let last_item_id = tl_items.len() as u64;
+        let last_item_id = tl_items.len();
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
         // Start the actual drawing procedure.
@@ -975,7 +974,7 @@ impl Widget for Timeline {
 fn populate_message_view(
     cx: &mut Cx,
     list: &mut PortalList,
-    item_id: u64,
+    item_id: usize,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     media_cache: &mut MediaCache,
@@ -1082,7 +1081,7 @@ fn populate_message_view(
 fn populate_redacted_message_view(
     cx: &mut Cx,
     list: &mut PortalList,
-    item_id: u64,
+    item_id: usize,
     event_tl_item: &EventTimelineItem,
     _room_id: &OwnedRoomId
 ) -> WidgetRef {
@@ -1139,7 +1138,7 @@ fn populate_redacted_message_view(
 fn populate_membership_change_view(
     cx: &mut Cx,
     list: &mut PortalList,
-    item_id: u64,
+    item_id: usize,
     event_tl_item: &EventTimelineItem,
     change: &RoomMembershipChange,
 ) -> WidgetRef {
@@ -1207,7 +1206,7 @@ fn populate_membership_change_view(
 fn populate_profile_change_view(
     cx: &mut Cx,
     list: &mut PortalList,
-    item_id: u64,
+    item_id: usize,
     event_tl_item: &EventTimelineItem,
     change: &MemberProfileChange,
 ) -> WidgetRef {
@@ -1254,7 +1253,7 @@ fn populate_profile_change_view(
 fn populate_other_state_view(
     cx: &mut Cx,
     list: &mut PortalList,
-    item_id: u64,
+    item_id: usize,
     event_tl_item: &EventTimelineItem,
     other_state: &timeline::OtherState,
 ) -> WidgetRef {
