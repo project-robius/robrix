@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use clap::Parser;
 use futures_util::{StreamExt, pin_mut};
-use makepad_widgets::SignalToUI;
+use makepad_widgets::{SignalToUI, error, log};
 use matrix_sdk::{
     Client,
     ruma::{
@@ -36,7 +36,7 @@ use crate::message_display::DisplayerExt;
 struct Cli {
     /// The user name that should be used for the login.
     #[clap(value_parser)]
-    user_name: String,
+    username: String,
     
     /// The password that should be used for the login.
     #[clap(value_parser)]
@@ -89,7 +89,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     // Attempt to login using the CLI-provided username & password.
     let login_result = client
         .matrix_auth()
-        .login_username(&cli.user_name, &cli.password)
+        .login_username(&cli.username, &cli.password)
         .initial_device_display_name("robrix-un-pw")
         .send()
         .await?;
@@ -99,14 +99,14 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     if client.logged_in() {
         println!("Logged in successfully? {:?}", client.logged_in());
         enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: format!("Logged in as {}. Loading rooms...", &cli.user_name),
+            status: format!("Logged in as {}. Loading rooms...", &cli.username),
         });
         Ok((client, _token))
     } else {
         enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: format!("Failed to login as {}: {:?}", &cli.user_name, login_result),
+            status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
         });
-        bail!("Failed to login as {}: {login_result:?}", &cli.user_name)
+        bail!("Failed to login as {}: {login_result:?}", &cli.username)
     }
 }
 
@@ -205,7 +205,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     ).await;
                     match res {
                         Ok(_) => println!("Completed pagination request for room {room_id}."),
-                        Err(e) => eprintln!("Error sending pagination request for room {room_id}: {e:?}"),
+                        Err(e) => error!("Error sending pagination request for room {room_id}: {e:?}"),
                     }
                 });
             }
@@ -265,7 +265,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
         }
     }
 
-    eprintln!("async_worker task ended unexpectedly");
+    error!("async_worker task ended unexpectedly");
     bail!("async_worker task ended unexpectedly")
 }
 
@@ -299,16 +299,16 @@ pub fn start_matrix_tokio() -> Result<()> {
                 result = &mut main_loop_join_handle => {
                     match result {
                         Ok(Ok(())) => {
-                            eprintln!("BUG: main async loop task ended unexpectedly!");
+                            error!("BUG: main async loop task ended unexpectedly!");
                         }
                         Ok(Err(e)) => {
-                            eprintln!("Error: main async loop task ended:\n\t{e:?}");
+                            error!("Error: main async loop task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
                         },
                         Err(e) => {
-                            eprintln!("BUG: failed to join main async loop task: {e:?}");
+                            error!("BUG: failed to join main async loop task: {e:?}");
                         }
                     }
                     break;
@@ -316,16 +316,16 @@ pub fn start_matrix_tokio() -> Result<()> {
                 result = &mut worker_join_handle => {
                     match result {
                         Ok(Ok(())) => {
-                            eprintln!("BUG: async worker task ended unexpectedly!");
+                            error!("BUG: async worker task ended unexpectedly!");
                         }
                         Ok(Err(e)) => {
-                            eprintln!("Error: async worker task ended:\n\t{e:?}");
+                            error!("Error: async worker task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
                         },
                         Err(e) => {
-                            eprintln!("BUG: failed to join async worker task: {e:?}");
+                            error!("BUG: failed to join async worker task: {e:?}");
                         }
                     }
                     break;
@@ -384,9 +384,56 @@ async fn async_main_loop() -> Result<()> {
 
     let start = std::time::Instant::now();
 
-    let cli = Cli::parse();
+    let cli = Cli::try_parse().ok().or_else(|| {
+        // Quickly try to parse the username and password fields from "login.toml".
+        let login_file = std::include_str!("../login.toml");
+        log!("login.toml: \n{login_file}");
+        let mut username = None;
+        let mut password = None;
+        for line in login_file.lines() {
+            if line.starts_with("username") {
+                username = line.find('=')
+                    .and_then(|i| line.get((i + 1) ..))
+                    .map(|s| s.trim().trim_matches('"').to_string());
+            }
+            if line.starts_with("password") {
+                password = line.find('=')
+                    .and_then(|i| line.get((i + 1) ..))
+                    .map(|s| s.trim().trim_matches('"').to_string());
+            }
+            if username.is_some() && password.is_some() {
+                break;
+            }
+        }
+        if let (Some(username), Some(password)) = (username, password) {
+            if username == "NoUsernameProvided" || password == "NoPasswordProvided" {
+                None
+            } else {
+                log!("Parsed username: {username:?}, password: {password:?}");
+                Some(Cli {
+                    username,
+                    password,
+                    homeserver: None,
+                    proxy: None,
+                    verbose: false,
+                })
+            }
+        } else {
+            log!("Failed to parse username and password from \"resources/login.toml\".");
+            None
+        }
+    });
+    
+    let Some(cli) = cli else {
+        enqueue_rooms_list_update(RoomsListUpdate::Status {
+            status: String::from("Error: missing username and password in 'login.toml' file. \
+                Please provide a valid username and password in 'login.toml' and rebuild the app."
+            ),
+        });
+        loop { } // nothing else we can do right now
+    };
     enqueue_rooms_list_update(RoomsListUpdate::Status {
-        status: format!("Logging in as {}...", &cli.user_name)
+        status: format!("Logging in as {}...", &cli.username)
     });
 
     let (client, _token) = login(cli).await?;
@@ -461,18 +508,18 @@ async fn async_main_loop() -> Result<()> {
                 u
             }
             Some(Err(e)) => {
-                eprintln!("loop was stopped by client error processing: {e}");
+                error!("loop was stopped by client error processing: {e}");
                 continue;
             }
             None => {
-                eprintln!("Streaming loop ended unexpectedly");
+                error!("Streaming loop ended unexpectedly");
                 break;
             }
         };
 
         for room_id in update.rooms {
             let Some(room) = client.get_room(&room_id) else {
-                eprintln!("Error: couldn't get Room {room_id:?} that had an update");
+                error!("Error: couldn't get Room {room_id:?} that had an update");
                 continue
             };
 
@@ -509,11 +556,11 @@ async fn async_main_loop() -> Result<()> {
             // println!("    --> Subscribing to above room {:?}", room_id);
 
             let Some(ssroom) = sliding_sync.get_room(&room_id).await else {
-                eprintln!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
+                error!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
                 continue
             };
             let Some(timeline) = ssroom.timeline().await else {
-                eprintln!("Error: couldn't get timeline for room {room_id:?} that had an update.");
+                error!("Error: couldn't get timeline for room {room_id:?} that had an update.");
                 continue
             };
             
@@ -655,7 +702,7 @@ async fn timeline_subscriber_handler(
         SignalToUI::set_ui_signal();
     }
 
-    eprintln!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
+    error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
 }
 
 

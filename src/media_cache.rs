@@ -1,4 +1,5 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
+use makepad_widgets::error;
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
 use crate::{sliding_sync::{self, MatrixRequest}, utils::{MEDIA_THUMBNAIL_FORMAT, MediaFormatConst}};
 
@@ -121,7 +122,7 @@ fn insert_into_cache(value_ref: &Mutex<MediaCacheEntry>, _request: MediaRequest,
             MediaCacheEntry::Loaded(data.into())
         }
         Err(e) => {
-            eprintln!("Failed to fetch media for {:?}: {e:?}", _request.source);
+            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
             MediaCacheEntry::Failed
         }
     };

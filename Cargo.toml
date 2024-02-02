@@ -46,10 +46,14 @@ url = "2.2.2"
 ##
 ## Even though we don't directly depend on these crates in Robrix,
 ## specifying them here with the `vendored`/`bundled` features
-## will cause cargo's resolver to unify those features across the entire build,
+## will cause cargo to enable those features across the entire build
+## (called "feature unification", see https://doc.rust-lang.org/cargo/reference/features.html#feature-unification),
 ## meaning that any other crate that depends on them will also use the vendored versions.
 ##
-## Technically, we don't need these when building for Android on Linux systems.
+## Technically, we don't need these when building for Android on Linux systems,
+## but there's no way to specify that in Cargo.toml, so we just always include them.
+## Plus, this makes builds more reproducible across host systems,
+## and avoids the issue of needing to set up pkg-config sysroots on Linux.
 [target.'cfg(target_os = "android")'.dependencies]
 openssl = { version = "*", features = ["vendored"] }
 rusqlite = { version = "*", features = ["bundled"] }

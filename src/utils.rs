@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use chrono::NaiveDateTime;
-use makepad_widgets::{ImageRef, ImageError, Cx};
+use makepad_widgets::{ImageRef, ImageError, Cx, error};
 use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, api::client::media::get_content_thumbnail::v3::Method}, media::{MediaThumbnailSize, MediaFormat}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -28,11 +28,11 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         Some(imghdr::Type::Png) => img.load_png_from_data(cx, data),
         Some(imghdr::Type::Jpeg) => img.load_jpg_from_data(cx, data),
         Some(unsupported) => {
-            eprintln!("load_png_or_jpg(): The {unsupported:?} image format is unsupported");
+            error!("load_png_or_jpg(): The {unsupported:?} image format is unsupported");
             Err(ImageError::UnsupportedFormat)
         }
         None => {
-            eprintln!("load_png_or_jpg(): Unknown image format");
+            error!("load_png_or_jpg(): Unknown image format");
             Err(ImageError::UnsupportedFormat)
         }
     };
@@ -44,7 +44,7 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         );
         path.push(filename);
         path.set_extension("unknown");
-        eprintln!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
+        error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
         std::fs::write(path, &data)
             .expect("Failed to write user avatar image to disk");
     }
