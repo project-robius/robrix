@@ -1,7 +1,0 @@
-# [target.aarch64-linux-android]
-# linker = "/Users/kevinboos/robius/makepad/tools/cargo_makepad/android_33_macos_aarch64/ndk/25.2.9519653/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android33-clang"
-
-# [env]
-# CC_aarch64-linux-android = { value = "/Users/kevinboos/robius/makepad/tools/cargo_makepad/android_33_macos_aarch64/ndk/25.2.9519653/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android33-clang", force = true }
-# AR_aarch64-linux-android = { value = "/Users/kevinboos/robius/makepad/tools/cargo_makepad/android_33_macos_aarch64/ndk/25.2.9519653/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar", force = true }
-# RANLIB_aarch64-linux-android = { value = "/Users/kevinboos/robius/makepad/tools/cargo_makepad/android_33_macos_aarch64/ndk/25.2.9519653/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ranlib", force = true }
