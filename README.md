@@ -24,22 +24,22 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
 ### Building Robrix for Android
 
 1. Install the `cargo-makepad` build tool:
-```sh
-cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
-```
+   ```sh
+   cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+   ```
 
 2. Use `cargo-makepad` to install the Android toolchain, with the full NDK:
-```sh
-cargo makepad android install-toolchain --full-ndk
-```
+   ```sh
+   cargo makepad android install-toolchain --full-ndk
+   ```
 
 3. Build and run Robrix using `cargo-makepad`:
     * Fill in your username and password in the [`login.toml`](login.toml) file.
-    ```sh
-    cargo makepad android run -p robrix --release
-    ```
+       ```sh
+       cargo makepad android run -p robrix --release
+       ```
     * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
-        > API version 33 or higher is required, which is Android 13 and up.
+        * API version 33 or higher is required, which is Android 13 and up.
 
 
 ## Feature status tracker 
