@@ -249,7 +249,7 @@ impl Widget for RoomsList {
                 }
             }
             if num_updates > 0 {
-                println!("RoomsList: processed {} updates to the list of all rooms", num_updates);
+                log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
                 self.redraw(cx);
             }
         }

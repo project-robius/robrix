@@ -94,10 +94,10 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         .send()
         .await?;
 
-    println!("Login result: {login_result:?}");
+    log!("Login result: {login_result:?}");
 
     if client.logged_in() {
-        println!("Logged in successfully? {:?}", client.logged_in());
+        log!("Logged in successfully? {:?}", client.logged_in());
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Logged in as {}. Loading rooms...", &cli.username),
         });
@@ -154,7 +154,7 @@ pub fn submit_async_request(req: MatrixRequest) {
 /// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
 /// and then executes them within an async runtime context.
 async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<()> {
-    println!("Started async_worker task.");
+    log!("Started async_worker task.");
     
     while let Some(request) = receiver.recv().await {
         match request {
@@ -162,7 +162,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        println!("BUG: room info not found for pagination request {room_id}");
+                        log!("BUG: room info not found for pagination request {room_id}");
                         continue;
                     };
 
@@ -175,7 +175,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         room_info.pagination_status_task = Some(Handle::current().spawn( async move {
                             loop {
                                 let status = back_pagination_subscriber.next().await;
-                                println!("### Timeline {room_id2} back pagination status: {:?}", status);
+                                log!("### Timeline {room_id2} back pagination status: {:?}", status);
                                 match status {
                                     Some(BackPaginationStatus::Idle) => {
                                         sender.send(TimelineUpdate::PaginationIdle).unwrap();
@@ -198,13 +198,13 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
-                    println!("Sending pagination request for room {room_id}...");
+                    log!("Sending pagination request for room {room_id}...");
                     let res = timeline.paginate_backwards(
                         // PaginationOptions::simple_request(batch_size)
                         PaginationOptions::until_num_items(batch_size, _max_events)
                     ).await;
                     match res {
-                        Ok(_) => println!("Completed pagination request for room {room_id}."),
+                        Ok(_) => log!("Completed pagination request for room {room_id}."),
                         Err(e) => error!("Error sending pagination request for room {room_id}: {e:?}"),
                     }
                 });
@@ -214,7 +214,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        println!("BUG: room info not found for fetch members request {room_id}");
+                        log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
 
@@ -223,9 +223,9 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
-                    println!("Sending fetch room members request for room {room_id}...");
+                    log!("Sending fetch room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    println!("Completed fetch room members request for room {room_id}.");
+                    log!("Completed fetch room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
                     SignalToUI::set_ui_signal();
                 });
@@ -236,7 +236,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let media = client.media();
                 
                 let _fetch_task = Handle::current().spawn(async move {
-                    // println!("Sending fetch media request for {media_request:?}...");
+                    // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res);
                 });
@@ -246,7 +246,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
-                        println!("BUG: room info not found for send message request {room_id}");
+                        log!("BUG: room info not found for send message request {room_id}");
                         continue;
                     };
 
@@ -255,9 +255,9 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
-                    println!("Sending message to room {room_id}: {message:?}...");
+                    log!("Sending message to room {room_id}: {message:?}...");
                     timeline.send(message.into()).await;
-                    println!("Sent message to room {room_id}.");
+                    log!("Sent message to room {room_id}.");
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -462,7 +462,7 @@ async fn async_main_loop() -> Result<()> {
         ]);
 
     // Now that we're logged in, try to connect to the sliding sync proxy.
-    println!("Sliding sync proxy URL: {:?}", client.sliding_sync_proxy());
+    log!("Sliding sync proxy URL: {:?}", client.sliding_sync_proxy());
     let sliding_sync = client
         .sliding_sync("main-sync")?
         .sliding_sync_proxy("https://slidingsync.lab.matrix.org".try_into()?)
@@ -503,8 +503,8 @@ async fn async_main_loop() -> Result<()> {
         let update = match stream.next().await {
             Some(Ok(u)) => {
                 let curr = start.elapsed().as_secs_f64();
-                println!("{curr:>8.2} Received an update. Summary: {u:?}");
-                // println!("    --> Current room list: {:?}", sliding_sync.get_all_rooms().await.into_iter().map(|r| r.room_id().to_owned()).collect::<Vec<_>>());
+                log!("{curr:>8.2} Received an update. Summary: {u:?}");
+                // log!("    --> Current room list: {:?}", sliding_sync.get_all_rooms().await.into_iter().map(|r| r.room_id().to_owned()).collect::<Vec<_>>());
                 u
             }
             Some(Err(e)) => {
@@ -523,7 +523,7 @@ async fn async_main_loop() -> Result<()> {
                 continue
             };
 
-            println!("\n{room_id:?} --> {:?} has an update
+            log!("\n{room_id:?} --> {:?} has an update
                 display_name: {:?},
                 topic: {:?},
                 is_synced: {:?}, is_state_fully_synced: {:?},
@@ -553,7 +553,7 @@ async fn async_main_loop() -> Result<()> {
             );
 
             // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
-            // println!("    --> Subscribing to above room {:?}", room_id);
+            // log!("    --> Subscribing to above room {:?}", room_id);
 
             let Some(ssroom) = sliding_sync.get_room(&room_id).await else {
                 error!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
@@ -668,7 +668,7 @@ async fn async_main_loop() -> Result<()> {
         }
 
         if !update.lists.is_empty() {
-            println!("Lists have an update: {:?}", update.lists);
+            log!("Lists have an update: {:?}", update.lists);
         }
     }
 
@@ -681,7 +681,7 @@ async fn timeline_subscriber_handler(
     timeline: Arc<Timeline>,
     sender: crossbeam_channel::Sender<TimelineUpdate>,
 ) {
-    println!("Starting timeline subscriber for room {room_id}...");
+    log!("Starting timeline subscriber for room {room_id}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
 
     sender.send(TimelineUpdate::NewItems(timeline_items.clone()))
@@ -693,7 +693,7 @@ async fn timeline_subscriber_handler(
             diff.apply(&mut timeline_items);
         }
         if num_updates > 0 {
-            println!("Timeline::handle_event(): applied {num_updates} updates for room {room_id}");
+            log!("Timeline::handle_event(): applied {num_updates} updates for room {room_id}");
         }
         sender.send(TimelineUpdate::NewItems(timeline_items.clone()))
             .expect("Error: timeline update sender couldn't send update with new items!");

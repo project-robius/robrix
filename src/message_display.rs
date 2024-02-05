@@ -1,5 +1,6 @@
 use std::fmt;
 
+use makepad_widgets::log;
 use matrix_sdk::ruma::events::room::message::MessageType;
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineItemContent, TimelineDetails};
 
@@ -43,7 +44,7 @@ impl<'e> fmt::Display for EventTextPreview<'e> {
             TimelineItemContent::Sticker(s) => write!(f, "{}: [Sticker: {}]", sender, s.content().body),
             TimelineItemContent::Poll(_p) => write!(f, "{}: [Poll]", sender),
             _unhandled => {
-                println!("!!! Found unknown latest event type: {:?}", _unhandled);
+                log!("!!! Found unknown latest event type: {:?}", _unhandled);
                 write!(f, "[Unknown event]")
             }
         }
@@ -113,7 +114,7 @@ fn display_other_state(
         AnyOtherFullStateEventContent::SpaceParent(_)
         | AnyOtherFullStateEventContent::SpaceChild(_) => None,
         other => {
-            println!("*** Unhandled: {:?}", other);
+            log!("*** Unhandled: {:?}", other);
             None
         }
     }

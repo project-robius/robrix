@@ -8,7 +8,9 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 
 ## Building and Running
 
-[Install Rust](https://www.rust-lang.org/tools/install), and then simply run:
+First, [install Rust](https://www.rust-lang.org/tools/install).
+
+Then, on desktop platforms (macOS, Linux, Windows), simply run:
 ```sh
 cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
 ```
@@ -17,6 +19,27 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
     * Note the usage of **single quotes** (not double quotes), which will prevent your shell from treating certain symbols as globs/regex patterns.
     * If you created your Matrix account using a third-party Single Sign On (SSO) like a Google account, you can set a standard password by using [Element's password reset form](https://app.element.io/#/forgot_password).
 * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
+
+
+### Building Robrix for Android
+
+1. Install the `cargo-makepad` build tool:
+```sh
+cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
+```
+
+2. Use `cargo-makepad` to install the Android toolchain, with the full NDK:
+```sh
+cargo makepad android install-toolchain --full-ndk
+```
+
+3. Build and run Robrix using `cargo-makepad`:
+    * Fill in your username and password in the [`login.toml`](login.toml) file.
+    ```sh
+    cargo makepad android run -p robrix 
+    ```
+    * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
+        > API version 33 or higher is required, which is Android 13 and up.
 
 
 ## Feature status tracker 
