@@ -387,29 +387,28 @@ async fn async_main_loop() -> Result<()> {
     let cli = Cli::try_parse().ok().or_else(|| {
         // Quickly try to parse the username and password fields from "login.toml".
         let login_file = std::include_str!("../login.toml");
-        log!("login.toml: \n{login_file}");
         let mut username = None;
         let mut password = None;
         for line in login_file.lines() {
             if line.starts_with("username") {
                 username = line.find('=')
                     .and_then(|i| line.get((i + 1) ..))
-                    .map(|s| s.trim().trim_matches('"').to_string());
+                    .map(|s| s.trim().trim_matches('"').trim().to_string());
             }
             if line.starts_with("password") {
                 password = line.find('=')
                     .and_then(|i| line.get((i + 1) ..))
-                    .map(|s| s.trim().trim_matches('"').to_string());
+                    .map(|s| s.trim().trim_matches('"').trim().to_string());
             }
             if username.is_some() && password.is_some() {
                 break;
             }
         }
         if let (Some(username), Some(password)) = (username, password) {
-            if username == "NoUsernameProvided" || password == "NoPasswordProvided" {
+            if username.is_empty() || password.is_empty() {
                 None
             } else {
-                log!("Parsed username: {username:?}, password: {password:?}");
+                log!("Parsed username: {username:?} and password.");
                 Some(Cli {
                     username,
                     password,
@@ -419,7 +418,7 @@ async fn async_main_loop() -> Result<()> {
                 })
             }
         } else {
-            log!("Failed to parse username and password from \"resources/login.toml\".");
+            log!("Failed to parse username and password from \"login.toml\".");
             None
         }
     });
