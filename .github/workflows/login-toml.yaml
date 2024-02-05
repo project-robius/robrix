@@ -3,8 +3,8 @@ name: Prevent modifying login.toml
 on: [push, pull_request]
 
 jobs:
-  documentation:
-    name: Build and deploy
+  prevent_modify_login_toml:
+    name: Prevent modifying login.toml
     runs-on: ubuntu-latest
     steps:
     - name: Prevent modifying login.toml
