@@ -627,7 +627,7 @@ impl Widget for RoomScreen {
                 msg_input_widget.set_text_and_redraw(cx, "");
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
-                    println!("Sending message to room {}: {:?}", room_id, entered_text);
+                    log!("Sending message to room {}: {:?}", room_id, entered_text);
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message: RoomMessageEventContent::text_plain(entered_text),
@@ -730,7 +730,7 @@ impl Timeline {
     ///
     /// Note: after calling this function, the timeline's `tl_state` will be `None`.
     fn save_state(&mut self) {
-        println!("Saving state for room {}", self.tl_state.as_ref().unwrap().room_id);
+        log!("Saving state for room {}", self.tl_state.as_ref().unwrap().room_id);
         let first_id = self.portal_list(id!(list)).first_id();
         let Some(mut tl) = self.tl_state.take() else { return };
         tl.saved_state.first_id = first_id;
@@ -781,7 +781,7 @@ impl TimelineRef {
                 max_events: 50,
             })
         } else {
-            // println!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
+            // log!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
         }
 
         // Even though we specify that room member profiles should be lazy-loaded,
@@ -810,7 +810,7 @@ impl Widget for Timeline {
                         tl.items = items;
                     }
                     TimelineUpdate::TimelineStartReached => {
-                        println!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
+                        log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
                         tl.fully_paginated = true;
                         done_loading = true;
                     }
@@ -818,7 +818,7 @@ impl Widget for Timeline {
                         done_loading = true;
                     }
                     TimelineUpdate::RoomMembersFetched => {
-                        println!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
+                        log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
@@ -826,7 +826,7 @@ impl Widget for Timeline {
             }
 
             if done_loading {
-                println!("TODO: hide topspace loading animation for room {}", tl.room_id);
+                log!("TODO: hide topspace loading animation for room {}", tl.room_id);
                 // TODO FIXME: hide TopSpace loading animation, set it to invisible.
             }
             
@@ -886,7 +886,7 @@ impl Widget for Timeline {
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                // println!("Drawing item {}", item_id);
+                // log!("Drawing item {}", item_id);
                 let item = if item_id == 0 {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                 } else {
@@ -1318,7 +1318,7 @@ fn populate_other_state_view(
         AnyOtherFullStateEventContent::SpaceParent(_)
         | AnyOtherFullStateEventContent::SpaceChild(_) => None,
         _other => {
-            // println!("*** Unhandled: {:?}.", _other);
+            // log!("*** Unhandled: {:?}.", _other);
             None
         }
     };
@@ -1419,7 +1419,7 @@ fn set_avatar_and_get_username(
             }
         }
         _other => {
-            // println!("populate_message_view(): sender profile not ready yet for event {_other:?}");
+            // log!("populate_message_view(): sender profile not ready yet for event {_other:?}");
             set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
         }
     }

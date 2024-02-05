@@ -219,28 +219,28 @@ impl Widget for RoomsList {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
                             room.avatar = avatar;
                         } else {
-                            eprintln!("Error: couldn't find room {room_id} to update avatar");
+                            error!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
                     RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
                             room.latest = Some((timestamp, latest_message_text));
                         } else {
-                            eprintln!("Error: couldn't find room {room_id} to update latest event");
+                            error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, room_name } => {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
                             room.room_name = Some(room_name);
                         } else {
-                            eprintln!("Error: couldn't find room {room_id} to update room name");
+                            error!("Error: couldn't find room {room_id} to update room name");
                         }
                     }
                     RoomsListUpdate::RemoveRoom(room_id) => {
                         if let Some(idx) = self.all_rooms.iter().position(|r| r.room_id.as_ref() == Some(&room_id)) {
                             self.all_rooms.remove(idx);
                         } else {
-                            eprintln!("Error: couldn't find room {room_id} to remove room");
+                            error!("Error: couldn't find room {room_id} to remove room");
                         }
                     }
                     RoomsListUpdate::Status { status } => {
@@ -249,7 +249,7 @@ impl Widget for RoomsList {
                 }
             }
             if num_updates > 0 {
-                println!("RoomsList: processed {} updates to the list of all rooms", num_updates);
+                log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
                 self.redraw(cx);
             }
         }
@@ -315,7 +315,7 @@ impl Widget for RoomsList {
                         });
                     } else {
                         item.as_view().apply_over(cx, live!{
-                            // height: Fit,
+                            height: Fit,
                             label = { text: (&self.status) }
                         });
                     }

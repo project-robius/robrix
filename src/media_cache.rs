@@ -1,4 +1,5 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
+use makepad_widgets::{error, log};
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
 use crate::{sliding_sync::{self, MatrixRequest}, utils::{MEDIA_THUMBNAIL_FORMAT, MediaFormatConst}};
 
@@ -104,7 +105,7 @@ fn insert_into_cache(value_ref: &Mutex<MediaCacheEntry>, _request: MediaRequest,
             // debugging: dump out the media image to disk
             if false {
                 if let MediaSource::Plain(mxc_uri) = _request.source {
-                    println!("Fetched media for {mxc_uri}");
+                    log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
                         SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
@@ -112,7 +113,7 @@ fn insert_into_cache(value_ref: &Mutex<MediaCacheEntry>, _request: MediaRequest,
                     );
                     path.push(filename);
                     path.set_extension("png");
-                    println!("Writing user media image to disk: {:?}", path);
+                    log!("Writing user media image to disk: {:?}", path);
                     std::fs::write(path, &data)
                         .expect("Failed to write user media image to disk");
                 }
@@ -121,7 +122,7 @@ fn insert_into_cache(value_ref: &Mutex<MediaCacheEntry>, _request: MediaRequest,
             MediaCacheEntry::Loaded(data.into())
         }
         Err(e) => {
-            eprintln!("Failed to fetch media for {:?}: {e:?}", _request.source);
+            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
             MediaCacheEntry::Failed
         }
     };

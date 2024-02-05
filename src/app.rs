@@ -258,7 +258,7 @@ impl LiveRegister for App {
 }
 impl LiveHook for App {
     fn after_new_from_doc(&mut self, _cx: &mut Cx) {
-        println!("after_new_from_doc(): starting matrix sdk loop");
+        log!("after_new_from_doc(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 }
