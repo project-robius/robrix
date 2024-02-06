@@ -74,23 +74,9 @@ live_design! {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
     
-    COLOR_BG = #xfff8ee
-    COLOR_BRAND = #xf88
-    COLOR_BRAND_HOVER = #xf66
-    COLOR_META_TEXT = #xaaa
-    COLOR_META = #xccc
-    COLOR_META_INV = #xfffa
-    COLOR_OVERLAY_BG = #x000000d8
-    COLOR_DIVIDER = #x00000018
-    COLOR_DIVIDER_DARK = #x00000044
-    COLOR_READ_MARKER = #xeb2733
-    COLOR_PROFILE_CIRCLE = #xfff8ee
-    COLOR_P = #x999
-    
-    FillerY = <View> {width: Fill}
-    
-    FillerX = <View> {height: Fill}
-    
+    // COLOR_BG = #xfff8ee
+    COLOR_ACCENT_HOVER = #x0ff
+    COLOR_READ_MARKER = #x0f0
     
     IconButton = <Button> {
         draw_text: {
@@ -102,11 +88,11 @@ live_design! {
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        (COLOR_META_TEXT),
-                        (COLOR_BRAND),
+                        #0ff,
+                        (COLOR_ACCENT),
                         self.hover
                     ),
-                    (COLOR_BRAND_HOVER),
+                    (COLOR_ACCENT_HOVER),
                     self.pressed
                 )
             }
@@ -116,11 +102,11 @@ live_design! {
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        (COLOR_META),
-                        (COLOR_BRAND),
+                        #f00,
+                        (COLOR_ACCENT),
                         self.hover
                     ),
-                    (COLOR_BRAND_HOVER),
+                    (COLOR_ACCENT_HOVER),
                     self.pressed
                 )
             }
@@ -136,43 +122,23 @@ live_design! {
         text: "1"
     }
     
-    LineH = <RoundedView> {
-        width: Fill,
-        height: 2,
-        margin: 0.0
-        padding: 0.0,
-        spacing: 0.0
-        draw_bg: {color: (COLOR_DIVIDER)}
-    }
-
-    Timestamp = <Label> {
-        padding: { top: 10.0, bottom: 0.0, left: 0.0, right: 0.0 }
-        draw_text: {
-            text_style: <TEXT_SUB> {},
-            color: (COLOR_META_TEXT)
-        }
-        text: " "
-    }
+    Timestamp = <Meta> { width: Fit, align: {x: 1.0, y: 0.5}}
     
     MessageMenu = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0
+        width: Fill, height: Fit,
+        margin: 0.0, padding: 0.0,
         flow: Down,
-        padding: 0.0,
         spacing: 0.0
         
         <View> {
-            width: Fill,
-            height: Fit,
-            margin: 0.0
+            width: Fill, height: Fit,
+            margin: 0.0, padding: 0.0,
             flow: Right,
-            padding: 0.0,
-            spacing: 10.0
+            spacing: (SPACE_0)
             
             likes = <IconButton> {draw_icon: {svg_file: (ICO_FAV)} icon_walk: {width: 15.0, height: Fit}}
             comments = <IconButton> {draw_icon: {svg_file: (ICO_COMMENT)} icon_walk: {width: 15.0, height: Fit}, text: "7"}
-            <FillerX> {}
+            <Filler> {}
             reply = <IconButton> {draw_icon: {svg_file: (ICO_REPLY)} icon_walk: {width: 15.0, height: Fit}, text: ""}
         }
     }
@@ -182,75 +148,46 @@ live_design! {
 
     // The view used for each text-based message event in a room's timeline.
     Message = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0
         flow: Down,
-        padding: 0.0,
+        width: Fill, height: Fit,
+        margin: 0.0 padding: <MSPACE_V_1> {} 
         spacing: 0.0
         
         body = <View> {
-            width: Fill,
-            height: Fit
             flow: Right,
-            padding: 10.0,
-            spacing: 10.0
+            width: Fill, height: Fit,
+            padding: <MSPACE_2> {}
+            spacing: 0.0
             
-            profile = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
-                height: Fit,
-                margin: {top: 7.5}
-                flow: Down,
-                avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
-                    // draw_bg: {
-                    //     fn pixel(self) -> vec4 {
-                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    //         let c = self.rect_size * 0.5;
-                    //         sdf.circle(c.x, c.y, c.x - 2.)
-                    //         sdf.fill_keep(self.get_color());
-                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                    //         return sdf.result
-                    //     }
-                    // }
-                }
-                timestamp = <Timestamp> { }
-                datestamp = <Timestamp> {
-                    padding: { top: 5.0 }
-                }
-            }
+            // profile = <View> {
+            //     align: {x: 1.0, y: 0.0} // centered horizontally, top aligned
+            //     width: 50.0,
+            //     height: Fit,
+            //     margin: {top: 7.5}
+            //     flow: Down,
+            // }
             content = <View> {
-                width: Fill,
-                height: Fit
-                flow: Down,
+                draw_bg: {color: (COLOR_U_0)}
+                width: Fill, height: Fit,
                 padding: 0.0
-                
-                username = <Label> {
-                    margin: {bottom: 10.0, top: 10.0}
-                    draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
-                    }
-                    text: "<Username not available>"
+                flow: Down,
+                spacing: (SPACE_1)
+
+                <View> {
+                    width: Fill, height: Fit,
+                    flow: Right,
+                    align: {x: 0.0, y: 0.5}
+                    padding: 0.0
+                    spacing: (SPACE_1  / 2)
+                    avatar = <Avatar> { width: 15., height: 15. }
+                    username = <Pbold> { width: Fill, text: "<Username not available>" }
+                    timestamp = <Timestamp> { text: "03:23 pm"} // TODO: FIX. date is not output anymore
+                    // datestamp = <Timestamp> { padding: { top: 5.0 } }
                 }
-                message = <Label> {
-                    width: Fill,
-                    height: Fit
-                    draw_text: {
-                        wrap: Word,
-                        text_style: <TEXT_P> {},
-                        color: (COLOR_P)
-                    }
-                    text: ""
-                }
-                
-                <LineH> {
-                    margin: {top: 13.0, bottom: 5.0}
-                }
-                
-                <MessageMenu> {}
+
+                message = <P> {}
+                // <DividerH> { margin: <MSPACE_V_2> {} }
+                // <MessageMenu> {}
             }
         }
     }
@@ -272,47 +209,27 @@ live_design! {
             padding: 10.0,
             spacing: 10.0
             
-            profile = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
-                height: Fit,
-                margin: {top: 7.5}
-                flow: Down,
-                avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
-                    // draw_bg: {
-                    //     fn pixel(self) -> vec4 {
-                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    //         let c = self.rect_size * 0.5;
-                    //         sdf.circle(c.x, c.y, c.x - 2.)
-                    //         sdf.fill_keep(self.get_color());
-                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                    //         return sdf.result
-                    //     }
-                    // }
-                }
-                timestamp = <Timestamp> { }
-                datestamp = <Timestamp> {
-                    padding: { top: 5.0 }
-                }
-            }
             content = <View> {
-                width: Fill,
-                height: Fit
-                flow: Down,
+                width: Fill, height: Fit
                 padding: 0.0
+                flow: Down,
+                spacing: (SPACE_1)
                 
-                username = <Label> {
-                    margin: {bottom: 10.0, top: 10.0}
-                    draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
-                    }
-                    text: "<Username not available>"
+                <View> {
+                    draw_bg: {color: (COLOR_U_0)}
+                    width: Fill, height: Fit,
+                    flow: Right,
+                    align: {x: 0.0, y: 0.5}
+                    padding: 0.0
+                    spacing: (SPACE_1 / 2)
+                    avatar = <Avatar> { width: 15., height: 15. } // TODO: Is this broken?
+                    username = <Meta> { width: Fill, text: "<Username not available>" }
+                    timestamp = <Timestamp> { text: "03:23"} // TODO: FIX. date is not output anymore
+                    // datestamp = <Timestamp> { padding: { top: 5.0 } }
                 }
+
                 img = <Image> {
-                    width: Fill, height: 200,
+                    width: Fill, height: Fit,
                     min_width: 10., min_height: 10.,
                     fit: Horizontal,
                     source: (IMG_LOADING),
@@ -334,11 +251,8 @@ live_design! {
                 //     }
                 // }
                 
-                <LineH> {
-                    margin: {top: 13.0, bottom: 5.0}
-                }
-                
-                <MessageMenu> {}
+                // <DividerH> { margin: {top: 13.0, bottom: 5.0} }
+                // <MessageMenu> {}
             }
         }
 
@@ -365,54 +279,27 @@ live_design! {
     // The view used for each state event (non-messages) in a room's timeline.
     // The timestamp, profile picture, and text are all very small.
     SmallStateEvent = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0
+        width: Fill, height: Fit,
+        padding: <MSPACE_V_1> {}, margin: 0.0
         flow: Right,
-        padding: 0.0,
-        spacing: 0.0
         
         body = <View> {
-            width: Fill,
-            height: Fit
+            width: Fill, height: Fit
             flow: Right,
-            padding: { top: 2.0, bottom: 2.0 }
-            spacing: 5.0
-            
+            spacing: (SPACE_1)
+            padding: <MSPACE_H_2> {}
+            avatar = <Avatar> { width: 15., height: 15. } // TODO: Is this broken?
+            content = <Meta> {
+                width: Fill, height: Fit
+                text: ""
+            }
             left_container = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                align: {x: 1.0, y: 0.0} // centered horizontally, top aligned
                 width: 70.0,
                 height: Fit
                 flow: Right,
 
-                timestamp = <Timestamp> {
-                    padding: {top: 5.0}
-                    draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
-                    }
-                }
-            }
-
-            avatar = <Avatar> {
-                width: 19.,
-                height: 19.,
-
-                text_view = { text = { draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 7. }
-                }}}
-            }
-
-            content = <Label> {
-                width: Fill,
-                height: Fit
-                padding: {top: 5.0},
-                draw_text: {
-                    wrap: Word,
-                    text_style: <TEXT_SUB> {},
-                    color: (COLOR_P)
-                }
-                text: ""
+                timestamp = <Timestamp> { }
             }
         }
     }
@@ -421,33 +308,24 @@ live_design! {
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
     DayDivider = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0,
         flow: Right,
+        width: Fill, height: Fit,
+        margin: 0.0,
         padding: 0.0,
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-        left_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        left_line = <DividerH> { margin: {top: 10.0, bottom: 10.0} }
 
-        date = <Label> {
-            padding: {left: 7.0, right: 7.0}
-            margin: {bottom: 10.0, top: 10.0}
-            draw_text: {
-                text_style: <TEXT_SUB> {},
-                color: (COLOR_DIVIDER_DARK)
-            }
+        date = <Meta> {
+            width: Fill,
+            height: 100,
+            // padding: {left: 7.0, right: 7.0}
+            // margin: {bottom: 10.0, top: 10.0}
             text: "<date>"
         }
 
-        right_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
-            draw_bg: {color: (COLOR_DIVIDER_DARK)}
-        }
+        right_line = <DividerH> { margin: {top: 10.0, bottom: 10.0} }
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
@@ -460,7 +338,7 @@ live_design! {
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-        left_line = <LineH> {
+        left_line = <DividerH> {
             margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
@@ -475,7 +353,7 @@ live_design! {
             text: "New Messages"
         }
 
-        right_line = <LineH> {
+        right_line = <DividerH> {
             margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
@@ -494,14 +372,14 @@ live_design! {
     Timeline = {{Timeline}} {
         width: Fill,
         height: Fill,
-        align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
+        align: {x: 0.0, y: 0.0} // center horizontally, align to top vertically
 
         list = <PortalList> {
             auto_tail: true, // set to `true` to lock the view to the last item.
-            height: Fill,
-            width: Fill
             flow: Down
-    
+            height: Fill, width: Fill
+            spacing: 0.0
+
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             TopSpace = <TopSpace> {}
             Message = <Message> {}
@@ -512,7 +390,6 @@ live_design! {
             ReadMarker = <ReadMarker> {}
         }
     }
-
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
