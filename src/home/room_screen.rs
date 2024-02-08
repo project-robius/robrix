@@ -6,7 +6,6 @@ use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::BTreeMap};
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
-    MilliSecondsSinceUnixEpoch,
     events::{
         AnySyncTimelineEvent,
         AnySyncMessageLikeEvent,
@@ -17,8 +16,7 @@ use matrix_sdk::ruma::{
             join_rules::JoinRule, message::{MessageType, RoomMessageEventContent}, MediaSource,
         },
         SyncMessageLikeEvent,
-    },
-    OwnedRoomId,
+    }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId,
 };
 use matrix_sdk_ui::timeline::{
     self,
@@ -232,6 +230,7 @@ live_design! {
                     draw_text: {
                         text_style: <TEXT_SUB> {},
                         color: (COLOR_META_TEXT)
+                        wrap: Ellipsis,
                     }
                     text: "<Username not available>"
                 }
@@ -246,119 +245,75 @@ live_design! {
                     text: ""
                 }
                 
-                <LineH> {
-                    margin: {top: 13.0, bottom: 5.0}
-                }
+                // <LineH> {
+                //     margin: {top: 13.0, bottom: 5.0}
+                // }
                 
                 <MessageMenu> {}
             }
         }
     }
 
-    // The view used for each static image-based message event in a room's timeline.
-    // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
-    ImageMessage = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0
-        flow: Down,
-        padding: 0.0,
-        spacing: 0.0
-        
-        body = <View> {
-            width: Fill,
-            height: Fit
-            flow: Right,
-            padding: 10.0,
-            spacing: 10.0
-            
+    // The view used for a condensed message that came right after another message
+    // from the same sender, and thus doesn't need to display the sender's profile again.
+    CondensedMessage = <Message> {
+        body = {
+            padding: { top: 5.0, bottom: 5.0, left: 10.0, right: 10.0 },
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 65.0,
                 height: Fit,
-                margin: {top: 7.5}
                 flow: Down,
-                avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
-                    // draw_bg: {
-                    //     fn pixel(self) -> vec4 {
-                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    //         let c = self.rect_size * 0.5;
-                    //         sdf.circle(c.x, c.y, c.x - 2.)
-                    //         sdf.fill_keep(self.get_color());
-                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                    //         return sdf.result
-                    //     }
-                    // }
-                }
-                timestamp = <Timestamp> { }
-                datestamp = <Timestamp> {
-                    padding: { top: 5.0 }
-                }
+                timestamp = <Timestamp> { padding: {top: 3.0} }
             }
             content = <View> {
                 width: Fill,
-                height: Fit
+                height: Fit,
                 flow: Down,
-                padding: 0.0
                 
-                username = <Label> {
-                    margin: {bottom: 10.0, top: 10.0}
+                message = <Label> {
+                    width: Fill,
+                    height: Fit
                     draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
+                        wrap: Word,
+                        text_style: <TEXT_P> {},
+                        color: (COLOR_P)
                     }
-                    text: "<Username not available>"
+                    text: ""
                 }
-                img = <Image> {
+            }
+        }
+    }
+
+    // The view used for each static image-based message event in a room's timeline.
+    // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
+    ImageMessage = <Message> {
+        body = {
+            content = {
+                message = <Image> {
                     width: Fill, height: 200,
                     min_width: 10., min_height: 10.,
                     fit: Horizontal,
                     source: (IMG_LOADING),
                 }
-                
-                // message = <RoundedView> {
-                //     width: Fill,
-                //     height: Fit,
-                //     align: { x: 0.5, y: 0.5 }
-                //     draw_bg: {
-                //         instance radius: 4.0,
-                //         instance border_width: 1.0,
-                //         // instance border_color: #ddd,
-                //         color: #dfd
-                //     }
-                //     img = <Image> {
-                //         width: 200., height: 200.0, // TODO FIXME: use actual image dimensions
-                //         source: (IMG_LOADING),
-                //     }
-                // }
-                
-                <LineH> {
-                    margin: {top: 13.0, bottom: 5.0}
-                }
-                
-                <MessageMenu> {}
             }
         }
+    }
 
-        // body = {
-        //     content = {
-        //         message = <RoundedView> {
-        //             align: { x: 0.5, y: 0.5 }
-        //             draw_bg: {
-        //                 instance radius: 4.0,
-        //                 instance border_width: 1.0,
-        //                 // instance border_color: #ddd,
-        //                 color: #dfd
-        //             }
-        //             img = <Image> {
-        //                 width: Fill, height: 100.0, // TODO FIXME: use actual image dimensions
-        //                 source: (IMG_LOADING),
-        //             }
-        //         }
-        //     }
-        // }
+    // The view used for a condensed image message that came right after another message
+    // from the same sender, and thus doesn't need to display the sender's profile again.
+    // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
+    CondensedImageMessage = <CondensedMessage> {
+        body = {
+            content = {
+                message = <Image> {
+                    width: Fill, height: 200,
+                    min_width: 10., min_height: 10.,
+                    fit: Horizontal,
+                    source: (IMG_LOADING),
+                }
+            }
+        }
     }
 
 
@@ -451,32 +406,20 @@ live_design! {
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
-    ReadMarker = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0,
-        flow: Right,
-        padding: 0.0,
-        spacing: 0.0,
-        align: {x: 0.5, y: 0.5} // center horizontally and vertically
-
-        left_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
+    // This is implemented as a DayDivider with a different color and a fixed text label.
+    ReadMarker = <DayDivider> {
+        left_line = {
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
 
-        date = <Label> {
-            padding: {left: 7.0, right: 7.0}
-            margin: {bottom: 10.0, top: 10.0}
+        date = {
             draw_text: {
-                text_style: <TEXT_SUB> {},
                 color: (COLOR_READ_MARKER)
             }
             text: "New Messages"
         }
 
-        right_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
+        right_line = {
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
     }
@@ -505,7 +448,9 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             TopSpace = <TopSpace> {}
             Message = <Message> {}
+            CondensedMessage = <CondensedMessage> {}
             ImageMessage = <ImageMessage> {}
+            CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
@@ -730,7 +675,6 @@ impl Timeline {
     ///
     /// Note: after calling this function, the timeline's `tl_state` will be `None`.
     fn save_state(&mut self) {
-        log!("Saving state for room {}", self.tl_state.as_ref().unwrap().room_id);
         let first_id = self.portal_list(id!(list)).first_id();
         let Some(mut tl) = self.tl_state.take() else { return };
         tl.saved_state.first_id = first_id;
@@ -901,14 +845,18 @@ impl Widget for Timeline {
                         TimelineItemKind::Event(event_tl_item) => {
                             // Choose to draw either a Message or SmallStateEvent based on the timeline event's content.
                             match event_tl_item.content() {
-                                TimelineItemContent::Message(message) => populate_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    message,
-                                    &mut tl_state.media_cache,
-                                ),
+                                TimelineItemContent::Message(message) => {
+                                    let prev_event = tl_items.get(tl_idx.saturating_sub(1));
+                                    populate_message_view(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        event_tl_item,
+                                        message,
+                                        prev_event,
+                                        &mut tl_state.media_cache,
+                                    )
+                                }
                                 TimelineItemContent::RedactedMessage => populate_redacted_message_view(
                                     cx,
                                     list,
@@ -977,11 +925,36 @@ fn populate_message_view(
     item_id: usize,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
+    prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
 ) -> WidgetRef {
+
+    let ts_millis = event_tl_item.timestamp();
+
+    // Determine whether we can use a more compact UI view that hides the user's profile info
+    // if the previous message was sent by the same user within 10 minutes.
+    let use_compact_view = match prev_event.map(|p| p.kind()) {
+        Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
+            TimelineItemContent::Message(_prev_msg) => {
+                let prev_msg_sender = prev_event_tl_item.sender();
+                let prev_msg_ts = prev_event_tl_item.timestamp();
+                prev_msg_sender == event_tl_item.sender() &&
+                    ts_millis.0.checked_sub(prev_msg_ts.0)
+                        .map_or(false, |d| d < uint!(600000)) // 10 mins in millis
+            }
+            _ => false,
+        }
+        _ => false,
+    };
+
     let item = match message.msgtype() {
         MessageType::Text(text) => {
-            let item = list.item(cx, item_id, live_id!(Message)).unwrap();
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let item = list.item(cx, item_id, template).unwrap();
             item.label(id!(content.message)).set_text(&text.body);
             item
         }
@@ -1002,9 +975,14 @@ fn populate_message_view(
             };
             // now that we've obtained the image URI and its mimetype, try to fetch the image.
             let item_result = if let Some(mxc_uri) = uri {
-                let item = list.item(cx, item_id, live_id!(ImageMessage)).unwrap();
+                let template = if use_compact_view {
+                    live_id!(CondensedImageMessage)
+                } else {
+                    live_id!(ImageMessage)
+                };
+                let item = list.item(cx, item_id, template).unwrap();
 
-                let img_ref = item.image(id!(body.content.img));
+                let img_ref = item.image(id!(body.content.message));
                 if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
                     match mimetype {
                         Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
@@ -1040,15 +1018,15 @@ fn populate_message_view(
 
     };
 
-    let username = set_avatar_and_get_username(
-        cx,
-        item.avatar(id!(profile.avatar)),
-        event_tl_item,
-    );
-    item.label(id!(content.username)).set_text(&username);
-
+    if !use_compact_view {
+        let username = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(profile.avatar)),
+            event_tl_item,
+        );
+        item.label(id!(content.username)).set_text(&username);
+    }
     // Set the timestamp.
-    let ts_millis = event_tl_item.timestamp();
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
         // format as AM/PM 12-hour time
         item.label(id!(profile.timestamp)).set_text(
