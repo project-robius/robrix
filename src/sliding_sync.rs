@@ -76,6 +76,8 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
             .timeout(std::time::Duration::from_secs(60))
     );
 
+    builder = builder.handle_refresh_tokens();
+
     let client = builder.build().await?;
 
     let mut _token = None;
