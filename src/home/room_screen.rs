@@ -54,6 +54,7 @@ live_design! {
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
     ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
+    ICO_SEND = dep("crate://self/resources/icon_send.svg")
     ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
@@ -131,7 +132,7 @@ live_design! {
             }
         }
         padding: 9.0
-        text: "1"
+        text: ""
     }
     
     LineH = <RoundedView> {
@@ -464,89 +465,92 @@ live_design! {
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
 
     RoomScreen = {{RoomScreen}} {
-        width: Fill, height: Fill
-        flow: Down
+        width: Fill, height: Fill,
         show_bg: true,
         draw_bg: {
             color: #fff
         }
 
-        // First, display the timeline of all messages/events.
-        timeline = <Timeline> {}
-        
-        // Below that, display a view that holds the message input bar.
-        <View> {
-            width: Fill, height: Fit
-            flow: Right, align: {y: 0.5}, padding: 10.
-            show_bg: true,
-            draw_bg: {
-                color: #fff
-            }
+        <KeyboardView> {
+            width: Fill, height: Fill,
+            flow: Down,
 
-            message_input = <TextInput> {
-                width: Fill, height: Fit, margin: 0
-                align: {y: 0.5}
-                empty_message: "Write a message..."
+            // First, display the timeline of all messages/events.
+            timeline = <Timeline> {}
+            
+            // Below that, display a view that holds the message input bar.
+            <View> {
+                width: Fill, height: Fit
+                flow: Right, align: {y: 1.0}, padding: 10.
+                show_bg: true,
                 draw_bg: {
                     color: #fff
                 }
-                draw_text: {
-                    text_style:<REGULAR_TEXT>{},
-    
-                    fn get_color(self) -> vec4 {
-                        return #ccc
-                    }
-                }
 
-                // TODO find a way to override colors
-                draw_cursor: {
-                    instance focus: 0.0
-                    uniform border_radius: 0.5
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        sdf.box(
-                            0.,
-                            0.,
-                            self.rect_size.x,
-                            self.rect_size.y,
-                            self.border_radius
-                        )
-                        sdf.fill(mix(#0f0, #0b0, self.focus));
-                        return sdf.result
+                message_input = <TextInput> {
+                    width: Fill, height: Fit, margin: 0
+                    align: {y: 0.5}
+                    empty_message: "Write a message..."
+                    draw_bg: {
+                        color: #fff
                     }
-                }
+                    draw_text: {
+                        text_style:<REGULAR_TEXT>{},
+        
+                        fn get_color(self) -> vec4 {
+                            return #ccc
+                        }
+                    }
 
-                // TODO find a way to override colors
-                draw_select: {
-                    instance hover: 0.0
-                    instance focus: 0.0
-                    uniform border_radius: 2.0
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        sdf.box(
-                            0.,
-                            0.,
-                            self.rect_size.x,
-                            self.rect_size.y,
-                            self.border_radius
-                        )
-                        sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
-                        return sdf.result
+                    // TODO find a way to override colors
+                    draw_cursor: {
+                        instance focus: 0.0
+                        uniform border_radius: 0.5
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(
+                                0.,
+                                0.,
+                                self.rect_size.x,
+                                self.rect_size.y,
+                                self.border_radius
+                            )
+                            sdf.fill(mix(#0f0, #0b0, self.focus));
+                            return sdf.result
+                        }
+                    }
+
+                    // TODO find a way to override colors
+                    draw_select: {
+                        instance hover: 0.0
+                        instance focus: 0.0
+                        uniform border_radius: 2.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(
+                                0.,
+                                0.,
+                                self.rect_size.x,
+                                self.rect_size.y,
+                                self.border_radius
+                            )
+                            sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
+                            return sdf.result
+                        }
                     }
                 }
-            }
-            <Image> {
-                source: (IMG_SMILEY_FACE_BW),
-                width: 36., height: 36.
-            }
-            <Image> {
-                source: (IMG_PLUS),
-                width: 36., height: 36.
-            }
-            send_message_button = <IconButton> {
-                draw_icon: {svg_file: (ICO_REPLY)},
-                icon_walk: {width: 15.0, height: Fit},
-                text: "Send",
+                // <Image> {
+                //     source: (IMG_SMILEY_FACE_BW),
+                //     width: 36., height: 36.
+                // }
+                // <Image> {
+                //     source: (IMG_PLUS),
+                //     width: 36., height: 36.
+                // }
+                send_message_button = <IconButton> {
+                    draw_icon: {svg_file: (ICO_SEND)},
+                    icon_walk: {width: 15.0, height: Fit},
+                }
             }
         }
     }
