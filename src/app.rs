@@ -256,14 +256,29 @@ impl LiveRegister for App {
         crate::profile::my_profile_screen::live_design(cx);
     }
 }
-impl LiveHook for App {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
-        log!("after_new_from_doc(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio().unwrap();
-    }
-}
+
+impl LiveHook for App { }
 
 impl MatchEvent for App {
+    fn handle_startup(&mut self, _cx: &mut Cx) {
+        log!("App::handle_startup(): starting matrix sdk loop");
+        crate::sliding_sync::start_matrix_tokio().unwrap();
+    }
+    fn handle_shutdown(&mut self, _cx: &mut Cx) {
+        log!("App::handle_shutdown()");
+    }
+    fn handle_pause(&mut self, _cx: &mut Cx) {
+        log!("App::handle_pause()");
+    }
+    fn handle_resume(&mut self, _cx: &mut Cx) {
+        log!("App::handle_resume()");
+    }
+    fn handle_app_got_focus(&mut self, _cx: &mut Cx) {
+        log!("App::handle_app_got_focus()");
+    }
+    fn handle_app_lost_focus(&mut self, _cx: &mut Cx) {
+        log!("App::handle_app_lost_focus()");
+    }
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         self.ui.radio_button_set(ids!(
             mobile_modes.tab1,
