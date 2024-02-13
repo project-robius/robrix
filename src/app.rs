@@ -267,6 +267,12 @@ impl MatchEvent for App {
     fn handle_shutdown(&mut self, _cx: &mut Cx) {
         log!("App::handle_shutdown()");
     }
+    fn handle_foreground(&mut self, _cx: &mut Cx) {
+        log!("App::handle_foreground()");
+    }
+    fn handle_background(&mut self, _cx: &mut Cx) {
+        log!("App::handle_background()");
+    }
     fn handle_pause(&mut self, _cx: &mut Cx) {
         log!("App::handle_pause()");
     }
