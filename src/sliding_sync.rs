@@ -691,6 +691,8 @@ async fn timeline_subscriber_handler(
         index_of_first_change: 0,
     }).expect("Error: timeline update sender couldn't send update with initial items!");
 
+    const LOG_DIFFS: bool = false;
+
     while let Some(batch) = subscriber.next().await {
         let num_updates = batch.len();
         let mut index_of_first_change = usize::MAX;
@@ -698,56 +700,56 @@ async fn timeline_subscriber_handler(
             match diff {
                 VectorDiff::Append { values } => {
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
-                    log!("timeline_subscriber: diff Append {}, index_of_first_change: {index_of_first_change}", values.len()); 
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Append {}, index_of_first_change: {index_of_first_change}", values.len()); }
                     timeline_items.extend(values);
                 }
                 VectorDiff::Clear => {
-                    log!("timeline_subscriber: diff Clear");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Clear"); }
                     index_of_first_change = 0;
                     timeline_items.clear();
                 }
                 VectorDiff::PushFront { value } => {
-                    log!("timeline_subscriber: diff PushFront");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff PushFront"); }
                     index_of_first_change = 0;
                     timeline_items.push_front(value);
                 }
                 VectorDiff::PushBack { value } => {
-                    log!("timeline_subscriber: diff PushBack");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff PushBack"); }
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
                     timeline_items.push_back(value);
                 }
                 VectorDiff::PopFront => {
-                    log!("timeline_subscriber: diff PopFront");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff PopFront"); }
                     index_of_first_change = 0;
                     timeline_items.pop_front();
                 }
                 VectorDiff::PopBack => {
-                    log!("timeline_subscriber: diff PopBack");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff PopBack"); }
                     timeline_items.pop_back();
                     index_of_first_change = min(index_of_first_change, timeline_items.len().saturating_sub(1));
                 }
                 VectorDiff::Insert { index, value } => {
-                    log!("timeline_subscriber: diff Insert at {index}");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Insert at {index}"); }
                     index_of_first_change = min(index_of_first_change, index);
                     timeline_items.insert(index, value);
                 }
                 VectorDiff::Set { index, value } => {
-                    log!("timeline_subscriber: diff Set at {index}");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Set at {index}"); }
                     index_of_first_change = min(index_of_first_change, index);
                     timeline_items.set(index, value);
                 }
                 VectorDiff::Remove { index } => {
-                    log!("timeline_subscriber: diff Remove at {index}");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Remove at {index}"); }
                     index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
                     timeline_items.remove(index);
                 }
                 VectorDiff::Truncate { length } => {
-                    log!("timeline_subscriber: diff Truncate to length {length}");
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Truncate to length {length}"); }
                     index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
                     timeline_items.truncate(length);
                 }
                 VectorDiff::Reset { values } => {
-                    log!("timeline_subscriber: diff Reset, new length {}", values.len());
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Reset, new length {}", values.len()); }
                     index_of_first_change = 0; // we must assume that all items have changed.
                     timeline_items = values;
                 }

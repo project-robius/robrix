@@ -647,8 +647,7 @@ struct TimelineUiState {
     /// When `true`, further backwards pagination requests will not be sent.
     fully_paginated: bool,
 
-    /// The list of items (events) in this room's timeline that our client currently knows about,
-    /// and the display state of each item (whether it needs to be redrawn).
+    /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
     /// The range of items that have been updated since the last time the timeline was drawn.
@@ -726,7 +725,7 @@ impl TimelineRef {
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
-                updated_items: usize::MIN ..= usize::MAX,
+                _updated_items: usize::MIN ..= usize::MAX,
                 update_receiver,
                 media_cache: MediaCache::new(MediaFormatConst::File),
                 saved_state: SavedState::default(),
@@ -783,7 +782,7 @@ impl Widget for Timeline {
                         }
                         tl.items = items;
 
-                        log!("Timeline::handle_event(): TODO: use index_of_first_change: {index_of_first_change}");
+                        // TODO: use index_of_first_change
                     }
                     TimelineUpdate::TimelineStartReached => {
                         log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
