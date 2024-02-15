@@ -1,5 +1,6 @@
 use anyhow::{Result, bail};
 use clap::Parser;
+use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use makepad_widgets::{SignalToUI, error, log};
 use matrix_sdk::{
@@ -25,7 +26,7 @@ use tokio::{
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{sync::{OnceLock, Mutex, Arc}, collections::BTreeMap};
+use std::{cmp::min, collections::BTreeMap, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
 use crate::{home::{rooms_list::{self, RoomPreviewEntry, RoomsListUpdate, RoomPreviewAvatar, enqueue_rooms_list_update}, room_screen::TimelineUpdate}, media_cache::MediaCacheEntry, utils::MEDIA_THUMBNAIL_FORMAT};
@@ -685,22 +686,84 @@ async fn timeline_subscriber_handler(
     log!("Starting timeline subscriber for room {room_id}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
 
-    sender.send(TimelineUpdate::NewItems(timeline_items.clone()))
-        .expect("Error: timeline update sender couldn't send update with initial items!");
+    sender.send(TimelineUpdate::NewItems {
+        items: timeline_items.clone(),
+        index_of_first_change: 0,
+    }).expect("Error: timeline update sender couldn't send update with initial items!");
 
     while let Some(batch) = subscriber.next().await {
         let num_updates = batch.len();
+        let mut index_of_first_change = usize::MAX;
         for diff in batch {
-            diff.apply(&mut timeline_items);
+            match diff {
+                VectorDiff::Append { values } => {
+                    index_of_first_change = min(index_of_first_change, timeline_items.len());
+                    log!("timeline_subscriber: diff Append {}, index_of_first_change: {index_of_first_change}", values.len()); 
+                    timeline_items.extend(values);
+                }
+                VectorDiff::Clear => {
+                    log!("timeline_subscriber: diff Clear");
+                    index_of_first_change = 0;
+                    timeline_items.clear();
+                }
+                VectorDiff::PushFront { value } => {
+                    log!("timeline_subscriber: diff PushFront");
+                    index_of_first_change = 0;
+                    timeline_items.push_front(value);
+                }
+                VectorDiff::PushBack { value } => {
+                    log!("timeline_subscriber: diff PushBack");
+                    index_of_first_change = min(index_of_first_change, timeline_items.len());
+                    timeline_items.push_back(value);
+                }
+                VectorDiff::PopFront => {
+                    log!("timeline_subscriber: diff PopFront");
+                    index_of_first_change = 0;
+                    timeline_items.pop_front();
+                }
+                VectorDiff::PopBack => {
+                    log!("timeline_subscriber: diff PopBack");
+                    timeline_items.pop_back();
+                    index_of_first_change = min(index_of_first_change, timeline_items.len().saturating_sub(1));
+                }
+                VectorDiff::Insert { index, value } => {
+                    log!("timeline_subscriber: diff Insert at {index}");
+                    index_of_first_change = min(index_of_first_change, index);
+                    timeline_items.insert(index, value);
+                }
+                VectorDiff::Set { index, value } => {
+                    log!("timeline_subscriber: diff Set at {index}");
+                    index_of_first_change = min(index_of_first_change, index);
+                    timeline_items.set(index, value);
+                }
+                VectorDiff::Remove { index } => {
+                    log!("timeline_subscriber: diff Remove at {index}");
+                    index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
+                    timeline_items.remove(index);
+                }
+                VectorDiff::Truncate { length } => {
+                    log!("timeline_subscriber: diff Truncate to length {length}");
+                    index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
+                    timeline_items.truncate(length);
+                }
+                VectorDiff::Reset { values } => {
+                    log!("timeline_subscriber: diff Reset, new length {}", values.len());
+                    index_of_first_change = 0; // we must assume that all items have changed.
+                    timeline_items = values;
+                }
+            }
         }
         if num_updates > 0 {
-            log!("Timeline::handle_event(): applied {num_updates} updates for room {room_id}");
-        }
-        sender.send(TimelineUpdate::NewItems(timeline_items.clone()))
-            .expect("Error: timeline update sender couldn't send update with new items!");
+            log!("timeline_subscriber: applied {num_updates} updates for room {room_id}; first change at index {index_of_first_change}.");
+        
+            sender.send(TimelineUpdate::NewItems {
+                items: timeline_items.clone(),
+                index_of_first_change,
+            }).expect("Error: timeline update sender couldn't send update with new items!");
 
-        // Send a Makepad-level signal to update this room's timeline UI view.
-        SignalToUI::set_ui_signal();
+            // Send a Makepad-level signal to update this room's timeline UI view.
+            SignalToUI::set_ui_signal();
+        }
     }
 
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
