@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::BTreeMap};
+use std::{collections::BTreeMap, ops::{DerefMut, RangeInclusive}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -602,9 +602,15 @@ impl RoomScreenRef {
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
-    /// A update containing the entire list of timeline items for a room,
-    /// indicating that it has been updated in the background.
-    NewItems(Vector<Arc<TimelineItem>>),
+    /// The content of a room's timeline was updated in the background.
+    NewItems {
+        /// The entire list of timeline items (events) for a room.
+        items: Vector<Arc<TimelineItem>>,
+        /// The index of the first item in the `items` list that has changed.
+        /// Any items before this index are assumed to be unchanged and need not be redrawn,
+        /// while any items after this index are assumed to be changed and must be redrawn.
+        index_of_first_change: usize,
+    },
     /// A notice that the start of the timeline has been reached, meaning that
     /// there is no need to send further backwards pagination requests.
     TimelineStartReached,
@@ -643,6 +649,11 @@ struct TimelineUiState {
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
+
+    /// The range of items that have been updated since the last time the timeline was drawn.
+    /// This range is set on each background update to ensure that no changes items are missed;
+    /// thus, it is a conservative estimate that may include more items than necessary.
+    _updated_items: RangeInclusive<usize>,
 
     /// The channel receiver for timeline updates for this room.
     ///
@@ -714,6 +725,7 @@ impl TimelineRef {
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
+                _updated_items: usize::MIN ..= usize::MAX,
                 update_receiver,
                 media_cache: MediaCache::new(MediaFormatConst::File),
                 saved_state: SavedState::default(),
@@ -750,12 +762,27 @@ impl Widget for Timeline {
         // Currently, a Signal event is only used to tell this widget that its timeline events
         // have been updated in the background.
         if let Event::Signal = event {
+            let portal_list = self.portal_list(id!(list));
             let Some(tl) = self.tl_state.as_mut() else { return };
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
-                    TimelineUpdate::NewItems(items) => {
+                    TimelineUpdate::NewItems { items, index_of_first_change } => {
+                        // Determine which item is currently visible the top of the screen
+                        // so that we can jump back to that position instantly after applying this update.
+                        let first_id = portal_list.first_id();
+                        if let Some(top_event_id) = tl.items.get(first_id).map(|item| item.unique_id()) {
+                            for (idx, item) in items.iter().enumerate() {
+                                if item.unique_id() == top_event_id {
+                                    log!("Timeline::handle_event(): jumping from top event index {first_id} to index {idx}");
+                                    portal_list.set_first_id(idx);
+                                    break;
+                                }
+                            }
+                        }
                         tl.items = items;
+
+                        // TODO: use index_of_first_change
                     }
                     TimelineUpdate::TimelineStartReached => {
                         log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
@@ -958,7 +985,7 @@ fn populate_message_view(
             } else {
                 live_id!(Message)
             };
-            let item = list.item(cx, item_id, template).unwrap();
+            let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
             item.label(id!(content.message)).set_text(&text.body);
             item
         }
@@ -984,7 +1011,7 @@ fn populate_message_view(
                 } else {
                     live_id!(ImageMessage)
                 };
-                let item = list.item(cx, item_id, template).unwrap();
+                let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
 
                 let img_ref = item.image(id!(body.content.message));
                 if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
@@ -1166,7 +1193,8 @@ fn populate_membership_change_view(
             format!("denied {}'s request to join this room.", change_user_id),
     };
 
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+    let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
     set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
     let username = set_avatar_and_get_username(
         cx,
@@ -1192,7 +1220,7 @@ fn populate_profile_change_view(
     event_tl_item: &EventTimelineItem,
     change: &MemberProfileChange,
 ) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+    let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
     let username = set_avatar_and_get_username(
         cx,
         item.avatar(id!(avatar)),
