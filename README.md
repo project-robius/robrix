@@ -55,7 +55,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Backwards pagination (upon viewing a room timeline)
 - [ ] Dynamic backwards pagination based on scroll position/movement
 - [ ] Loading animation while waiting for pagination request
-- [ ] Stable positioning of events view during timeline update
+- [x] Stable positioning of events view during timeline update
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [ ] Rich text formatting for message bodies
