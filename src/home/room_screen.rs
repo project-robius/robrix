@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{collections::BTreeMap, ops::{DerefMut, RangeInclusive}, sync::{Arc, Mutex}};
+use std::{collections::BTreeMap, ops::DerefMut, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -31,6 +31,7 @@ use matrix_sdk_ui::timeline::{
     TimelineItemKind, TimelineItem,
 };
 
+use rangemap::RangeSet;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, AVATAR_CACHE},
@@ -580,7 +581,7 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message: RoomMessageEventContent::text_plain(entered_text),
-                        // TODO: support replies to specific messages, attaching mentions, etc.
+                        // TODO: support replies to specific messages, attaching mentions, rich text (html), etc.
                     });
                 }
             }
@@ -622,6 +623,9 @@ pub enum TimelineUpdate {
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
     RoomMembersFetched,
+    /// A notice that one or more requested media items (images, videos, etc.)
+    /// that should be displayed in this timeline have now been fetched and are available.
+    MediaFetched,
 }
 
 
@@ -650,10 +654,26 @@ struct TimelineUiState {
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
-    /// The range of items that have been updated since the last time the timeline was drawn.
-    /// This range is set on each background update to ensure that no changes items are missed;
-    /// thus, it is a conservative estimate that may include more items than necessary.
-    _updated_items: RangeInclusive<usize>,
+    /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
+    /// since the last update and thus do not need to be re-populated on future draw events.
+    ///
+    /// This range is partially cleared on each background update (see below) to ensure that
+    /// items modified during the update are properly redrawn. Thus, it is a conservative
+    /// "cache tracker" that may not include all items that have already been drawn,
+    /// but that's okay because big updates that clear out large parts of the rangeset
+    /// only occur during back pagination, which is both rare and slow in and of itself.
+    /// During typical usage, new events are appended to the end of the timeline,
+    /// meaning that the range of already-drawn items doesn't need to be cleared.
+    ///
+    /// Upon a background update, only item indices greater than or equal to the
+    /// `index_of_first_change` are removed from this set. 
+    content_drawn_since_last_update: RangeSet<usize>,
+
+    /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
+    profile_drawn_since_last_update: RangeSet<usize>,
+
+    force_redraw_media: bool,
+    force_redraw_profiles: bool,
 
     /// The channel receiver for timeline updates for this room.
     ///
@@ -718,20 +738,25 @@ impl TimelineRef {
         let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
-            let update_receiver = take_timeline_update_receiver(&room_id)
+            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
-                _updated_items: usize::MIN ..= usize::MAX,
+                content_drawn_since_last_update: RangeSet::new(),
+                profile_drawn_since_last_update: RangeSet::new(),
+                force_redraw_profiles: false,
+                force_redraw_media: false,
                 update_receiver,
-                media_cache: MediaCache::new(MediaFormatConst::File),
+                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 saved_state: SavedState::default(),
             };
             (new_tl_state, true)
         };
+
+        log!("Timeline::set_room(): opening room {room_id}\n\tdrawn_since_last_update: {:#?}", tl_state.drawn_since_last_update);
 
         // kick off a back pagination request for this room
         if !tl_state.fully_paginated {
@@ -749,6 +774,8 @@ impl TimelineRef {
         // So we kick off a request to fetch the room members here upon first viewing the room.
         if first_time_showing_room {
             submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            // TODO: in the future, move the back pagination request to here,
+            //       once back pagination is done dynamically based on timeline scroll position.
         }
 
         // Finally, store the tl_state for this room into the Timeline widget,
@@ -759,30 +786,35 @@ impl TimelineRef {
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Currently, a Signal event is only used to tell this widget that its timeline events
-        // have been updated in the background.
+        // Currently, a Signal event is only used to tell this widget
+        // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
+            let orig_first_id = portal_list.first_id();
             let Some(tl) = self.tl_state.as_mut() else { return };
+
             let mut done_loading = false;
+            let mut force_redraw_media = false;
+            let mut force_redraw_profiles = true; // always do this for now, any time we get a `Signal`.
+
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, index_of_first_change } => {
                         // Determine which item is currently visible the top of the screen
                         // so that we can jump back to that position instantly after applying this update.
-                        let first_id = portal_list.first_id();
-                        if let Some(top_event_id) = tl.items.get(first_id).map(|item| item.unique_id()) {
+                        if let Some(top_event_id) = tl.items.get(orig_first_id).map(|item| item.unique_id()) {
                             for (idx, item) in items.iter().enumerate() {
                                 if item.unique_id() == top_event_id {
-                                    log!("Timeline::handle_event(): jumping from top event index {first_id} to index {idx}");
+                                    log!("Timeline::handle_event(): jumping from top event index {orig_first_id} to index {idx}");
                                     portal_list.set_first_id(idx);
                                     break;
                                 }
                             }
                         }
+                        tl.content_drawn_since_last_update.remove(index_of_first_change .. items.len());
+                        tl.profile_drawn_since_last_update.remove(index_of_first_change .. items.len());
+                        log!("Timeline::handle_event(): index_of_first_change: {index_of_first_change}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                         tl.items = items;
-
-                        // TODO: use index_of_first_change
                     }
                     TimelineUpdate::TimelineStartReached => {
                         log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
@@ -796,6 +828,13 @@ impl Widget for Timeline {
                         log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                        force_redraw_profiles = true;
+                    }
+                    TimelineUpdate::MediaFetched => {
+                        log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
+                        // Here, to be most efficient, we could redraw only the media items in the timeline,
+                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                        force_redraw_media = true;
                     }
                 }
             }
@@ -805,6 +844,8 @@ impl Widget for Timeline {
                 // TODO FIXME: hide TopSpace loading animation, set it to invisible.
             }
             
+            tl.force_redraw_profiles = force_redraw_profiles;
+            tl.force_redraw_media = force_redraw_media;
             self.redraw(cx);
         }
 
@@ -872,55 +913,63 @@ impl Widget for Timeline {
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
                         continue;
                     };
-                    match timeline_item.kind() {
-                        TimelineItemKind::Event(event_tl_item) => {
-                            // Choose to draw either a Message or SmallStateEvent based on the timeline event's content.
-                            match event_tl_item.content() {
-                                TimelineItemContent::Message(message) => {
-                                    let prev_event = tl_items.get(tl_idx.saturating_sub(1));
-                                    populate_message_view(
-                                        cx,
-                                        list,
-                                        item_id,
-                                        event_tl_item,
-                                        message,
-                                        prev_event,
-                                        &mut tl_state.media_cache,
-                                    )
-                                }
-                                TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+
+                    // If the item has already been drawn since the last update, just re-use it.
+                    let item_drawn_status = ItemDrawnStatus {
+                        content_drawn: tl_state.content_drawn_since_last_update.contains(tl_idx .. tl_idx + 1),
+                        profile_drawn: tl_state.profile_drawn_since_last_update.contains(tl_idx .. tl_idx + 1),
+                    };
+                    if item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
+                        log!("TODO: skip drawing item {item_id}, tl_idx {tl_idx}");
+                    }
+
+                    let (item, item_draw_status) = match timeline_item.kind() {
+                        TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                            TimelineItemContent::Message(message) => {
+                                let prev_event = tl_items.get(tl_idx.saturating_sub(1));
+                                populate_message_view(
                                     cx,
                                     list,
                                     item_id,
                                     event_tl_item,
-                                    &tl_state.room_id,
-                                ),
-                                TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    membership_change,
-                                ),
-                                TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    profile_change,
-                                ),
-                                TimelineItemContent::OtherState(other) => populate_other_state_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    other,
-                                ),
-                                unhandled => {
-                                    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-                                    item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
-                                    item
-                                }
+                                    message,
+                                    prev_event,
+                                    &mut tl_state.media_cache,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                &tl_state.room_id,
+                            ),
+                            TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                membership_change,
+                            ),
+                            TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                profile_change,
+                            ),
+                            TimelineItemContent::OtherState(other) => populate_other_state_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                other,
+                            ),
+                            unhandled => {
+                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
+                                item
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
@@ -935,7 +984,11 @@ impl Widget for Timeline {
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
                             list.item(cx, item_id, live_id!(ReadMarker)).unwrap()
                         }
-                    }
+                    };
+
+                    // Now that we've drawn the item, add its index to the set of drawn items.
+                    tl_state.drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+                    item
                 };
                 item.draw_all(cx, &mut Scope::empty());
             }
@@ -943,6 +996,47 @@ impl Widget for Timeline {
         DrawStep::done()
     }
 }
+
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ItemDrawnStatus {
+    /// Whether the profile info (avatar and displayable username) were drawn for this item.
+    profile_drawn: bool,
+    /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
+    content_drawn: bool,
+}
+impl ItemDrawnStatus {
+    /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
+    const fn new() -> Self {
+        Self { profile_drawn: false, content_drawn: false }
+    }
+}
+
+TODO: return this `ItemDrawnStatus` from the populate_*_view functions and use it to determine
+      if that item ID can be added to the `drawn_since_last_update` range set (only if both are true).
+      For now, we should only add items that are fully drawn to the range set,
+      as we don't want to accidentally miss redrawing updated items that were only partially drawn.
+      In this way, we won't consider an item fully drawn until both its profile and content are fully drawn.
+      ****
+      Note: we'll also need to differentiate between:
+            an avatar not existing at all (considered fully drawn)
+            vs an avatar not being "ready" or not being fetched yet (considered not fully drawn)
+      
+      ****
+      Also, we should split `drawn_since_last_update` into two separate `RangeSet`s:
+         -- one for items whose CONTENT has been drawn fully, and
+         -- one for items whose PROFILE has been drawn fully.
+        This way, we can redraw the profile of an item without redrawing its content, and vice versa --> efficient!
+      ****
+      We should also use a range to specify `index_of_first_change` AND index of last change,
+      such that we can support diff operations like set (editing/updating a single event).
+      To do so, we'll have to send interim message updates to the UI thread rather than always sending the entire batch of diffs,
+      but that's no problem because sending those updates is already very cheap.
+      Plus, we already have plans to split up the batches across multiple update messages in the future,
+      in order to support conveying more detailed info about which items were actually changed and at which indices
+      (e.g., we'll eventually send one update per contiguous set of changed items, rather than one update per entire batch of items).
+
+      
 
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
@@ -958,7 +1052,10 @@ fn populate_message_view(
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
-) -> WidgetRef {
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+
+    let mut new_drawn_status = item_drawn_status;
 
     let ts_millis = event_tl_item.timestamp();
 
@@ -985,48 +1082,58 @@ fn populate_message_view(
             } else {
                 live_id!(Message)
             };
-            let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
-            item.label(id!(content.message)).set_text(&text.body);
-            item
+            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            if existed && item_drawn_status.content_drawn {
+                item
+            } else {
+                item.label(id!(content.message)).set_text(&text.body);
+                new_drawn_status.content_drawn = true;
+                item
+            }
         }
         MessageType::Image(image) => {
-            // We don't use thumbnails, as their resolution is too low to be visually useful.
-            let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
-                (
-                    info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
-                    info.width,
-                    info.height,
-                )
+            let template = if use_compact_view {
+                live_id!(CondensedImageMessage)
             } else {
-                (None, None, None)
+                live_id!(ImageMessage)
             };
-            let uri = match &image.source {
-                MediaSource::Plain(mxc_uri) => Some(mxc_uri.clone()),
-                MediaSource::Encrypted(_) => None,
-            };
-            // now that we've obtained the image URI and its mimetype, try to fetch the image.
-            let item_result = if let Some(mxc_uri) = uri {
-                let template = if use_compact_view {
-                    live_id!(CondensedImageMessage)
+            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            if existed && item_drawn_status.content_drawn {
+                item
+            } else {
+                // We don't use thumbnails, as their resolution is too low to be visually useful.
+                let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                    (
+                        info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
+                        info.width,
+                        info.height,
+                    )
                 } else {
-                    live_id!(ImageMessage)
+                    (None, None, None)
                 };
-                let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
-
-                let img_ref = item.image(id!(body.content.message));
-                if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
-                    match mimetype {
-                        Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
-                        Some(utils::ImageFormat::Jpeg) => img_ref.load_jpg_from_data(cx, &data),
-                        _unknown => utils::load_png_or_jpg(&img_ref, cx, &data),
-                    }.map(|_| item)
+                let uri = match &image.source {
+                    MediaSource::Plain(mxc_uri) => Some(mxc_uri.clone()),
+                    MediaSource::Encrypted(_) => None,
+                };
+                // now that we've obtained the image URI and its mimetype, try to fetch the image.
+                let item_result = if let Some(mxc_uri) = uri {
+    
+                    let img_ref = item.image(id!(body.content.message));
+                    if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
+                        match mimetype {
+                            Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
+                            Some(utils::ImageFormat::Jpeg) => img_ref.load_jpg_from_data(cx, &data),
+                            _unknown => utils::load_png_or_jpg(&img_ref, cx, &data),
+                        }.map(|_| item)
+                    } else {
+                        // waiting for the image to be fetched
+                        Ok(item)
+                    }
                 } else {
-                    // waiting for the image to be fetched
-                    Ok(item)
-                }
-            } else {
-                Err(ImageError::EmptyData)
-            };
+                    Err(ImageError::EmptyData)
+                };
+
+            }
 
             match item_result {
                 Ok(item) => item,
@@ -1370,7 +1477,7 @@ fn set_timestamp(
 }
 
 
-/// Sets the given avatar returns a displayable username, based on the info from the given timeline event.
+/// Sets the given avatar and returns a displayable username based on the given timeline event.
 ///
 /// This function will always choose a nice, displayable username and avatar.
 ///
