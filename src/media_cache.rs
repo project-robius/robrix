@@ -7,7 +7,8 @@ pub static AVATAR_CACHE: Mutex<MediaCache> = Mutex::new(MediaCache::new(MEDIA_TH
 
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 
-/// An entry in the media cache.
+/// An entry in the media cache. 
+#[derive(Debug, Clone)]
 pub enum MediaCacheEntry {
     /// A request has been issued and we're waiting for it to complete.
     Requested,
@@ -15,14 +16,6 @@ pub enum MediaCacheEntry {
     Loaded(Arc<[u8]>),
     /// The media failed to load from the server.
     Failed,
-}
-impl MediaCacheEntry {
-    fn to_option(&self) -> Option<Arc<[u8]>> {
-        match self {
-            MediaCacheEntry::Loaded(data) => Some(data.clone()),
-            _ => None,
-        }
-    }
 }
 
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
@@ -57,25 +50,25 @@ impl MediaCache {
     /// Gets media from the cache without sending a fetch request if the media is absent.
     ///
     /// This is suitable for use in a latency-sensitive context, such as a UI draw routine.
-    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri) -> Option<Arc<[u8]>> {
-        self.get(mxc_uri).and_then(|v| v.lock().unwrap().to_option())
+    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri) -> Option<MediaCacheEntry> {
+        self.get(mxc_uri).map(|v| v.lock().unwrap().deref().clone())
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.
     ///
     /// This method *does not* block or wait for the media to be fetched,
-    /// and will return `None` while the async request is in flight.
-    /// If a request is already in flight, this will return `None` and not issue a new redundant request.
+    /// and will return `MediaCache::Requested` while the async request is in flight.
+    /// If a request is already in flight, this will not issue a new redundant request.
     pub fn try_get_media_or_fetch(
         &mut self,
         mxc_uri: OwnedMxcUri,
         media_format: Option<MediaFormat>,
-    ) -> Option<Arc<[u8]>> {
+    ) -> MediaCacheEntry {
         let value_ref = match self.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => vacant.insert(
                 Arc::new(Mutex::new(MediaCacheEntry::Requested))
             ),
-            Entry::Occupied(occupied) => return occupied.get().lock().unwrap().to_option(),
+            Entry::Occupied(occupied) => return occupied.get().lock().unwrap().deref().clone(),
         };
 
         let destination = Arc::clone(value_ref);
@@ -92,7 +85,7 @@ impl MediaCache {
                 destination,
             }
         );
-        None
+        MediaCacheEntry::Requested
     }
 
 }
