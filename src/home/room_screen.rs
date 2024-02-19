@@ -34,10 +34,10 @@ use matrix_sdk_ui::timeline::{
 use rangemap::RangeSet;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
-    media_cache::{MediaCache, AVATAR_CACHE},
-    shared::avatar::{AvatarWidgetRefExt, AvatarRef},
-    sliding_sync::{submit_async_request, MatrixRequest, take_timeline_update_receiver},
-    utils::{unix_time_millis_to_datetime, self, MediaFormatConst},
+    media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
+    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, text_or_image::TextOrImageWidgetRefExt},
+    sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
+    utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
 };
 
 live_design! {
@@ -49,6 +49,7 @@ live_design! {
     import crate::shared::helpers::*;
     import crate::shared::search_bar::SearchBar;
     import crate::shared::avatar::Avatar;
+    import crate::shared::text_or_image::TextOrImage;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     IMG_LOADING = dep("crate://self/resources/img/loading.png")
@@ -292,11 +293,9 @@ live_design! {
     ImageMessage = <Message> {
         body = {
             content = {
-                message = <Image> {
-                    width: Fill, height: 200,
-                    min_width: 10., min_height: 10.,
-                    fit: Horizontal,
-                    source: (IMG_LOADING),
+                message = <TextOrImage> {
+                    width: Fill, height: 300,
+                    // img_view = { img = { fit: Horizontal } }
                 }
             }
         }
@@ -308,11 +307,9 @@ live_design! {
     CondensedImageMessage = <CondensedMessage> {
         body = {
             content = {
-                message = <Image> {
-                    width: Fill, height: 200,
-                    min_width: 10., min_height: 10.,
-                    fit: Horizontal,
-                    source: (IMG_LOADING),
+                message = <TextOrImage> {
+                    width: Fill, height: 300,
+                    // img_view = { img = { fit: Horizontal } }
                 }
             }
         }
@@ -1097,56 +1094,53 @@ fn populate_message_view(
             } else {
                 live_id!(ImageMessage)
             };
-            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
-            if existed && item_drawn_status.content_drawn {
-                item
+            let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
+
+            // We don't use thumbnails, as their resolution is too low to be visually useful.
+            let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                (
+                    info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
+                    info.width,
+                    info.height,
+                )
             } else {
-                // We don't use thumbnails, as their resolution is too low to be visually useful.
-                let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
-                    (
-                        info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
-                        info.width,
-                        info.height,
-                    )
-                } else {
-                    (None, None, None)
-                };
-                let uri = match &image.source {
-                    MediaSource::Plain(mxc_uri) => Some(mxc_uri.clone()),
-                    MediaSource::Encrypted(_) => None,
-                };
-                // now that we've obtained the image URI and its mimetype, try to fetch the image.
-                let item_result = if let Some(mxc_uri) = uri {
-    
-                    let img_ref = item.image(id!(body.content.message));
-                    if let Some(data) = media_cache.try_get_media_or_fetch(mxc_uri, None) {
-                        match mimetype {
-                            Some(utils::ImageFormat::Png) => img_ref.load_png_from_data(cx, &data),
-                            Some(utils::ImageFormat::Jpeg) => img_ref.load_jpg_from_data(cx, &data),
-                            _unknown => utils::load_png_or_jpg(&img_ref, cx, &data),
-                        }.map(|_| item)
-                    } else {
-                        // waiting for the image to be fetched
-                        Ok(item)
+                live_id!(ImageMessage)
+            };
+            let text_or_image_ref = item.text_or_image(id!(content.message));
+            match &image.source {
+                MediaSource::Plain(mxc_uri) => {
+                    // now that we've obtained the image URI and its mimetype, try to fetch the image.
+                    match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+                        MediaCacheEntry::Loaded(data) => {
+                            let set_image_result = text_or_image_ref.set_image(|img|
+                                match mimetype {
+                                    Some(utils::ImageFormat::Png) => img.load_png_from_data(cx, &data),
+                                    Some(utils::ImageFormat::Jpeg) => img.load_jpg_from_data(cx, &data),
+                                    _unknown => utils::load_png_or_jpg(&img, cx, &data),
+                                }
+                            );
+                            if let Err(e) = set_image_result {
+                                let err_str = format!("Failed to display image: {e:?}");
+                                error!("{err_str}");
+                                text_or_image_ref.set_text(&err_str);
+                            }
+                            
+                            // The image content is completely drawn here, ready to be marked as cached/drawn.
+                        }
+                        MediaCacheEntry::Requested => {
+                            text_or_image_ref.set_text(&format!("Fetching image from {:?}", mxc_uri));
+                        }
+                        MediaCacheEntry::Failed => {
+                            text_or_image_ref.set_text(&format!("Failed to fetch image from {:?}", mxc_uri));
+                            // The image content is complete here, ready to be marked as cached/drawn.
+                        }
                     }
-                } else {
-                    Err(ImageError::EmptyData)
-                };
-
-            }
-
-            match item_result {
-                Ok(item) => item,
-                Err(e) => {
-                    let item = list.item(cx, item_id, live_id!(Message)).unwrap();
-                    if let MediaSource::Encrypted(encrypted) = &image.source {
-                        item.label(id!(content.message)).set_text(&format!("[TODO] Display encrypted image at {:?}", encrypted.url));
-                    } else {
-                        item.label(id!(content.message)).set_text(&format!("Failed to get image: {e:?}:\n {:#?}", image));
-                    }
-                    item
                 }
-            }
+                MediaSource::Encrypted(encrypted) => {
+                    text_or_image_ref.set_text(&format!("[TODO] fetch encrypted image at {:?}", encrypted.url));
+                }
+            };
+            item
         }
         other => {
             let item = list.item(cx, item_id, live_id!(Message)).unwrap();
@@ -1492,7 +1486,7 @@ fn set_timestamp(
 ///   will be the user ID and the first character of that user ID, respectively.
 fn set_avatar_and_get_username(
     cx: &mut Cx,
-    mut avatar: AvatarRef,
+    avatar: AvatarRef,
     event_tl_item: &EventTimelineItem,
 ) -> String {
     let mut username = String::new();
@@ -1512,8 +1506,12 @@ fn set_avatar_and_get_username(
     match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
             // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = profile.avatar_url.as_ref()
-                .and_then(|uri| AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None));
+            let avatar_img = profile.avatar_url.as_ref().and_then(|uri| 
+                match AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None) {
+                    MediaCacheEntry::Loaded(data) => Some(data),
+                    _ => None,
+                }
+            );
             match (avatar_img, &profile.display_name) {
                 // Both the avatar image and display name are available.
                 (Some(avatar_img), Some(name)) => {

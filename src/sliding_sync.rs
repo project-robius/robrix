@@ -510,6 +510,7 @@ async fn async_main_loop() -> Result<()> {
     let stream = sliding_sync.sync();
     pin_mut!(stream);
 
+    let mut stream_error = None;
     loop {
         let update = match stream.next().await {
             Some(Ok(u)) => {
@@ -519,11 +520,12 @@ async fn async_main_loop() -> Result<()> {
                 u
             }
             Some(Err(e)) => {
-                error!("loop was stopped by client error processing: {e}");
+                error!("sync loop was stopped by client error processing: {e}");
+                stream_error = Some(e);
                 continue;
             }
             None => {
-                error!("Streaming loop ended unexpectedly");
+                error!("sync loop ended unexpectedly");
                 break;
             }
         };
@@ -683,7 +685,11 @@ async fn async_main_loop() -> Result<()> {
         }
     }
 
-    bail!("unexpected return from async_main_loop!")
+    if let Some(e) = stream_error {
+        bail!(e)
+    } else {
+        bail!("sync loop ended unexpectedly")
+    }
 }
 
 

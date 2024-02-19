@@ -6,3 +6,4 @@ pub mod popup_menu;
 pub mod search_bar;
 pub mod styles;
 pub mod avatar;
+pub mod text_or_image;
