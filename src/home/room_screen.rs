@@ -916,15 +916,13 @@ impl Widget for Timeline {
                         continue;
                     };
 
-                    // If the item has already been drawn since the last update, just re-use it.
+                    // Determine whether this item's content and profile have been drawn since the last update.
+                    // Pass this state to each of the `populate_*` functions so they can attempt to re-use
+                    // an item in the timeline's portallist that was previously populated, if one exists.
                     let item_drawn_status = ItemDrawnStatus {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-                    if item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
-                        // log!("TODO: skip drawing item {item_id}, tl_idx {tl_idx}");
-                        // TODO: skip drawing item
-                    }
 
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
@@ -941,15 +939,13 @@ impl Widget for Timeline {
                                     item_drawn_status,
                                 )
                             }
-                            TimelineItemContent::RedactedMessage => (
-                                populate_redacted_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    &tl_state.room_id,
-                                ),
-                                ItemDrawnStatus::new(),
+                            TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                &tl_state.room_id,
+                                item_drawn_status,
                             ),
                             TimelineItemContent::MembershipChange(membership_change) => (
                                 populate_membership_change_view(
@@ -958,6 +954,7 @@ impl Widget for Timeline {
                                     item_id,
                                     event_tl_item,
                                     membership_change,
+                                    // item_drawn_status,
                                 ),
                                 ItemDrawnStatus::new(),
                             ),
@@ -968,6 +965,7 @@ impl Widget for Timeline {
                                     item_id,
                                     event_tl_item,
                                     profile_change,
+                                    // item_drawn_status,
                                 ),
                                 ItemDrawnStatus::new(),
                             ),
@@ -978,6 +976,7 @@ impl Widget for Timeline {
                                     item_id,
                                     event_tl_item,
                                     other,
+                                    // item_drawn_status,
                                 ),
                                 ItemDrawnStatus::new(),
                             ),
@@ -1090,9 +1089,8 @@ fn populate_message_view(
         Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
             TimelineItemContent::Message(_prev_msg) => {
                 let prev_msg_sender = prev_event_tl_item.sender();
-                let prev_msg_ts = prev_event_tl_item.timestamp();
                 prev_msg_sender == event_tl_item.sender() &&
-                    ts_millis.0.checked_sub(prev_msg_ts.0)
+                    ts_millis.0.checked_sub(prev_event_tl_item.timestamp().0)
                         .map_or(false, |d| d < uint!(600000)) // 10 mins in millis
             }
             _ => false,
@@ -1189,11 +1187,11 @@ fn populate_message_view(
     };
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
-    let redraw_profile = !used_cached_item || (!use_compact_view && !item_drawn_status.profile_drawn);
     let skip_draw_profile = use_compact_view || (used_cached_item && item_drawn_status.profile_drawn);
     log!("populate_message_view(): item_id: {item_id}, skip_redraw?: {skip_draw_profile}, use_compact_view: {use_compact_view}, used_cached_item: {used_cached_item}, item_drawn_status: {item_drawn_status:?}, new_drawn_status: {new_drawn_status:?}", );
     if skip_draw_profile {
         log!("\t --> populate_message_view(): SKIPPING profile draw for item_id: {item_id}");
+        new_drawn_status.profile_drawn = true;
     } else {
         log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
         let (username, profile_drawn) = set_avatar_and_get_username(
@@ -1246,31 +1244,64 @@ fn populate_redacted_message_view(
     list: &mut PortalList,
     item_id: usize,
     event_tl_item: &EventTimelineItem,
-    _room_id: &OwnedRoomId
-) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-    let redactor_and_reason = if let Some(redacted_msg) = event_tl_item.latest_json() {
-        if let Ok(old) = redacted_msg.deserialize() {
-            match old {
-                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(redaction))) => {
-                    Some((
+    _room_id: &OwnedRoomId,
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    // The content of a redacted message view depends on the profile,
+    // so we can only cache the content after the profile has been drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
+
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+
+    // If the profile has been drawn, we can just quickly grab the original sender's display name
+    // instead of having to call `set_avatar_and_get_username()` again.
+    let original_sender_opt = {
+        let mut opt = None;
+        if skip_redrawing_profile {
+            if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
+                opt = profile.display_name.clone();
+            }
+        }
+        opt
+    };
+    
+    let original_sender = original_sender_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username()` to the display name (or user ID)
+        // of the original sender of the now-redacted message.
+        let (original_sender, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.profile_drawn = profile_drawn;
+        original_sender
+    });
+
+
+    // Proceed to draw the content, now that we have the original sender's display name. 
+    let redactor_and_reason = {
+        let mut rr = None;
+        if let Some(redacted_msg) = event_tl_item.latest_json() {
+            if let Ok(old) = redacted_msg.deserialize() {
+                if let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(redaction))) = old {
+                    rr = Some((
                         redaction.unsigned.redacted_because.sender,
                         redaction.unsigned.redacted_because.content.reason,
-                    ))
+                    ));
                 }
-                _ => None,
             }
-        } else { None }
-    } else { None };
+        }
+        rr
+    };
 
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    
-    // Get the display name (or user ID) of the original sender of the now-redacted message.
-    let (original_sender, profile_drawn) = set_avatar_and_get_username(
-        cx,
-        item.avatar(id!(avatar)),
-        event_tl_item,
-    );
     let text = match redactor_and_reason {
         Some((redactor, Some(reason))) => {
             // TODO: get the redactor's display name if possible
@@ -1289,7 +1320,8 @@ fn populate_redacted_message_view(
     };
 
     item.label(id!(content)).set_text(&text);
-    item
+    new_drawn_status.content_drawn = true;
+    (item, new_drawn_status)
 } 
 
 
