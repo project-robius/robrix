@@ -1142,7 +1142,8 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                item.label(id!(content.message)).set_text(&format!("[TODO] {}", other.body()));
+                let kind = other.msgtype();
+                item.label(id!(content.message)).set_text(&format!("[TODO {kind:?}] {}", other.body()));
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
