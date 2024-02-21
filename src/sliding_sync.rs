@@ -2,6 +2,7 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
+use imbl::Vector;
 use makepad_widgets::{SignalToUI, error, log};
 use matrix_sdk::{
     Client,
@@ -20,13 +21,13 @@ use matrix_sdk::{
     media::MediaRequest,
     Room,
 };
-use matrix_sdk_ui::{timeline::{SlidingSyncRoomExt, PaginationOptions, BackPaginationStatus, TimelineItemContent, AnyOtherFullStateEventContent}, Timeline};
+use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, BackPaginationStatus, PaginationOptions, SlidingSyncRoomExt, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::min, collections::BTreeMap, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::BTreeMap, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
 use crate::{home::{rooms_list::{self, RoomPreviewEntry, RoomsListUpdate, RoomPreviewAvatar, enqueue_rooms_list_update}, room_screen::TimelineUpdate}, media_cache::MediaCacheEntry, utils::MEDIA_THUMBNAIL_FORMAT};
@@ -703,84 +704,122 @@ async fn timeline_subscriber_handler(
 
     sender.send(TimelineUpdate::NewItems {
         items: timeline_items.clone(),
-        index_of_first_change: 0,
+        changed_indices: usize::MIN..usize::MAX,
+        clear_cache: true,
     }).expect("Error: timeline update sender couldn't send update with initial items!");
+
+    let send_update = |timeline_items: Vector<Arc<TimelineItem>>, changed_indices: Range<usize>, clear_cache: bool, num_updates: usize| {
+        if num_updates > 0 {
+            // log!("timeline_subscriber: applied {num_updates} updates for room {room_id}. Clear cache? {clear_cache}. Changes: {changed_indices:?}.");
+            sender.send(TimelineUpdate::NewItems {
+                items: timeline_items,
+                changed_indices,
+                clear_cache,
+            }).expect("Error: timeline update sender couldn't send update with new items!");
+            
+            // Send a Makepad-level signal to update this room's timeline UI view.
+            SignalToUI::set_ui_signal();
+        }
+    };
 
     const LOG_DIFFS: bool = false;
 
     while let Some(batch) = subscriber.next().await {
-        let num_updates = batch.len();
+        let mut num_updates = 0;
         let mut index_of_first_change = usize::MAX;
+        let mut index_of_last_change = usize::MIN;
+        let mut clear_cache = false; // whether to clear the entire cache of items
         for diff in batch {
             match diff {
                 VectorDiff::Append { values } => {
+                    let _values_len = values.len();
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
-                    if LOG_DIFFS { log!("timeline_subscriber: diff Append {}, index_of_first_change: {index_of_first_change}", values.len()); }
                     timeline_items.extend(values);
+                    index_of_last_change = max(index_of_last_change, timeline_items.len());
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::Clear => {
                     if LOG_DIFFS { log!("timeline_subscriber: diff Clear"); }
-                    index_of_first_change = 0;
+                    clear_cache = true;
                     timeline_items.clear();
+                    num_updates += 1;
                 }
                 VectorDiff::PushFront { value } => {
                     if LOG_DIFFS { log!("timeline_subscriber: diff PushFront"); }
-                    index_of_first_change = 0;
+                    clear_cache = true;
                     timeline_items.push_front(value);
+                    num_updates += 1;
                 }
                 VectorDiff::PushBack { value } => {
-                    if LOG_DIFFS { log!("timeline_subscriber: diff PushBack"); }
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
                     timeline_items.push_back(value);
+                    index_of_last_change = max(index_of_last_change, timeline_items.len());
+                    if LOG_DIFFS { log!("timeline_subscriber: diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::PopFront => {
                     if LOG_DIFFS { log!("timeline_subscriber: diff PopFront"); }
-                    index_of_first_change = 0;
+                    clear_cache = true;
                     timeline_items.pop_front();
+                    num_updates += 1;
                 }
                 VectorDiff::PopBack => {
-                    if LOG_DIFFS { log!("timeline_subscriber: diff PopBack"); }
                     timeline_items.pop_back();
-                    index_of_first_change = min(index_of_first_change, timeline_items.len().saturating_sub(1));
+                    index_of_first_change = min(index_of_first_change, timeline_items.len());
+                    index_of_last_change = usize::MAX;
+                    if LOG_DIFFS { log!("timeline_subscriber: diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::Insert { index, value } => {
-                    if LOG_DIFFS { log!("timeline_subscriber: diff Insert at {index}"); }
-                    index_of_first_change = min(index_of_first_change, index);
+                    if index == 0 {
+                        clear_cache = true;
+                    } else {
+                        index_of_first_change = min(index_of_first_change, index);
+                        index_of_last_change = usize::MAX;
+                    }
                     timeline_items.insert(index, value);
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::Set { index, value } => {
-                    if LOG_DIFFS { log!("timeline_subscriber: diff Set at {index}"); }
                     index_of_first_change = min(index_of_first_change, index);
+                    index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
                     timeline_items.set(index, value);
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::Remove { index } => {
-                    if LOG_DIFFS { log!("timeline_subscriber: diff Remove at {index}"); }
-                    index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
+                    if index == 0 {
+                        clear_cache = true;
+                    } else {
+                        index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
+                        index_of_last_change = usize::MAX;
+                    }
                     timeline_items.remove(index);
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::Truncate { length } => {
-                    if LOG_DIFFS { log!("timeline_subscriber: diff Truncate to length {length}"); }
-                    index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
+                    if length == 0 {
+                        clear_cache = true;
+                    } else {
+                        index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
+                        index_of_last_change = usize::MAX;
+                    }
                     timeline_items.truncate(length);
+                    if LOG_DIFFS { log!("timeline_subscriber: diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    num_updates += 1;
                 }
                 VectorDiff::Reset { values } => {
                     if LOG_DIFFS { log!("timeline_subscriber: diff Reset, new length {}", values.len()); }
-                    index_of_first_change = 0; // we must assume that all items have changed.
+                    clear_cache = true; // we must assume all items have changed.
                     timeline_items = values;
+                    num_updates += 1;
                 }
             }
         }
-        if num_updates > 0 {
-            log!("timeline_subscriber: applied {num_updates} updates for room {room_id}; first change at index {index_of_first_change}.");
-        
-            sender.send(TimelineUpdate::NewItems {
-                items: timeline_items.clone(),
-                index_of_first_change,
-            }).expect("Error: timeline update sender couldn't send update with new items!");
-
-            // Send a Makepad-level signal to update this room's timeline UI view.
-            SignalToUI::set_ui_signal();
-        }
+        send_update(timeline_items.clone(), index_of_first_change..index_of_last_change, clear_cache, num_updates);
     }
 
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
