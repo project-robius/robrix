@@ -130,11 +130,13 @@ pub enum MatrixRequest {
     },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
-    /// will be invoked with the `destination` and the result of the media fetch.
+    /// will be invoked with four arguments: the `destination`, the `media_request`,
+    /// the result of the media fetch, and the `update_sender`.
     FetchMedia {
         media_request: MediaRequest,
-        on_fetched: fn(&Mutex<MediaCacheEntry>, MediaRequest, matrix_sdk::Result<Vec<u8>>),
+        on_fetched: fn(&Mutex<MediaCacheEntry>, MediaRequest, matrix_sdk::Result<Vec<u8>>, Option<crossbeam_channel::Sender<TimelineUpdate>>),
         destination: Arc<Mutex<MediaCacheEntry>>,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room's timeline.
     SendMessage {
@@ -234,14 +236,14 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 });
             }
 
-            MatrixRequest::FetchMedia { media_request, on_fetched, destination } => {
+            MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let media = client.media();
                 
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
-                    on_fetched(&destination, media_request, res);
+                    on_fetched(&destination, media_request, res, update_sender);
                 });
             }
 
@@ -370,15 +372,22 @@ static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeM
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
-/// Returns the timeline update receiver for the given room, if one exists.
+/// Returns the timeline update sender and receiver endpoints for the given room,
+/// if and only if the receiver exists.
 ///
 /// This will only succeed once per room, as only a single channel receiver can exist.
 pub fn take_timeline_update_receiver(
     room_id: &OwnedRoomId,
-) -> Option<crossbeam_channel::Receiver<TimelineUpdate>> {
+) -> Option<(
+        crossbeam_channel::Sender<TimelineUpdate>,
+        crossbeam_channel::Receiver<TimelineUpdate>,
+    )>
+{
     ALL_ROOM_INFO.lock().unwrap()
         .get_mut(room_id)
-        .and_then(|ri| ri.timeline_update_receiver.take())
+        .and_then(|ri| ri.timeline_update_receiver.take()
+            .map(|receiver| (ri.timeline_update_sender.clone(), receiver))
+        )
 }
 
 

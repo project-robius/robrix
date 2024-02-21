@@ -35,6 +35,7 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
 
 3. Build and run Robrix using `cargo-makepad`:
     * Fill in your username and password in the [`login.toml`](login.toml) file.
+    * Then use cargo makepad to build and run:
        ```sh
        cargo makepad android run -p robrix --release
        ```

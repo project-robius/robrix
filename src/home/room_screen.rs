@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{collections::BTreeMap, ops::{DerefMut, RangeInclusive}, sync::{Arc, Mutex}};
+use std::{collections::BTreeMap, ops::DerefMut, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -31,6 +31,7 @@ use matrix_sdk_ui::timeline::{
     TimelineItemKind, TimelineItem,
 };
 
+use rangemap::RangeSet;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
@@ -577,7 +578,7 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message: RoomMessageEventContent::text_plain(entered_text),
-                        // TODO: support replies to specific messages, attaching mentions, etc.
+                        // TODO: support replies to specific messages, attaching mentions, rich text (html), etc.
                     });
                 }
             }
@@ -619,6 +620,9 @@ pub enum TimelineUpdate {
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
     RoomMembersFetched,
+    /// A notice that one or more requested media items (images, videos, etc.)
+    /// that should be displayed in this timeline have now been fetched and are available.
+    MediaFetched,
 }
 
 
@@ -647,10 +651,23 @@ struct TimelineUiState {
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
-    /// The range of items that have been updated since the last time the timeline was drawn.
-    /// This range is set on each background update to ensure that no changes items are missed;
-    /// thus, it is a conservative estimate that may include more items than necessary.
-    _updated_items: RangeInclusive<usize>,
+    /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
+    /// since the last update and thus do not need to be re-populated on future draw events.
+    ///
+    /// This range is partially cleared on each background update (see below) to ensure that
+    /// items modified during the update are properly redrawn. Thus, it is a conservative
+    /// "cache tracker" that may not include all items that have already been drawn,
+    /// but that's okay because big updates that clear out large parts of the rangeset
+    /// only occur during back pagination, which is both rare and slow in and of itself.
+    /// During typical usage, new events are appended to the end of the timeline,
+    /// meaning that the range of already-drawn items doesn't need to be cleared.
+    ///
+    /// Upon a background update, only item indices greater than or equal to the
+    /// `index_of_first_change` are removed from this set. 
+    content_drawn_since_last_update: RangeSet<usize>,
+
+    /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
+    profile_drawn_since_last_update: RangeSet<usize>,
 
     /// The channel receiver for timeline updates for this room.
     ///
@@ -715,20 +732,28 @@ impl TimelineRef {
         let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
-            let update_receiver = take_timeline_update_receiver(&room_id)
+            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
-                _updated_items: usize::MIN ..= usize::MAX,
+                content_drawn_since_last_update: RangeSet::new(),
+                profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
-                media_cache: MediaCache::new(MediaFormatConst::File),
+                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 saved_state: SavedState::default(),
             };
             (new_tl_state, true)
         };
+
+        // log!("Timeline::set_room(): opening room {room_id}
+        //     content_drawn_since_last_update: {:#?}
+        //     profile_drawn_since_last_update: {:#?}",
+        //     tl_state.content_drawn_since_last_update,
+        //     tl_state.profile_drawn_since_last_update,
+        // );
 
         // kick off a back pagination request for this room
         if !tl_state.fully_paginated {
@@ -746,6 +771,8 @@ impl TimelineRef {
         // So we kick off a request to fetch the room members here upon first viewing the room.
         if first_time_showing_room {
             submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            // TODO: in the future, move the back pagination request to here,
+            //       once back pagination is done dynamically based on timeline scroll position.
         }
 
         // Finally, store the tl_state for this room into the Timeline widget,
@@ -756,30 +783,32 @@ impl TimelineRef {
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Currently, a Signal event is only used to tell this widget that its timeline events
-        // have been updated in the background.
+        // Currently, a Signal event is only used to tell this widget
+        // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
+            let orig_first_id = portal_list.first_id();
             let Some(tl) = self.tl_state.as_mut() else { return };
+
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, index_of_first_change } => {
                         // Determine which item is currently visible the top of the screen
                         // so that we can jump back to that position instantly after applying this update.
-                        let first_id = portal_list.first_id();
-                        if let Some(top_event_id) = tl.items.get(first_id).map(|item| item.unique_id()) {
+                        if let Some(top_event_id) = tl.items.get(orig_first_id).map(|item| item.unique_id()) {
                             for (idx, item) in items.iter().enumerate() {
                                 if item.unique_id() == top_event_id {
-                                    log!("Timeline::handle_event(): jumping from top event index {first_id} to index {idx}");
+                                    log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to index {idx}");
                                     portal_list.set_first_id(idx);
                                     break;
                                 }
                             }
                         }
+                        tl.content_drawn_since_last_update.remove(index_of_first_change .. items.len());
+                        tl.profile_drawn_since_last_update.remove(index_of_first_change .. items.len());
+                        // log!("Timeline::handle_event(): index_of_first_change: {index_of_first_change}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                         tl.items = items;
-
-                        // TODO: use index_of_first_change
                     }
                     TimelineUpdate::TimelineStartReached => {
                         log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
@@ -792,6 +821,11 @@ impl Widget for Timeline {
                     TimelineUpdate::RoomMembersFetched => {
                         log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
+                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    }
+                    TimelineUpdate::MediaFetched => {
+                        log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
+                        // Here, to be most efficient, we could redraw only the media items in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
                 }
@@ -869,55 +903,66 @@ impl Widget for Timeline {
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
                         continue;
                     };
-                    match timeline_item.kind() {
-                        TimelineItemKind::Event(event_tl_item) => {
-                            // Choose to draw either a Message or SmallStateEvent based on the timeline event's content.
-                            match event_tl_item.content() {
-                                TimelineItemContent::Message(message) => {
-                                    let prev_event = tl_items.get(tl_idx.saturating_sub(1));
-                                    populate_message_view(
-                                        cx,
-                                        list,
-                                        item_id,
-                                        event_tl_item,
-                                        message,
-                                        prev_event,
-                                        &mut tl_state.media_cache,
-                                    )
-                                }
-                                TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+
+                    // Determine whether this item's content and profile have been drawn since the last update.
+                    // Pass this state to each of the `populate_*` functions so they can attempt to re-use
+                    // an item in the timeline's portallist that was previously populated, if one exists.
+                    let item_drawn_status = ItemDrawnStatus {
+                        content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
+                        profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
+                    };
+
+                    let (item, item_new_draw_status) = match timeline_item.kind() {
+                        TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                            TimelineItemContent::Message(message) => {
+                                let prev_event = tl_items.get(tl_idx.saturating_sub(1));
+                                populate_message_view(
                                     cx,
                                     list,
                                     item_id,
                                     event_tl_item,
-                                    &tl_state.room_id,
-                                ),
-                                TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    membership_change,
-                                ),
-                                TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    profile_change,
-                                ),
-                                TimelineItemContent::OtherState(other) => populate_other_state_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    other,
-                                ),
-                                unhandled => {
-                                    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-                                    item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
-                                    item
-                                }
+                                    message,
+                                    prev_event,
+                                    &mut tl_state.media_cache,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                &tl_state.room_id,
+                                item_drawn_status,
+                            ),
+                            TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                membership_change,
+                                item_drawn_status,
+                            ),
+                            TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                profile_change,
+                                item_drawn_status,
+                            ),
+                            TimelineItemContent::OtherState(other) => populate_other_state_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                other,
+                                item_drawn_status,
+                            ),
+                            unhandled => {
+                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
+                                (item, ItemDrawnStatus::both_drawn())
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
@@ -927,12 +972,22 @@ impl Widget for Timeline {
                                 .map(|dt| format!("{}", dt.date().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
                             item.label(id!(date)).set_text(&text);
-                            item
+                            (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            list.item(cx, item_id, live_id!(ReadMarker)).unwrap()
+                            let item = list.item(cx, item_id, live_id!(ReadMarker)).unwrap();
+                            (item, ItemDrawnStatus::both_drawn())
                         }
+                    };
+
+                    // Now that we've drawn the item, add its index to the set of drawn items.
+                    if item_new_draw_status.content_drawn {
+                        tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx+1);
                     }
+                    if item_new_draw_status.profile_drawn {
+                        tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx+1);
+                    }
+                    item
                 };
                 item.draw_all(cx, &mut Scope::empty());
             }
@@ -940,6 +995,51 @@ impl Widget for Timeline {
         DrawStep::done()
     }
 }
+
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+struct ItemDrawnStatus {
+    /// Whether the profile info (avatar and displayable username) were drawn for this item.
+    profile_drawn: bool,
+    /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
+    content_drawn: bool,
+}
+impl ItemDrawnStatus {
+    /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
+    const fn new() -> Self {
+        Self { profile_drawn: false, content_drawn: false }
+    }
+    /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
+    const fn both_drawn() -> Self {
+        Self { profile_drawn: true, content_drawn: true }
+    }
+}
+
+// TODO: return this `ItemDrawnStatus` from the populate_*_view functions and use it to determine
+//       if that item ID can be added to the `drawn_since_last_update` range set (only if both are true).
+//       For now, we should only add items that are fully drawn to the range set,
+//       as we don't want to accidentally miss redrawing updated items that were only partially drawn.
+//       In this way, we won't consider an item fully drawn until both its profile and content are fully drawn.
+//       ****
+//       Note: we'll also need to differentiate between:
+//             an avatar not existing at all (considered fully drawn)
+//             vs an avatar not being "ready" or not being fetched yet (considered not fully drawn)
+      
+//       ****
+//       Also, we should split `drawn_since_last_update` into two separate `RangeSet`s:
+//          -- one for items whose CONTENT has been drawn fully, and
+//          -- one for items whose PROFILE has been drawn fully.
+//         This way, we can redraw the profile of an item without redrawing its content, and vice versa --> efficient!
+//       ****
+//       We should also use a range to specify `index_of_first_change` AND index of last change,
+//       such that we can support diff operations like set (editing/updating a single event).
+//       To do so, we'll have to send interim message updates to the UI thread rather than always sending the entire batch of diffs,
+//       but that's no problem because sending those updates is already very cheap.
+//       Plus, we already have plans to split up the batches across multiple update messages in the future,
+//       in order to support conveying more detailed info about which items were actually changed and at which indices
+//       (e.g., we'll eventually send one update per contiguous set of changed items, rather than one update per entire batch of items).
+
+      
 
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
@@ -955,7 +1055,10 @@ fn populate_message_view(
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
-) -> WidgetRef {
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+
+    let mut new_drawn_status = item_drawn_status;
 
     let ts_millis = event_tl_item.timestamp();
 
@@ -965,9 +1068,8 @@ fn populate_message_view(
         Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
             TimelineItemContent::Message(_prev_msg) => {
                 let prev_msg_sender = prev_event_tl_item.sender();
-                let prev_msg_ts = prev_event_tl_item.timestamp();
                 prev_msg_sender == event_tl_item.sender() &&
-                    ts_millis.0.checked_sub(prev_msg_ts.0)
+                    ts_millis.0.checked_sub(prev_event_tl_item.timestamp().0)
                         .map_or(false, |d| d < uint!(600000)) // 10 mins in millis
             }
             _ => false,
@@ -975,16 +1077,21 @@ fn populate_message_view(
         _ => false,
     };
 
-    let item = match message.msgtype() {
+    let (item, used_cached_item) = match message.msgtype() {
         MessageType::Text(text) => {
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
                 live_id!(Message)
             };
-            let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
-            item.label(id!(content.message)).set_text(&text.body);
-            item
+            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                item.label(id!(content.message)).set_text(&text.body);
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
         }
         MessageType::Image(image) => {
             let template = if use_compact_view {
@@ -992,70 +1099,94 @@ fn populate_message_view(
             } else {
                 live_id!(ImageMessage)
             };
-            let (item, _existed) = list.item_with_existed(cx, item_id, template).unwrap();
-
-            // We don't use thumbnails, as their resolution is too low to be visually useful.
-            let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
-                (
-                    info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
-                    info.width,
-                    info.height,
-                )
+            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
             } else {
-                (None, None, None)
-            };
-            let text_or_image_ref = item.text_or_image(id!(content.message));
-            match &image.source {
-                MediaSource::Plain(mxc_uri) => {
-                    // now that we've obtained the image URI and its mimetype, try to fetch the image.
-                    match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
-                        MediaCacheEntry::Loaded(data) => {
-                            let set_image_result = text_or_image_ref.set_image(|img|
-                                match mimetype {
-                                    Some(utils::ImageFormat::Png) => img.load_png_from_data(cx, &data),
-                                    Some(utils::ImageFormat::Jpeg) => img.load_jpg_from_data(cx, &data),
-                                    _unknown => utils::load_png_or_jpg(&img, cx, &data),
+                // We don't use thumbnails, as their resolution is too low to be visually useful.
+                let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                    (
+                        info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
+                        info.width,
+                        info.height,
+                    )
+                } else {
+                    (None, None, None)
+                };
+                let text_or_image_ref = item.text_or_image(id!(content.message));
+                match &image.source {
+                    MediaSource::Plain(mxc_uri) => {
+                        // now that we've obtained the image URI and its mimetype, try to fetch the image.
+                        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+                            MediaCacheEntry::Loaded(data) => {
+                                let set_image_result = text_or_image_ref.set_image(|img|
+                                    match mimetype {
+                                        Some(utils::ImageFormat::Png) => img.load_png_from_data(cx, &data),
+                                        Some(utils::ImageFormat::Jpeg) => img.load_jpg_from_data(cx, &data),
+                                        _unknown => utils::load_png_or_jpg(&img, cx, &data),
+                                    }
+                                );
+                                if let Err(e) = set_image_result {
+                                    let err_str = format!("Failed to display image: {e:?}");
+                                    error!("{err_str}");
+                                    text_or_image_ref.set_text(&err_str);
                                 }
-                            );
-                            if let Err(e) = set_image_result {
-                                let err_str = format!("Failed to display image: {e:?}");
-                                error!("{err_str}");
-                                text_or_image_ref.set_text(&err_str);
+                                // The image content is completely drawn here, ready to be marked as cached/drawn.
+                                new_drawn_status.content_drawn = true;
                             }
-                            
-                            // The image content is completely drawn here, ready to be marked as cached/drawn.
-                        }
-                        MediaCacheEntry::Requested => {
-                            text_or_image_ref.set_text(&format!("Fetching image from {:?}", mxc_uri));
-                        }
-                        MediaCacheEntry::Failed => {
-                            text_or_image_ref.set_text(&format!("Failed to fetch image from {:?}", mxc_uri));
-                            // The image content is complete here, ready to be marked as cached/drawn.
+                            MediaCacheEntry::Requested => {
+                                text_or_image_ref.set_text(&format!("Fetching image from {:?}", mxc_uri));
+                            }
+                            MediaCacheEntry::Failed => {
+                                text_or_image_ref.set_text(&format!("Failed to fetch image from {:?}", mxc_uri));
+                                // For now, we consider this as being "complete". In the future, we could support
+                                // retrying to fetch the image on a user click/tap.
+                                new_drawn_status.content_drawn = true;
+                            }
                         }
                     }
-                }
-                MediaSource::Encrypted(encrypted) => {
-                    text_or_image_ref.set_text(&format!("[TODO] fetch encrypted image at {:?}", encrypted.url));
-                }
-            };
-            item
+                    MediaSource::Encrypted(encrypted) => {
+                        text_or_image_ref.set_text(&format!("[TODO] fetch encrypted image at {:?}", encrypted.url));
+                        new_drawn_status.content_drawn = true; // considered complete, since we don't yet support this.
+                    }
+                };
+                (item, false)
+            }
         }
         other => {
-            let item = list.item(cx, item_id, live_id!(Message)).unwrap();
-            item.label(id!(content.message)).set_text(&format!("[TODO] {}", other.body()));
-            item
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message)).unwrap();
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                item.label(id!(content.message)).set_text(&format!("[TODO] {}", other.body()));
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
         }
-
     };
 
-    if !use_compact_view {
-        let username = set_avatar_and_get_username(
+    // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
+    let skip_draw_profile = use_compact_view || (used_cached_item && item_drawn_status.profile_drawn);
+    // log!("populate_message_view(): item_id: {item_id}, skip_redraw?: {skip_draw_profile}, use_compact_view: {use_compact_view}, used_cached_item: {used_cached_item}, item_drawn_status: {item_drawn_status:?}, new_drawn_status: {new_drawn_status:?}", );
+    if skip_draw_profile {
+        // log!("\t --> populate_message_view(): SKIPPING profile draw for item_id: {item_id}");
+        new_drawn_status.profile_drawn = true;
+    } else {
+        // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
+        let (username, profile_drawn) = set_avatar_and_get_username(
             cx,
             item.avatar(id!(profile.avatar)),
             event_tl_item,
         );
         item.label(id!(content.username)).set_text(&username);
+        new_drawn_status.profile_drawn = profile_drawn;
     }
+
+    // If we've previously drawn the item content, skip redrawing the timestamp and annotations.
+    if used_cached_item && item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
+        return (item, new_drawn_status);
+    }
+
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
         // format as AM/PM 12-hour time
@@ -1071,11 +1202,12 @@ fn populate_message_view(
         );
     }
 
-    // Temp filler: set the likes and comments count to the item id, just for now.
-    item.button(id!(likes)).set_text(&format!("{item_id}"));
-    item.button(id!(comments)).set_text(&format!("{item_id}"));
+    // Temp filler: set the likes and comments count to the timeline idx (item_id - 1), just for now.
+    // In the future, we'll draw annotations (reactions) here.
+    item.button(id!(likes)).set_text(&format!("{}", item_id - 1));
+    item.button(id!(comments)).set_text(&format!("{}", item_id - 1));
 
-    item
+    (item, new_drawn_status)
 } 
 
 
@@ -1091,31 +1223,60 @@ fn populate_redacted_message_view(
     list: &mut PortalList,
     item_id: usize,
     event_tl_item: &EventTimelineItem,
-    _room_id: &OwnedRoomId
-) -> WidgetRef {
-    let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-    let redactor_and_reason = if let Some(redacted_msg) = event_tl_item.latest_json() {
-        if let Ok(old) = redacted_msg.deserialize() {
-            match old {
-                AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(redaction))) => {
-                    Some((
+    _room_id: &OwnedRoomId,
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+
+    // The content of a redacted message view depends on the profile,
+    // so we can only cache the content after the profile has been drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
+
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+
+    // If the profile has been drawn, we can just quickly grab the original sender's display name
+    // instead of having to call `set_avatar_and_get_username()` again.
+    let original_sender_opt = if skip_redrawing_profile {
+        get_profile_display_name(event_tl_item)
+    } else {
+        None
+    };
+    
+    let original_sender = original_sender_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username()` to get the display name
+        // (or user ID) of the original sender of the now-redacted message.
+        let (original_sender, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.profile_drawn = profile_drawn;
+        original_sender
+    });
+
+
+    // Proceed to draw the content, now that we have the original sender's display name. 
+    let redactor_and_reason = {
+        let mut rr = None;
+        if let Some(redacted_msg) = event_tl_item.latest_json() {
+            if let Ok(old) = redacted_msg.deserialize() {
+                if let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(redaction))) = old {
+                    rr = Some((
                         redaction.unsigned.redacted_because.sender,
                         redaction.unsigned.redacted_because.content.reason,
-                    ))
+                    ));
                 }
-                _ => None,
             }
-        } else { None }
-    } else { None };
+        }
+        rr
+    };
 
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    
-    // Get the display name (or user ID) of the original sender of the now-redacted message.
-    let original_sender = set_avatar_and_get_username(
-        cx,
-        item.avatar(id!(avatar)),
-        event_tl_item,
-    );
     let text = match redactor_and_reason {
         Some((redactor, Some(reason))) => {
             // TODO: get the redactor's display name if possible
@@ -1134,7 +1295,8 @@ fn populate_redacted_message_view(
     };
 
     item.label(id!(content)).set_text(&text);
-    item
+    new_drawn_status.content_drawn = true;
+    (item, new_drawn_status)
 } 
 
 
@@ -1149,16 +1311,52 @@ fn populate_membership_change_view(
     item_id: usize,
     event_tl_item: &EventTimelineItem,
     change: &RoomMembershipChange,
-) -> WidgetRef {
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
 
+    // The content of a membership change view depends on the profile,
+    // so we can only cache the content after the profile has been drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
+
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+
+    // If the profile has been drawn, we can just quickly grab the user's display name
+    // instead of having to call `set_avatar_and_get_username()` again.
+    let username_opt = if skip_redrawing_profile {
+        get_profile_display_name(event_tl_item)
+    } else {
+        None
+    };
+    
+    let username = username_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
+        let (username, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.profile_drawn = profile_drawn;
+        username
+    });
+
+    // Proceed to draw the content, now that we have the user's display name. 
     let change_user_id = change.user_id();
-
     let text = match change.change() {
         None
         | Some(MembershipChange::NotImplemented)
         | Some(MembershipChange::None) => {
             // Don't actually display anything for nonexistent/unimportant membership changes.
-            return list.item(cx, item_id, live_id!(Empty)).unwrap();
+            return (
+                list.item(cx, item_id, live_id!(Empty)).unwrap(),
+                ItemDrawnStatus::new(),
+            );
         }
         Some(MembershipChange::Error) =>
             format!("had a membership change error."),
@@ -1192,17 +1390,9 @@ fn populate_membership_change_view(
             format!("denied {}'s request to join this room.", change_user_id),
     };
 
-    let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    let username = set_avatar_and_get_username(
-        cx,
-        item.avatar(id!(avatar)),
-        event_tl_item,
-    );
-    
     item.label(id!(content)).set_text(&format!("{username} {text}"));
-    item
+    new_drawn_status.content_drawn = true;
+    (item, new_drawn_status)
 }
 
 
@@ -1218,14 +1408,42 @@ fn populate_profile_change_view(
     item_id: usize,
     event_tl_item: &EventTimelineItem,
     change: &MemberProfileChange,
-) -> WidgetRef {
-    let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-    let username = set_avatar_and_get_username(
-        cx,
-        item.avatar(id!(avatar)),
-        event_tl_item,
-    );
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+    
+    // The content of a profile change view depends on the profile,
+    // so we can only cache the content after the profile has been drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
 
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+
+    // If the profile has been drawn, we can just quickly grab the user's display name
+    // instead of having to call `set_avatar_and_get_username()` again.
+    let username_opt = if skip_redrawing_profile {
+        get_profile_display_name(event_tl_item)
+    } else {
+        None
+    };
+    
+    let username = username_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
+        let (username, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.profile_drawn = profile_drawn;
+        username
+    });
+    
+    // Proceed to draw the content, now that we have the user's display name. 
     let name_text = if let Some(name_change) = change.displayname_change() {
         let old = name_change.old.as_deref().unwrap_or(&username);
         if let Some(new) = name_change.new.as_ref() {
@@ -1248,8 +1466,8 @@ fn populate_profile_change_view(
     };
 
     item.label(id!(content)).set_text(&format!("{}{}.", name_text, avatar_text));
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    item
+    new_drawn_status.content_drawn = true;
+    (item, new_drawn_status)
 }
 
 
@@ -1265,7 +1483,42 @@ fn populate_other_state_view(
     item_id: usize,
     event_tl_item: &EventTimelineItem,
     other_state: &timeline::OtherState,
-) -> WidgetRef {
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+    
+    // The content of an "other state" view depends on the profile,
+    // so we can only cache the content after the profile has been drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
+
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+
+    // If the profile has been drawn, we can just quickly grab the user's display name
+    // instead of having to call `set_avatar_and_get_username()` again.
+    let username_opt = if skip_redrawing_profile {
+        get_profile_display_name(event_tl_item)
+    } else {
+        None
+    };
+    
+    let username = username_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
+        let (username, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.profile_drawn = profile_drawn;
+        username
+    });
+
+    // Proceed to draw the content, now that we have the user's display name. 
     let text = match other_state.content() {
         AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
             let mut s = format!("set this room's aliases to ");
@@ -1332,19 +1585,16 @@ fn populate_other_state_view(
         }
     };
 
-    if let Some(text) = text {
-        let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-        let username = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(avatar)),
-            event_tl_item,
-        );
+    let item = if let Some(text) = text {
         item.label(id!(content)).set_text(&format!("{username} {text}"));
-        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.content_drawn = true;
         item
     } else {
-        list.item(cx, item_id, live_id!(Empty)).unwrap()
-    }
+        let item = list.item(cx, item_id, live_id!(Empty)).unwrap();
+        new_drawn_status = ItemDrawnStatus::new();
+        item
+    };
+    (item, new_drawn_status)
 }
 
 
@@ -1369,7 +1619,7 @@ fn set_timestamp(
 }
 
 
-/// Sets the given avatar returns a displayable username, based on the info from the given timeline event.
+/// Sets the given avatar and returns a displayable username based on the given timeline event.
 ///
 /// This function will always choose a nice, displayable username and avatar.
 ///
@@ -1382,19 +1632,27 @@ fn set_timestamp(
 ///   will be used for the `username`, and the first character of the user ID for the `avatar`.
 /// * If the timeline event's sender profile is not yet ready, then the `username` and `avatar`
 ///   will be the user ID and the first character of that user ID, respectively.
+///
+/// ## Return
+/// Returns a tuple of:
+/// 1. The displayable username that should be used to populate the username field.
+/// 2. A boolean indicating whether the user's profile info has been completely drawn
+///    (for purposes of caching it to avoid future redraws).
 fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
     event_tl_item: &EventTimelineItem,
-) -> String {
-    let mut username = String::new();
+) -> (String, bool) {
+    let username: String;
+    let mut profile_drawn = false;
 
-    // A closure to set the item's avatar and username to text data,
-    // skipping the first `skip` characters of the given `name` for the avatar text.
-    let mut set_avatar_text_and_name = |name: &str, skip: usize| {
-        username = name.to_owned();
+    // A closure to set the item's avatar to text data,
+    // skipping the first `skip` characters of the given `name`.
+    let set_avatar_text = |name: &str, skip: usize| {
         avatar.set_text(
-            name.graphemes(true).skip(skip).next()
+            name.graphemes(true)
+                .skip(skip)
+                .next()
                 .map(ToString::to_string)
                 .unwrap_or_default()
         );
@@ -1404,38 +1662,61 @@ fn set_avatar_and_get_username(
     match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
             // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = profile.avatar_url.as_ref().and_then(|uri| 
-                match AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None) {
-                    MediaCacheEntry::Loaded(data) => Some(data),
-                    _ => None,
+            let avatar_img = match profile.avatar_url.as_ref() {
+                Some(uri) => match AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None) {
+                    MediaCacheEntry::Loaded(data) => {
+                        profile_drawn = true;
+                        Some(data)
+                    }
+                    MediaCacheEntry::Failed => {
+                        profile_drawn = true;
+                        None
+                    }
+                    MediaCacheEntry::Requested => None,
                 }
-            );
-            match (avatar_img, &profile.display_name) {
-                // Both the avatar image and display name are available.
-                (Some(avatar_img), Some(name)) => {
-                    let _ = avatar.set_image(|img| utils::load_png_or_jpg(&img, cx, &avatar_img));
-                    username = name.to_owned();
+                None => {
+                    profile_drawn = true;
+                    None
                 }
-                // The avatar image is available, but the display name is not.
-                (Some(avatar_img), None) => {
-                    let _ = avatar.set_image(|img| utils::load_png_or_jpg(&img, cx, &avatar_img));
-                    username = event_tl_item.sender().as_str().to_owned();
-                }
-                // The avatar image is not available, but the display name is.
-                (None, Some(name)) => {
-                    set_avatar_text_and_name(name, 0);
-                }
-                // Neither the avatar image nor the display name are available.
-                (None, None) => {
-                    set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
-                }
+            };
+            
+            // Set the username to the display name if available, otherwise the user ID after the '@'.
+            let (skip, un) = if let Some(dn) = profile.display_name.as_ref() {
+                (0, dn.to_owned())
+            } else {
+                (1, event_tl_item.sender().as_str().to_owned())
+            };
+            username = un;
+
+            // Draw the avatar image if available, otherwise set the avatar to text.
+            let drew_avatar_img = avatar_img.map(|data|
+                avatar.set_image(|img|
+                    utils::load_png_or_jpg(&img, cx, &data)
+                ).is_ok()
+            ).unwrap_or(false);
+            
+            if !drew_avatar_img {
+                set_avatar_text(&username, skip);
             }
         }
-        _other => {
+        other => {
             // log!("populate_message_view(): sender profile not ready yet for event {_other:?}");
-            set_avatar_text_and_name(event_tl_item.sender().as_str(), 1);
+            username = event_tl_item.sender().as_str().to_owned();
+            set_avatar_text(&username, 1);
+            // If there was an error fetching the profile, treat that condition as fully drawn,
+            // since we don't yet have a good way to re-request profile information.
+            profile_drawn = matches!(other, TimelineDetails::Error(_));
         }
     }
 
-    username
+    (username, profile_drawn)
+}
+
+/// Returns the display name of the sender of the given `event_tl_item`, if available.
+fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
+    if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
+        profile.display_name.clone()
+    } else {
+        None
+    }
 }

@@ -1,9 +1,9 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
 use makepad_widgets::{error, log};
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
-use crate::{sliding_sync::{self, MatrixRequest}, utils::{MEDIA_THUMBNAIL_FORMAT, MediaFormatConst}};
+use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::{MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}};
 
-pub static AVATAR_CACHE: Mutex<MediaCache> = Mutex::new(MediaCache::new(MEDIA_THUMBNAIL_FORMAT));
+pub static AVATAR_CACHE: Mutex<MediaCache> = Mutex::new(MediaCache::new(MEDIA_THUMBNAIL_FORMAT, None));
 
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 
@@ -24,6 +24,8 @@ pub struct MediaCache {
     cache: BTreeMap<OwnedMxcUri, MediaCacheEntryRef>,
     /// The default format to use when fetching media.
     default_format: MediaFormatConst,
+    /// A channel to send updates to a particular timeline when a media request has completed.
+    timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
     type Target = BTreeMap<OwnedMxcUri, MediaCacheEntryRef>;
@@ -40,10 +42,17 @@ impl DerefMut for MediaCache {
 impl MediaCache {
     /// Creates a new media cache that will use the given media format
     /// when fetching media from the server.
-    pub const fn new(default_format: MediaFormatConst) -> Self {
+    ///
+    /// It will also optionally send updates to the given timeline update sender
+    /// when a media request has completed.
+    pub const fn new(
+        default_format: MediaFormatConst,
+        timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    ) -> Self {
         Self {
             cache: BTreeMap::new(),
             default_format,
+            timeline_update_sender,
         }
     }
 
@@ -83,6 +92,7 @@ impl MediaCache {
                 },
                 on_fetched: insert_into_cache,
                 destination,
+                update_sender: self.timeline_update_sender.clone(),
             }
         );
         MediaCacheEntry::Requested
@@ -91,7 +101,12 @@ impl MediaCache {
 }
 
 /// Insert data into a previously-requested media cache entry.
-fn insert_into_cache(value_ref: &Mutex<MediaCacheEntry>, _request: MediaRequest, data: matrix_sdk::Result<Vec<u8>>) {
+fn insert_into_cache(
+    value_ref: &Mutex<MediaCacheEntry>,
+    _request: MediaRequest,
+    data: matrix_sdk::Result<Vec<u8>>,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+) {
     let new_value = match data {
         Ok(data) => {
             
@@ -120,4 +135,8 @@ fn insert_into_cache(value_ref: &Mutex<MediaCacheEntry>, _request: MediaRequest,
         }
     };
     *value_ref.lock().unwrap() = new_value;
+
+    if let Some(sender) = update_sender {
+        let _ = sender.send(TimelineUpdate::MediaFetched);
+    }
 }
