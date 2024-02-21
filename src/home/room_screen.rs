@@ -947,16 +947,13 @@ impl Widget for Timeline {
                                 &tl_state.room_id,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::MembershipChange(membership_change) => (
-                                populate_membership_change_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    event_tl_item,
-                                    membership_change,
-                                    // item_drawn_status,
-                                ),
-                                ItemDrawnStatus::new(),
+                            TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
+                                cx,
+                                list,
+                                item_id,
+                                event_tl_item,
+                                membership_change,
+                                item_drawn_status,
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => (
                                 populate_profile_change_view(
@@ -1261,19 +1258,15 @@ fn populate_redacted_message_view(
 
     // If the profile has been drawn, we can just quickly grab the original sender's display name
     // instead of having to call `set_avatar_and_get_username()` again.
-    let original_sender_opt = {
-        let mut opt = None;
-        if skip_redrawing_profile {
-            if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
-                opt = profile.display_name.clone();
-            }
-        }
-        opt
+    let original_sender_opt = if skip_redrawing_profile {
+        get_profile_display_name(event_tl_item)
+    } else {
+        None
     };
     
     let original_sender = original_sender_opt.unwrap_or_else(|| {
-        // As a fallback, call `set_avatar_and_get_username()` to the display name (or user ID)
-        // of the original sender of the now-redacted message.
+        // As a fallback, call `set_avatar_and_get_username()` to get the display name
+        // (or user ID) of the original sender of the now-redacted message.
         let (original_sender, profile_drawn) = set_avatar_and_get_username(
             cx,
             item.avatar(id!(avatar)),
@@ -1336,16 +1329,52 @@ fn populate_membership_change_view(
     item_id: usize,
     event_tl_item: &EventTimelineItem,
     change: &RoomMembershipChange,
-) -> WidgetRef {
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
 
+    // The content of a membership change view depends on the profile,
+    // so we can only cache the content after the profile has been drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
+
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+
+    // If the profile has been drawn, we can just quickly grab the user's display name
+    // instead of having to call `set_avatar_and_get_username()` again.
+    let username_opt = if skip_redrawing_profile {
+        get_profile_display_name(event_tl_item)
+    } else {
+        None
+    };
+    
+    let username = username_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
+        let (username, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            item.avatar(id!(avatar)),
+            event_tl_item,
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
+        new_drawn_status.profile_drawn = profile_drawn;
+        username
+    });
+
+    // Proceed to draw the content, now that we have the user's display name. 
     let change_user_id = change.user_id();
-
     let text = match change.change() {
         None
         | Some(MembershipChange::NotImplemented)
         | Some(MembershipChange::None) => {
             // Don't actually display anything for nonexistent/unimportant membership changes.
-            return list.item(cx, item_id, live_id!(Empty)).unwrap();
+            return (
+                list.item(cx, item_id, live_id!(Empty)).unwrap(),
+                ItemDrawnStatus::both_drawn(),
+            );
         }
         Some(MembershipChange::Error) =>
             format!("had a membership change error."),
@@ -1379,17 +1408,9 @@ fn populate_membership_change_view(
             format!("denied {}'s request to join this room.", change_user_id),
     };
 
-    let (item, _existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-    let (username, profile_drawn) = set_avatar_and_get_username(
-        cx,
-        item.avatar(id!(avatar)),
-        event_tl_item,
-    );
-    
     item.label(id!(content)).set_text(&format!("{username} {text}"));
-    item
+    new_drawn_status.content_drawn = true;
+    (item, new_drawn_status)
 }
 
 
@@ -1647,4 +1668,13 @@ fn set_avatar_and_get_username(
     }
 
     (username, profile_drawn)
+}
+
+/// Returns the display name of the sender of the given `event_tl_item`, if available.
+fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String> {
+    if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
+        profile.display_name.clone()
+    } else {
+        None
+    }
 }
