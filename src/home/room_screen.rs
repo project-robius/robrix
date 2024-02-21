@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{collections::BTreeMap, ops::DerefMut, sync::{Arc, Mutex}};
+use std::{collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -604,10 +604,13 @@ pub enum TimelineUpdate {
     NewItems {
         /// The entire list of timeline items (events) for a room.
         items: Vector<Arc<TimelineItem>>,
-        /// The index of the first item in the `items` list that has changed.
-        /// Any items before this index are assumed to be unchanged and need not be redrawn,
-        /// while any items after this index are assumed to be changed and must be redrawn.
-        index_of_first_change: usize,
+        /// The range of indices in the `items` list that have been changed in this update
+        /// and thus must be removed from any caches of drawn items in the timeline.
+        /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
+        changed_indices: Range<usize>,
+        /// Whether to clear the entire cache of drawn items in the timeline.
+        /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
+        clear_cache: bool,
     },
     /// A notice that the start of the timeline has been reached, meaning that
     /// there is no need to send further backwards pagination requests.
@@ -793,21 +796,28 @@ impl Widget for Timeline {
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
-                    TimelineUpdate::NewItems { items, index_of_first_change } => {
+                    TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
                         // Determine which item is currently visible the top of the screen
                         // so that we can jump back to that position instantly after applying this update.
                         if let Some(top_event_id) = tl.items.get(orig_first_id).map(|item| item.unique_id()) {
                             for (idx, item) in items.iter().enumerate() {
                                 if item.unique_id() == top_event_id {
-                                    log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to index {idx}");
-                                    portal_list.set_first_id(idx);
+                                    if orig_first_id != idx {
+                                        log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to index {idx}");
+                                        portal_list.set_first_id(idx);
+                                    }
                                     break;
                                 }
                             }
                         }
-                        tl.content_drawn_since_last_update.remove(index_of_first_change .. items.len());
-                        tl.profile_drawn_since_last_update.remove(index_of_first_change .. items.len());
-                        // log!("Timeline::handle_event(): index_of_first_change: {index_of_first_change}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
+                        if clear_cache {
+                            tl.content_drawn_since_last_update.clear();
+                            tl.profile_drawn_since_last_update.clear();
+                        } else {
+                            tl.content_drawn_since_last_update.remove(changed_indices.clone());
+                            tl.profile_drawn_since_last_update.remove(changed_indices.clone());
+                            // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
+                        }
                         tl.items = items;
                     }
                     TimelineUpdate::TimelineStartReached => {
@@ -1014,32 +1024,6 @@ impl ItemDrawnStatus {
         Self { profile_drawn: true, content_drawn: true }
     }
 }
-
-// TODO: return this `ItemDrawnStatus` from the populate_*_view functions and use it to determine
-//       if that item ID can be added to the `drawn_since_last_update` range set (only if both are true).
-//       For now, we should only add items that are fully drawn to the range set,
-//       as we don't want to accidentally miss redrawing updated items that were only partially drawn.
-//       In this way, we won't consider an item fully drawn until both its profile and content are fully drawn.
-//       ****
-//       Note: we'll also need to differentiate between:
-//             an avatar not existing at all (considered fully drawn)
-//             vs an avatar not being "ready" or not being fetched yet (considered not fully drawn)
-      
-//       ****
-//       Also, we should split `drawn_since_last_update` into two separate `RangeSet`s:
-//          -- one for items whose CONTENT has been drawn fully, and
-//          -- one for items whose PROFILE has been drawn fully.
-//         This way, we can redraw the profile of an item without redrawing its content, and vice versa --> efficient!
-//       ****
-//       We should also use a range to specify `index_of_first_change` AND index of last change,
-//       such that we can support diff operations like set (editing/updating a single event).
-//       To do so, we'll have to send interim message updates to the UI thread rather than always sending the entire batch of diffs,
-//       but that's no problem because sending those updates is already very cheap.
-//       Plus, we already have plans to split up the batches across multiple update messages in the future,
-//       in order to support conveying more detailed info about which items were actually changed and at which indices
-//       (e.g., we'll eventually send one update per contiguous set of changed items, rather than one update per entire batch of items).
-
-      
 
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
