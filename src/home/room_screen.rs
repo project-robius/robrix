@@ -669,9 +669,6 @@ struct TimelineUiState {
     /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
     profile_drawn_since_last_update: RangeSet<usize>,
 
-    force_redraw_media: bool,
-    force_redraw_profiles: bool,
-
     /// The channel receiver for timeline updates for this room.
     ///
     /// Here we use a synchronous (non-async) channel because the receiver runs
@@ -744,8 +741,6 @@ impl TimelineRef {
                 items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
-                force_redraw_profiles: false,
-                force_redraw_media: false,
                 update_receiver,
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 saved_state: SavedState::default(),
@@ -796,9 +791,6 @@ impl Widget for Timeline {
             let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
-            let mut force_redraw_media = false;
-            let mut force_redraw_profiles = true; // always do this for now, any time we get a `Signal`.
-
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, index_of_first_change } => {
@@ -830,13 +822,11 @@ impl Widget for Timeline {
                         log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                        force_redraw_profiles = true;
                     }
                     TimelineUpdate::MediaFetched => {
                         log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the media items in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                        force_redraw_media = true;
                     }
                 }
             }
@@ -846,8 +836,6 @@ impl Widget for Timeline {
                 // TODO FIXME: hide TopSpace loading animation, set it to invisible.
             }
             
-            tl.force_redraw_profiles = force_redraw_profiles;
-            tl.force_redraw_media = force_redraw_media;
             self.redraw(cx);
         }
 
