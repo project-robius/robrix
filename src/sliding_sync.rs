@@ -706,7 +706,7 @@ async fn timeline_subscriber_handler(
         index_of_first_change: 0,
     }).expect("Error: timeline update sender couldn't send update with initial items!");
 
-    const LOG_DIFFS: bool = true;
+    const LOG_DIFFS: bool = false;
 
     while let Some(batch) = subscriber.next().await {
         let num_updates = batch.len();
