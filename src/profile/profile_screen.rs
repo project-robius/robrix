@@ -7,87 +7,55 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
 
-    import crate::shared::helpers::FillerX;
     import crate::shared::helpers::Divider;
     import crate::shared::styles::*;
     import crate::shared::clickable_view::ClickableView
 
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-    IMG_FAVORITES = dep("crate://self/resources/img/favorites.png")
-    IMG_MY_POSTS = dep("crate://self/resources/img/my-posts.png")
-    IMG_STICKER_GALLERY = dep("crate://self/resources/img/sticker-gallery.png")
-    IMG_SETTINGS = dep("crate://self/resources/img/settings.png")
-    IMG_QR = dep("crate://self/resources/img/qr_icon.png")
-
-    ActionIcon = <Label> {
-        width: Fit, height: Fit
-        text: ">"
-        draw_text:{
-            color: #b4,
-            text_style: <REGULAR_TEXT>{font_size: 16},
-        }
-    }
-
     OptionsItem = <View> {
+        flow: Down,
         width: Fill, height: Fit
-        padding: {left: 10., top: 10., right: 10. bottom: 2.}, spacing: 8., flow: Down
-        show_bg: true
-        draw_bg: {
-            color: #fff
-        }
+        padding: <MSPACE_2> {}
+        show_bg: false
 
         content = <View> {
-            width: Fill, height: Fit
-            padding: 0, align: {x: 0.0, y: 0.5}, spacing: 10., flow: Right
+            flow: Right,
+            width: Fill, height: Fit,
+            spacing: (SPACE_1),
+            align: { x: 0.5, y: 0.5},
 
             icon = <Image> {
-                width: 36., height: 36.
+                width: 32.5, height: 32.5
             }
 
-            label = <Label> {
-                width: Fit, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{},
-                },
-            }
-
-            <FillerX> {}
-
+            label = <H4> {}
+            <Filler> {}
             action_icon = <ActionIcon> {}
-        }
-
-        divider = <Divider> {
-            margin: {left: 42.0}
         }
     }
 
     Options = <View> {
         width: Fill, height: Fit
-        padding: 0, spacing: 0., flow: Down
+        flow: Down
+        padding: 0.,
+        spacing: 0.,
     }
 
     Profile = {{Profile}} {
         width: Fill, height: Fill
-        flow: Down, spacing: 10.
-
-        show_bg: true,
-        draw_bg: {
-            color: #ddd
-        }
+        flow: Down, spacing: (SPACE_2)
 
         ProfileInfo = <View> {
-            width: Fill, height: Fit
-            flow: Right, spacing: 10., padding: {top: 100., bottom: 30., right: 10., left: 20.}
-
-            show_bg: true
-            draw_bg: {
-                color: #fff
-            }
-
+            width: Fill, height: Fit,
+            flow: Down,
+            padding: {top: 100., bottom: 30., right: 10., left: 20.},
+            spacing: (SPACE_2),
+            show_bg: false,
+            
             <View> {
-                width: Fit, height: Fit
-                flow: Down, align: {y: 0}
+                username = <H2> { text:"facu" }
+                width: Fill, height: Fit
+                flow: Down,
+                align: {x: 0.0, y: 0.}
                 avatar = <Image> {
                     source: (IMG_DEFAULT_AVATAR),
                     width: 80., height: 80.
@@ -95,60 +63,39 @@ live_design! {
             }
 
             <View> {
-                width: Fill, height: Fit
-                flow: Down, align: {x: 0, y: 0.5}, padding: {top: 5., left: 10.}, spacing: 20.
-
-                username = <Label> {
-                    draw_text:{
-                        color: #000,
-                        text_style: <TEXT_SUB>{font_size: 20.},
-                    }
-                    text:"facu"
-                }
+                width: Fill, height: Fit,
+                flow: Down,
+                align: {x: 0, y: 0.5},
+                margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
+                spacing: (SPACE_2),
 
                 <View> {
-                    width: Fill, height: Fit
-                    flow: Right, spacing: 5., align: {y: 0.5}
+                    width: Fill, height: Fit,
+                    flow: Right,
+                    align: {y: 0.5},
+                    spacing: 5.,
 
                     <View> {
                         width: Fill, height: Fit
-                        flow: Down, spacing: 5.
+                        flow: Down,
+                        spacing: 5.,
 
-                        wechat_id_prefix = <Label> {
-                            draw_text: {
-                                color: #6a6a6a,
-                                text_style: <REGULAR_TEXT>{font_size: 11.},
-                            }
-                            text: "WeChat ID:"
-                        }
-
-                        wechat_id = <Label> {
-                            draw_text: {
-                                color: #6a6a6a,
-                                text_style: <REGULAR_TEXT>{font_size: 11.},
-                            }
-                            text: "wxid_123n43kjl123hjg"
-                        }
+                        wechat_id_prefix = <Pbold> { text: "WeChat ID" }
+                        wechat_id = <P> { text: "wxid_123n43kjl123hjg" }
                     }
 
                     my_profile_frame = <ClickableView> {
+                        show_bg: false,
                         width: Fit, height: Fit
-                        align: {y: 0.5}, spacing: 15
+                        align: {y: 0.5},
+                        spacing: 15.
                         qr_icon = <Image> {
                             source: (IMG_QR),
                             width: 20., height: 20.
                         }
 
-                        <Label> {
-                            width: Fit, height: Fit
-                            text: ">"
-                            draw_text: {
-                                text_style: <REGULAR_TEXT>{font_size: 16},
-                                fn get_color(self) -> vec4 {
-                                    return #b4
-                                }
-                            }
-                        }
+                        <ActionIcon> {}
+
                     }
                 }
 
@@ -158,20 +105,20 @@ live_design! {
 
                     status_button = <Button> {
                         width: Fit, height: 34.
-                        text: "+ Status"
+                        text: "Status"
                         draw_text: {
-                            text_style: <REGULAR_TEXT>{font_size: 12.},
+                            text_style: <REGULAR_TEXT> {font_size: 10.},
                             fn get_color(self) -> vec4 {
-                                return #6a
+                                return (COLOR_D_6)
                             }
                         }
                         draw_bg: {
                             border_radius: 8.
                             fn pixel(self) -> vec4 {
-                                let border_color = #b4b4b4;
-                                let border_width = 0.5;
+                                let border_color = (COLOR_D_3);
+                                let border_width = 1.5;
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                let body = mix(mix(#f, #f0, self.hover), #d1, self.pressed);
+                                let body = mix(mix((COLOR_U), (COLOR_U_0), self.hover), (COLOR_D_2), self.pressed);
 
                                 sdf.box(
                                     1.,
@@ -202,10 +149,10 @@ live_design! {
                         }
                         draw_bg: {
                             fn pixel(self) -> vec4 {
-                                let border_color = #b4b4b4;
-                                let border_width = 0.5;
+                                let border_color = (COLOR_D_3);
+                                let border_width = 1.5;
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                let body = mix(mix(#f, #f0, self.hover), #d1, self.pressed);
+                                let body = mix(mix((COLOR_U), (COLOR_U_0), self.hover), (COLOR_D_2), self.pressed);
 
                                 let radius = min(self.rect_size.x, self.rect_size.y) / 2.0 - 1.;
 
@@ -224,7 +171,7 @@ live_design! {
                 }
             }
         }
-
+        
         <Options> {
             <OptionsItem> {
                 content = {
@@ -237,7 +184,7 @@ live_design! {
                     }
                 }
             }
-
+            <DividerH> {}
             <OptionsItem> {
                 content = {
                     icon = {
@@ -249,7 +196,7 @@ live_design! {
                     }
                 }
             }
-
+            <DividerH> {}
             <OptionsItem> {
                 content = {
                     icon = {
@@ -261,31 +208,31 @@ live_design! {
                     }
 
                 }
-
-                divider = <View> {}
             }
-        }
+            <DividerH> {}
+            <Options> {
+                <OptionsItem> {
+                    content = {
+                        icon = {
+                            source: (IMG_SETTINGS)
+                        }
 
-        <Options> {
-            <OptionsItem> {
-                content = {
-                    icon = {
-                        source: (IMG_SETTINGS)
-                    }
-
-                    label = {
-                        text: "Settings"
+                        label = {
+                            text: "Settings"
+                        }
                     }
                 }
-
-                divider = <View> {}
             }
         }
+
     }
 
     ProfileScreen = <View> {
         width: Fill, height: Fill
-        <Profile> {}
+        <Profile> {
+            show_bg: true,
+            draw_bg: {color: (COLOR_D_0) }
+        }
     }
 }
 

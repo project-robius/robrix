@@ -8,16 +8,15 @@ live_design! {
     import crate::shared::styles::*;
 
     MenuItem = {{MenuItem}} {
+        width: Fill, height: Fit,
         align: {y: 0.5},
-        padding: {left: 5., top: 10., bottom: 10., right: 5.},
-        spacing: 5.,
-        width: Fill,
-        height: Fit
+        padding: <MSPACE_1> {}
+        spacing: (SPACE_1),
 
         draw_bg: {
-            instance color: #4
-            instance color_selected: #5
-            instance border_radius: 4.0
+            instance color: (COLOR_U)
+            instance color_selected: #E8E8E8,
+            instance border_radius: 3.0
 
             instance selected: 0.0
             instance hover: 0.0
@@ -37,27 +36,30 @@ live_design! {
         }
     
         draw_name: {
-            text_style: <REGULAR_TEXT>{font_size: 9},
+            text_style: <REGULAR_TEXT> {font_size: 9},
             instance selected: 0.0
             instance hover: 0.0
     
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        THEME_COLOR_TEXT_DEFAULT,
-                        THEME_COLOR_TEXT_SELECTED,
+                        (COLOR_D_5),
+                        (COLOR_D_6),
                         self.selected
                     ),
-                    THEME_COLOR_TEXT_HOVER,
+                    (COLOR_D_7),
                     self.hover
                 )
             }
         }
 
-        icon_walk: {width: 15., height: Fit, margin: {bottom: 3.}}
+        icon_walk: {
+            width: 15., height: Fit,
+            margin: <MSPACE_1> {}
+        }
         draw_icon: {
-            color: #f2f2f2;
-            brightness: 0.8;
+            color: #000;
+            brightness: 0.6
         }
 
         animator: {
@@ -102,33 +104,33 @@ live_design! {
     }
 
     PopupMenu = {{PopupMenu}} {
+        width: 140., height: Fit,
         menu_item: <MenuItem> {}
+        align: { x: 0.5, y: 0.5 }
         flow: Down,
-        padding: 5.,
-        width: 140.,
-        height: Fit,
+        padding: { top: 2.0, right: 4.0, bottom: 4.0, left: 2.0 },
 
-        icon_walk: {width: 20., height: Fit}
+        icon_walk: { width: 20., height: Fit, }
         draw_icon:{
             instance hover: 0.0
             instance pressed: 0.0
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        #9,
-                        #c,
+                        (COLOR_D_5),
+                        (COLOR_D_6),
                         self.hover
                     ),
-                    #9,
+                    (COLOR_D_7),
                     self.pressed
                 )
             }
         }
 
         draw_bg: {
-            instance color: #4
-            instance border_width: 0.0,
-            instance border_color: #4,
+            instance color: (COLOR_D_2),
+            instance border_width: 1.0,
+            instance border_color: (COLOR_D_2),
             instance border_radius: 4.0
 
             fn get_color(self) -> vec4 {

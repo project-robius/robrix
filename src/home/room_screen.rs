@@ -1,4 +1,5 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
+//! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
 use std::{ops::DerefMut, sync::{Arc, Mutex}, collections::BTreeMap};
@@ -51,95 +52,35 @@ live_design! {
     import crate::shared::search_bar::SearchBar;
     import crate::shared::avatar::Avatar;
 
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-    IMG_LOADING = dep("crate://self/resources/img/loading.png")
-    ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
-    ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
-    ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
-    ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
-    ICO_USER = dep("crate://self/resources/icon_user.svg")
-    ICO_ADD = dep("crate://self/resources/icon_add.svg")
-
-    FONT_SIZE_SUB = 9.5
-    FONT_SIZE_P = 12.5
-    
-    TEXT_SUB = {
-        font_size: (FONT_SIZE_SUB),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-    }
-    
-    TEXT_P = {
-        font_size: (FONT_SIZE_P),
-        height_factor: 1.65,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-    }
-    
-    // COLOR_BG = #xfff8ee
-    COLOR_ACCENT_HOVER = #x0ff
-    COLOR_READ_MARKER = #x0f0
-    
-    IconButton = <Button> {
-        draw_text: {
-            instance hover: 0.0
-            instance pressed: 0.0
-            text_style: {
-                font_size: 11.0
-            }
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        #0ff,
-                        (COLOR_ACCENT),
-                        self.hover
-                    ),
-                    (COLOR_ACCENT_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        draw_icon: {
-            svg_file: (ICO_FAV),
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        #f00,
-                        (COLOR_ACCENT),
-                        self.hover
-                    ),
-                    (COLOR_ACCENT_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
-        }
-        padding: 9.0
-        text: "1"
-    }
-    
-    Timestamp = <Meta> { width: Fit, align: {x: 1.0, y: 0.5}}
+     //estamp = <Meta> { width: Fit, align: {x: 1.0, y: 0.5}}
     
     MessageMenu = <View> {
         width: Fill, height: Fit,
-        margin: 0.0, padding: 0.0,
         flow: Down,
-        spacing: 0.0
+        margin: <MSPACE_0> {}
+        spacing: (SPACE_0)
         
         <View> {
             width: Fill, height: Fit,
-            margin: 0.0, padding: 0.0,
             flow: Right,
+            margin: <MSPACE_0> {}
             spacing: (SPACE_0)
             
-            likes = <IconButton> {draw_icon: {svg_file: (ICO_FAV)} icon_walk: {width: 15.0, height: Fit}}
-            comments = <IconButton> {draw_icon: {svg_file: (ICO_COMMENT)} icon_walk: {width: 15.0, height: Fit}, text: "7"}
+            likes = <IconButton> {
+                draw_icon: {svg_file: (ICO_FAV)},
+                icon_walk: {width: 15.0, height: Fit}
+            }
+            comments = <IconButton> {
+                draw_icon: {svg_file: (ICO_COMMENT)},
+                icon_walk: {width: 15.0, height: Fit},
+                text: "7"
+            }
             <Filler> {}
-            reply = <IconButton> {draw_icon: {svg_file: (ICO_REPLY)} icon_walk: {width: 15.0, height: Fit}, text: ""}
+            reply = <IconButton> {
+                draw_icon: {svg_file: (ICO_REPLY)},
+                icon_walk: {width: 15.0, height: Fit},
+                text: ""
+            }
         }
     }
     
@@ -148,45 +89,39 @@ live_design! {
 
     // The view used for each text-based message event in a room's timeline.
     Message = <View> {
-        flow: Down,
         width: Fill, height: Fit,
-        margin: 0.0 padding: <MSPACE_V_1> {} 
-        spacing: 0.0
+        flow: Down,
+        margin: <MSPACE_0> {}, padding: <MSPACE_V_1> {} 
+        spacing: (SPACE_0)
         
         body = <View> {
-            flow: Right,
             width: Fill, height: Fit,
-            padding: <MSPACE_2> {}
-            spacing: 0.0
+            flow: Right,
+            padding: <MSPACE_2> {},
+            spacing: (SPACE_0),
             
-            // profile = <View> {
-            //     align: {x: 1.0, y: 0.0} // centered horizontally, top aligned
-            //     width: 50.0,
-            //     height: Fit,
-            //     margin: {top: 7.5}
-            //     flow: Down,
-            // }
             content = <View> {
-                draw_bg: {color: (COLOR_U_0)}
                 width: Fill, height: Fit,
-                padding: 0.0
                 flow: Down,
-                spacing: (SPACE_1)
+                padding: <MSPACE_0> {},
+                spacing: (SPACE_1),
 
                 <View> {
                     width: Fill, height: Fit,
                     flow: Right,
-                    align: {x: 0.0, y: 0.5}
-                    padding: 0.0
-                    spacing: (SPACE_1  / 2)
-                    avatar = <Avatar> { width: 15., height: 15. }
-                    username = <Pbold> { width: Fill, text: "<Username not available>" }
-                    timestamp = <Timestamp> { text: "03:23 pm"} // TODO: FIX. date is not output anymore
-                    // datestamp = <Timestamp> { padding: { top: 5.0 } }
+                    align: {x: 0.0, y: 0.5},
+                    padding: <MSPACE_0> {},
+                    spacing: (SPACE_1  / 2),
+                    avatar = <Avatar> { width: 15., height: 15. },
+                    username = <Pbold> { width: Fill, text: "<Username not available>" },
+                    profile = <View> {
+                        width: Fit,
+                        timestamp = <Timestamp> { },
+                    }
                 }
 
-                message = <P> {}
-                // <DividerH> { margin: <MSPACE_V_2> {} }
+                message = <P> { margin: {left: 18.0} }
+            
                 // <MessageMenu> {}
             }
         }
@@ -195,37 +130,35 @@ live_design! {
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     ImageMessage = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0
+        width: Fill, height: Fit,
         flow: Down,
-        padding: 0.0,
-        spacing: 0.0
+        margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
+        spacing: (SPACE_0)
         
         body = <View> {
-            width: Fill,
-            height: Fit
+            width: Fill, height: Fit,
             flow: Right,
-            padding: 10.0,
-            spacing: 10.0
+            padding: <MSPACE_2> {},
+            spacing: (SPACE_2)
             
             content = <View> {
                 width: Fill, height: Fit
-                padding: 0.0
                 flow: Down,
+                padding: <MSPACE_0> {}
                 spacing: (SPACE_1)
-                
+
                 <View> {
-                    draw_bg: {color: (COLOR_U_0)}
                     width: Fill, height: Fit,
                     flow: Right,
-                    align: {x: 0.0, y: 0.5}
-                    padding: 0.0
+                    align: {x: 0.0, y: 0.0}
+                    padding: <MSPACE_0> {}
                     spacing: (SPACE_1 / 2)
                     avatar = <Avatar> { width: 15., height: 15. } // TODO: Is this broken?
-                    username = <Meta> { width: Fill, text: "<Username not available>" }
-                    timestamp = <Timestamp> { text: "03:23"} // TODO: FIX. date is not output anymore
-                    // datestamp = <Timestamp> { padding: { top: 5.0 } }
+                    username = <Meta> {
+                        width: Fill,
+                        text: "<Username not available>"
+                    }
+                    timestamp = <Timestamp> { }
                 }
 
                 img = <Image> {
@@ -234,7 +167,7 @@ live_design! {
                     fit: Horizontal,
                     source: (IMG_LOADING),
                 }
-                
+
                 // message = <RoundedView> {
                 //     width: Fill,
                 //     height: Fit,
@@ -280,26 +213,25 @@ live_design! {
     // The timestamp, profile picture, and text are all very small.
     SmallStateEvent = <View> {
         width: Fill, height: Fit,
-        padding: <MSPACE_V_1> {}, margin: 0.0
         flow: Right,
+        padding: <MSPACE_V_1> {}, margin: <MSPACE_0> {}
         
         body = <View> {
-            width: Fill, height: Fit
+            width: Fill, height: Fit,
             flow: Right,
-            spacing: (SPACE_1)
-            padding: <MSPACE_H_2> {}
-            avatar = <Avatar> { width: 15., height: 15. } // TODO: Is this broken?
+            padding: <MSPACE_H_2> {},
+            spacing: (SPACE_2),
+            avatar = <Avatar> { width: 15., height: 15. }, // TODO: Is this broken?
             content = <Meta> {
-                width: Fill, height: Fit
-                text: ""
-            }
+                width: Fill, height: Fit,
+                text: "",
+            },
             left_container = <View> {
-                align: {x: 1.0, y: 0.0} // centered horizontally, top aligned
-                width: 70.0,
-                height: Fit
+                width: 70.0, height: Fit,
                 flow: Right,
+                align: {x: 1.0, y: 0.0}, // centered horizontally, top aligned
 
-                timestamp = <Timestamp> { }
+                timestamp = <Timestamp> { },
             }
         }
     }
@@ -308,177 +240,274 @@ live_design! {
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
     DayDivider = <View> {
-        flow: Right,
         width: Fill, height: Fit,
-        margin: 0.0,
-        padding: 0.0,
-        spacing: 0.0,
+        flow: Right,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
+        margin: <MSPACE_0> {}, padding: <MSPACE_2> {},
+        spacing: (SPACE_0),
 
-        left_line = <DividerH> { margin: {top: 10.0, bottom: 10.0} }
-
-        date = <Meta> {
-            width: Fill,
-            height: 100,
-            // padding: {left: 7.0, right: 7.0}
-            // margin: {bottom: 10.0, top: 10.0}
+        left_line = <DividerH> { margin: <MSPACE_V_2> {} }
+        date = <H4> {
+            width: Fit,
+            margin: <MSPACE_2> {}
             text: "<date>"
         }
-
-        right_line = <DividerH> { margin: {top: 10.0, bottom: 10.0} }
+        right_line = <DividerH> { margin: <MSPACE_V_2> {} }
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
     ReadMarker = <View> {
-        width: Fill,
-        height: Fit,
-        margin: 0.0,
+        width: Fill, height: Fit,
         flow: Right,
-        padding: 0.0,
-        spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
+        margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
+        spacing: (SPACE_0),
 
         left_line = <DividerH> {
-            margin: {top: 10.0, bottom: 10.0}
-            draw_bg: {color: (COLOR_READ_MARKER)}
-        }
+            margin: <MSPACE_V_2> {},
+            draw_bg: { color: (COLOR_ACCENT) }
+        },
 
-        date = <Label> {
-            padding: {left: 7.0, right: 7.0}
-            margin: {bottom: 10.0, top: 10.0}
-            draw_text: {
-                text_style: <TEXT_SUB> {},
-                color: (COLOR_READ_MARKER)
-            }
+        date = <Meta> {
+            margin: <MSPACE_V_2> {}, padding: <MSPACE_H_2> {},
             text: "New Messages"
-        }
+        },
+
+        // date = <Pbold> {
+        //     padding: <MSPACE_H_2> {}
+        //     margin: <MSPACE_V_2> {}
+        //     text: "New Messages"
+        // }
 
         right_line = <DividerH> {
-            margin: {top: 10.0, bottom: 10.0}
-            draw_bg: {color: (COLOR_READ_MARKER)}
+            margin: <MSPACE_V_2> {},
+            draw_bg: {color: (COLOR_ACCENT)},
         }
     }
 
     // The top space is used to display a loading animation while the room is being paginated.
     TopSpace = <View> {
-        width: Fill,
-        height: 0.0,
-
-        label = <Label> {
-            text: "Loading..."
-        }
+        width: Fill, height: 300.0,
+        label = <Pbolditalic> { text: "Loading..." }
     }
 
     Timeline = {{Timeline}} {
-        width: Fill,
-        height: Fill,
+        width: Fill, height: Fill,
         align: {x: 0.0, y: 0.0} // center horizontally, align to top vertically
+        margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
 
         list = <PortalList> {
             auto_tail: true, // set to `true` to lock the view to the last item.
-            flow: Down
-            height: Fill, width: Fill
-            spacing: 0.0
+            height: Fill, width: Fill,
+            flow: Down,
+            margin: <MSPACE_1> {}, padding: <MSPACE_1> {},
+            spacing: (SPACE_0),
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
-            TopSpace = <TopSpace> {}
-            Message = <Message> {}
-            ImageMessage = <ImageMessage> {}
-            SmallStateEvent = <SmallStateEvent> {}
-            Empty = <Empty> {}
-            DayDivider = <DayDivider> {}
-            ReadMarker = <ReadMarker> {}
+            TopSpace = <TopSpace> {},
+            Message = <Message> {},
+            ImageMessage = <ImageMessage> {},
+            SmallStateEvent = <SmallStateEvent> {},
+            Empty = <Empty> {},
+            DayDivider = <DayDivider> {},
+            ReadMarker = <ReadMarker> {}, // TODO: clarify if this is funvtional
         }
     }
 
-    IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
-    IMG_PLUS = dep("crate://self/resources/img/plus.png")
-    IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
-
     RoomScreen = {{RoomScreen}} {
-        width: Fill, height: Fill
-        flow: Down
+        padding: 0.0,
         show_bg: true,
-        draw_bg: {
-            color: #fff
-        }
+        draw_bg: { color: (COLOR_D_1) }
 
-        // First, display the timeline of all messages/events.
-        timeline = <Timeline> {}
-        
-        // Below that, display a view that holds the message input bar.
-        <View> {
-            width: Fill, height: Fit
-            flow: Right, align: {y: 0.5}, padding: 10.
-            show_bg: true,
+        <RoundedView> {
+            width: Fill, height: Fill,
+            flow: Down,
+            margin: <MSPACE_2> {}, padding: <MSPACE_0> {},
+
             draw_bg: {
-                color: #fff
-            }
+                radius: 5.0,
+                border_width: 1.0,
+                border_width: 1.0
 
-            message_input = <TextInput> {
-                width: Fill, height: Fit, margin: 0
-                align: {y: 0.5}
-                empty_message: "Write a message..."
-                draw_bg: {
-                    color: #fff
+                fn get_border_color(self) -> vec4 {
+                    return mix(#F4F4F4FF, #E0E0E0FF, self.pos.y)
                 }
-                draw_text: {
-                    text_style:<REGULAR_TEXT>{},
-    
-                    fn get_color(self) -> vec4 {
-                        return #ccc
+
+                fn get_color(self) -> vec4 {
+                    return (COLOR_U)
+                }
+            },
+
+            // First, display the timeline of all messages/events.
+            timeline = <Timeline> {},
+            
+            // Below that, display a view that holds the message input bar.
+            <View> {
+                width: Fill, height: Fit,
+                flow: Right,
+                align: {y: 0.5},
+                margin: <MSPACE_H_2> {}, padding: <MSPACE_2> {},
+                spacing: (SPACE_1 / 2),
+
+                <IconButton> {
+                    icon_walk: {width: 22.5, height: Fit},
+                    draw_icon: {
+                        svg_file: (ICON_CREATE),
+                        fn get_color(self) -> vec4 { return (COLOR_D_5) }
                     }
                 }
 
-                // TODO find a way to override colors
-                draw_cursor: {
-                    instance focus: 0.0
-                    uniform border_radius: 0.5
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        sdf.box(
-                            0.,
-                            0.,
-                            self.rect_size.x,
-                            self.rect_size.y,
-                            self.border_radius
-                        )
-                        sdf.fill(mix(#0f0, #0b0, self.focus));
-                        return sdf.result
+                message_input = <TextInput> {
+                    width: Fill, height: Fit,
+                    align: {y: 0.0},
+                    margin: <MSPACE_H_2> {},
+
+                    cursor_margin_bottom: 3.0,
+                    cursor_margin_top: 4.0,
+                    select_pad_edges: 3.0
+                    cursor_size: 2.0,
+                    on_focus_select_all: false,
+                    empty_message: "Message ...",
+
+                    draw_bg: {
+                        instance hover: 0.0,
+                        instance focus: 0.0,
+                        border_width: 1.0,
+                        fn get_color(self) -> vec4 {
+                            return mix( (COLOR_D_3), (COLOR_D_0), self.pos.y + mix(0.0, 0.5, self.focus) )
+                        }
+
+                        fn get_border_color(self) -> vec4 {
+                            return mix(
+                                mix((COLOR_U_0), (COLOR_U), self.pos.y),
+                                mix((COLOR_U_0),(COLOR_U), self.pos.y),
+                                self.focus)
+                        }
+
+                    }
+
+                    draw_text: {
+                        instance focus: 0.0
+
+                        text_style: {
+                            font_size: 10.0
+                            font: {path: dep("crate://self/resources/fonts/Inter-Regular.ttf")}
+                        },
+
+                        fn get_color(self) -> vec4 {
+                            return
+                                mix(
+                                    (COLOR_D_6),
+                                    (COLOR_D_4),
+                                    self.is_empty
+                                )
+                        }
+                    }
+
+                    draw_cursor: {
+                        instance focus: 0.0
+                        uniform border_radius: 0.5
+                        fn pixel(self) -> vec4 {
+                            return mix((COLOR_D_0), (COLOR_ACCENT), self.focus)
+                        }
+                    }
+
+                    draw_select: {
+                        instance hover: 0.0
+                        instance focus: 0.0
+                        uniform border_radius: 2.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            sdf.box(
+                                0.,
+                                0.,
+                                self.rect_size.x,
+                                self.rect_size.y,
+                                self.border_radius
+                            )
+                            sdf.fill(mix((COLOR_U_0), (COLOR_SELECT), self.focus)); // Pad color
+                            return sdf.result
+                        }
+                    }
+
+                    animator: {
+                        hover = {
+                            default: off
+                            off = {
+                                from: {all: Forward {duration: 0.25}}
+                                apply: {
+                                    draw_select: {hover: 0.0}
+                                    draw_text: {hover: 0.0}
+                                    draw_bg: {hover: 0.0}
+                                }
+                            }
+                            on = {
+                                from: {all: Forward {duration: 0.1}}
+                                apply: {
+                                    draw_select: {hover: 1.0}
+                                    draw_text: {hover: 1.0}
+                                    draw_bg: {hover: 1.0}
+                                }
+                            }
+                        }
+
+                        focus = {
+                            default: off
+                            off = {
+                                redraw: true
+                                from: {all: Forward {duration: 1.}}
+                                ease: OutElastic
+                                apply: {
+                                    draw_cursor: {focus: 0.0},
+                                    draw_select: {focus: 0.0}
+                                    draw_text: {
+                                        text_style: {
+                                            font_size: 10.0
+                                        } 
+                                    }
+                                    draw_bg: {focus: 0.0}
+                                }
+                            }
+                            on = {
+                                redraw: true
+                                from: {all: Forward {duration: 1.}}
+                                ease: OutElastic
+                                apply: {
+                                    draw_cursor: {focus: 1.0},
+                                    draw_select: {focus: 1.0}
+                                    draw_text: {
+                                        text_style: {
+                                            font_size: 10.0
+                                        } 
+                                    }
+                                    draw_bg: {focus: 1.0}
+                                }
+                            }
+                        }
                     }
                 }
 
-                // TODO find a way to override colors
-                draw_select: {
-                    instance hover: 0.0
-                    instance focus: 0.0
-                    uniform border_radius: 2.0
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        sdf.box(
-                            0.,
-                            0.,
-                            self.rect_size.x,
-                            self.rect_size.y,
-                            self.border_radius
-                        )
-                        sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
-                        return sdf.result
+                <IconButton> {
+                    icon_walk: {width: 22.5, height: Fit}
+                    draw_icon: {
+                        svg_file: (ICON_EMOJI),
+                        fn get_color(self) -> vec4 { return (COLOR_D_5) }
                     }
                 }
-            }
-            <Image> {
-                source: (IMG_SMILEY_FACE_BW),
-                width: 36., height: 36.
-            }
-            <Image> {
-                source: (IMG_PLUS),
-                width: 36., height: 36.
-            }
-            send_message_button = <IconButton> {
-                draw_icon: {svg_file: (ICO_REPLY)},
-                icon_walk: {width: 15.0, height: Fit},
-                text: "Send",
+
+                // <Image> {
+                //     source: (IMG_SMILEY_FACE_BW),
+                //     width: 36., height: 36.
+                // }
+                // <Image> {
+                //     source: (IMG_PLUS),
+                //     width: 36., height: 36.
+                // }
+                // send_message_button = <IconButton> {
+                //     draw_icon: {svg_file: (ICO_REPLY)},
+                //     icon_walk: {width: 15.0, height: Fit},
+                //     text: "Send",
+                // }
             }
         }
     }

@@ -11,11 +11,9 @@ live_design! {
     import crate::contacts::add_contact_screen::AddContactScreen;
     import crate::contacts::contacts_list::ContactsList;
 
-    IMG_NEW_FRIENDS = dep("crate://self/resources/img/new_friends.png")
-    IMG_GROUP_CHATS = dep("crate://self/resources/img/group_chats.png")
-    IMG_TAGS = dep("crate://self/resources/img/tags.png")
-
     ContactsHeader = <HeaderDropDownMenu> {
+        show_bg: true,
+        draw_bg: { color: (COLOR_D_1)}
         content = {
             title_container = {
                 title = {
@@ -28,36 +26,34 @@ live_design! {
     <SearchBar> {}
 
     Divider = <View> {
-        width: Fill, height: Fit
-        flow: Down
+        width: Fill, height: Fit,
+        flow: Down,
         <RoundedView> {
-            width: Fill,
-            height: 1.,
-            draw_bg: {color: (#ddd)}
+            width: Fill, height: 1.,
+            draw_bg: {color: (COLOR_D_5)}
         }
     }
 
     ContactsBody = <View> {
-        show_bg: true
-        width: Fill, height: Fill
-        flow: Down, spacing: 0.0
-
-        draw_bg: {
-            color: #fff
-        }
+        width: Fill, height: Fill,
+        flow: Down,
+        spacing: (SPACE_0),
+        show_bg: true,
+        draw_bg: { color: (COLOR_U) }
 
         <ContactsHeader> {}
         <ContactsList> {}
     }
 
     Contacts = <View> {
-        width: Fill, height: Fill
-        flow: Down, spacing: 0.0
+        width: Fill, height: Fill,
+        flow: Down,
+        spacing: (SPACE_0),
         <ContactsBody> {}
     }
 
     ContactsScreen = <View> {
-        width: Fill, height: Fill
+        width: Fill, height: Fill,
         <Contacts> {}
     }
 }

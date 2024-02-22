@@ -11,7 +11,7 @@ live_design! {
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
-            color: #EDEDED;
+            color: (COLOR_D_0);
         }
 
         input = <TextInput> {

@@ -19,78 +19,62 @@ live_design! {
     import crate::shared::avatar::Avatar;
 
     RoomPreview = <ClickableView> {
-        flow: Right, spacing: 10., padding: 10.
-        width: Fill, height: Fit
+        width: Fill, height: Fit,
+        flow: Right,
+        padding: <MSPACE_2> {}  
+        spacing: (SPACE_2)
+        show_bg: false,
 
         avatar = <Avatar> {}
 
         preview = <View> {
             width: Fill, height: Fit
-            flow: Down, spacing: 7.
+            flow: Down,
+            spacing: (SPACE_2)
 
-            room_name = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{}
-                }
-                text: "[Room name unknown]"
-            }
+            room_name = <H4> { text: "[Room name unknown]" }
 
-            latest_message = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    wrap: Ellipsis,
-                    text_style: <REGULAR_TEXT>{
-                        font_size: 10.5
-                    },
-                }
+            latest_message = <P> {
+                draw_text:{ wrap: Ellipsis }
                 text: "[Latest message unknown]"
             }
         }
 
-        timestamp = <Label> {
+        timestamp = <Meta> {
             width: Fit, height: Fit
-            draw_text:{
-                text_style: <REGULAR_TEXT>{
-                    font_size: 8.
-                },
-            }
             text: "[Timestamp unknown]"
         }
     }
 
     // An empty view that takes up no space in the portal list.
-    Empty = <View> { }
+    Empty = <View> {}
 
     StatusLabel = <View> {
         width: Fill, height: Fit,
         align: { x: 0.5, y: 0.5 }
-        padding: 15.0,
-        draw_bg: {
-            color: #f4f4f4
-        }
-        show_bg: true,
+        padding: <MSPACE_2> {}
+        show_bg: false,
 
-        label = <Label> {
+        label = <Pbolditalic> {
             width: Fill,
             align: { x: 0.5, y: 0.5 }
-            draw_text: {
-                wrap: Word,
-                text_style: <REGULAR_TEXT>{}
-            }
+            draw_text: { wrap: Word, }
             text: "Loading joined rooms..."
         }
     }
 
+
     RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
+        draw_bg: { color: (COLOR_D_1) }
+        show_bg: true,
 
         list = <PortalList> {
             keep_invisible: false
             width: Fill, height: Fill
-            flow: Down, spacing: 0.0
+            flow: Down,
+            spacing: (SPACE_0)
 
             search_bar = <SearchBar> {}
             room_preview = <RoomPreview> {}
@@ -99,10 +83,8 @@ live_design! {
             bottom_filler = <View> {
                 width: Fill,
                 height: 100.0,
-                draw_bg: {
-                    color: #f4f4f4
-                }
                 show_bg: true,
+                draw_bg: { color: (COLOR_D_0) }
             }
         }
     }

@@ -8,7 +8,7 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     import crate::shared::styles::*;
-    import crate::shared::avatar::Avatar; // TODO: REMOVE?
+    import crate::shared::avatar::Avatar;
     import crate::home::home_screen::HomeScreen
     import crate::home::room_screen::RoomScreen
     import crate::contacts::contacts_screen::ContactsScreen
@@ -19,513 +19,123 @@ live_design! {
     import crate::profile::my_profile_screen::MyProfileScreen
 
     import crate::shared::clickable_view::ClickableView
-    import crate::shared::stack_navigation::*; // TODO: REMOVE?
+    // import crate::shared::stack_navigation::*;
 
-    ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
-    ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
-    ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
-    ICON_ME = dep("crate://self/resources/icons/me.svg")
+    SpaceAvatar = <Avatar> {
+        width: 32.5, height: 32.5,
 
-    H3_TEXT_REGULAR = {
-        font_size: 9.0,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-    }
+        // the text_view and img_view are overlaid on top of each other.
+        flow: Overlay
+        // centered horizontally and vertically.
+        align: { x: 0.5, y: 0.5 }
 
-    AppTab = <RadioButton> {
-        width: Fit,
-        height: Fill,
-        align: {x: 0.0, y: 0.0}
-        draw_radio: {
-            radio_type: Tab,
-            color_active: #fff,
-            color_inactive: #fff,
-        }
-        draw_text: {
-            color_selected: #0b0,
-            color_unselected: #000,
-            color_unselected_hover: #111,
-            text_style: <H3_TEXT_REGULAR> {}
-        }
-    }
-
-    Legacy = <View> {
-        navigation = <StackNavigation> {
-            root_view = {
-                width: Fill,
-                height: Fill,
-                padding: 0, align: {x: 0.0, y: 0.0}, spacing: 0., flow: Down
-
-                application_pages = <View> {
-                    width: Fill,
-                    margin: 0.0,
-                    padding: 0.0
-
-                    tab1_frame = <HomeScreen> {visible: true}
-                    tab2_frame = <ContactsScreen> {visible: false}
-                    tab3_frame = <DiscoverScreen> {visible: false}
-                    tab4_frame = <ProfileScreen> {visible: false}
-                }
-
-                mobile_menu = <RoundedView> {
-                    width: Fill,
-                    height: 80,
-                    flow: Right, spacing: 6.0, padding: 10
-                    draw_bg: {
-                        instance radius: 0.0,
-                        instance border_width: 1.0,
-                        instance border_color: #aaa,
-                        color: #fff
-                    }
-
-                    mobile_modes = <View> {
-                        tab1 = <AppTab> {
-                            animator: {selected = {default: on}}
-                            label: "Rooms"
-                            draw_icon: {
-                                svg_file: (ICON_CHAT),
-                                fn get_color(self) -> vec4 {
-                                    return mix(
-                                        #000,
-                                        #0b0,
-                                        self.selected
-                                    )
-                                }
-                            }
-                            width: Fill,
-                            icon_walk: {width: 20, height: 20}
-                            flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
-                        }
-                        tab2 = <AppTab> {
-                            label: "DMs",
-                            draw_icon: {
-                                svg_file: (ICON_CONTACTS),
-                                fn get_color(self) -> vec4 {
-                                    return mix(
-                                        #000,
-                                        #0b0,
-                                        self.selected
-                                    )
-                                }
-                            }
-                            width: Fill
-                            icon_walk: {width: 20, height: 20}
-                            flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
-                        }
-                        tab3 = <AppTab> {
-                            label: "Spaces",
-                            draw_icon: {
-                                svg_file: (ICON_DISCOVER),
-                                fn get_color(self) -> vec4 {
-                                    return mix(
-                                        #000,
-                                        #0b0,
-                                        self.selected
-                                    )
-                                }
-                            }
-                            width: Fill
-                            icon_walk: {width: 20, height: 20}
-                            flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
-                        }
-                        tab4 = <AppTab> {
-                            label: "Profile",
-                            draw_icon: {
-                                svg_file: (ICON_ME),
-                                fn get_color(self) -> vec4 {
-                                    return mix(
-                                        #000,
-                                        #0b0,
-                                        self.selected
-                                    )
-                                }
-                            }
-                            width: Fill
-                            icon_walk: {width: 20, height: 20}
-                            flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
-                        }
-                    }
-                }
-            }
-
-            moments_stack_view = <StackNavigationView> {
-                header = {
-                    content = {
-                        title_container = {
-                            title = {
-                                text: "Moments"
-                            }
-                        }
-                    }
-                }
-                body = {
-                    <MomentsScreen> {}
-                }
-            }
-
-            add_contact_stack_view = <StackNavigationView> {
-                header = {
-                    content = {
-                        title_container = {
-                            title = {
-                                text: "Add Contact"
-                            }
-                        }
-                    }
-                }
-                body = {
-                    <AddContactScreen> {}
-                }
-            }
-
-            my_profile_stack_view = <StackNavigationView> {
-                header = {
-                    content = {
-                        title_container = {
-                            title = {
-                                text: "My Profile"
-                            }
-                        }
-                    }
-                }
-                body = {
-                    <MyProfileScreen> {}
-                }
-            }
-
-            rooms_stack_view = <StackNavigationView> {
-                header = {
-                    content = {
-                        title_container = {
-                            title = {
-                                text: "Loading room..."
-                            }
-                        }
-                    }
-                }
-                body = {
-                    room_screen = <RoomScreen> {}
-                }
-            }
-        }
-    }
-
-    SpacesSidebar = <Rows> {
-    margin: <MSPACE_1> {},
-    spacing: (SPACE_1),
-    align: {x: 0.5, y: 0.0}
-    width: 35.0,
-
-    <Avatar> {}
-
-    <CachedRoundedView> {
-        draw_bg:{radius:10.0}
-        width: 35, height: 35,
-        <Image> {
-            source: dep("crate://self/resources/img/profile_1.jpg"),
-            width: Fill, height: Fill,
-            margin: 0,
-        }
-    }
-
-    <Filler> {}
-
-    <CachedRoundedView> {
-        draw_bg:{radius:10.0}
-        width: 35, height: 35,
-        <Image> {
-            source: dep("crate://self/resources/img/profile_1.jpg"),
-            width: Fill, height: Fill,
-            margin: 0,
-        }
-    }
-
-    <CachedRoundedView> {
-        draw_bg:{radius:10.0}
-        width: 35, height: 35,
-        <Image> {
-            source: dep("crate://self/resources/img/profile_1.jpg"),
-            width: Fill, height: Fill,
-            margin: 0,
-        }
-    }
-
-    <CachedRoundedView> {
-        draw_bg:{radius:10.0}
-        width: 35, height: 35,
-        <Image> {
-            source: dep("crate://self/resources/img/profile_1.jpg"),
-            width: Fill, height: Fill,
-            margin: 0,
-        }
-    }
-
-    <DividerH> {}
-
-    <IconButton> {
-        draw_icon: {svg_file: (ICO_DM)},
-        icon_walk: {width: 18.0, height: Fit}
-        margin: <MSPACE_2> {}
-    }
-
-    <IconButton> {
-        draw_icon: {svg_file: (ICO_HOME)},
-        icon_walk: {width: 22.5, height: Fit}
-        margin: <MSPACE_2> {}
-    }
-
-
-}
-
-TypographyDemo = <View> {
-    flow: Down,
-    width: Fill, height: Fit,
-    padding: <MSPACE_0> {},
-    draw_bg: {color: (COLOR_D_0)}
-    <H1> { text: "Headline H1"}
-    <H1italic> { text: "Headline H1"}
-    <H2> { text: "Headline H2"}
-    <H2italic> { text: "Headline H2"}
-    <H3> { text: "Headline H3"}
-    <H3italic> { text: "Headline H3"}
-    <H4> { text: "Headline H4"}
-    <H4italic> { text: "Headline H4"}
-    <P> {
-        text: "Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum"
-    }
-    <Pitalic> {
-        text: "Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum Lorem Ipsum"
-    }
-}
-
-ChannelPreview = <View> {
-    flow: Down,
-    width: Fill, height: Fit,
-    spacing: (SPACE_1 / 2)
-    margin: <MSPACE_V_1> {},
-    <View> {
-        flow: Right,
-        width: Fill, height: Fit,
-        <Pbold> { text: "Channel Name" }
-        <Filler> {}
-        <Meta> { width: Fit, text: "12:15" }
-    }
-    <Meta> { text: "Message preview"}
-}
-
-SubSpace = <View> {
-    flow: Down,
-    width: Fill, height: Fit,
-    spacing: (SPACE_1),
-    padding: <MSPACE_V_1> {},
-    <RoundedView> {
-        flow: Down,
-        width: Fill, height: Fit,
-        draw_bg: { color: (COLOR_D_1)},
-        padding: <MSPACE_2> {},
-        <H4> { text: "Test" } 
-    }
-    <View> {
-        flow: Down,
-        width: Fill, height: Fit,
-        spacing: (SPACE_1),
-        padding: <MSPACE_H_2> {},
-        <ChannelPreview> {}
-        <ChannelPreview> {}
-        <ChannelPreview> {}
-        <ChannelPreview> {}
-        <ChannelPreview> {}
-    }
-}
-
-Space = <Rows> {
-    margin: <MSPACE_1> {},
-    spacing: (SPACE_1)
-    <H2> { text: "Home"}
-    <DividerH> {}
-    <View> {
-        scroll_bars: <ScrollBars> {show_scroll_x: false, show_scroll_y: true}
-        flow: Down,
-        margin: {top: (SPACE_1 * -1)}
-        <Filler> {}
-        <View> {
-            flow: Down,
-            spacing: (SPACE_1),
-            width: Fill, height: Fit,
-            <SubSpace> {}
-            <SubSpace> {}
-            <SubSpace> {}
-        }
-    }
-}
-
-SearchBar = <View> {
-    width: Fill, height: Fit
-    show_bg: false,
-    draw_bg: { color: (COLOR_D_0) }
-
-        input = <TextInput> {
-            width: Fill, height: Fit,
-            align: {y: 0.0},
-
-            cursor_margin_bottom: 3.0,
-            cursor_margin_top: 4.0,
-            select_pad_edges: 3.0
-            cursor_size: 2.0,
-            on_focus_select_all: false,
-            empty_message: "Search ...",
-            margin: <MSPACE_H_2> {},
-
+        text_view = <View> {
+            visible: true,
+            align: { x: 0.5, y: 0.5 }
+            show_bg: true,
             draw_bg: {
-                instance hover: 0.0
-                instance focus: 0.0
-                border_width: 1.0
-                fn get_color(self) -> vec4 {
-                    return mix( #A, (COLOR_U), self.pos.y + mix(0.0, 0.5, self.focus) )
-                }
-
-                fn get_border_color(self) -> vec4 {
-                    return mix(
-                        mix((COLOR_U_0), (COLOR_U), self.pos.y),
-                        mix((COLOR_D_2),(COLOR_U_0), self.pos.y),
-                        self.focus)
-                }
-
-            }
-
-            draw_text: {
-                instance focus: 0.0
-
-                text_style: {
-                    // font_size: (FONT_SIZE_BASE + 2 * (FONT_SIZE_CONTRAST))
-                    font_size: 10.0
-                    font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")}
-                },
-
-                fn get_color(self) -> vec4 {
-                    return
-                        mix(
-                            (COLOR_D_6),
-                            (COLOR_D_4),
-                            self.is_empty
-                        )
-                }
-            }
-
-            draw_cursor: {
-                instance focus: 0.0
-                uniform border_radius: 0.5
+                instance background_color: (COLOR_D_7),
                 fn pixel(self) -> vec4 {
-                    // let sdf = sdf2d::viewport(self.pos * self.rect_size);
-                    // sdf.fill(mix(#ccc, #f, self.focus));
-                    // return sdf.result
-                    return mix((COLOR_D_0), (COLOR_ACCENT), self.focus)
-                }
-            }
-
-            draw_select: {
-                instance hover: 0.0
-                instance focus: 0.0
-                uniform border_radius: 2.0
-                fn pixel(self) -> vec4 {
-                    //return mix(#f00,#0f0,self.pos.y)
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    sdf.box(
-                        0.,
-                        0.,
-                        self.rect_size.x,
-                        self.rect_size.y,
-                        self.border_radius
-                    )
-                    sdf.fill(mix((COLOR_U_0), (COLOR_SELECT), self.focus)); // Pad color
+                    let c = self.rect_size * 0.5;
+                    sdf.circle(c.x, c.x, c.x)
+                    sdf.fill_keep(self.background_color);
                     return sdf.result
                 }
             }
-
-            animator: {
-                hover = {
-                    default: off
-                    off = {
-                        from: {all: Forward {duration: 0.25}}
-                        apply: {
-                            draw_select: {hover: 0.0}
-                            draw_text: {hover: 0.0}
-                            draw_bg: {hover: 0.0}
-                        }
-                    }
-                    on = {
-                        from: {all: Forward {duration: 0.1}}
-                        apply: {
-                            draw_select: {hover: 1.0}
-                            draw_text: {hover: 1.0}
-                            draw_bg: {hover: 1.0}
-                        }
-                    }
+            
+            text = <Pbold> {
+                width: Fit, height: Fit,
+                draw_text: {
+                    text_style: {
+                        font_size: 12.5,
+                        top_drop: 1.1
+                    },
+                    color: (COLOR_U)
                 }
+                text: "B"
+            }
+        }
+    }
 
-            // text_style: { font_size: (FONT_SIZE_BASE + 5 * (FONT_SIZE_CONTRAST)) },
+    ChanAvatar = <Avatar> {
+        width: 30.0, height: 30.0,
 
-                focus = {
-                    default: off
-                    off = {
-                        redraw: true
-                        from: {all: Forward {duration: 1.}}
-                        ease: OutElastic
-                        apply: {
-                            draw_cursor: {focus: 0.0},
-                            draw_select: {focus: 0.0}
-                            draw_text: {
-                                text_style: {
-                                    font_size: 10.0
-                                } 
-                            }
-                            draw_bg: {focus: 0.0}
-                        }
-                    }
-                    on = {
-                        redraw: true
-                        from: {all: Forward {duration: 1.}}
-                        ease: OutElastic
-                        apply: {
-                            draw_cursor: {focus: 1.0},
-                            draw_select: {focus: 1.0}
-                            draw_text: {
-                                text_style: {
-                                    font_size: 20.0
-                                } 
-                            }
-                            draw_bg: {focus: 1.0}
-                        }
-                    }
+        // the text_view and img_view are overlaid on top of each other.
+        flow: Overlay
+
+        // centered horizontally and vertically.
+        align: { x: 0.5, y: 0.5 }
+
+        text_view = <View> {
+            visible: true,
+            align: { x: 0.5, y: 0.5 }
+            show_bg: true,
+            draw_bg: {
+                instance background_color: (COLOR_U),
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    let c = self.rect_size * 0.5;
+                    sdf.circle(c.x, c.x, c.x)
+                    sdf.fill_keep(self.background_color);
+                    return sdf.result
                 }
             }
+            
+            text = <Pbold> {
+                width: Fit, height: Fit,
 
+                draw_text: {
+                    text_style: {
+                        font_size: 12.5,
+                        top_drop: 1.1
+                    },
+                    color: (COLOR_D_6)
+                }
+                text: "B"
+            }
         }
     }
 
-    SpaceSearch = <Rows> {
-        height: Fit,
-        <SearchBar> {
-            draw_bg: {color: (COLOR_U_0)}
+    AppTab = <RadioButton> {
+        width: 30, height: 30,
+        flow: Down,
+        icon_walk: { width: 30.0 }
+        draw_icon: {
+            svg_file: (ICON_ME),
+            fn get_color(self) -> vec4 {
+                return mix(
+                    (COLOR_D_5),
+                    (COLOR_ACCENT),
+                    self.selected
+                )
+            }
+        }
+        draw_radio: {
+            radio_type: Tab,
+            color_active: (COLOR_U_0),
+            color_inactive: (COLOR_U_0),
+        }
+        label: "",
+    }
+
+    DummyCommunityTMP = <CachedRoundedView> {
+        width: 32.5, height: 32.5,
+        draw_bg:{radius:10.0}
+        <Image> {
+            width: Fill, height: Fill,
+            source: (IMG_TESTUSER),
+            margin: <MSPACE_0> {},
         }
     }
 
-
-
-    ReworkedUI = <View> {
+    HomeView = <View> {
         width: Fill, height: Fill,
         margin: <MSPACE_0> {}, padding: <MSPACE_1> {},
-        spacing: (SPACE_1), flow: Down,
-
-        <OsHeader> {}
-
-        <Columns> {
-            <SpacesSidebar> {}
-            <Space> {}
-        }
-        <SpaceSearch> {}
-        <OsFooter> {}
+        flow: Down,
+        spacing: (SPACE_2),
+        <HomeScreen> {visible: true}
     } 
-
 
     App = {{App}} {
         ui: <Window> {
@@ -533,8 +143,149 @@ SearchBar = <View> {
             pass: {clear_color: (COLOR_BG) }
 
             body = {
-                // <ReworkedUI> {}
-                <Legacy> {}
+                flow: Down,
+                <OsHeader> {}
+                
+                navigation = <StackNavigation> {
+                    root_view = {
+                        width: Fill, height: Fill,
+                        flow: Right
+                        align: {x: 0.0, y: 0.0},
+                        padding: <MSPACE_0> {},
+                        spacing: (SPACE_0),
+
+                        mobile_menu = <View> {
+                            width: 60, height: Fill,
+                            flow: Right,
+                            align: { x: 0.5, y: 0.5 }
+                            
+                            margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
+                            mobile_modes = <View> {
+                                flow: Down,
+                                align: { x: 0.5, y: 0.5 },
+                                margin: <MSPACE_2> {}, spacing: (SPACE_3)
+
+                                tab1 = <AppTab> { draw_icon: { svg_file: (ICON_ME) } }
+                                tab2 = <AppTab> { draw_icon: { svg_file: (ICON_SETTINGS) } }
+                                <Filler> {}
+                                <IconButton> {
+                                    draw_icon: { svg_file: (ICON_CREATE) },
+                                    icon_walk: { width: 25.0 }
+                                }
+                                <DividerH> {}
+                                <SpaceAvatar> {}
+                                <DummyCommunityTMP> {}
+                                <DummyCommunityTMP> {}
+                                <DummyCommunityTMP> {}
+                                <DummyCommunityTMP> {}
+                                <DividerH> {}
+                                tab3 = <AppTab> { draw_icon: { svg_file: (ICON_CHAT) } }
+                                tab4 = <AppTab> {
+                                    animator: { selected = {default: on} }
+                                    draw_icon: { svg_file: (ICON_HOME) }
+                                }
+                            }
+                        }
+
+                        application_pages = <View> {
+                            width: Fill,
+                            margin: 0.0, padding: 0.0,
+
+                            // tab1_frame = <HomeScreen> {visible: true}
+                            tab1_frame = <ProfileScreen> {visible: false}
+                            tab2_frame = <ContactsScreen> {visible: false}
+                            tab3_frame = <DiscoverScreen> {visible: false}
+                            tab4_frame = <HomeView> { visible: true}
+                        }
+                    }
+
+                    moments_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: "Moments"
+                                    }
+                                }
+                            }
+                        }
+                        body = {
+                            <MomentsScreen> {}
+                        }
+                    }
+
+                    add_contact_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: "Add Contact"
+                                    }
+                                }
+                            }
+                        }
+                        body = {
+                            <AddContactScreen> {}
+                        }
+                    }
+
+                    my_profile_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    title = {
+                                        text: "My Profile"
+                                    }
+                                }
+                            }
+                        }
+                        body = {
+                            <MyProfileScreen> {}
+                        }
+                    }
+                    
+                    rooms_stack_view = <StackNavigationView> {
+                        header = {
+                            align: { x: 0.5, y: 0.5 },
+                            padding: <MSPACE_V_2> {},
+                            show_bg: true,
+                            content = {
+                                title_container = {
+                                    align: {x: 0.5, y: 0.5}
+                                    margin: { left: 35.0, }
+                                    spacing: (SPACE_2)
+                                    title = {
+                                        draw_text: {
+                                            text_style: { 
+                                                font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")},
+                                                font_size: (FONT_SIZE_4)
+                                            }
+                                            color: (COLOR_TEXT)
+                                        }
+                                        text: "Loading Room..."
+                                    }
+                                    <ChanAvatar> { width: 25., height: 25.}
+                                    <Filler> {}
+                                    <IconButton> {
+                                        draw_icon: { svg_file: (ICON_USERS) }
+                                        icon_walk: { width: 20.0, height: Fit }
+                                    }
+                                    <IconButton> {
+                                        margin: { right: (SPACE_2 * 1.5) }
+                                        draw_icon: { svg_file: (ICON_SETTINGS) }
+                                        icon_walk: { width: 16.0, height: Fit }
+                                    }
+                                }
+                            }
+                        }
+
+                        body = {
+                            height: Fill,
+                            room_screen = <RoomScreen> {}
+                        }
+                    }
+                }
+                <OsFooter> {}
             }
         }
     }

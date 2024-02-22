@@ -8,52 +8,38 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     import crate::shared::styles::*;
-    import crate::shared::helpers::Divider;
-    import crate::shared::search_bar::SearchBar;
+    // import crate::shared::helpers::Divider;
+    // import crate::shared::search_bar::SearchBar;
 
     import crate::contacts::contacts_group::ContactsGroup
 
-    IMG_NEW_FRIENDS = dep("crate://self/resources/img/new_friends.png")
-    IMG_GROUP_CHATS = dep("crate://self/resources/img/group_chats.png")
-    IMG_TAGS = dep("crate://self/resources/img/tags.png")
-
     OptionsItem = <View> {
-        width: Fill,
-        height: Fit,
-        padding: {left: 10., top: 10., bottom: 2.}, spacing: 8., flow: Down
+        flow: Down,
+        width: Fill, height: Fit
+        padding: <MSPACE_2> {}
+        show_bg: false,
 
         content = <View> {
-            width: Fit,
-            height: Fit,
-            padding: 0, align: {x: 0.0, y: 0.5}, spacing: 10., flow: Right
+            flow: Right,
+            width: Fill, height: Fit,
+            spacing: (SPACE_1),
+            align: { x: 0.5, y: 0.5},
 
             icon = <Image> {
-                source: (IMG_NEW_FRIENDS),
-                width: 36.,
-                height: 36.,
+                width: 32.5, height: 32.5
             }
 
-            label = <Label> {
-                width: Fit,
-                height: Fit,
-                draw_text: {
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{},
-                },
-                text: "New Friends"
-            }
-        }
-
-        divider = <Divider> {
-            margin: {left: 42.0}
+            label = <H4> {}
+            <Filler> {}
+            action_icon = <ActionIcon> {}
         }
     }
 
     Options = <View> {
-        width: Fill,
-        height: Fit,
-        margin: {left: 12.0},
-        padding: 0, spacing: 0., flow: Down
+        width: Fill, height: Fit,
+        flow: Down,
+        padding: <MSPACE_0> {},
+        spacing: (SPACE_0),
 
         <OptionsItem> {
             content = {
@@ -67,6 +53,8 @@ live_design! {
             }
         }
 
+        <DividerH> {}
+
         <OptionsItem> {
             content = {
                 icon = {
@@ -79,6 +67,8 @@ live_design! {
             }
         }
 
+        <DividerH> {}
+
         <OptionsItem> {
             content = {
                 icon = {
@@ -89,37 +79,31 @@ live_design! {
                     text: "Tags"
                 }
             }
-
-            divider = <Divider> {}
         }
     }
 
     ContactsList = {{ContactsList}} {
-        width: Fill,
-        height: Fill,
-        flow: Down
+        width: Fill, height: Fill,
+        flow: Down,
+        show_bg: true,
+        draw_bg: { color: (COLOR_D_1) },
 
         list = <PortalList> {
-            width: Fill,
-            height: Fill,
-            flow: Down, spacing: 0.0
+            width: Fill, height: Fill,
+            flow: Down,
+            spacing: (SPACE_0),
 
-            search_bar = <SearchBar> {}
-            options = <Options> {}
-            contacts_group = <ContactsGroup> {}
+            search_bar = <SearchBar> { }
+            options = <Options> {},
+            contacts_group = <ContactsGroup> {},
 
             bottom = <View> {
-                width: Fill,
-                height: Fit,
-                padding: {top: 14., bottom: 50.}, align: {x: 0.5, y: 0.}
+                width: Fill, height: Fit,
+                align: {x: 0.5, y: 0.},
 
-                <Label> {
+                <Pbolditalic> {
+                    margin: <MSPACE_2> {}
                     width: Fit,
-                    height: Fit,
-                    draw_text: {
-                        color: #777,
-                        text_style: <REGULAR_TEXT>{},
-                    }
                     text: "3 friends"
                 }
             }

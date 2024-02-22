@@ -8,15 +8,10 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
 
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-
-    IMG_BANNER = dep("crate://self/resources/img/hero.jpg")
-    IMG_POST1 = dep("crate://self/resources/img/post1.jpg")
-    IMG_POST2 = dep("crate://self/resources/img/post2.jpg")
-
     Hero = <View> {
-        width: Fill, height: Fit
-        flow: Overlay, align: {y: 1, x: 1}
+        width: Fill, height: Fit,
+        flow: Overlay,
+        align: {y: 1., x: 1.}
         banner = <Image> {
             width: Fill, height: 200.0
             source: (IMG_BANNER),
@@ -24,13 +19,9 @@ live_design! {
         content = <View> {
             width: Fit, height: Fit
             align: {y: 0.5}
-            username = <Label> {
+            username = <H2> {
                 width: Fit, height: Fit
-                draw_text:{
-                    color: #fff,
-                    text_style: <REGULAR_TEXT>{}
-                }
-                text:"減活乗治外進"
+                text: "Test 減活乗治外進"
             }
             avatar = <Image> {
                 source: (IMG_DEFAULT_AVATAR),
@@ -40,8 +31,10 @@ live_design! {
     }
 
     TextPost = <View> {
-        flow: Right, spacing: 10., padding: 10.
-        width: Fill, height: Fit
+        width: Fill, height: Fit,
+        flow: Right,
+        padding: <MSPACE_2> {},
+        spacing: (SPACE_2),
 
         avatar = <Image> {
             source: (IMG_DEFAULT_AVATAR),
@@ -50,31 +43,19 @@ live_design! {
 
         content = <View> {
             width: Fill, height: Fit
-            flow: Down, spacing: 7.
+            flow: Down,
+            spacing: (SPACE_2),
 
-            username = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{}
-                }
-                text:"Josh"
-            }
-
-            text = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{}
-                }
-                text:"Lorem ipsum dolor sit amet, consectetur"
-            }
+            username = <Pbold> { text:"Josh" }
+            text = <Pbold> { text:"Lorem ipsum dolor sit amet, consectetur" }
         }
     }
 
     ImagePost = <View> {
-        flow: Right, spacing: 10., padding: 10.
-        width: Fill, height: Fit
+        width: Fill, height: Fit,
+        flow: Right,
+        padding: <MSPACE_2> {},
+        spacing: (SPACE_2),
 
         avatar = <Image> {
             source: (IMG_DEFAULT_AVATAR),
@@ -82,39 +63,26 @@ live_design! {
         }
 
         content = <View> {
-            flow: Down, spacing: 7.
-            width: Fill, height: Fit
+            width: Fill, height: Fit,
+            flow: Down,
+            spacing: (SPACE_2),
 
-            username = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{}
-                }
-                text:"Josh"
-            }
-
-            text = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{font_size: 11.}
-                }
-                text:"Lorem ipsum dolor sit amet, consectetur"
-            }
+            username = <Pbold> { text:"Josh" }
+            text = <Pbold> { text:"Lorem ipsum dolor sit amet, consectetur" }
 
             images = <View> {
-                width: Fill, height: 110.
-                flow: Right, spacing: 7.
+                width: Fill, height: 110.,
+                flow: Right,
+                spacing: (SPACE_2),
 
                 image_1 = <Image> {
-                    source: (IMG_POST1),
                     width: 90., height: 110.
+                    source: (IMG_POST1),
                 }
 
                 image_2 = <Image> {
+                    width: 180., height: 110.,
                     source: (IMG_POST2),
-                    width: 180., height: 110.
                 }
             }
         }
@@ -126,7 +94,8 @@ live_design! {
 
         list = <PortalList> {
             width: Fill, height: Fill
-            flow: Down, spacing: 0.0
+            flow: Down,
+            spacing: (SPACE_0)
 
             image_post = <ImagePost> {}
             text_post = <TextPost> {}

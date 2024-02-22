@@ -15,7 +15,6 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
     import crate::shared::styles::*;
 
-    IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
     // An avatar view holds either an image thumbnail or a single character of text.
     // By default, the text label is visible, but can be replaced by an image
@@ -35,7 +34,7 @@ live_design! {
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
             draw_bg: {
-                instance background_color: #bfb,
+                instance background_color: (COLOR_D_7),
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
@@ -45,13 +44,18 @@ live_design! {
                 }
             }
             
-            text = <Label> {
+            text = <Pbold> {
                 width: Fit, height: Fit,
-                padding: { top: 3.0 } // for better vertical alignment
+
                 draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 15. }
+                    text_style: {
+                        font_size: 6.5,
+                        line_spacing: 1.0,
+                        top_drop: 1.0
+                    },
+                    color: (COLOR_U)
                 }
-                text: ""
+                text: "A"
             }
         }
 

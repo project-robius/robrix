@@ -12,66 +12,51 @@ live_design! {
     import crate::shared::header::HeaderDropDownMenu;
     import makepad_widgets::image::*;
 
-    IMG_MOMENTS = dep("crate://self/resources/img/moments.png")
-    IMG_SCAN = dep("crate://self/resources/img/scan.png")
-    IMG_SHAKE = dep("crate://self/resources/img/shake.png")
-    IMG_SEARCH = dep("crate://self/resources/img/search.png")
-    IMG_PEOPLE_NEARBY = dep("crate://self/resources/img/people_nearby.png")
-    IMG_MINI_PROGRAMS = dep("crate://self/resources/img/mini_programs.png")
-
-    ActionIcon = <Label> {
-        width: Fit, height: Fit
-        text: ">"
-        draw_text:{
-            color: #b4
-            text_style: <REGULAR_TEXT>{font_size: 16},
-        }
-    }
-
     OptionsItem = <View> {
+        flow: Down,
         width: Fill, height: Fit
-        padding: {left: 10., top: 10., right: 20. bottom: 2.}, spacing: 8., flow: Down
+        padding: <MSPACE_2> {}
+        show_bg: false,
 
         content = <View> {
-            width: Fill, height: Fit
-            padding: 0, align: {x: 0.0, y: 0.5}, spacing: 10., flow: Right
+            flow: Right,
+            width: Fill, height: Fit,
+            spacing: (SPACE_1),
+            align: { x: 0.5, y: 0.5},
 
             icon = <Image> {
-                width: 24., height: 24.
+                width: 32.5, height: 32.5
             }
 
-            label = <Label> {
-                width: Fit, height: Fit
-                draw_text:{
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{},
-                },
-            }
-
-            <FillerX> {}
-
+            label = <H4> {}
+            <Filler> {}
             action_icon = <ActionIcon> {}
         }
     }
 
     Options = <View> {
-        width: Fill, height: Fit, margin: {top: 10., bottom: 10.}
-        padding: {bottom: 10.}, spacing: 0., flow: Down
+        width: Fill, height: Fit,
+        flow: Down
+        margin: <MSPACE_V_2> {}, padding: {bottom: (SPACE_2)},
+        spacing: 0.,
 
-        show_bg: true
-        draw_bg: {
-            color: #fff
-        }
+        show_bg: false,
     }
 
     Discover = {{Discover}} {
-        width: Fill, height: Fit
-        flow: Down, spacing: 0.0
+        width: Fill, height: Fit,
+        flow: Down,
+        spacing: 0.0,
 
         moments_link = <ClickableView> {
-            width: Fill, height: Fit, margin: {top: 10., bottom: 10.}
-            padding: {bottom: 10.}, spacing: 0., flow: Down
-
+            width: Fill, height: Fit,
+            flow: Down,
+            margin: {top: 10., bottom: 10.}, padding: {bottom: 10.},
+            spacing: 0.,
+            show_bg: true,
+            draw_bg: { color: (COLOR_D_0) } 
+        }
+        <Options> {
             <OptionsItem> {
                 content = {
                     icon = {
@@ -83,9 +68,7 @@ live_design! {
                     }
                 }
             }
-        }
-
-        <Options> {
+            <DividerH> { }
             <OptionsItem> {
                 content = {
                     icon = {
@@ -96,12 +79,8 @@ live_design! {
                         text: "Scan"
                     }
                 }
-
-                divider = <Divider> {
-                    margin: {left: 42.0}
-                }
             }
-
+            <DividerH> { }
             <OptionsItem> {
                 content = {
                     icon = {
@@ -114,9 +93,7 @@ live_design! {
 
                 }
             }
-        }
-
-        <Options> {
+            <DividerH> { }
             <OptionsItem> {
                 content = {
                     icon = {
@@ -128,9 +105,7 @@ live_design! {
                     }
                 }
             }
-        }
-
-        <Options> {
+            <DividerH> { }
             <OptionsItem> {
                 content = {
                     icon = {
@@ -142,9 +117,7 @@ live_design! {
                     }
                 }
             }
-        }
-
-        <Options> {
+            <DividerH> { }
             <OptionsItem> {
                 content = {
                     icon = {
@@ -160,13 +133,12 @@ live_design! {
     }
 
     DiscoverScreen = <View> {
-        width: Fill, height: Fill
-        flow: Down, spacing: 0.0
+        width: Fill, height: Fill,
+        flow: Down,
+        spacing: 0.0,
 
-        show_bg: true
-        draw_bg: {
-            color: #ddd
-        }
+        show_bg: true,
+        draw_bg: { color: (COLOR_D_0) }
 
         <HeaderDropDownMenu> {
             content = {
