@@ -7,15 +7,11 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
     events::{
-        AnySyncTimelineEvent,
-        AnySyncMessageLikeEvent,
-        FullStateEventContent,
         room::{
             guest_access::GuestAccess,
             history_visibility::HistoryVisibility,
-            join_rules::JoinRule, message::{MessageType, RoomMessageEventContent}, MediaSource,
-        },
-        SyncMessageLikeEvent,
+            join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
+        }, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent
     }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId,
 };
 use matrix_sdk_ui::timeline::{
@@ -181,6 +177,30 @@ live_design! {
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
 
+    // A centralized widget where we define styles and custom elements for HTML
+    // message content. This is a wrapper around Makepad's built-in `Html` widget.
+    RobrixHtml = <Html> {
+        font_size: (FONT_SIZE_P),
+        draw_normal: {
+            color: (COLOR_P)
+        }
+        draw_italic: {
+            color: (COLOR_P)
+        }
+        draw_bold: {
+            color: (COLOR_P)
+        }
+        draw_bold_italic: {
+            color: (COLOR_P)
+        }
+        flow: RightWrap,
+        width: Fill,
+        height: Fit,
+        padding: 5,
+        line_spacing: 10,
+        html: ""
+    }
+
     // The view used for each text-based message event in a room's timeline.
     Message = <View> {
         width: Fill,
@@ -237,16 +257,7 @@ live_design! {
                     }
                     text: "<Username not available>"
                 }
-                message = <Label> {
-                    width: Fill,
-                    height: Fit
-                    draw_text: {
-                        wrap: Word,
-                        text_style: <TEXT_P> {},
-                        color: (COLOR_P)
-                    }
-                    text: ""
-                }
+                message = <RobrixHtml> { }
                 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -274,16 +285,7 @@ live_design! {
                 height: Fit,
                 flow: Down,
                 
-                message = <Label> {
-                    width: Fill,
-                    height: Fit
-                    draw_text: {
-                        wrap: Word,
-                        text_style: <TEXT_P> {},
-                        color: (COLOR_P)
-                    }
-                    text: ""
-                }
+                message = <RobrixHtml> { }
             }
         }
     }
@@ -726,7 +728,7 @@ impl TimelineRef {
     /// Sets this timeline widget to display the timeline for the given room.
     fn set_room(&self, room_id: OwnedRoomId) {
         let Some(mut timeline) = self.borrow_mut() else { return };
-        debug_assert!( // just an optional sanity check
+        assert!( // just an optional sanity check
             timeline.tl_state.is_none(),
             "BUG: tried to set_room() on a timeline with existing state. \
             Did you forget to restore the timeline state to the global map of states?",
@@ -854,7 +856,7 @@ impl Widget for Timeline {
             for action in actions {
                 let stack_view_subwidget_action = action.as_widget_action().cast();
                 match stack_view_subwidget_action {
-                    StackNavigationTransitionAction::HideEnd => {
+                    StackNavigationTransitionAction::HideBegin => {
                         self.save_state();
                         continue;
                     }
@@ -863,7 +865,7 @@ impl Widget for Timeline {
                         self.redraw(cx);
                         continue;
                     }
-                    StackNavigationTransitionAction::HideBegin
+                    StackNavigationTransitionAction::HideEnd
                     | StackNavigationTransitionAction::ShowDone
                     | StackNavigationTransitionAction::None => { }
                 }
@@ -1072,7 +1074,14 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                item.label(id!(content.message)).set_text(&text.body);
+                let body = text.formatted.as_ref()
+                    .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
+                    .unwrap_or_else(|| text.body.clone());
+                let body_ref = body.as_str();
+                log!("Drawing body: {body_ref}");
+                item.apply_over(cx, live! {
+                    body = { content = { message = { html: (body_ref) } } }
+                });
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
