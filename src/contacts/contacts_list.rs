@@ -13,32 +13,10 @@ live_design! {
 
     import crate::contacts::contacts_group::ContactsGroup
 
-    OptionsItem = <View> {
-        flow: Down,
-        width: Fill, height: Fit
-        padding: <MSPACE_2> {}
-        show_bg: false,
-
-        content = <View> {
-            flow: Right,
-            width: Fill, height: Fit,
-            spacing: (SPACE_1),
-            align: { x: 0.5, y: 0.5},
-
-            icon = <Image> {
-                width: 32.5, height: 32.5
-            }
-
-            label = <H4> {}
-            <Filler> {}
-            action_icon = <ActionIcon> {}
-        }
-    }
-
     Options = <View> {
         width: Fill, height: Fit,
         flow: Down,
-        padding: <MSPACE_0> {},
+        padding: <MSPACE_0> {}, margin: <MSPACE_0> {},
         spacing: (SPACE_0),
 
         <OptionsItem> {
@@ -85,13 +63,15 @@ live_design! {
     ContactsList = {{ContactsList}} {
         width: Fill, height: Fill,
         flow: Down,
+        margin: <MSPACE_0> {}, padding: <MSPACE_2> {},
         show_bg: true,
         draw_bg: { color: (COLOR_D_1) },
 
         list = <PortalList> {
             width: Fill, height: Fill,
             flow: Down,
-            spacing: (SPACE_0),
+            spacing: (SPACE_2),
+            margin: 0., padding: 0.,
 
             search_bar = <SearchBar> { }
             options = <Options> {},

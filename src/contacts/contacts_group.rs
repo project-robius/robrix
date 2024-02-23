@@ -6,11 +6,6 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
     import crate::shared::styles::*;
 
-    REGULAR_TEXT = {
-        font_size: (12),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-    }
-
     ContactItem = <View> {
         width: Fill, height: Fit,
         flow: Down
@@ -33,8 +28,7 @@ live_design! {
         width: Fill, height: Fit,
         flow: Down
         spacing: (SPACE_0),
-        margin: {top: (SPACE_2)}
-
+        margin: <MSPACE_2> {},
         header: <View> {
             width: Fill, height: 100,
             padding: <MSPACE_1> {}

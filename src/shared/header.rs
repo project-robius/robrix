@@ -34,11 +34,6 @@ live_design! {
         spacing: (SPACE_0),
         flow: Overlay
 
-        // show_bg: true
-        // draw_bg: {
-        //     color: #EDEDED
-        // }
-
         content = <SimpleHeaderContent> {}
     }
 

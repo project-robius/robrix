@@ -48,41 +48,41 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::search_bar::SearchBar;
+    // import crate::shared::helpers::*;
+    // import crate::shared::search_bar::SearchBar;
     import crate::shared::avatar::Avatar;
 
-     //estamp = <Meta> { width: Fit, align: {x: 1.0, y: 0.5}}
+     // timestamp = <Meta> { width: Fit, align: {x: 1.0, y: 0.5}}
     
-    MessageMenu = <View> {
-        width: Fill, height: Fit,
-        flow: Down,
-        margin: <MSPACE_0> {}
-        spacing: (SPACE_0)
+    // MessageMenu = <View> {
+    //     width: Fill, height: Fit,
+    //     flow: Down,
+    //     margin: <MSPACE_0> {}
+    //     spacing: (SPACE_0)
         
-        <View> {
-            width: Fill, height: Fit,
-            flow: Right,
-            margin: <MSPACE_0> {}
-            spacing: (SPACE_0)
+    //     <View> {
+    //         width: Fill, height: Fit,
+    //         flow: Right,
+    //         margin: <MSPACE_0> {}
+    //         spacing: (SPACE_0)
             
-            likes = <IconButton> {
-                draw_icon: {svg_file: (ICO_FAV)},
-                icon_walk: {width: 15.0, height: Fit}
-            }
-            comments = <IconButton> {
-                draw_icon: {svg_file: (ICO_COMMENT)},
-                icon_walk: {width: 15.0, height: Fit},
-                text: "7"
-            }
-            <Filler> {}
-            reply = <IconButton> {
-                draw_icon: {svg_file: (ICO_REPLY)},
-                icon_walk: {width: 15.0, height: Fit},
-                text: ""
-            }
-        }
-    }
+    //         likes = <IconButton> {
+    //             draw_icon: {svg_file: (ICO_FAV)},
+    //             icon_walk: {width: 15.0, height: Fit}
+    //         }
+    //         comments = <IconButton> {
+    //             draw_icon: {svg_file: (ICO_COMMENT)},
+    //             icon_walk: {width: 15.0, height: Fit},
+    //             text: "7"
+    //         }
+    //         <Filler> {}
+    //         reply = <IconButton> {
+    //             draw_icon: {svg_file: (ICO_REPLY)},
+    //             icon_walk: {width: 15.0, height: Fit},
+    //             text: ""
+    //         }
+    //     }
+    // }
     
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -294,7 +294,6 @@ live_design! {
     Timeline = {{Timeline}} {
         width: Fill, height: Fill,
         align: {x: 0.0, y: 0.0} // center horizontally, align to top vertically
-        margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
 
         list = <PortalList> {
             auto_tail: true, // set to `true` to lock the view to the last item.
@@ -315,9 +314,9 @@ live_design! {
     }
 
     RoomScreen = {{RoomScreen}} {
-        padding: 0.0,
         show_bg: true,
         draw_bg: { color: (COLOR_D_1) }
+        padding: { bottom: (OS_SPACE_BOTTOM) }
 
         <RoundedView> {
             width: Fill, height: Fill,
@@ -388,11 +387,11 @@ live_design! {
 
                     draw_text: {
                         instance focus: 0.0
-
-                        text_style: {
-                            font_size: 10.0
-                            font: {path: dep("crate://self/resources/fonts/Inter-Regular.ttf")}
-                        },
+                        text_style: <FONT_REGULAR> {
+                            line_spacing: 1.5,
+                            font_size: (FONT_SIZE_P)
+                        }
+                        color: (COLOR_TEXT)
 
                         fn get_color(self) -> vec4 {
                             return

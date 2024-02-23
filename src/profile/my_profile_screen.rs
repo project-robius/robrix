@@ -6,43 +6,12 @@ live_design! {
 
     // import crate::shared::helpers::FillerX;
     // import crate::shared::helpers::Divider;
-    import crate::shared::search_bar::SearchBar;
+    // import crate::shared::search_bar::SearchBar;
     import crate::shared::styles::*;
-
-    OptionsItem = <View> {
-        width: Fill, height: Fit
-        padding: <MSPACE_H_2> {}
-        flow: Down,
-
-        show_bg: true,
-        draw_bg: { color: (COLOR_D_0) }
-
-        content = <View> {
-            flow: Right,
-            width: Fill, height: Fit,
-            align: {x: 0.0, y: 0.5}
-            padding: <MSPACE_2> {}, 
-
-            label = <H4> {}
-            <Filler> {}
-            item_data = <View> { }
-            action_icon = <ActionIcon> {}
-        }
-
-        divider = <DividerH> {}
-    }
-
-    Options = <View> {
-        width: Fill, height: Fit
-        flow: Down
-        padding: <MSPACE_0> {},
-        spacing: (SPACE_0)
-        show_bg: true,
-        draw_bg: { color: (COLOR_D_0) }
-    }
 
     MyProfileScreen = <View> {
         width: Fill, height: Fill
+        padding: <MSPACE_2> {}, margin: <MSPACE_0> {}, 
         flow: Down,
         spacing: (SPACE_2)
 
@@ -53,7 +22,6 @@ live_design! {
             width: Fill,
             <OptionsItem> {
                 content = {
-                    width: Fill, height: Fit
                     label = {
                         text: "Profile Photo"
                     }
@@ -63,6 +31,8 @@ live_design! {
                     }
                 }
             }
+
+            <DividerH> {}
 
             <OptionsItem> {
                 content = {
@@ -77,6 +47,8 @@ live_design! {
                 }
             }
 
+            <DividerH> {}
+
             <OptionsItem> {
                 content = {
                     label = {
@@ -85,6 +57,8 @@ live_design! {
                 }
             }
 
+            <DividerH> {}
+
             <OptionsItem> {
                 content = {
                     label = {
@@ -92,11 +66,12 @@ live_design! {
                     }
                     item_data = <P> {
                         margin: <MSPACE_H_1> {}
-                        width: Fit, height: Fit
                         text:"wxid_123n43kjl123hjg"
                     }
                 }
             }
+
+            <DividerH> {}
 
             <OptionsItem> {
                 content = {
@@ -111,36 +86,39 @@ live_design! {
                 }
             }
 
+            <DividerH> {}
+
             <OptionsItem> {
                 content = {
                     label = {
                         text: "More Info"
                     }
                 }
-                divider = <DividerH> {}
             }
+
+            <DividerH> {}
 
             <OptionsItem> {
                 content = {
-                    width: Fill,
                     label = {
                         text: "Ringtone for Incoming Calls"
                     }
-                    item_data = <View> { width: 0.0 }
+                    item_data = <View> { }
                 }
-                divider = <DividerH> {}
             }
-        }
 
-        <Options> {
-            <OptionsItem> {
-                width: Fill,
-                content = {
-                    label = {
-                        text: "WeBeans"
+            <DividerH> {}
+
+            <Options> {
+                <OptionsItem> {
+                    content = {
+                        label = {
+                            text: "WeBeans"
+                        }
                     }
                 }
             }
         }
+
     }
 }

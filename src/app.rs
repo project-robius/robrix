@@ -48,7 +48,6 @@ live_design! {
                 width: Fit, height: Fit,
                 draw_text: {
                     text_style: {
-                        font_size: 12.5,
                         top_drop: 1.1
                     },
                     color: (COLOR_U)
@@ -87,7 +86,6 @@ live_design! {
 
                 draw_text: {
                     text_style: {
-                        font_size: 12.5,
                         top_drop: 1.1
                     },
                     color: (COLOR_D_6)
@@ -144,8 +142,7 @@ live_design! {
 
             body = {
                 flow: Down,
-                <OsHeader> {}
-                
+
                 navigation = <StackNavigation> {
                     root_view = {
                         width: Fill, height: Fill,
@@ -155,11 +152,13 @@ live_design! {
                         spacing: (SPACE_0),
 
                         mobile_menu = <View> {
+                            padding: { top: (OS_SPACE_TOP), bottom: (OS_SPACE_BOTTOM) }
                             width: 60, height: Fill,
                             flow: Right,
                             align: { x: 0.5, y: 0.5 }
+                            show_bg: true,
+                            draw_bg: { color: (COLOR_D_1) }
                             
-                            margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
                             mobile_modes = <View> {
                                 flow: Down,
                                 align: { x: 0.5, y: 0.5 },
@@ -189,7 +188,7 @@ live_design! {
 
                         application_pages = <View> {
                             width: Fill,
-                            margin: 0.0, padding: 0.0,
+                            padding: { top: (OS_SPACE_TOP), bottom: (OS_SPACE_BOTTOM) }
 
                             // tab1_frame = <HomeScreen> {visible: true}
                             tab1_frame = <ProfileScreen> {visible: false}
@@ -205,6 +204,13 @@ live_design! {
                                 title_container = {
                                     title = {
                                         text: "Moments"
+                                        draw_text: {
+                                            text_style: <FONT_BOLD> {
+                                                line_spacing: 1.5,
+                                                font_size: (FONT_SIZE_4)
+                                            }
+                                            color: (COLOR_HL)
+                                        }
                                     }
                                 }
                             }
@@ -220,6 +226,13 @@ live_design! {
                                 title_container = {
                                     title = {
                                         text: "Add Contact"
+                                        draw_text: {
+                                            text_style: <FONT_BOLD> {
+                                                line_spacing: 1.5,
+                                                font_size: (FONT_SIZE_4)
+                                            }
+                                            color: (COLOR_HL)
+                                        }
                                     }
                                 }
                             }
@@ -235,6 +248,13 @@ live_design! {
                                 title_container = {
                                     title = {
                                         text: "My Profile"
+                                        draw_text: {
+                                            text_style: <FONT_BOLD> {
+                                                line_spacing: 1.5,
+                                                font_size: (FONT_SIZE_4)
+                                            }
+                                            color: (COLOR_HL)
+                                        }
                                     }
                                 }
                             }
@@ -256,11 +276,11 @@ live_design! {
                                     spacing: (SPACE_2)
                                     title = {
                                         draw_text: {
-                                            text_style: { 
-                                                font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")},
+                                            text_style: <FONT_BOLD> {
+                                                line_spacing: 1.5,
                                                 font_size: (FONT_SIZE_4)
                                             }
-                                            color: (COLOR_TEXT)
+                                            color: (COLOR_HL)
                                         }
                                         text: "Loading Room..."
                                     }
@@ -285,7 +305,7 @@ live_design! {
                         }
                     }
                 }
-                <OsFooter> {}
+                // <OsFooter> {}
             }
         }
     }

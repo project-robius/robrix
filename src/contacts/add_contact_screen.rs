@@ -5,7 +5,7 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     // import crate::shared::search_bar::SearchBar;
-    import crate::shared::helpers::*;
+    // import crate::shared::helpers::*;
     import crate::shared::styles::*;
 
 
@@ -24,7 +24,7 @@ live_design! {
 
             icon = <Image> {
                 width: 24., height: 24.,
-                margin: {right: (SPACE_2)}
+                margin: <MSPACE_2> {}
             }
 
             labels = <View> {
@@ -50,33 +50,32 @@ live_design! {
         divider = <DividerH> {}
     }
 
-    Options = <View> {
-        width: Fill, height: Fit,
-        flow: Down
-        padding: <MSPACE_0> {},
-        spacing: (SPACE_0),
-    }
-
     AddContactScreen = <View> {
         width: Fill, height: Fill,
         flow: Down,
-        spacing: 10.
+        spacing: (SPACE_2) 
 
         show_bg: true
         draw_bg: { color: (COLOR_D_1) }
 
-        <SearchBar> { input = { empty_message: "Account/Mobile" } }
-
         <View> {
+            flow: Down,
             width: Fill, height: Fit,
-            align: {x: 0.5, y: 0.5},
-            margin: <MSPACE_2> {},
-            spacing: (SPACE_1),
+            align: {x: 0.0, y: 0.5},
+            margin: <MSPACE_0> {}, padding: <MSPACE_2> {},
+            spacing: (SPACE_2),
 
-            <H4> { text: "My WeChat ID: wxid_123n43kjl123hjg" }
-            <Image> {
-                width: 20., height: 20.
-                source: (IMG_QR),
+            <SearchBar> { input = { empty_message: "Account/Mobile" } }
+            <View> {
+                flow: Right,
+                width: Fill, height: Fit
+                padding: <MSPACE_0> {}, margin: <MSPACE_2> {},
+                spacing: (SPACE_2),
+                <H4> { text: "My WeChat ID: wxid_123n43kjl123hjg" }
+                <Image> {
+                    width: 20., height: 20.
+                    source: (IMG_QR),
+                }
             }
         }
 

@@ -7,7 +7,7 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::header::HeaderDropDownMenu;
-    import crate::shared::search_bar::SearchBar;
+    // import crate::shared::search_bar::SearchBar;
     import crate::contacts::add_contact_screen::AddContactScreen;
     import crate::contacts::contacts_list::ContactsList;
 
@@ -24,15 +24,6 @@ live_design! {
     }
 
     <SearchBar> {}
-
-    Divider = <View> {
-        width: Fill, height: Fit,
-        flow: Down,
-        <RoundedView> {
-            width: Fill, height: 1.,
-            draw_bg: {color: (COLOR_D_5)}
-        }
-    }
 
     ContactsBody = <View> {
         width: Fill, height: Fill,

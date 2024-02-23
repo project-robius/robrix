@@ -36,15 +36,15 @@ live_design! {
         }
     
         draw_name: {
-            text_style: <REGULAR_TEXT> {font_size: 9},
+            text_style: <FONT_BOLD> {font_size: 9.},
             instance selected: 0.0
             instance hover: 0.0
     
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        (COLOR_D_5),
                         (COLOR_D_6),
+                        (COLOR_D_7),
                         self.selected
                     ),
                     (COLOR_D_7),

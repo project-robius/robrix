@@ -5,28 +5,6 @@ live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::theme_desktop_dark::*;
 
-    // BEGIN LEGACY
-    TITLE_TEXT = {
-        font_size: (14),
-        font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")}
-    }
-
-    REGULAR_TEXT = {
-        font_size: (12),
-        font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")}
-    }
-
-    TEXT_SUB = {
-        font_size: (FONT_SIZE_SUB),
-        font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")}
-    }
-
-    COLOR_PROFILE_CIRCLE = #xfff8ee
-    COLOR_DIVIDER = #x00000018
-    COLOR_DIVIDER_DARK = #x00000044
-
-    // END LEGACY
-
     ICON_ARR_R = dep("crate://self/resources/icons/tri_r.svg")
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -67,6 +45,9 @@ live_design! {
     IMG_TESTUSER = dep("crate://self/resources/img/profile_1.jpg")
     IMG_WECHAT_AVATAR = dep("crate://self/resources/img/wechat_avatar.png")
     IMG_WECOM_CONTACTS = dep("crate://self/resources/img/wecom_contacts.png")
+    
+    OS_SPACE_TOP = 25.
+    OS_SPACE_BOTTOM = 50.
     
     SPACE_FACTOR = 10.0 // Increase for a less dense layout
     SPACE_0 = 0.0
@@ -114,127 +95,144 @@ live_design! {
     FONT_SIZE_P = (FONT_SIZE_BASE + 1 * FONT_SIZE_CONTRAST)
     FONT_SIZE_META = (FONT_SIZE_BASE + 0.5 * FONT_SIZE_CONTRAST)
 
-    FontRegular = <Label> {
-        draw_text: {text_style: { font: {path: dep("crate://self/resources/fonts/Inter-Regular.ttf")}}}
-    }
-    
-    FontRegularItalic = <Label> {
-        width: Fill, height: Fit,
-        draw_text: {text_style: {font: {path: dep("crate://self/resources/fonts/Inter-Italic.ttf")}}},
-        text: "Regular Font"
-    }
+    FONT_REGULAR = { font: { path: dep("crate://self/resources/fonts/Inter-Regular.ttf") } }
+    FONT_ITALIC = { font: { path: dep("crate://self/resources/fonts/Inter-Italic.ttf") } }
+    FONT_BOLD = { font: { path: dep("crate://self/resources/fonts/Inter-Bold.ttf") } }
+    FONT_BOLD_ITALIC = { font: { path: dep("crate://self/resources/fonts/Inter-BoldItalic.ttf") } }
 
-    FontBold = <Label> {
-        width: Fill, height: Fit,
-        draw_text: {text_style: {font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")}}},
-        text: "Bold Font"
-    }
-
-    FontBoldItalic = <Label> {
-        width: Fill, height: Fit,
-        draw_text: {text_style: {font: {path: dep("crate://self/resources/fonts/Inter-BoldItalic.ttf")}}},
-        text: "Bold Font"
-    }
-
-    H1 = <FontBold> {
+    H1 = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_1) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_1)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H1"
     }
-    H1italic = <FontBoldItalic> {
+    H1italic = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_1) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD_ITALIC> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_1)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H1"
     }
-    H2 = <FontBold> {
+    H2 = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_2) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_2)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H2"
     }
-    H2italic = <FontBoldItalic> {
+    H2italic = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_2) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD_ITALIC> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_2)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H2"
     }
-    H3 = <FontBold> {
+    H3 = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_3) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_3)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H3"
     }
-    H3italic = <FontBoldItalic> {
+    H3italic = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_3) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD_ITALIC> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_3)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H3"
     }
-    H4 = <FontBold> {
+    H4 = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_4) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_4)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H4"
     }
-    H4italic = <FontBoldItalic> {
+    H4italic = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_4) },
-            color: (COLOR_HL)
+            text_style: <FONT_BOLD_ITALIC> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_4)
+            }
+            color: (COLOR_TEXT)
         }
         text: "Headline H4"
     }
-    P = <FontRegular> {
+
+    P = <Label> {
         draw_text: {
-            text_style: {
+            text_style: <FONT_REGULAR> {
                 line_spacing: 1.5,
                 font_size: (FONT_SIZE_P)
-            },
+            }
             color: (COLOR_TEXT)
         }
         text: "Paragraph"
     }
-    Meta = <FontRegular> {
+    Meta = <Label> {
         draw_text: {
-            text_style: {
+            text_style: <FONT_REGULAR> {
                 line_spacing: 1.5,
                 font_size: (FONT_SIZE_META)
-            },
-            color: (COLOR_META),
+            }
+            color: (COLOR_META)
         }
         text: "Meta data"
     }
-    Pbold = <FontBold> {
+    Pbold = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_P) },
+            text_style: <FONT_BOLD> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_P)
+            }
             color: (COLOR_TEXT)
         }
         text: "Paragraph"
     }
-    Pitalic = <FontRegularItalic> {
+    Pitalic = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_P) },
+            text_style: <FONT_ITALIC> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_P)
+            }
             color: (COLOR_TEXT)
         }
         text: "Paragraph"
     }
-    Pbolditalic = <FontBoldItalic> {
+    Pbolditalic = <Label> {
         draw_text: {
-            text_style: { font_size: (FONT_SIZE_P) },
+            text_style: <FONT_BOLD_ITALIC> {
+                line_spacing: 1.5,
+                font_size: (FONT_SIZE_P)
+            }
             color: (COLOR_TEXT)
         }
         text: "Paragraph"
     }
 
-    Timestamp = <Meta> { width: Fit, align: {x: 1.0, y: 0.5}}
+    Timestamp = <Label> { width: Fit, align: {x: 1.0, y: 0.5}}
 
     // COMPONENTS        
     Filler = <View> {
@@ -306,6 +304,37 @@ live_design! {
         text: ""
     }
 
+    OptionsItem = <View> {
+        flow: Down,
+        width: Fill, height: Fit
+
+        content = <View> {
+            flow: Right,
+            width: Fill, height: Fit,
+            spacing: (SPACE_2),
+            margin: <MSPACE_2> {}, padding: <MSPACE_2> {}
+            align: { x: 0.0, y: 0.5},
+
+            icon = <Image> {
+                width: 20., height: 20.
+            }
+
+            label = <H4> {
+                width: Fit, height: Fit,
+            }
+            <Filler> {}
+            action_icon = <ActionIcon> {}
+        }
+    }
+
+    Options = <View> {
+        width: Fill, height: Fit,
+        flow: Down
+        margin: <MSPACE_V_2> {}, padding: {bottom: (SPACE_2)},
+        spacing: 0.,
+        show_bg: false,
+    }
+
     SearchBar = <View> {
         width: Fill, height: Fit
         show_bg: false,
@@ -344,7 +373,7 @@ live_design! {
 
                     text_style: {
                         // font_size: (FONT_SIZE_BASE + 2 * (FONT_SIZE_CONTRAST))
-                        font_size: 10.0
+                        font_size: (FONT_SIZE_P) 
                         font: {path: dep("crate://self/resources/fonts/Inter-Bold.ttf")}
                     },
 

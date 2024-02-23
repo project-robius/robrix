@@ -12,9 +12,9 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
 
-    import crate::shared::search_bar::SearchBar;
+    // import crate::shared::search_bar::SearchBar;
+    // import crate::shared::helpers::*;
     import crate::shared::styles::*;
-    import crate::shared::helpers::*;
     import crate::shared::clickable_view::ClickableView;
     import crate::shared::avatar::Avatar;
 

@@ -7,38 +7,9 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
 
-    import crate::shared::helpers::Divider;
+    // import crate::shared::helpers::Divider;
     import crate::shared::styles::*;
     import crate::shared::clickable_view::ClickableView
-
-    OptionsItem = <View> {
-        flow: Down,
-        width: Fill, height: Fit
-        padding: <MSPACE_2> {}
-        show_bg: false
-
-        content = <View> {
-            flow: Right,
-            width: Fill, height: Fit,
-            spacing: (SPACE_1),
-            align: { x: 0.5, y: 0.5},
-
-            icon = <Image> {
-                width: 32.5, height: 32.5
-            }
-
-            label = <H4> {}
-            <Filler> {}
-            action_icon = <ActionIcon> {}
-        }
-    }
-
-    Options = <View> {
-        width: Fill, height: Fit
-        flow: Down
-        padding: 0.,
-        spacing: 0.,
-    }
 
     Profile = {{Profile}} {
         width: Fill, height: Fill
@@ -47,15 +18,16 @@ live_design! {
         ProfileInfo = <View> {
             width: Fill, height: Fit,
             flow: Down,
-            padding: {top: 100., bottom: 30., right: 10., left: 20.},
+            // padding: {top: 100., bottom: 30., right: 10., left: 20.},
             spacing: (SPACE_2),
             show_bg: false,
             
             <View> {
-                username = <H2> { text:"facu" }
                 width: Fill, height: Fit
+                padding: <MSPACE_2> {}, margin: <MSPACE_2> {},
                 flow: Down,
                 align: {x: 0.0, y: 0.}
+                username = <H2> { text:"facu" }
                 avatar = <Image> {
                     source: (IMG_DEFAULT_AVATAR),
                     width: 80., height: 80.
@@ -66,7 +38,7 @@ live_design! {
                 width: Fill, height: Fit,
                 flow: Down,
                 align: {x: 0, y: 0.5},
-                margin: <MSPACE_0> {}, padding: <MSPACE_0> {},
+                padding: <MSPACE_2> {}, margin: <MSPACE_2> {},
                 spacing: (SPACE_2),
 
                 <View> {
@@ -107,7 +79,7 @@ live_design! {
                         width: Fit, height: 34.
                         text: "Status"
                         draw_text: {
-                            text_style: <REGULAR_TEXT> {font_size: 10.},
+                            text_style: <FONT_BOLD> {font_size: (FONT_SIZE_P)},
                             fn get_color(self) -> vec4 {
                                 return (COLOR_D_6)
                             }
@@ -142,9 +114,9 @@ live_design! {
                         width: Fit, height: 34
                         text: "..."
                         draw_text: {
-                            text_style: <TEXT_SUB>{font_size: 14.},
+                            text_style: <FONT_REGULAR> {},
                             fn get_color(self) -> vec4 {
-                                return #6a
+                                return (COLOR_D_5)
                             }
                         }
                         draw_bg: {

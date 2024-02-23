@@ -8,40 +8,9 @@ live_design! {
 
     import crate::shared::clickable_view::ClickableView;
     import crate::shared::styles::*;
-    import crate::shared::helpers::*;
+    // import crate::shared::helpers::*;
     import crate::shared::header::HeaderDropDownMenu;
     import makepad_widgets::image::*;
-
-    OptionsItem = <View> {
-        flow: Down,
-        width: Fill, height: Fit
-        padding: <MSPACE_2> {}
-        show_bg: false,
-
-        content = <View> {
-            flow: Right,
-            width: Fill, height: Fit,
-            spacing: (SPACE_1),
-            align: { x: 0.5, y: 0.5},
-
-            icon = <Image> {
-                width: 32.5, height: 32.5
-            }
-
-            label = <H4> {}
-            <Filler> {}
-            action_icon = <ActionIcon> {}
-        }
-    }
-
-    Options = <View> {
-        width: Fill, height: Fit,
-        flow: Down
-        margin: <MSPACE_V_2> {}, padding: {bottom: (SPACE_2)},
-        spacing: 0.,
-
-        show_bg: false,
-    }
 
     Discover = {{Discover}} {
         width: Fill, height: Fit,

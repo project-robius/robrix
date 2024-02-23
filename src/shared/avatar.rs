@@ -49,7 +49,6 @@ live_design! {
 
                 draw_text: {
                     text_style: {
-                        font_size: 6.5,
                         line_spacing: 1.0,
                         top_drop: 1.0
                     },
