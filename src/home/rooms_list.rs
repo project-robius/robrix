@@ -204,10 +204,8 @@ pub struct RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Currently, a Signal event is only used to tell this widget
-        // that the rooms list has been updated in the background.
-        if let Event::Signal = event {
-            // Process all pending updates to the list of all rooms, and then redraw it.
+        // Process all pending updates to the list of all rooms, and then redraw it.
+        {
             let mut num_updates: usize = 0;
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;

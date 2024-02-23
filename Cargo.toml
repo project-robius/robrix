@@ -17,8 +17,7 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "extend_portal_list_item_api" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
 
 
 anyhow = "1.0"
