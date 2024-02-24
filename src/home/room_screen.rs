@@ -229,7 +229,8 @@ live_design! {
                 padding: 0.0
                 
                 username = <Label> {
-                    margin: {bottom: 10.0, top: 10.0}
+                    width: Fill,
+                    margin: {bottom: 10.0, top: 10.0, right: 10.0,}
                     draw_text: {
                         text_style: <TEXT_SUB> {},
                         color: (COLOR_META_TEXT)
@@ -634,6 +635,8 @@ pub enum TimelineUpdate {
 pub struct Timeline {
     #[deref] view: View,
     
+    /// The room ID that this timeline is currently displaying.
+    #[rust] room_id: Option<OwnedRoomId>,
     /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 }
@@ -702,34 +705,15 @@ struct SavedState {
 }
 
 impl Timeline {
-    /// Removes this Timeline's current visual UI state from this Timeline widget
-    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
-    ///
-    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
-    fn save_state(&mut self) {
-        let first_id = self.portal_list(id!(list)).first_id();
-        let Some(mut tl) = self.tl_state.take() else { return };
-        tl.saved_state.first_id = first_id;
-        // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
-    }
-
-    /// Restores the previously-saved visual UI state of this timeline.
-    fn restore_state(&mut self) {
-        let Some(tl) = self.tl_state.as_ref() else { return };
-        let first_id = tl.saved_state.first_id;
-        self.portal_list(id!(list)).set_first_id(first_id);
-    }
-}
-
-impl TimelineRef {
-    /// Sets this timeline widget to display the timeline for the given room.
-    fn set_room(&self, room_id: OwnedRoomId) {
-        let Some(mut timeline) = self.borrow_mut() else { return };
-        debug_assert!( // just an optional sanity check
-            timeline.tl_state.is_none(),
-            "BUG: tried to set_room() on a timeline with existing state. \
-            Did you forget to restore the timeline state to the global map of states?",
+    /// Invoke this when this timeline is being shown,
+    /// e.g., when the user navigates to this timeline.
+    fn show_timeline(&mut self) {
+        let room_id = self.room_id.clone()
+            .expect("BUG: Timeline::show_timeline(): no room_id was set.");
+        assert!( // just an optional sanity check
+            self.tl_state.is_none(),
+            "BUG: tried to show_timeline() into a timeline with existing state. \
+            Did you forget to save the timeline state back to the global map of states?",
         );
 
         let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
@@ -778,14 +762,85 @@ impl TimelineRef {
             //       once back pagination is done dynamically based on timeline scroll position.
         }
 
-        // Finally, store the tl_state for this room into the Timeline widget,
+        // Now, restore the visual state of this timeline from its previously-saved state.
+        self.restore_state(&tl_state);
+
+        // As the final step , store the tl_state for this room into the Timeline widget,
         // such that it can be accessed in future event/draw handlers.
-        timeline.tl_state = Some(tl_state);
+        self.tl_state = Some(tl_state);
+    }
+
+
+    /// Invoke this when this timeline is being hidden or no longer being shown,
+    /// e.g., when the user navigates away from this timeline.
+    fn hide_timeline(&mut self) {
+        self.save_state();
+    }
+
+    /// Removes this Timeline's current visual UI state from this Timeline widget
+    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
+    ///
+    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
+    fn save_state(&mut self) {
+        let Some(mut tl) = self.tl_state.take() else {
+            log!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
+            return;
+        };
+        let first_id = self.portal_list(id!(list)).first_id();
+        tl.saved_state.first_id = first_id;
+        // Store this Timeline's `TimelineUiState` in the global map of states.
+        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
+    }
+
+    /// Restores the previously-saved visual UI state of this timeline.
+    ///
+    /// Note: this accepts a direct reference to the timeline's UI state,
+    /// so this function must not try to re-obtain it by accessing `self.tl_state`.
+    fn restore_state(&mut self, tl_state: &TimelineUiState) {
+        let first_id = tl_state.saved_state.first_id;
+        self.portal_list(id!(list)).set_first_id(first_id);
+    }
+}
+
+impl TimelineRef {
+    /// Sets this timeline widget to display the timeline for the given room.
+    fn set_room(&self, room_id: OwnedRoomId) {
+        let Some(mut timeline) = self.borrow_mut() else { return };
+        timeline.room_id = Some(room_id);
     }
 }
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Handle actions on this widget, e.g., it being hidden or shown.
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                let stack_view_subwidget_action = action.as_widget_action().cast();
+                match stack_view_subwidget_action {
+                    StackNavigationTransitionAction::HideBegin => {
+                        self.hide_timeline();
+                        continue;
+                    }
+                    StackNavigationTransitionAction::ShowBegin => {
+                        self.show_timeline();
+                        self.redraw(cx);
+                        continue;
+                    }
+                    StackNavigationTransitionAction::HideEnd
+                    | StackNavigationTransitionAction::ShowDone
+                    | StackNavigationTransitionAction::None => { }
+                }
+
+                // Handle other actions here
+                // TODO: handle actions upon an item being clicked.
+                // for (item_id, item) in self.list.items_with_actions(&actions) {
+                //     if item.button(id!(likes)).clicked(&actions) {
+                //         log!("hello {}", item_id);
+                //     }
+                // }
+            }
+        }
+
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
@@ -847,35 +902,6 @@ impl Widget for Timeline {
             }
             
             self.redraw(cx);
-        }
-
-        // Handle actions on this widget, e.g., it being hidden or shown.
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                let stack_view_subwidget_action = action.as_widget_action().cast();
-                match stack_view_subwidget_action {
-                    StackNavigationTransitionAction::HideEnd => {
-                        self.save_state();
-                        continue;
-                    }
-                    StackNavigationTransitionAction::ShowBegin => {
-                        self.restore_state();
-                        self.redraw(cx);
-                        continue;
-                    }
-                    StackNavigationTransitionAction::HideBegin
-                    | StackNavigationTransitionAction::ShowDone
-                    | StackNavigationTransitionAction::None => { }
-                }
-
-                // Handle other actions here
-                // TODO: handle actions upon an item being clicked.
-                // for (item_id, item) in self.list.items_with_actions(&actions) {
-                //     if item.button(id!(likes)).clicked(&actions) {
-                //         log!("hello {}", item_id);
-                //     }
-                // }
-            }
         }
 
         // Forward events to this Timeline's inner child view.
