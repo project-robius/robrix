@@ -32,6 +32,7 @@ live_design! {
                 width: Fill, height: Fit
                 draw_text:{
                     color: #000,
+                    wrap: Ellipsis,
                     text_style: <REGULAR_TEXT>{}
                 }
                 text: "[Room name unknown]"
