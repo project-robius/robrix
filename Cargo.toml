@@ -58,6 +58,19 @@ url = "2.2.2"
 openssl = { version = "*", features = ["vendored"] }
 rusqlite = { version = "*", features = ["bundled"] }
 
+## On Windows, there are prebuilt versions of sqlite3 available,
+## but building it from bundled source is just easier and works out of the box.
+##
+## If you don't want to include sqlite3 as a static library built from source,
+## you can comment out the below lines and link against a prebuilt version.
+## One way to easily do this is to install sqlite using a package manager like `chocolatey`
+## (see <https://stackoverflow.com/a/76427629>). Another way is to or download it
+## directly from the sqlite website: <https://www.sqlite.org/download.html>,
+## where you'll want the 64-bit DLL (x64) under "Precompiled Binaries for Windows".
+## You'll need to add the directory of that prebuilt sqlite DLL to your path env variable.
+[target.'cfg(target_os = "windows")'.dependencies]
+rusqlite = { version = "*", features = ["bundled"] }
+
 
 [package.metadata.docs.rs]
 all-features = true
