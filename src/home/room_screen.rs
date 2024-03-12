@@ -52,7 +52,6 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-    IMG_LOADING = dep("crate://self/resources/img/loading.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
     ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
