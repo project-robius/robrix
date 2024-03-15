@@ -1113,7 +1113,8 @@ fn populate_message_view(
                 (item, true)
             } else {
                 // We don't use thumbnails, as their resolution is too low to be visually useful.
-                let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                // We also don't trust the provided mimetype, as it can be incorrect.
+                let (_mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
                     (
                         info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
                         info.width,
@@ -1125,15 +1126,11 @@ fn populate_message_view(
                 let text_or_image_ref = item.text_or_image(id!(content.message));
                 match &image.source {
                     MediaSource::Plain(mxc_uri) => {
-                        // now that we've obtained the image URI and its mimetype, try to fetch the image.
+                        // now that we've obtained the image URI and its metadata, try to fetch the image.
                         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
                             MediaCacheEntry::Loaded(data) => {
-                                let set_image_result = text_or_image_ref.set_image(|img|
-                                    match mimetype {
-                                        Some(utils::ImageFormat::Png) => img.load_png_from_data(cx, &data),
-                                        Some(utils::ImageFormat::Jpeg) => img.load_jpg_from_data(cx, &data),
-                                        _unknown => utils::load_png_or_jpg(&img, cx, &data),
-                                    }
+                                let set_image_result = text_or_image_ref.set_image(
+                                    |img| utils::load_png_or_jpg(&img, cx, &data)
                                 );
                                 if let Err(e) = set_image_result {
                                     let err_str = format!("Failed to display image: {e:?}");
