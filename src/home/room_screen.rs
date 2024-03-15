@@ -1126,7 +1126,7 @@ fn populate_message_view(
                 let text_or_image_ref = item.text_or_image(id!(content.message));
                 match &image.source {
                     MediaSource::Plain(mxc_uri) => {
-                        // now that we've obtained the image URI and its mimetype, try to fetch the image.
+                        // now that we've obtained the image URI and its metadata, try to fetch the image.
                         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
                             MediaCacheEntry::Loaded(data) => {
                                 let set_image_result = text_or_image_ref.set_image(
