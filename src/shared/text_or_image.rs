@@ -23,7 +23,7 @@ live_design! {
                 draw_text: {
                     text_style: <REGULAR_TEXT>{ font_size: 12. }
                 }
-                text: "Loading..."
+                text: "Loading image..."
             }
         }
 
@@ -38,6 +38,11 @@ live_design! {
 }
 
 
+/// A view that holds an image or text content, and can switch between the two.
+///
+/// This is useful for displaying alternate text when an image is not (yet) available
+/// or fails to load. It can also be used to display a loading message while an image
+/// is being fetched.
 #[derive(LiveHook, Live, Widget)]
 pub struct TextOrImage {
     #[deref] view: View,
@@ -53,18 +58,16 @@ impl Widget for TextOrImage {
     }
 }
 
-impl TextOrImageRef {
-    /// Sets the text content, makin the text visible and the image invisible.
+impl TextOrImage {
+    /// Sets the text content, making the text visible and the image invisible.
     ///
     /// ## Arguments
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
-    pub fn set_text<T: AsRef<str>>(&self, text: T) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.label(id!(text_view.text)).set_text(text.as_ref());
-            inner.view(id!(img_view)).set_visible(false);
-            inner.view(id!(text_view)).set_visible(true);
-        }
+    pub fn show_text<T: AsRef<str>>(&mut self, text: T) {
+        self.label(id!(text_view.text)).set_text(text.as_ref());
+        self.view(id!(img_view)).set_visible(false);
+        self.view(id!(text_view)).set_visible(true);
     }
 
     /// Sets the image content, making the image visible and the text invisible.
@@ -74,30 +77,54 @@ impl TextOrImageRef {
     ///    which refers to the image that will be displayed within this `TextOrImage`.
     ///    This allows the caller to set the image contents in any way they want.
     ///    If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn set_image<F, E>(&self, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&mut self, image_set_function: F) -> Result<(), E>
+        where F: FnOnce(ImageRef) -> Result<(), E>
+    {
+        let img_ref = self.image(id!(img_view.img));
+        let res = image_set_function(img_ref);
+        if res.is_ok() {
+            self.view(id!(img_view)).set_visible(true);
+            self.view(id!(text_view)).set_visible(false);
+        }
+        res
+    }
+
+    /// Returns whether this `TextOrImage` is currently displaying an image or text.
+    pub fn status(&mut self) -> DisplayStatus {
+        if self.view(id!(img_view)).is_visible() {
+            return DisplayStatus::Image;
+        } else {
+            DisplayStatus::Text
+        }
+    }
+}
+
+impl TextOrImageRef {
+    /// See [TextOrImage::show_text()].
+    pub fn show_text<T: AsRef<str>>(&self, text: T) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.show_text(text);
+        }
+    }
+
+    /// See [TextOrImage::show_image()].
+    pub fn show_image<F, E>(&self, image_set_function: F) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
-            let img_ref = inner.image(id!(img_view.img));
-            let res = image_set_function(img_ref);
-            if res.is_ok() {
-                inner.view(id!(img_view)).set_visible(true);
-                inner.view(id!(text_view)).set_visible(false);
-            }
-            res
+            inner.show_image(image_set_function)
         } else {
             Ok(())
         }
     }
 
-    /// Returns whether this `TextOrImage` is currently displaying an image or text.
+    /// See [TextOrImage::status()].
     pub fn status(&self) -> DisplayStatus {
         if let Some(mut inner) = self.borrow_mut() {
-            if inner.view(id!(img_view)).is_visible() {
-                return DisplayStatus::Image;
-            }
+            inner.status()
+        } else {
+            DisplayStatus::Text
         }
-        DisplayStatus::Text
     }
 }
 
