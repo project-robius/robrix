@@ -10,7 +10,12 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 
 First, [install Rust](https://www.rust-lang.org/tools/install).
 
-Then, on desktop platforms (macOS, Linux, Windows), simply run:
+Then, install the required native libraries. For example, on Linux:
+```sh
+sudo apt-get install libsqlite3-dev libssl-dev
+```
+
+Then, on a standard desktop platform (macOS, Linux, Windows), simply run:
 ```sh
 cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
 ```

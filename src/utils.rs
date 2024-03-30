@@ -1,7 +1,7 @@
 use std::time::SystemTime;
 
 use chrono::NaiveDateTime;
-use makepad_widgets::{ImageRef, ImageError, Cx, error};
+use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
 use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, api::client::media::get_content_thumbnail::v3::Method}, media::{MediaThumbnailSize, MediaFormat}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

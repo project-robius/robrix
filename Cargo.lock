@@ -1078,21 +1078,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
-name = "foreign-types"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6f339eb8adc052cd2ca78910fda869aefa38d22d5cb648e6485e4d3fc06f3b1"
-dependencies = [
- "foreign-types-shared",
-]
-
-[[package]]
-name = "foreign-types-shared"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
-
-[[package]]
 name = "form_urlencoded"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1467,19 +1452,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hyper-tls"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d6183ddfa99b85da61a140bea0efc93fdf56ceaa041b37d553518030827f9905"
-dependencies = [
- "bytes",
- "hyper",
- "native-tls",
- "tokio",
- "tokio-native-tls",
-]
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.58"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1677,6 +1649,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 
 [[package]]
+name = "jni-sys"
+version = "0.4.0"
+
+[[package]]
 name = "js-sys"
 version = "0.3.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1856,7 +1832,6 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1865,7 +1840,6 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1873,7 +1847,6 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1882,9 +1855,9 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "ab_glyph_rasterizer",
+ "makepad-html",
  "makepad-platform",
  "makepad-vector",
  "rustybuzz",
@@ -1895,17 +1868,14 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "0.7.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 
 [[package]]
 name = "makepad-html"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1913,12 +1883,10 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 
 [[package]]
 name = "makepad-live-compiler"
 version = "0.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -1928,7 +1896,6 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -1936,7 +1903,6 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1944,7 +1910,6 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -1952,19 +1917,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "makepad-markdown"
+version = "0.4.0"
+dependencies = [
+ "makepad-live-id",
+]
+
+[[package]]
 name = "makepad-math"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-micro-serde-derive",
 ]
@@ -1972,7 +1941,6 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1980,13 +1948,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 
 [[package]]
 name = "makepad-platform"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
+ "jni-sys",
  "makepad-futures",
  "makepad-futures-legacy",
  "makepad-http",
@@ -2000,7 +1967,6 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "0.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -2008,7 +1974,6 @@ dependencies = [
 [[package]]
 name = "makepad-vector"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "ttf-parser",
 ]
@@ -2016,7 +1981,6 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -2025,11 +1989,11 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
  "makepad-html",
+ "makepad-markdown",
  "makepad-zune-jpeg",
  "makepad-zune-png",
 ]
@@ -2037,16 +2001,14 @@ dependencies = [
 [[package]]
 name = "makepad-windows"
 version = "0.51.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
- "windows-core 0.51.1 (git+https://github.com/kevinaboos/makepad?branch=more_html_tags)",
+ "windows-core 0.51.1",
  "windows-targets",
 ]
 
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "bitflags 2.4.1",
 ]
@@ -2054,7 +2016,6 @@ dependencies = [
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.54"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "simd-adler32",
 ]
@@ -2062,7 +2023,6 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -2070,7 +2030,6 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
 dependencies = [
  "makepad-zune-core",
  "makepad-zune-inflate",
@@ -2547,24 +2506,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "native-tls"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07226173c32f2926027b63cce4bcd8076c3552846cbe7925f3aaffeac0a3b92e"
-dependencies = [
- "lazy_static",
- "libc",
- "log",
- "openssl",
- "openssl-probe",
- "openssl-sys",
- "schannel",
- "security-framework",
- "security-framework-sys",
- "tempfile",
-]
-
-[[package]]
 name = "new_debug_unreachable"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2681,58 +2622,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
-name = "openssl"
-version = "0.10.57"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bac25ee399abb46215765b1cb35bc0212377e58a061560d8b29b024fd0430e7c"
-dependencies = [
- "bitflags 2.4.1",
- "cfg-if",
- "foreign-types",
- "libc",
- "once_cell",
- "openssl-macros",
- "openssl-sys",
-]
-
-[[package]]
-name = "openssl-macros"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a948666b637a0f465e8564c73e89d4dde00d72d4d473cc972f390fc3dcee7d9c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.38",
-]
-
-[[package]]
 name = "openssl-probe"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
-
-[[package]]
-name = "openssl-src"
-version = "300.2.2+3.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bbfad0063610ac26ee79f7484739e2b07555a75c42453b89263830b5c8103bc"
-dependencies = [
- "cc",
-]
-
-[[package]]
-name = "openssl-sys"
-version = "0.9.93"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db4d56a4c0478783083cfafcc42493dd4a981d41669da64b4572a2a089b51b1d"
-dependencies = [
- "cc",
- "libc",
- "openssl-src",
- "pkg-config",
- "vcpkg",
-]
 
 [[package]]
 name = "opentelemetry"
@@ -3321,21 +3214,22 @@ dependencies = [
  "http",
  "http-body",
  "hyper",
- "hyper-tls",
+ "hyper-rustls",
  "ipnet",
  "js-sys",
  "log",
  "mime",
- "native-tls",
  "once_cell",
  "percent-encoding",
  "pin-project-lite",
+ "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_urlencoded",
  "system-configuration",
  "tokio",
- "tokio-native-tls",
+ "tokio-rustls",
  "tokio-util",
  "tower-service",
  "url",
@@ -3343,6 +3237,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
+ "webpki-roots",
  "winreg",
 ]
 
@@ -3409,9 +3304,7 @@ dependencies = [
  "makepad-widgets",
  "matrix-sdk",
  "matrix-sdk-ui",
- "openssl",
  "rangemap",
- "rusqlite",
  "tokio",
  "tracing-subscriber",
  "unicode-segmentation",
@@ -4270,16 +4163,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-native-tls"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbae76ab933c85776efabc971569dd6119c580d8f5d448769dec1764bf796ef2"
-dependencies = [
- "native-tls",
- "tokio",
-]
-
-[[package]]
 name = "tokio-rustls"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4799,6 +4682,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "webpki-roots"
+version = "0.25.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5f20c57d8d7db6d3b86154206ae5d8fba62dd39573114de97c2cb0578251f8e1"
+
+[[package]]
 name = "wildmatch"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4829,8 +4718,6 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 [[package]]
 name = "windows-core"
 version = "0.51.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1f8cf84f35d2db49a46868f947758c7a1138116f7fac3bc844f43ade1292e64"
 dependencies = [
  "windows-targets",
 ]
@@ -4838,7 +4725,8 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.51.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=more_html_tags#a0bf570fd27e1ee03e9386ac00d96d60775d8bcb"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1f8cf84f35d2db49a46868f947758c7a1138116f7fac3bc844f43ade1292e64"
 dependencies = [
  "windows-targets",
 ]

@@ -701,6 +701,7 @@ async fn timeline_subscriber_handler(
 ) {
     log!("Starting timeline subscriber for room {room_id}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
+    log!("Received initial timeline update for room {room_id}.");
 
     sender.send(TimelineUpdate::NewItems {
         items: timeline_items.clone(),

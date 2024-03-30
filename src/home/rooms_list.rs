@@ -32,6 +32,7 @@ live_design! {
                 width: Fill, height: Fit
                 draw_text:{
                     color: #000,
+                    wrap: Ellipsis,
                     text_style: <REGULAR_TEXT>{}
                 }
                 text: "[Room name unknown]"
@@ -204,10 +205,8 @@ pub struct RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Currently, a Signal event is only used to tell this widget
-        // that the rooms list has been updated in the background.
-        if let Event::Signal = event {
-            // Process all pending updates to the list of all rooms, and then redraw it.
+        // Process all pending updates to the list of all rooms, and then redraw it.
+        {
             let mut num_updates: usize = 0;
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;
@@ -348,7 +347,7 @@ impl Widget for RoomsList {
                             item.avatar(id!(avatar)).set_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
-                            let _ = item.avatar(id!(avatar)).set_image(
+                            let _ = item.avatar(id!(avatar)).show_image(
                                 |img| utils::load_png_or_jpg(&img, cx, img_bytes)
                             );
                         }

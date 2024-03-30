@@ -4,7 +4,7 @@
 //! 
 //! By default, an avatar displays the one-character text label.
 //! You can use [AvatarRef::set_text] to set the content of that text label,
-//! or [AvatarRef::set_image] to display an image instead of the text.
+//! or [AvatarRef::show_image] to display an image instead of the text.
 
 use makepad_widgets::*;
 
@@ -101,7 +101,7 @@ impl AvatarRef {
     /// * `text`: the text that will be displayed in this avatar.
     ///    This should be a single character, but we accept anything that can be 
     ///    treated as a `&str` in order to support multi-character Unicode.
-    pub fn set_text<T: AsRef<str>>(&self, text: T) {
+    pub fn show_text<T: AsRef<str>>(&self, text: T) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.label(id!(text_view.text)).set_text(text.as_ref());
             inner.view(id!(img_view)).set_visible(false);
@@ -117,7 +117,7 @@ impl AvatarRef {
     ///    to the image that will be displayed in this avatar.
     ///    This allows the caller to set the image contents in any way they want.
     ///    If `image_set_function` returns an error, no change is made to the avatar.
-    pub fn set_image<F, E>(&self, image_set_function: F) -> Result<(), E>
+    pub fn show_image<F, E>(&self, image_set_function: F) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
     {
         if let Some(mut inner) = self.borrow_mut() {

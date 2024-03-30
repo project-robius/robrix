@@ -48,7 +48,6 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-    IMG_LOADING = dep("crate://self/resources/img/loading.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
     ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
@@ -181,24 +180,12 @@ live_design! {
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
     RobrixHtml = <Html> {
         font_size: (FONT_SIZE_P),
-        draw_normal: {
-            color: (COLOR_P)
-        }
-        draw_italic: {
-            color: (COLOR_P)
-        }
-        draw_bold: {
-            color: (COLOR_P)
-        }
-        draw_bold_italic: {
-            color: (COLOR_P)
-        }
-        flow: RightWrap,
-        width: Fill,
-        height: Fit,
-        padding: 5,
-        line_spacing: 10,
-        html: ""
+        draw_normal: { color: (COLOR_P) }
+        draw_italic: { color: (COLOR_P) }
+        draw_bold:   { color: (COLOR_P) }
+        draw_bold_italic: { color: (COLOR_P) }
+        draw_fixed:  { color: (COLOR_P) }
+        body: ""
     }
 
     // The view used for each text-based message event in a room's timeline.
@@ -249,7 +236,8 @@ live_design! {
                 padding: 0.0
                 
                 username = <Label> {
-                    margin: {bottom: 10.0, top: 10.0}
+                    width: Fill,
+                    margin: {bottom: 10.0, top: 10.0, right: 10.0,}
                     draw_text: {
                         text_style: <TEXT_SUB> {},
                         color: (COLOR_META_TEXT)
@@ -636,6 +624,8 @@ pub enum TimelineUpdate {
 pub struct Timeline {
     #[deref] view: View,
     
+    /// The room ID that this timeline is currently displaying.
+    #[rust] room_id: Option<OwnedRoomId>,
     /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 }
@@ -704,34 +694,15 @@ struct SavedState {
 }
 
 impl Timeline {
-    /// Removes this Timeline's current visual UI state from this Timeline widget
-    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
-    ///
-    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
-    fn save_state(&mut self) {
-        let first_id = self.portal_list(id!(list)).first_id();
-        let Some(mut tl) = self.tl_state.take() else { return };
-        tl.saved_state.first_id = first_id;
-        // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
-    }
-
-    /// Restores the previously-saved visual UI state of this timeline.
-    fn restore_state(&mut self) {
-        let Some(tl) = self.tl_state.as_ref() else { return };
-        let first_id = tl.saved_state.first_id;
-        self.portal_list(id!(list)).set_first_id(first_id);
-    }
-}
-
-impl TimelineRef {
-    /// Sets this timeline widget to display the timeline for the given room.
-    fn set_room(&self, room_id: OwnedRoomId) {
-        let Some(mut timeline) = self.borrow_mut() else { return };
+    /// Invoke this when this timeline is being shown,
+    /// e.g., when the user navigates to this timeline.
+    fn show_timeline(&mut self) {
+        let room_id = self.room_id.clone()
+            .expect("BUG: Timeline::show_timeline(): no room_id was set.");
         assert!( // just an optional sanity check
-            timeline.tl_state.is_none(),
-            "BUG: tried to set_room() on a timeline with existing state. \
-            Did you forget to restore the timeline state to the global map of states?",
+            self.tl_state.is_none(),
+            "BUG: tried to show_timeline() into a timeline with existing state. \
+            Did you forget to save the timeline state back to the global map of states?",
         );
 
         let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
@@ -780,14 +751,85 @@ impl TimelineRef {
             //       once back pagination is done dynamically based on timeline scroll position.
         }
 
-        // Finally, store the tl_state for this room into the Timeline widget,
+        // Now, restore the visual state of this timeline from its previously-saved state.
+        self.restore_state(&tl_state);
+
+        // As the final step , store the tl_state for this room into the Timeline widget,
         // such that it can be accessed in future event/draw handlers.
-        timeline.tl_state = Some(tl_state);
+        self.tl_state = Some(tl_state);
+    }
+
+
+    /// Invoke this when this timeline is being hidden or no longer being shown,
+    /// e.g., when the user navigates away from this timeline.
+    fn hide_timeline(&mut self) {
+        self.save_state();
+    }
+
+    /// Removes this Timeline's current visual UI state from this Timeline widget
+    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
+    ///
+    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
+    fn save_state(&mut self) {
+        let Some(mut tl) = self.tl_state.take() else {
+            log!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
+            return;
+        };
+        let first_id = self.portal_list(id!(list)).first_id();
+        tl.saved_state.first_id = first_id;
+        // Store this Timeline's `TimelineUiState` in the global map of states.
+        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
+    }
+
+    /// Restores the previously-saved visual UI state of this timeline.
+    ///
+    /// Note: this accepts a direct reference to the timeline's UI state,
+    /// so this function must not try to re-obtain it by accessing `self.tl_state`.
+    fn restore_state(&mut self, tl_state: &TimelineUiState) {
+        let first_id = tl_state.saved_state.first_id;
+        self.portal_list(id!(list)).set_first_id(first_id);
+    }
+}
+
+impl TimelineRef {
+    /// Sets this timeline widget to display the timeline for the given room.
+    fn set_room(&self, room_id: OwnedRoomId) {
+        let Some(mut timeline) = self.borrow_mut() else { return };
+        timeline.room_id = Some(room_id);
     }
 }
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // Handle actions on this widget, e.g., it being hidden or shown.
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                let stack_view_subwidget_action = action.as_widget_action().cast();
+                match stack_view_subwidget_action {
+                    StackNavigationTransitionAction::HideBegin => {
+                        self.hide_timeline();
+                        continue;
+                    }
+                    StackNavigationTransitionAction::ShowBegin => {
+                        self.show_timeline();
+                        self.redraw(cx);
+                        continue;
+                    }
+                    StackNavigationTransitionAction::HideEnd
+                    | StackNavigationTransitionAction::ShowDone
+                    | StackNavigationTransitionAction::None => { }
+                }
+
+                // Handle other actions here
+                // TODO: handle actions upon an item being clicked.
+                // for (item_id, item) in self.list.items_with_actions(&actions) {
+                //     if item.button(id!(likes)).clicked(&actions) {
+                //         log!("hello {}", item_id);
+                //     }
+                // }
+            }
+        }
+
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
@@ -851,35 +893,6 @@ impl Widget for Timeline {
             self.redraw(cx);
         }
 
-        // Handle actions on this widget, e.g., it being hidden or shown.
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                let stack_view_subwidget_action = action.as_widget_action().cast();
-                match stack_view_subwidget_action {
-                    StackNavigationTransitionAction::HideBegin => {
-                        self.save_state();
-                        continue;
-                    }
-                    StackNavigationTransitionAction::ShowBegin => {
-                        self.restore_state();
-                        self.redraw(cx);
-                        continue;
-                    }
-                    StackNavigationTransitionAction::HideEnd
-                    | StackNavigationTransitionAction::ShowDone
-                    | StackNavigationTransitionAction::None => { }
-                }
-
-                // Handle other actions here
-                // TODO: handle actions upon an item being clicked.
-                // for (item_id, item) in self.list.items_with_actions(&actions) {
-                //     if item.button(id!(likes)).clicked(&actions) {
-                //         log!("hello {}", item_id);
-                //     }
-                // }
-            }
-        }
-
         // Forward events to this Timeline's inner child view.
         self.view.handle_event(cx, event, scope);
     }
@@ -939,15 +952,15 @@ impl Widget for Timeline {
                                     item_drawn_status,
                                 )
                             }
-                            TimelineItemContent::RedactedMessage => populate_redacted_message_view(
+                            TimelineItemContent::RedactedMessage => populate_small_state_event(
                                 cx,
                                 list,
                                 item_id,
                                 event_tl_item,
-                                &tl_state.room_id,
+                                &RedactedMessageEventMarker,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::MembershipChange(membership_change) => populate_membership_change_view(
+                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
                                 cx,
                                 list,
                                 item_id,
@@ -955,7 +968,7 @@ impl Widget for Timeline {
                                 membership_change,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::ProfileChange(profile_change) => populate_profile_change_view(
+                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
                                 cx,
                                 list,
                                 item_id,
@@ -963,7 +976,7 @@ impl Widget for Timeline {
                                 profile_change,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::OtherState(other) => populate_other_state_view(
+                            TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
                                 list,
                                 item_id,
@@ -1078,9 +1091,9 @@ fn populate_message_view(
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
                     .unwrap_or_else(|| text.body.clone());
                 let body_ref = body.as_str();
-                log!("Drawing body: {body_ref}");
+                log!("Drawing body: {body_ref:?}");
                 item.apply_over(cx, live! {
-                    body = { content = { message = { html: (body_ref) } } }
+                    body = { content = { message = { body: (body_ref) } } }
                 });
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -1097,7 +1110,8 @@ fn populate_message_view(
                 (item, true)
             } else {
                 // We don't use thumbnails, as their resolution is too low to be visually useful.
-                let (mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+                // We also don't trust the provided mimetype, as it can be incorrect.
+                let (_mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
                     (
                         info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
                         info.width,
@@ -1109,17 +1123,13 @@ fn populate_message_view(
                 let text_or_image_ref = item.text_or_image(id!(content.message));
                 match &image.source {
                     MediaSource::Plain(mxc_uri) => {
-                        // now that we've obtained the image URI and its mimetype, try to fetch the image.
+                        // now that we've obtained the image URI and its metadata, try to fetch the image.
                         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
                             MediaCacheEntry::Loaded(data) => {
-                                let set_image_result = text_or_image_ref.set_image(|img|
-                                    match mimetype {
-                                        Some(utils::ImageFormat::Png) => img.load_png_from_data(cx, &data),
-                                        Some(utils::ImageFormat::Jpeg) => img.load_jpg_from_data(cx, &data),
-                                        _unknown => utils::load_png_or_jpg(&img, cx, &data),
-                                    }
+                                let show_image_result = text_or_image_ref.show_image(
+                                    |img| utils::load_png_or_jpg(&img, cx, &data)
                                 );
-                                if let Err(e) = set_image_result {
+                                if let Err(e) = show_image_result {
                                     let err_str = format!("Failed to display image: {e:?}");
                                     error!("{err_str}");
                                     text_or_image_ref.set_text(&err_str);
@@ -1206,92 +1216,285 @@ fn populate_message_view(
 
 
 
-
-/// Creates, populates, and adds a `SmallStateEvent` liveview widget to the given `PortalList`
-/// with the given `item_id`.
-///
-/// The content of the returned widget is populated with metadata about the redacted message
-/// the corresponds to the given `EventTimelineItem`.
-fn populate_redacted_message_view(
-    cx: &mut Cx,
-    list: &mut PortalList,
-    item_id: usize,
-    event_tl_item: &EventTimelineItem,
-    _room_id: &OwnedRoomId,
-    item_drawn_status: ItemDrawnStatus,
-) -> (WidgetRef, ItemDrawnStatus) {
-    let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    // The content of a redacted message view depends on the profile,
-    // so we can only cache the content after the profile has been drawn and cached.
-    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
-    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-
-    if skip_redrawing_content {
-        return (item, new_drawn_status);
-    }
-
-    // If the profile has been drawn, we can just quickly grab the original sender's display name
-    // instead of having to call `set_avatar_and_get_username()` again.
-    let original_sender_opt = if skip_redrawing_profile {
-        get_profile_display_name(event_tl_item)
-    } else {
-        None
-    };
-    
-    let original_sender = original_sender_opt.unwrap_or_else(|| {
-        // As a fallback, call `set_avatar_and_get_username()` to get the display name
-        // (or user ID) of the original sender of the now-redacted message.
-        let (original_sender, profile_drawn) = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(avatar)),
-            event_tl_item,
-        );
-        // Draw the timestamp as part of the profile.
-        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-        new_drawn_status.profile_drawn = profile_drawn;
-        original_sender
-    });
+/// A trait for abstracting over the different types of timeline events
+/// that can be displayed in a `SmallStateEvent` widget.
+trait SmallStateEventContent {
+    /// Populates the *content* (not the profile) of the given `item` with data from
+    /// the given `event_tl_item` and `self` (the specific type of event content).
+    ///
+    /// ## Arguments
+    /// * `item`: a `SmallStateEvent` widget that has already been added to
+    ///    the given `PortalList` at the given `item_id`.
+    ///    This function may either modify that item or completely replace it
+    ///    with a different widget if needed.
+    /// * `item_drawn_status`: the old (prior) drawn status of the item.
+    /// * `new_drawn_status`: the new drawn status of the item, which may have already
+    ///    been updated to reflect the item's profile having been drawn right before this function.
+    ///
+    /// ## Return
+    /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        event_tl_item: &EventTimelineItem,
+        username: String,
+        item_drawn_status: ItemDrawnStatus,
+        new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus);
+}
 
 
-    // Proceed to draw the content, now that we have the original sender's display name. 
-    let redactor_and_reason = {
-        let mut rr = None;
-        if let Some(redacted_msg) = event_tl_item.latest_json() {
-            if let Ok(old) = redacted_msg.deserialize() {
-                if let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(SyncMessageLikeEvent::Redacted(redaction))) = old {
-                    rr = Some((
-                        redaction.unsigned.redacted_because.sender,
-                        redaction.unsigned.redacted_because.content.reason,
-                    ));
+/// An empty marker struct used for populating redacted messages.
+struct RedactedMessageEventMarker;
+
+impl SmallStateEventContent for RedactedMessageEventMarker {
+    fn populate_item_content(
+        &self,
+        _cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        event_tl_item: &EventTimelineItem,
+        original_sender: String,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let redactor_and_reason = {
+            let mut rr = None;
+            if let Some(redacted_msg) = event_tl_item.latest_json() {
+                if let Ok(old) = redacted_msg.deserialize() {
+                    if let AnySyncTimelineEvent::MessageLike(
+                        AnySyncMessageLikeEvent::RoomMessage(
+                            SyncMessageLikeEvent::Redacted(redaction)
+                        )
+                    ) = old {
+                        rr = Some((
+                            redaction.unsigned.redacted_because.sender,
+                            redaction.unsigned.redacted_because.content.reason,
+                        ));
+                    }
                 }
             }
-        }
-        rr
-    };
+            rr
+        };
 
-    let text = match redactor_and_reason {
-        Some((redactor, Some(reason))) => {
-            // TODO: get the redactor's display name if possible
-            format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
-        }
-        Some((redactor, None)) => {
-            if redactor == event_tl_item.sender() {
-                format!("{} deleted their own message.", original_sender)
-            } else {
-                format!("{} deleted {}'s message.", redactor, original_sender)
+        let text = match redactor_and_reason {
+            Some((redactor, Some(reason))) => {
+                // TODO: get the redactor's display name if possible
+                format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
             }
-        }
-        None => {
-            format!("{}'s message was deleted.", original_sender)
-        }
-    };
+            Some((redactor, None)) => {
+                if redactor == event_tl_item.sender() {
+                    format!("{} deleted their own message.", original_sender)
+                } else {
+                    format!("{} deleted {}'s message.", redactor, original_sender)
+                }
+            }
+            None => {
+                format!("{}'s message was deleted.", original_sender)
+            }
+        };
 
-    item.label(id!(content)).set_text(&text);
-    new_drawn_status.content_drawn = true;
-    (item, new_drawn_status)
-} 
+        item.label(id!(content)).set_text(&text);
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
+
+
+impl SmallStateEventContent for timeline::OtherState {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: String,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let text = match self.content() {
+            AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
+                let mut s = format!("set this room's aliases to ");
+                let last_alias = content.aliases.len() - 1;
+                for (i, alias) in content.aliases.iter().enumerate() {
+                    s.push_str(alias.as_str());
+                    if i != last_alias {
+                        s.push_str(", ");
+                    }
+                }
+                s.push_str(".");
+                Some(s)
+            }
+            AnyOtherFullStateEventContent::RoomAvatar(_) => {
+                Some(format!("set this room's avatar picture."))
+            }
+            AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
+                Some(format!("set the main address of this room to {}.",
+                    content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
+                ))
+            }
+            AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
+                Some(format!("created this room (v{}).", content.room_version.as_str()))
+            }
+            AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
+                Some(match content.guest_access {
+                    GuestAccess::CanJoin => format!("has allowed guests to join this room."),
+                    GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room."),
+                })
+            }
+            AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
+                let visibility = match content.history_visibility {
+                    HistoryVisibility::Invited => "invited users, since they were invited.",
+                    HistoryVisibility::Joined => "joined users, since they joined.",
+                    HistoryVisibility::Shared => "joined users, for all of time.",
+                    HistoryVisibility::WorldReadable | _ => "anyone for all time.",
+                };
+                Some(format!("set this room's history to be visible by {}.", visibility))
+            }
+            AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
+                Some(match content.join_rule {
+                    JoinRule::Public => format!("set this room to be joinable by anyone."),
+                    JoinRule::Knock => format!("set this room to be joinable by invite only or by request."),
+                    JoinRule::Private => format!("set this room to be private."),
+                    JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions."),
+                    JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions."),
+                    JoinRule::Invite | _ => format!("set this room to be joinable by invite only."),
+                })
+            }
+            AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+                Some(format!("changed this room's name to {:?}.", content.name))
+            }
+            AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
+                None
+            }
+            AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
+                Some(format!("changed this room's topic to {:?}.", content.topic))
+            }
+            AnyOtherFullStateEventContent::SpaceParent(_)
+            | AnyOtherFullStateEventContent::SpaceChild(_) => None,
+            _other => {
+                // log!("*** Unhandled: {:?}.", _other);
+                None
+            }
+        };
+
+        let item = if let Some(text) = text {
+            item.label(id!(content)).set_text(&format!("{username} {text}"));
+            new_drawn_status.content_drawn = true;
+            item
+        } else {
+            let item = list.item(cx, item_id, live_id!(Empty)).unwrap();
+            new_drawn_status = ItemDrawnStatus::new();
+            item
+        };
+        (item, new_drawn_status)
+    }
+}
+
+impl SmallStateEventContent for MemberProfileChange {
+    fn populate_item_content(
+        &self,
+        _cx: &mut Cx,
+        _list: &mut PortalList,
+        _item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: String,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let name_text = if let Some(name_change) = self.displayname_change() {
+            let old = name_change.old.as_deref().unwrap_or(&username);
+            if let Some(new) = name_change.new.as_ref() {
+                format!("{old} changed their display name to {new:?}")
+            } else {
+                format!("{old} removed their display name")
+            }
+        } else {
+            String::new()
+        };
+
+        let avatar_text = if let Some(_avatar_change) = self.avatar_url_change() {
+            if name_text.is_empty() {
+                format!("{} changed their profile picture", username)
+            } else {
+                format!(" and changed their profile picture")
+            }
+        } else {
+            String::new()
+        };
+
+        item.label(id!(content)).set_text(&format!("{}{}.", name_text, avatar_text));
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
+
+impl SmallStateEventContent for RoomMembershipChange {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventTimelineItem,
+        username: String,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let change_user_id = self.user_id();
+        let text = match self.change() {
+            None
+            | Some(MembershipChange::NotImplemented)
+            | Some(MembershipChange::None) => {
+                // Don't actually display anything for nonexistent/unimportant membership changes.
+                return (
+                    list.item(cx, item_id, live_id!(Empty)).unwrap(),
+                    ItemDrawnStatus::new(),
+                );
+            }
+            Some(MembershipChange::Error) =>
+                format!("had a membership change error."),
+            Some(MembershipChange::Joined) =>
+                format!("joined this room."),
+            Some(MembershipChange::Left) =>
+                format!("left this room."),
+            Some(MembershipChange::Banned) =>
+                format!("banned {} from this room.", change_user_id),
+            Some(MembershipChange::Unbanned) =>
+                format!("unbanned {} from this room.", change_user_id),
+            Some(MembershipChange::Kicked) =>
+                format!("kicked {} from this room.", change_user_id),
+            Some(MembershipChange::Invited) =>
+                format!("invited {} to this room.", change_user_id),
+            Some(MembershipChange::KickedAndBanned) =>
+                format!("kicked and banned {} from this room.", change_user_id),
+            Some(MembershipChange::InvitationAccepted) =>
+                format!("accepted an invitation to this room."),
+            Some(MembershipChange::InvitationRejected) =>
+                format!("rejected an invitation to this room."),
+            Some(MembershipChange::InvitationRevoked) =>
+                format!("revoked {}'s invitation to this room.", change_user_id),
+            Some(MembershipChange::Knocked) =>
+                format!("requested to join this room."),
+            Some(MembershipChange::KnockAccepted) =>
+                format!("accepted {}'s request to join this room.", change_user_id),
+            Some(MembershipChange::KnockRetracted) =>
+                format!("retracted their request to join this room."),
+            Some(MembershipChange::KnockDenied) =>
+                format!("denied {}'s request to join this room.", change_user_id),
+        };
+
+        item.label(id!(content)).set_text(&format!("{username} {text}"));
+        new_drawn_status.content_drawn = true;
+        (item, new_drawn_status)
+    }
+}
 
 
 /// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
@@ -1299,19 +1502,19 @@ fn populate_redacted_message_view(
 ///
 /// The content of the returned widget is populated with data from the
 /// given room membership change and its parent `EventTimelineItem`.
-fn populate_membership_change_view(
+fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
     event_tl_item: &EventTimelineItem,
-    change: &RoomMembershipChange,
+    event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-
-    // The content of a membership change view depends on the profile,
-    // so we can only cache the content after the profile has been drawn and cached.
+    
+    // The content of a small state event view may depend on the profile info,
+    // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
     let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
 
@@ -1340,257 +1543,18 @@ fn populate_membership_change_view(
         username
     });
 
-    // Proceed to draw the content, now that we have the user's display name. 
-    let change_user_id = change.user_id();
-    let text = match change.change() {
-        None
-        | Some(MembershipChange::NotImplemented)
-        | Some(MembershipChange::None) => {
-            // Don't actually display anything for nonexistent/unimportant membership changes.
-            return (
-                list.item(cx, item_id, live_id!(Empty)).unwrap(),
-                ItemDrawnStatus::new(),
-            );
-        }
-        Some(MembershipChange::Error) =>
-            format!("had a membership change error."),
-        Some(MembershipChange::Joined) =>
-            format!("joined this room."),
-        Some(MembershipChange::Left) =>
-            format!("left this room."),
-        Some(MembershipChange::Banned) =>
-            format!("banned {} from this room.", change_user_id),
-        Some(MembershipChange::Unbanned) =>
-            format!("unbanned {} from this room.", change_user_id),
-        Some(MembershipChange::Kicked) =>
-            format!("kicked {} from this room.", change_user_id),
-        Some(MembershipChange::Invited) =>
-            format!("invited {} to this room.", change_user_id),
-        Some(MembershipChange::KickedAndBanned) =>
-            format!("kicked and banned {} from this room.", change_user_id),
-        Some(MembershipChange::InvitationAccepted) =>
-            format!("accepted an invitation to this room."),
-        Some(MembershipChange::InvitationRejected) =>
-            format!("rejected an invitation to this room."),
-        Some(MembershipChange::InvitationRevoked) =>
-            format!("revoked {}'s invitation to this room.", change_user_id),
-        Some(MembershipChange::Knocked) =>
-            format!("requested to join this room."),
-        Some(MembershipChange::KnockAccepted) =>
-            format!("accepted {}'s request to join this room.", change_user_id),
-        Some(MembershipChange::KnockRetracted) =>
-            format!("retracted their request to join this room."),
-        Some(MembershipChange::KnockDenied) =>
-            format!("denied {}'s request to join this room.", change_user_id),
-    };
-
-    item.label(id!(content)).set_text(&format!("{username} {text}"));
-    new_drawn_status.content_drawn = true;
-    (item, new_drawn_status)
+    // Proceed to draw the actual event content.
+    event_content.populate_item_content(
+        cx,
+        list,
+        item_id,
+        item,
+        event_tl_item,
+        username,
+        item_drawn_status,
+        new_drawn_status,
+    )
 }
-
-
-
-/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
-/// with the given `item_id`.
-///
-/// The content of the returned `SmallStateEvent` widget is populated with data from the
-/// given member profile change and its parent `EventTimelineItem`.
-fn populate_profile_change_view(
-    cx: &mut Cx,
-    list: &mut PortalList,
-    item_id: usize,
-    event_tl_item: &EventTimelineItem,
-    change: &MemberProfileChange,
-    item_drawn_status: ItemDrawnStatus,
-) -> (WidgetRef, ItemDrawnStatus) {
-    let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-    
-    // The content of a profile change view depends on the profile,
-    // so we can only cache the content after the profile has been drawn and cached.
-    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
-    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-
-    if skip_redrawing_content {
-        return (item, new_drawn_status);
-    }
-
-    // If the profile has been drawn, we can just quickly grab the user's display name
-    // instead of having to call `set_avatar_and_get_username()` again.
-    let username_opt = if skip_redrawing_profile {
-        get_profile_display_name(event_tl_item)
-    } else {
-        None
-    };
-    
-    let username = username_opt.unwrap_or_else(|| {
-        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
-        let (username, profile_drawn) = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(avatar)),
-            event_tl_item,
-        );
-        // Draw the timestamp as part of the profile.
-        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-        new_drawn_status.profile_drawn = profile_drawn;
-        username
-    });
-    
-    // Proceed to draw the content, now that we have the user's display name. 
-    let name_text = if let Some(name_change) = change.displayname_change() {
-        let old = name_change.old.as_deref().unwrap_or(&username);
-        if let Some(new) = name_change.new.as_ref() {
-            format!("{old} changed their display name to {new:?}")
-        } else {
-            format!("{old} removed their display name")
-        }
-    } else {
-        String::new()
-    };
-
-    let avatar_text = if let Some(_avatar_change) = change.avatar_url_change() {
-        if name_text.is_empty() {
-            format!("{} changed their profile picture", username)
-        } else {
-            format!(" and changed their profile picture")
-        }
-    } else {
-        String::new()
-    };
-
-    item.label(id!(content)).set_text(&format!("{}{}.", name_text, avatar_text));
-    new_drawn_status.content_drawn = true;
-    (item, new_drawn_status)
-}
-
-
-
-/// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
-/// with the given `item_id`.
-///
-/// The content of the returned `SmallStateEvent` widget is populated with data from the given `message`
-/// and its parent `EventTimelineItem`.
-fn populate_other_state_view(
-    cx: &mut Cx,
-    list: &mut PortalList,
-    item_id: usize,
-    event_tl_item: &EventTimelineItem,
-    other_state: &timeline::OtherState,
-    item_drawn_status: ItemDrawnStatus,
-) -> (WidgetRef, ItemDrawnStatus) {
-    let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-    
-    // The content of an "other state" view depends on the profile,
-    // so we can only cache the content after the profile has been drawn and cached.
-    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
-    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-
-    if skip_redrawing_content {
-        return (item, new_drawn_status);
-    }
-
-    // If the profile has been drawn, we can just quickly grab the user's display name
-    // instead of having to call `set_avatar_and_get_username()` again.
-    let username_opt = if skip_redrawing_profile {
-        get_profile_display_name(event_tl_item)
-    } else {
-        None
-    };
-    
-    let username = username_opt.unwrap_or_else(|| {
-        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
-        let (username, profile_drawn) = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(avatar)),
-            event_tl_item,
-        );
-        // Draw the timestamp as part of the profile.
-        set_timestamp(&item, id!(left_container.timestamp), event_tl_item.timestamp());
-        new_drawn_status.profile_drawn = profile_drawn;
-        username
-    });
-
-    // Proceed to draw the content, now that we have the user's display name. 
-    let text = match other_state.content() {
-        AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
-            let mut s = format!("set this room's aliases to ");
-            let last_alias = content.aliases.len() - 1;
-            for (i, alias) in content.aliases.iter().enumerate() {
-                s.push_str(alias.as_str());
-                if i != last_alias {
-                    s.push_str(", ");
-                }
-            }
-            s.push_str(".");
-            Some(s)
-        }
-        AnyOtherFullStateEventContent::RoomAvatar(_) => {
-            Some(format!("set this room's avatar picture."))
-        }
-        AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("set the main address of this room to {}.",
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
-            ))
-        }
-        AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("created this room (v{}).", content.room_version.as_str()))
-        }
-        AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
-            Some(match content.guest_access {
-                GuestAccess::CanJoin => format!("has allowed guests to join this room."),
-                GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room."),
-            })
-        }
-        AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
-            let visibility = match content.history_visibility {
-                HistoryVisibility::Invited => "invited users, since they were invited.",
-                HistoryVisibility::Joined => "joined users, since they joined.",
-                HistoryVisibility::Shared => "joined users, for all of time.",
-                HistoryVisibility::WorldReadable | _ => "anyone for all time.",
-            };
-            Some(format!("set this room's history to be visible by {}.", visibility))
-        }
-        AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
-            Some(match content.join_rule {
-                JoinRule::Public => format!("set this room to be joinable by anyone."),
-                JoinRule::Knock => format!("set this room to be joinable by invite only or by request."),
-                JoinRule::Private => format!("set this room to be private."),
-                JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions."),
-                JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions."),
-                JoinRule::Invite | _ => format!("set this room to be joinable by invite only."),
-            })
-        }
-        AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's name to {:?}.", content.name))
-        }
-        AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
-            None
-        }
-        AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
-            Some(format!("changed this room's topic to {:?}.", content.topic))
-        }
-        AnyOtherFullStateEventContent::SpaceParent(_)
-        | AnyOtherFullStateEventContent::SpaceChild(_) => None,
-        _other => {
-            // log!("*** Unhandled: {:?}.", _other);
-            None
-        }
-    };
-
-    let item = if let Some(text) = text {
-        item.label(id!(content)).set_text(&format!("{username} {text}"));
-        new_drawn_status.content_drawn = true;
-        item
-    } else {
-        let item = list.item(cx, item_id, live_id!(Empty)).unwrap();
-        new_drawn_status = ItemDrawnStatus::new();
-        item
-    };
-    (item, new_drawn_status)
-}
-
 
 
 /// Sets the text of the `Label` at the given `item`'s live ID path
@@ -1643,7 +1607,7 @@ fn set_avatar_and_get_username(
     // A closure to set the item's avatar to text data,
     // skipping the first `skip` characters of the given `name`.
     let set_avatar_text = |name: &str, skip: usize| {
-        avatar.set_text(
+        avatar.show_text(
             name.graphemes(true)
                 .skip(skip)
                 .next()
@@ -1684,7 +1648,7 @@ fn set_avatar_and_get_username(
 
             // Draw the avatar image if available, otherwise set the avatar to text.
             let drew_avatar_img = avatar_img.map(|data|
-                avatar.set_image(|img|
+                avatar.show_image(|img|
                     utils::load_png_or_jpg(&img, cx, &data)
                 ).is_ok()
             ).unwrap_or(false);
