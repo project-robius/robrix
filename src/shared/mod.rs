@@ -7,3 +7,4 @@ pub mod search_bar;
 pub mod styles;
 pub mod avatar;
 pub mod text_or_image;
+pub mod html_or_plaintext;

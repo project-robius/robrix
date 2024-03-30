@@ -31,7 +31,7 @@ use rangemap::RangeSet;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, text_or_image::TextOrImageWidgetRefExt},
+    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
     sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
 };
@@ -46,6 +46,7 @@ live_design! {
     import crate::shared::search_bar::SearchBar;
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
+    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -176,18 +177,6 @@ live_design! {
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
 
-    // A centralized widget where we define styles and custom elements for HTML
-    // message content. This is a wrapper around Makepad's built-in `Html` widget.
-    RobrixHtml = <Html> {
-        font_size: (FONT_SIZE_P),
-        draw_normal: { color: (COLOR_P) }
-        draw_italic: { color: (COLOR_P) }
-        draw_bold:   { color: (COLOR_P) }
-        draw_bold_italic: { color: (COLOR_P) }
-        draw_fixed:  { color: (COLOR_P) }
-        body: ""
-    }
-
     // The view used for each text-based message event in a room's timeline.
     Message = <View> {
         width: Fill,
@@ -245,7 +234,7 @@ live_design! {
                     }
                     text: "<Username not available>"
                 }
-                message = <RobrixHtml> { }
+                message = <HtmlOrPlaintext> { }
                 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -273,7 +262,7 @@ live_design! {
                 height: Fit,
                 flow: Down,
                 
-                message = <RobrixHtml> { }
+                message = <HtmlOrPlaintext> { }
             }
         }
     }
@@ -1087,15 +1076,18 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let body = text.formatted.as_ref()
+                if let Some(formatted_body) = text.formatted.as_ref()
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
-                    .unwrap_or_else(|| text.body.clone());
-                let body_ref = body.as_str();
-                log!("Drawing body: {body_ref:?}");
-                item.apply_over(cx, live! {
-                    body = { content = { message = { body: (body_ref) } } }
-                });
-                new_drawn_status.content_drawn = true;
+                {
+                    log!("Drawing rich HTML body: {formatted_body:?}");
+                    item.html_or_plaintext(id!(body.content.message)).show_html(formatted_body);
+                }
+                else {
+                    log!("Drawing plaintext body: {:?}", text.body);
+                    item.html_or_plaintext(id!(body.content.message)).show_plaintext(&text.body);
+                }
+                // new_drawn_status.content_drawn = true;
+                new_drawn_status.content_drawn = false;
                 (item, false)
             }
         }
