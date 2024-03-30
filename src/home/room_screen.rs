@@ -1080,11 +1080,11 @@ fn populate_message_view(
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
                 {
                     log!("Drawing rich HTML body: {formatted_body:?}");
-                    item.html_or_plaintext(id!(body.content.message)).show_html(formatted_body);
+                    item.html_or_plaintext(id!(message)).show_html(formatted_body);
                 }
                 else {
                     log!("Drawing plaintext body: {:?}", text.body);
-                    item.html_or_plaintext(id!(body.content.message)).show_plaintext(&text.body);
+                    item.html_or_plaintext(id!(message)).show_plaintext(&text.body);
                 }
                 // new_drawn_status.content_drawn = true;
                 new_drawn_status.content_drawn = false;

@@ -12,6 +12,12 @@ live_design! {
     FONT_SIZE_P = 12.5
     COLOR_P = #x999
 
+    TEXT_P = {
+        font_size: (FONT_SIZE_P),
+        height_factor: 1.65,
+        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+    }
+
     // A centralized widget where we define styles and custom elements for HTML
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
     RobrixHtml = <Html> {
@@ -26,26 +32,27 @@ live_design! {
 
     // A view container that displays either plaintext s(a simple `Label`)
     // or rich HTML content (an instance of `RobrixHtml`).
-    HtmlOrPlaintext = <View> {
+    HtmlOrPlaintext = {{HtmlOrPlaintext}} {
         width: Fill, height: Fit,
         flow: Overlay
         
         plaintext_view = <View> {
             visible: true,
-            label = <Label> {
-                width: Fill,
+            pt_label = <Label> {
+                width: Fit,
                 height: Fit
                 draw_text: {
                     wrap: Word,
-                    text_style: <TEXT_P> {},
-                    color: (COLOR_P)
+                    color: (COLOR_P),
+                    text_style: <REGULAR_TEXT> { },
                 }
-                text: "",
+                text: "<PLACEHOLDER>",
             }
         }
         
         html_view = <View> {
             visible: false,
+            width: Fill, height: Fit,
             html = <RobrixHtml> {}
         }
     }
@@ -70,15 +77,15 @@ impl Widget for HtmlOrPlaintext {
 impl HtmlOrPlaintext {
     /// Sets the plaintext content and makes it visible, hiding the rich HTML content.
     pub fn show_plaintext<T: AsRef<str>>(&mut self, text: T) {
-        log!("HtmlOrPlaintextRef::show_plaintext(): {:?}", text.as_ref());
-        self.label(id!(plaintext_view.label)).set_text(text.as_ref());
+        log!("HtmlOrPlaintext::show_plaintext(): {:?}", text.as_ref());
         self.view(id!(html_view)).set_visible(false);
         self.view(id!(plaintext_view)).set_visible(true);
+        self.label(id!(plaintext_view.pt_label)).set_text(text.as_ref());
     }
 
     /// Sets the HTML content, making the HTML visible and the plaintext invisible.
     pub fn show_html<T: AsRef<str>>(&mut self, html_body: T) {
-        log!("HtmlOrPlaintextRef::show_html(): {:?}", html_body.as_ref());
+        log!("HtmlOrPlaintext::show_html(): {:?}", html_body.as_ref());
         self.html(id!(html_view.html)).set_text(html_body.as_ref());
         self.view(id!(html_view)).set_visible(true);
         self.view(id!(plaintext_view)).set_visible(false);
@@ -88,6 +95,7 @@ impl HtmlOrPlaintext {
 impl HtmlOrPlaintextRef {
     /// See [`HtmlOrPlaintext::show_plaintext()`].
     pub fn show_plaintext<T: AsRef<str>>(&self, text: T) {
+        log!("HtmlOrPlaintextRef::show_plaintext(): {:?}", text.as_ref());
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_plaintext(text);
         }
@@ -95,6 +103,7 @@ impl HtmlOrPlaintextRef {
 
     /// See [`HtmlOrPlaintext::show_html()`].
     pub fn show_html<T: AsRef<str>>(&self, html_body: T) {
+        log!("HtmlOrPlaintextRef::show_html(): {:?}", html_body.as_ref());
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_html(html_body);
         }
