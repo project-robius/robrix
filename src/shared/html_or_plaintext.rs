@@ -42,6 +42,7 @@ live_design! {
                 width: Fit,
                 height: Fit
                 draw_text: {
+                    draw_call_group: htmlorplaintext_dcg,
                     wrap: Word,
                     color: (COLOR_P),
                     text_style: <REGULAR_TEXT> { },

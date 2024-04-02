@@ -18,7 +18,7 @@ live_design! {
 
         text_view = <View> {
             visible: true,
-            text = <Label> {
+            tv_label = <Label> {
                 width: Fit, height: Fit,
                 draw_text: {
                     text_style: <REGULAR_TEXT>{ font_size: 12. }
@@ -29,7 +29,7 @@ live_design! {
 
         img_view = <View> {
             visible: false,
-            img = <Image> {
+            iv_img = <Image> {
                 fit: Smallest,
                 width: Fill, height: Fill,
             }
@@ -65,7 +65,7 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, text: T) {
-        self.label(id!(text_view.text)).set_text(text.as_ref());
+        self.label(id!(text_view.tv_label)).set_text(text.as_ref());
         self.view(id!(img_view)).set_visible(false);
         self.view(id!(text_view)).set_visible(true);
     }
@@ -80,7 +80,7 @@ impl TextOrImage {
     pub fn show_image<F, E>(&mut self, image_set_function: F) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
     {
-        let img_ref = self.image(id!(img_view.img));
+        let img_ref = self.image(id!(img_view.iv_img));
         let res = image_set_function(img_ref);
         if res.is_ok() {
             self.view(id!(img_view)).set_visible(true);
