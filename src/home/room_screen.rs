@@ -3,6 +3,7 @@
 
 use std::{collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
+use chrono::format;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
@@ -57,16 +58,13 @@ live_design! {
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
 
-    FONT_SIZE_SUB = 9.5
-    FONT_SIZE_P = 12.5
-    
     TEXT_SUB = {
-        font_size: (FONT_SIZE_SUB),
+        font_size: (10),
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
     
     TEXT_P = {
-        font_size: (FONT_SIZE_P),
+        font_size: (12),
         height_factor: 1.65,
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
@@ -1080,6 +1078,12 @@ fn populate_message_view(
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
                 {
                     log!("Drawing rich HTML body: {formatted_body:?}");
+                    if formatted_body.contains("Can you really use custom emoji") {
+                        log!("Found the emoji message! Each character: ");
+                        for c in formatted_body.chars() {
+                            log!("    {c}    ");
+                        }
+                    }
                     item.html_or_plaintext(id!(message)).show_html(formatted_body);
                 }
                 else {
@@ -1118,8 +1122,9 @@ fn populate_message_view(
                         // now that we've obtained the image URI and its metadata, try to fetch the image.
                         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
                             MediaCacheEntry::Loaded(data) => {
-                                let show_image_result = text_or_image_ref.show_image(
-                                    |img| utils::load_png_or_jpg(&img, cx, &data)
+                                let show_image_result = text_or_image_ref.show_image(|img|
+                                    utils::load_png_or_jpg(&img, cx, &data)
+                                        .map(|()| img.size_in_pixels(cx).unwrap())
                                 );
                                 if let Err(e) = show_image_result {
                                     let err_str = format!("Failed to display image: {e:?}");
