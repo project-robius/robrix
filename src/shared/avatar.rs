@@ -91,9 +91,13 @@ impl Widget for Avatar {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
+
+    fn set_text(&mut self, v: &str) {
+        self.show_text(v)
+    }
 }
 
-impl AvatarRef {
+impl Avatar {
     /// Sets the text content of this avatar, making the text visible
     /// and the image invisible.
     ///
@@ -101,12 +105,10 @@ impl AvatarRef {
     /// * `text`: the text that will be displayed in this avatar.
     ///    This should be a single character, but we accept anything that can be 
     ///    treated as a `&str` in order to support multi-character Unicode.
-    pub fn show_text<T: AsRef<str>>(&self, text: T) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.label(id!(text_view.text)).set_text(text.as_ref());
-            inner.view(id!(img_view)).set_visible(false);
-            inner.view(id!(text_view)).set_visible(true);
-        }
+    pub fn show_text<T: AsRef<str>>(&mut self, text: T) {
+        self.label(id!(text_view.text)).set_text(text.as_ref());
+        self.view(id!(img_view)).set_visible(false);
+        self.view(id!(text_view)).set_visible(true);
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -117,31 +119,55 @@ impl AvatarRef {
     ///    to the image that will be displayed in this avatar.
     ///    This allows the caller to set the image contents in any way they want.
     ///    If `image_set_function` returns an error, no change is made to the avatar.
+    pub fn show_image<F, E>(&mut self, image_set_function: F) -> Result<(), E>
+        where F: FnOnce(ImageRef) -> Result<(), E>
+    {
+        let img_ref = self.image(id!(img_view.img));
+        let res = image_set_function(img_ref);
+        if res.is_ok() {
+            self.view(id!(img_view)).set_visible(true);
+            self.view(id!(text_view)).set_visible(false);
+        }
+        res
+    }
+
+    /// Returns whether this avatar is currently displaying an image or text.
+    pub fn status(&mut self) -> AvatarDisplayStatus {
+        if self.view(id!(img_view)).is_visible() {
+            AvatarDisplayStatus::Image
+        } else {
+            AvatarDisplayStatus::Text
+        }
+    }
+}
+
+impl AvatarRef {
+    /// See [`Avatar::show_text()`].
+    pub fn show_text<T: AsRef<str>>(&self, text: T) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.show_text(text);
+        }
+    }
+
+    /// See [`Avatar::show_image()`].
     pub fn show_image<F, E>(&self, image_set_function: F) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
-            let img_ref = inner.image(id!(img_view.img));
-            let res = image_set_function(img_ref);
-            if res.is_ok() {
-                inner.view(id!(img_view)).set_visible(true);
-                inner.view(id!(text_view)).set_visible(false);
-            }
-            res
+            inner.show_image(image_set_function)
         } else {
             Ok(())
         }
     }
 
-    /// Returns whether this avatar is currently displaying an image or text.
+    /// See [`Avatar::status()`].
     pub fn status(&self) -> AvatarDisplayStatus {
         if let Some(mut inner) = self.borrow_mut() {
-            if inner.view(id!(img_view)).is_visible() {
-                return AvatarDisplayStatus::Image;
-            }
+            inner.status()
+        } else {
+            AvatarDisplayStatus::Text
         }
-        AvatarDisplayStatus::Text
-    }
+    }    
 }
 
 /// What an Avatar instance is currently displaying.
