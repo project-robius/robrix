@@ -49,7 +49,6 @@ live_design! {
                 width: Fit, height: Fit,
                 padding: { top: 1.0 } // for better vertical alignment
                 draw_text: {
-                    draw_call_group: avatar_text_dcg,
                     text_style: <TITLE_TEXT>{ font_size: 15. }
                 }
                 text: ""

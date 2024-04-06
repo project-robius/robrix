@@ -3,7 +3,6 @@
 
 use std::{collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
-use chrono::format;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
@@ -80,7 +79,6 @@ live_design! {
     COLOR_DIVIDER_DARK = #x00000044
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-    COLOR_P = #x999
     
     FillerY = <View> {width: Fill}
     
@@ -143,8 +141,8 @@ live_design! {
     Timestamp = <Label> {
         padding: { top: 10.0, bottom: 0.0, left: 0.0, right: 0.0 }
         draw_text: {
-            text_style: <TEXT_SUB> {},
-            color: (COLOR_META_TEXT)
+            text_style: <TIMESTAMP_TEXT_STYLE> {},
+            color: (TIMESTAMP_TEXT_COLOR)
         }
         text: " "
     }
@@ -226,8 +224,8 @@ live_design! {
                     width: Fill,
                     margin: {bottom: 10.0, top: 10.0, right: 10.0,}
                     draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
+                        text_style: <USERNAME_TEXT_STYLE> {},
+                        color: (USERNAME_TEXT_COLOR)
                         wrap: Ellipsis,
                     }
                     text: "<Username not available>"
@@ -246,6 +244,7 @@ live_design! {
     // The view used for a condensed message that came right after another message
     // from the same sender, and thus doesn't need to display the sender's profile again.
     CondensedMessage = <Message> {
+        padding: { top: 2.0, bottom: 2.0 }
         body = {
             padding: { top: 5.0, bottom: 5.0, left: 10.0, right: 10.0 },
             profile = <View> {
@@ -272,7 +271,7 @@ live_design! {
             content = {
                 message = <TextOrImage> {
                     width: Fill, height: 300,
-                    // img_view = { img = { fit: Horizontal } }
+                    image_view = { image = { fit: Horizontal } }
                 }
             }
         }
@@ -286,7 +285,7 @@ live_design! {
             content = {
                 message = <TextOrImage> {
                     width: Fill, height: 300,
-                    // img_view = { img = { fit: Horizontal } }
+                    image_view = { image = { fit: Horizontal } }
                 }
             }
         }
@@ -300,7 +299,7 @@ live_design! {
         height: Fit,
         margin: 0.0
         flow: Right,
-        padding: 0.0,
+        padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
         
         body = <View> {
@@ -319,8 +318,8 @@ live_design! {
                 timestamp = <Timestamp> {
                     padding: {top: 5.0}
                     draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
+                        text_style: <TIMESTAMP_TEXT_STYLE> {},
+                        color: (TIMESTAMP_TEXT_COLOR)
                     }
                 }
             }
@@ -340,8 +339,8 @@ live_design! {
                 padding: {top: 5.0},
                 draw_text: {
                     wrap: Word,
-                    text_style: <TEXT_SUB> {},
-                    color: (COLOR_P)
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                    color: (SMALL_STATE_TEXT_COLOR)
                 }
                 text: ""
             }
@@ -470,7 +469,7 @@ live_design! {
                         color: #fff
                     }
                     draw_text: {
-                        text_style:<REGULAR_TEXT>{},
+                        text_style:<MESSAGE_TEXT_STYLE>{},
         
                         fn get_color(self) -> vec4 {
                             return #ccc
@@ -1077,21 +1076,11 @@ fn populate_message_view(
                 if let Some(formatted_body) = text.formatted.as_ref()
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
                 {
-                    log!("Drawing rich HTML body: {formatted_body:?}");
-                    if formatted_body.contains("Can you really use custom emoji") {
-                        log!("Found the emoji message! Each character: ");
-                        for c in formatted_body.chars() {
-                            log!("    {c}    ");
-                        }
-                    }
                     item.html_or_plaintext(id!(message)).show_html(formatted_body);
-                }
-                else {
-                    log!("Drawing plaintext body: {:?}", text.body);
+                } else {
                     item.html_or_plaintext(id!(message)).show_plaintext(&text.body);
                 }
-                // new_drawn_status.content_drawn = true;
-                new_drawn_status.content_drawn = false;
+                new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }

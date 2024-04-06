@@ -77,11 +77,7 @@ impl MediaCache {
             Entry::Vacant(vacant) => vacant.insert(
                 Arc::new(Mutex::new(MediaCacheEntry::Requested))
             ),
-            // Entry::Occupied(occupied) => return occupied.get().lock().unwrap().deref().clone(),
-            //
-            // TEMP TEST: remove this, just testing when images never load
-            //
-            Entry::Occupied(occupied) => return MediaCacheEntry::Requested,
+            Entry::Occupied(occupied) => return occupied.get().lock().unwrap().deref().clone(),
         };
 
         let destination = Arc::clone(value_ref);

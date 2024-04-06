@@ -13,24 +13,24 @@ live_design! {
     import crate::shared::styles::*;
 
     TextOrImage = {{TextOrImage}} {
+        width: Fill, height: Fit, 
         text_view: <View> {
-            width: Fill,
-            height: Fill,
+            width: Fill, height: Fit,
             label = <Label> {
-                width: Fit, height: Fit,
+                width: Fill, height: Fit,
                 draw_text: {
-                    text_style: <TEXT_SUB> { }
-                    // color: #00f,
+                    wrap: Word,
+                    text_style: <MESSAGE_TEXT_STYLE> { }
+                    color: (MESSAGE_TEXT_COLOR),
                 }
             }
         }
         image_view: <View> {
-            width: Fill,
-            height: Fill,
+            width: Fill, height: Fit,
             image = <Image> {
                 width: Fill,
-                height: Fill,
-                fit: Stretch,
+                height: Fit,
+                fit: Smallest,
             }
         }
     }
