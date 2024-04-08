@@ -53,7 +53,8 @@ live_design! {
         timestamp = <Label> {
             width: Fit, height: Fit
             draw_text:{
-                text_style: <REGULAR_TEXT>{
+                color: (TIMESTAMP_TEXT_COLOR)
+                text_style: <TIMESTAMP_TEXT_STYLE>{
                     font_size: 8.
                 },
             }
@@ -344,10 +345,10 @@ impl Widget for RoomsList {
                     }
                     match room_info.avatar {
                         RoomPreviewAvatar::Text(ref text) => {
-                            item.avatar(id!(avatar)).set_text(text);
+                            item.avatar(id!(avatar)).show_text(text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
-                            let _ = item.avatar(id!(avatar)).set_image(
+                            let _ = item.avatar(id!(avatar)).show_image(
                                 |img| utils::load_png_or_jpg(&img, cx, img_bytes)
                             );
                         }

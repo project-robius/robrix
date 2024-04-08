@@ -7,15 +7,11 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{
     events::{
-        AnySyncTimelineEvent,
-        AnySyncMessageLikeEvent,
-        FullStateEventContent,
         room::{
             guest_access::GuestAccess,
             history_visibility::HistoryVisibility,
-            join_rules::JoinRule, message::{MessageType, RoomMessageEventContent}, MediaSource,
-        },
-        SyncMessageLikeEvent,
+            join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
+        }, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent
     }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId,
 };
 use matrix_sdk_ui::timeline::{
@@ -35,7 +31,7 @@ use rangemap::RangeSet;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, text_or_image::TextOrImageWidgetRefExt},
+    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
     sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
 };
@@ -50,6 +46,7 @@ live_design! {
     import crate::shared::search_bar::SearchBar;
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
+    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -60,16 +57,13 @@ live_design! {
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
 
-    FONT_SIZE_SUB = 9.5
-    FONT_SIZE_P = 12.5
-    
     TEXT_SUB = {
-        font_size: (FONT_SIZE_SUB),
+        font_size: (10),
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
     
     TEXT_P = {
-        font_size: (FONT_SIZE_P),
+        font_size: (12),
         height_factor: 1.65,
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
@@ -85,7 +79,6 @@ live_design! {
     COLOR_DIVIDER_DARK = #x00000044
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-    COLOR_P = #x999
     
     FillerY = <View> {width: Fill}
     
@@ -148,8 +141,8 @@ live_design! {
     Timestamp = <Label> {
         padding: { top: 10.0, bottom: 0.0, left: 0.0, right: 0.0 }
         draw_text: {
-            text_style: <TEXT_SUB> {},
-            color: (COLOR_META_TEXT)
+            text_style: <TIMESTAMP_TEXT_STYLE> {},
+            color: (TIMESTAMP_TEXT_COLOR)
         }
         text: " "
     }
@@ -231,22 +224,13 @@ live_design! {
                     width: Fill,
                     margin: {bottom: 10.0, top: 10.0, right: 10.0,}
                     draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
+                        text_style: <USERNAME_TEXT_STYLE> {},
+                        color: (USERNAME_TEXT_COLOR)
                         wrap: Ellipsis,
                     }
                     text: "<Username not available>"
                 }
-                message = <Label> {
-                    width: Fill,
-                    height: Fit
-                    draw_text: {
-                        wrap: Word,
-                        text_style: <TEXT_P> {},
-                        color: (COLOR_P)
-                    }
-                    text: ""
-                }
+                message = <HtmlOrPlaintext> { }
                 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -260,6 +244,7 @@ live_design! {
     // The view used for a condensed message that came right after another message
     // from the same sender, and thus doesn't need to display the sender's profile again.
     CondensedMessage = <Message> {
+        padding: { top: 2.0, bottom: 2.0 }
         body = {
             padding: { top: 5.0, bottom: 5.0, left: 10.0, right: 10.0 },
             profile = <View> {
@@ -274,16 +259,7 @@ live_design! {
                 height: Fit,
                 flow: Down,
                 
-                message = <Label> {
-                    width: Fill,
-                    height: Fit
-                    draw_text: {
-                        wrap: Word,
-                        text_style: <TEXT_P> {},
-                        color: (COLOR_P)
-                    }
-                    text: ""
-                }
+                message = <HtmlOrPlaintext> { }
             }
         }
     }
@@ -295,7 +271,7 @@ live_design! {
             content = {
                 message = <TextOrImage> {
                     width: Fill, height: 300,
-                    // img_view = { img = { fit: Horizontal } }
+                    image_view = { image = { fit: Horizontal } }
                 }
             }
         }
@@ -309,7 +285,7 @@ live_design! {
             content = {
                 message = <TextOrImage> {
                     width: Fill, height: 300,
-                    // img_view = { img = { fit: Horizontal } }
+                    image_view = { image = { fit: Horizontal } }
                 }
             }
         }
@@ -323,7 +299,7 @@ live_design! {
         height: Fit,
         margin: 0.0
         flow: Right,
-        padding: 0.0,
+        padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
         
         body = <View> {
@@ -342,8 +318,8 @@ live_design! {
                 timestamp = <Timestamp> {
                     padding: {top: 5.0}
                     draw_text: {
-                        text_style: <TEXT_SUB> {},
-                        color: (COLOR_META_TEXT)
+                        text_style: <TIMESTAMP_TEXT_STYLE> {},
+                        color: (TIMESTAMP_TEXT_COLOR)
                     }
                 }
             }
@@ -363,8 +339,8 @@ live_design! {
                 padding: {top: 5.0},
                 draw_text: {
                     wrap: Word,
-                    text_style: <TEXT_SUB> {},
-                    color: (COLOR_P)
+                    text_style: <SMALL_STATE_TEXT_STYLE> {},
+                    color: (SMALL_STATE_TEXT_COLOR)
                 }
                 text: ""
             }
@@ -493,7 +469,7 @@ live_design! {
                         color: #fff
                     }
                     draw_text: {
-                        text_style:<REGULAR_TEXT>{},
+                        text_style:<MESSAGE_TEXT_STYLE>{},
         
                         fn get_color(self) -> vec4 {
                             return #ccc
@@ -1097,7 +1073,13 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                item.label(id!(content.message)).set_text(&text.body);
+                if let Some(formatted_body) = text.formatted.as_ref()
+                    .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
+                {
+                    item.html_or_plaintext(id!(message)).show_html(formatted_body);
+                } else {
+                    item.html_or_plaintext(id!(message)).show_plaintext(&text.body);
+                }
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -1129,10 +1111,11 @@ fn populate_message_view(
                         // now that we've obtained the image URI and its metadata, try to fetch the image.
                         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
                             MediaCacheEntry::Loaded(data) => {
-                                let set_image_result = text_or_image_ref.set_image(
-                                    |img| utils::load_png_or_jpg(&img, cx, &data)
+                                let show_image_result = text_or_image_ref.show_image(|img|
+                                    utils::load_png_or_jpg(&img, cx, &data)
+                                        .map(|()| img.size_in_pixels(cx).unwrap())
                                 );
-                                if let Err(e) = set_image_result {
+                                if let Err(e) = show_image_result {
                                     let err_str = format!("Failed to display image: {e:?}");
                                     error!("{err_str}");
                                     text_or_image_ref.set_text(&err_str);
@@ -1164,7 +1147,8 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                item.label(id!(content.message)).set_text(&format!("[TODO] {}", other.body()));
+                let kind = other.msgtype();
+                item.label(id!(content.message)).set_text(&format!("[TODO {kind:?}] {}", other.body()));
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -1609,7 +1593,7 @@ fn set_avatar_and_get_username(
     // A closure to set the item's avatar to text data,
     // skipping the first `skip` characters of the given `name`.
     let set_avatar_text = |name: &str, skip: usize| {
-        avatar.set_text(
+        avatar.show_text(
             name.graphemes(true)
                 .skip(skip)
                 .next()
@@ -1650,7 +1634,7 @@ fn set_avatar_and_get_username(
 
             // Draw the avatar image if available, otherwise set the avatar to text.
             let drew_avatar_img = avatar_img.map(|data|
-                avatar.set_image(|img|
+                avatar.show_image(|img|
                     utils::load_png_or_jpg(&img, cx, &data)
                 ).is_ok()
             ).unwrap_or(false);
