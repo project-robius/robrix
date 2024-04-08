@@ -30,10 +30,10 @@ live_design! {
     MESSAGE_TEXT_COLOR = #x777
     MESSAGE_TEXT_LINE_SPACING = 1.35
     MESSAGE_TEXT_HEIGHT_FACTOR = 1.5
+    // This font should only be used for plaintext labels. Don't use this for Html content,
+    // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     MESSAGE_TEXT_STYLE = {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-        // Don't set the actual font here, as the Html widget sets different fonts for
-        // different text styles (e.g., bold, italic, etc)
         font_size: (MESSAGE_FONT_SIZE),
         height_factor: (MESSAGE_TEXT_HEIGHT_FACTOR),
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
