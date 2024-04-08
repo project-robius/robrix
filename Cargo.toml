@@ -17,9 +17,7 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-makepad-widgets = { path = "../makepad/widgets" }
-
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
 
 anyhow = "1.0"
 chrono = "0.4"
