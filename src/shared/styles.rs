@@ -27,7 +27,7 @@ live_design! {
 
 
     MESSAGE_FONT_SIZE = 12.0
-    MESSAGE_TEXT_COLOR = #x777
+    MESSAGE_TEXT_COLOR = #x555
     MESSAGE_TEXT_LINE_SPACING = 1.35
     MESSAGE_TEXT_HEIGHT_FACTOR = 1.5
     // This font should only be used for plaintext labels. Don't use this for Html content,

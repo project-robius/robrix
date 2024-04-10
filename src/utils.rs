@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
 use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, api::client::media::get_content_thumbnail::v3::Method}, media::{MediaThumbnailSize, MediaFormat}};
 
@@ -52,9 +52,9 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 }
 
 
-pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<NaiveDateTime> {
+pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
-    NaiveDateTime::from_timestamp_millis(millis)
+    Local.timestamp_millis_opt(millis).single()
 }
 
 
