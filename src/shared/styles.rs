@@ -25,7 +25,6 @@ live_design! {
         // height_factor: 1.5,
     }
 
-
     MESSAGE_FONT_SIZE = 12.0
     MESSAGE_TEXT_COLOR = #x777
     MESSAGE_TEXT_LINE_SPACING = 1.35
