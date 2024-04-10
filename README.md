@@ -64,7 +64,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Stable positioning of events view during timeline update
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
-- [ ] Rich text formatting for message bodies
+- [x] Rich text formatting for message bodies
 - [ ] Display multimedia (audio/video/gif) message events
 - [ ] Display reactions (annotations)
 - [ ] Inline link previews
