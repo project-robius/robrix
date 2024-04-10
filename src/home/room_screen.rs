@@ -1080,8 +1080,7 @@ fn populate_message_view(
                 } else {
                     item.html_or_plaintext(id!(message)).show_plaintext(&text.body);
                 }
-                // new_drawn_status.content_drawn = true;
-                new_drawn_status.content_drawn = false;
+                new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }
