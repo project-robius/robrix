@@ -13,6 +13,7 @@ live_design! {
     // For some reason, they're not the same. That's TBD.
     HTML_LINE_SPACING = 8.0
     HTML_TEXT_HEIGHT_FACTOR = 1.3
+    HTML_BLOCK_LINE_SPACING = 5.0
 
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
@@ -42,7 +43,7 @@ live_design! {
         draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
         draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
         draw_fixed:       { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_block:{ 
+        draw_block: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
             quote_bg_color: (#EDEDED)
@@ -50,7 +51,9 @@ live_design! {
             block_color: (#EDEDED)
             code_color: (#EDEDED)
         }
-        list_item_layout: { line_spacing: 5.0, padding: {top: 1.0, bottom: 1.0}, }
+        list_item_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
+        code_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 4.0, bottom: 4.0}, }
+        quote_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 0.0, bottom: 8.0}, }
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }

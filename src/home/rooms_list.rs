@@ -338,7 +338,7 @@ impl Widget for RoomsList {
                     }
                     if let Some((ts, msg)) = room_info.latest.as_ref() {
                         if let Some(dt) = unix_time_millis_to_datetime(ts) {
-                            let text = format!("{} {}", dt.date(), dt.time().format("%l:%M %P"));
+                            let text = format!("{} {}", dt.date_naive(), dt.time().format("%l:%M %P"));
                             item.label(id!(timestamp)).set_text(&text);
                         }
                         item.label(id!(preview.latest_message)).set_text(msg);

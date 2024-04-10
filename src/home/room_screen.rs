@@ -980,7 +980,7 @@ impl Widget for Timeline {
                             let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
                             let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
-                                .map(|dt| format!("{}", dt.date().format("%a %b %-d, %Y")))
+                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
                             item.label(id!(date)).set_text(&text);
                             (item, ItemDrawnStatus::both_drawn())
@@ -1184,7 +1184,7 @@ fn populate_message_view(
             &format!("{}", dt.time().format("%l:%M %P"))
         );
         item.label(id!(profile.datestamp)).set_text(
-            &format!("{}", dt.date())
+            &format!("{}", dt.date_naive())
         );
     } else {
         item.label(id!(profile.timestamp)).set_text(
