@@ -564,9 +564,16 @@ impl Widget for RoomScreen {
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
+                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
+                        RoomMessageEventContent::text_html(html_text, html_text)
+                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
+                        RoomMessageEventContent::text_plain(plain_text)
+                    } else {
+                        RoomMessageEventContent::text_markdown(entered_text)
+                    };
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
-                        message: RoomMessageEventContent::text_markdown(entered_text),
+                        message,
                         // TODO: support replies to specific messages, attaching mentions, rich text (html), etc.
                     });
                 }
