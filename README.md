@@ -1,10 +1,25 @@
 # Robrix: a Rust Matrix client built atop [Robius](https://github.com/project-robius)
 
+[![Robrix Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
+
 Robrix is a Matrix chat client written in Rust to demonstrate the functionality of the Robius, a framework for multi-platform application development in Rust.
 
 > ⚠️ Robrix is just getting started and is not yet fully functional.
 >
 > It is currently based on the [Makepad WeChat example](https://github.com/project-robius/makepad_wechat); only the first "Rooms" tab is in use.
+
+
+| Host OS | Target Platform | Builds? | Runs? |
+| ------- | --------------- | ------- | ----- |
+| macOS   | macOS           | ✅      | ✅    |
+| macOS   | Android         | ✅      | ✅    |
+| macOS   | iOS             | ✅      | ✅    |
+| Linux   | Linux           | ✅      | ✅    |
+| Linux   | Android         | ✅      | ✅    |
+| Windows | Windows         | ✅      | ✅    |
+| Windows | Android         | ✅      | ✅    |
+
+
 
 ## Building and Running
 
