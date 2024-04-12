@@ -464,15 +464,28 @@ live_design! {
                 message_input = <TextInput> {
                     width: Fill, height: Fit, margin: 0
                     align: {y: 0.5}
-                    empty_message: "Write a message..."
+                    empty_message: "Write a message (in Markdown) ..."
                     draw_bg: {
-                        color: #fff
+                        color: #F9F9F9
                     }
                     draw_text: {
-                        text_style:<MESSAGE_TEXT_STYLE>{},
-        
+                        color: (MESSAGE_TEXT_COLOR),
+                        text_style: <MESSAGE_TEXT_STYLE>{},
+
                         fn get_color(self) -> vec4 {
-                            return #ccc
+                            return mix(
+                                mix(
+                                    mix(
+                                        #xFFFFFF55,
+                                        #xFFFFFF88,
+                                        self.hover
+                                    ),
+                                    self.color,
+                                    self.focus
+                                ),
+                                #BBBBBB,
+                                self.is_empty
+                            )
                         }
                     }
 
@@ -553,7 +566,7 @@ impl Widget for RoomScreen {
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
-                        message: RoomMessageEventContent::text_plain(entered_text),
+                        message: RoomMessageEventContent::text_markdown(entered_text),
                         // TODO: support replies to specific messages, attaching mentions, rich text (html), etc.
                     });
                 }

@@ -266,6 +266,7 @@ impl MatchEvent for App {
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
+    /*
     fn handle_shutdown(&mut self, _cx: &mut Cx) {
         log!("App::handle_shutdown()");
     }
@@ -287,6 +288,8 @@ impl MatchEvent for App {
     fn handle_app_lost_focus(&mut self, _cx: &mut Cx) {
         log!("App::handle_app_lost_focus()");
     }
+    */
+
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         self.ui.radio_button_set(ids!(
             mobile_modes.tab1,
