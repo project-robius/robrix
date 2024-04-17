@@ -37,7 +37,6 @@ live_design! {
         padding: 0.0,
         line_spacing: (HTML_LINE_SPACING),
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
-        keep_whitespace: true,
         font_size: (MESSAGE_FONT_SIZE),
         draw_normal:      { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
         draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
@@ -58,6 +57,13 @@ live_design! {
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
+
+        a = {
+            padding: {left: 1.0, right: 1.5},
+            draw_text: {
+                text_style: <MESSAGE_TEXT_STYLE> { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING), top_drop: 1.2, },
+            }
+        }
 
         body: "[<i> HTML message placeholder</i>]",
     }
@@ -155,12 +161,11 @@ impl LiveHook for MatrixHtmlSpan {
                     // Set the Label's foreground text color and background color
                     if let Some(fg_color) = self.fg_color {
                         self.ll.apply_over(cx, live!{ draw_text: { color: (fg_color) } });
-                    };
+                    }
                     if let Some(_bg_color) = self.bg_color {
                         log!("TODO: Html span/font background color is not yet implemented.")
                         // self.apply_over(cx, live!{ draw_bg: { color: (bg_color) } });
-                    };
-
+                    }
                     // TODO: need to handle label events to handle the spoiler, so we can toggle it upon click.
                 }
             } else {
