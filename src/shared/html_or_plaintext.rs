@@ -161,11 +161,11 @@ impl LiveHook for MatrixHtmlSpan {
                     // Set the Label's foreground text color and background color
                     if let Some(fg_color) = self.fg_color {
                         self.ll.apply_over(cx, live!{ draw_text: { color: (fg_color) } });
-                    };
-                    if let Some(bg_color) = self.bg_color {
-                        self.ll.apply_over(cx, live!{ draw_bg: { color: (bg_color) } });
-                    };
-
+                    }
+                    if let Some(_bg_color) = self.bg_color {
+                        log!("TODO: Html span/font background color is not yet implemented.")
+                        // self.apply_over(cx, live!{ draw_bg: { color: (bg_color) } });
+                    }
                     // TODO: need to handle label events to handle the spoiler, so we can toggle it upon click.
                 }
             } else {
