@@ -24,16 +24,28 @@ impl ImageFormat {
 ///
 /// Returns an error if either load fails or if the image format is unknown.
 pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
-   let res = match imghdr::from_bytes(data) {
+
+    fn attempt_both(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), ImageError> {
+        img.load_png_from_data(cx, data)
+            .or_else(|_| img.load_jpg_from_data(cx, data))
+    }
+
+    let res = match imghdr::from_bytes(data) {
         Some(imghdr::Type::Png) => img.load_png_from_data(cx, data),
         Some(imghdr::Type::Jpeg) => img.load_jpg_from_data(cx, data),
         Some(unsupported) => {
-            error!("load_png_or_jpg(): The {unsupported:?} image format is unsupported");
-            Err(ImageError::UnsupportedFormat)
+            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
+            attempt_both(img, cx, data).map_err(|_| {
+                error!("load_png_or_jpg(): The {unsupported:?} image format is unsupported");
+                ImageError::UnsupportedFormat
+            })
         }
         None => {
-            error!("load_png_or_jpg(): Unknown image format");
-            Err(ImageError::UnsupportedFormat)
+            // Attempt to load it as a PNG or JPEG anyway, since imghdr isn't perfect.
+            attempt_both(img, cx, data).map_err(|_| {
+                error!("load_png_or_jpg(): Unknown image format");
+                ImageError::UnsupportedFormat
+            })
         }
     };
     if let Err(err) = res.as_ref() {

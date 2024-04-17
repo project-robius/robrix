@@ -1651,7 +1651,7 @@ checksum = "af150ab688ff2122fcef229be89cb50dd66af9e01a4ff320cc137eecc9bacc38"
 [[package]]
 name = "jni-sys"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "js-sys"
@@ -1833,7 +1833,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1842,7 +1842,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1850,7 +1850,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1859,7 +1859,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "0.6.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "ab_glyph_rasterizer",
  "makepad-html",
@@ -1873,17 +1873,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "0.7.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "makepad-html"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1891,12 +1891,12 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "makepad-live-compiler"
 version = "0.5.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -1906,7 +1906,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -1914,7 +1914,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1922,7 +1922,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -1932,7 +1932,7 @@ dependencies = [
 [[package]]
 name = "makepad-markdown"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1940,17 +1940,17 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-micro-serde-derive",
 ]
@@ -1958,7 +1958,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1966,12 +1966,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 
 [[package]]
 name = "makepad-platform"
 version = "0.6.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "jni-sys",
  "makepad-futures",
@@ -1981,13 +1981,14 @@ dependencies = [
  "makepad-shader-compiler",
  "makepad-wasm-bridge",
  "makepad-windows",
+ "smallvec",
  "windows-targets",
 ]
 
 [[package]]
 name = "makepad-shader-compiler"
 version = "0.5.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -1995,7 +1996,7 @@ dependencies = [
 [[package]]
 name = "makepad-vector"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "ttf-parser",
 ]
@@ -2003,7 +2004,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -2012,7 +2013,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "0.6.0"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -2025,16 +2026,16 @@ dependencies = [
 [[package]]
 name = "makepad-windows"
 version = "0.51.1"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
- "windows-core 0.51.1 (git+https://github.com/makepad/makepad?branch=rik)",
+ "windows-core 0.51.1 (git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace)",
  "windows-targets",
 ]
 
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "bitflags 2.4.1",
 ]
@@ -2042,7 +2043,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.54"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "simd-adler32",
 ]
@@ -2050,7 +2051,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -2058,7 +2059,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.2.1"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "makepad-zune-core",
  "makepad-zune-inflate",
@@ -3927,9 +3928,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.11.1"
+version = "1.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "942b4a808e05215192e39f4ab80813e599068285906cc91aa64f923db842bd5a"
+checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "socket2"
@@ -4777,7 +4778,7 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.51.1"
-source = "git+https://github.com/makepad/makepad?branch=rik#ab3a96628bff906ee67ace672f5df95ea2d78476"
+source = "git+https://github.com/kevinaboos/makepad?branch=fix_panic_improve_html_whitespace#2773ac838fc5aaeba4c0695fa0b72d776352ebab"
 dependencies = [
  "windows-targets",
 ]
