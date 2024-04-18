@@ -12,7 +12,7 @@ live_design! {
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
     HTML_LINE_SPACING = 8.0
-    HTML_TEXT_HEIGHT_FACTOR = 1.3
+    HTML_TEXT_HEIGHT_FACTOR = 1.2
     HTML_BLOCK_LINE_SPACING = 5.0
 
 

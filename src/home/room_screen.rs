@@ -15,16 +15,7 @@ use matrix_sdk::ruma::{
     }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId,
 };
 use matrix_sdk_ui::timeline::{
-    self,
-    AnyOtherFullStateEventContent,
-    EventTimelineItem,
-    MembershipChange,
-    MemberProfileChange,
-    RoomMembershipChange,
-    VirtualTimelineItem,
-    TimelineDetails,
-    TimelineItemContent,
-    TimelineItemKind, TimelineItem,
+    self, AnyOtherFullStateEventContent, BundledReactions, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use rangemap::RangeSet;
@@ -46,7 +37,7 @@ live_design! {
     import crate::shared::search_bar::SearchBar;
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
-    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    import crate::shared::html_or_plaintext::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -147,26 +138,25 @@ live_design! {
         text: " "
     }
     
+    REACTION_TEXT_COLOR = #4c00b0
+
     MessageMenu = <View> {
+        visible: false,
         width: Fill,
         height: Fit,
-        margin: 0.0
-        flow: Down,
-        padding: 0.0,
-        spacing: 0.0
-        
-        <View> {
+
+        // TODO: use a set of Buttons later, so a user can click to add their own reaction.
+        annotations = <RobrixHtml> {
             width: Fill,
             height: Fit,
-            margin: 0.0
-            flow: Right,
-            padding: 0.0,
-            spacing: 10.0
-            
-            likes = <IconButton> {draw_icon: {svg_file: (ICO_FAV)} icon_walk: {width: 15.0, height: Fit}}
-            comments = <IconButton> {draw_icon: {svg_file: (ICO_COMMENT)} icon_walk: {width: 15.0, height: Fit}, text: "7"}
-            <FillerX> {}
-            reply = <IconButton> {draw_icon: {svg_file: (ICO_REPLY)} icon_walk: {width: 15.0, height: Fit}, text: ""}
+            padding: {top: 7.5, bottom: 5.0 },
+            font_size: 10.5,
+            draw_normal:      { color: (REACTION_TEXT_COLOR) },
+            draw_italic:      { color: (REACTION_TEXT_COLOR) },
+            draw_bold:        { color: (REACTION_TEXT_COLOR) },
+            draw_bold_italic: { color: (REACTION_TEXT_COLOR) },
+            draw_fixed:       { color: (REACTION_TEXT_COLOR) },
+            body: ""
         }
     }
     
@@ -236,7 +226,7 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
                 
-                <MessageMenu> {}
+                message_menu = <MessageMenu> {}
             }
         }
     }
@@ -260,6 +250,7 @@ live_design! {
                 flow: Down,
                 
                 message = <HtmlOrPlaintext> { }
+                message_menu = <MessageMenu> {}
             }
         }
     }
@@ -273,6 +264,7 @@ live_design! {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
                 }
+                message_menu = <MessageMenu> {}
             }
         }
     }
@@ -287,6 +279,7 @@ live_design! {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
                 }
+                message_menu = <MessageMenu> {}
             }
         }
     }
@@ -1053,7 +1046,7 @@ impl ItemDrawnStatus {
 /// The content of the returned `Message` widget is populated with data from the given `message`
 /// and its parent `EventTimelineItem`.
 fn populate_message_view(
-    cx: &mut Cx,
+    cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
     event_tl_item: &EventTimelineItem,
@@ -1093,6 +1086,7 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                // Draw the message body, either as rich HTML or as plaintext.
                 if let Some(formatted_body) = text.formatted.as_ref()
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
                 {
@@ -1100,6 +1094,9 @@ fn populate_message_view(
                 } else {
                     item.html_or_plaintext(id!(message)).show_plaintext(&text.body);
                 }
+                // Draw any reactions to the message.
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
+                // We're done drawing the message content, so mark it as fully drawn.
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -1140,6 +1137,8 @@ fn populate_message_view(
                                     error!("{err_str}");
                                     text_or_image_ref.set_text(&err_str);
                                 }
+                                // Draw any reactions to the message.
+                                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
                                 // The image content is completely drawn here, ready to be marked as cached/drawn.
                                 new_drawn_status.content_drawn = true;
                             }
@@ -1177,7 +1176,6 @@ fn populate_message_view(
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
     let skip_draw_profile = use_compact_view || (used_cached_item && item_drawn_status.profile_drawn);
-    // log!("populate_message_view(): item_id: {item_id}, skip_redraw?: {skip_draw_profile}, use_compact_view: {use_compact_view}, used_cached_item: {used_cached_item}, item_drawn_status: {item_drawn_status:?}, new_drawn_status: {new_drawn_status:?}", );
     if skip_draw_profile {
         // log!("\t --> populate_message_view(): SKIPPING profile draw for item_id: {item_id}");
         new_drawn_status.profile_drawn = true;
@@ -1212,13 +1210,40 @@ fn populate_message_view(
         );
     }
 
-    // Temp filler: set the likes and comments count to the timeline idx (item_id - 1), just for now.
-    // In the future, we'll draw annotations (reactions) here.
-    item.button(id!(likes)).set_text(&format!("{}", item_id - 1));
-    item.button(id!(comments)).set_text(&format!("{}", item_id - 1));
-
     (item, new_drawn_status)
 } 
+
+
+
+fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &BundledReactions, id: usize) {
+    const DRAW_ITEM_ID_REACTION: bool = false;
+    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
+        return;
+    }
+    // The message menu is invisible by default, so we must set it to visible
+    // now that we know there are reactions to show.
+    message_item.view(id!(content.message_menu)).set_visible(true);
+    let mut label_text = String::new();
+    for (reaction_raw, group) in reactions.iter() {
+        // Just take the first char of the emoji, which ignores any variant selectors.
+        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
+        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
+        let text_to_display = emojis::get(&reaction_str)
+            .and_then(|e| e.shortcode())
+            .unwrap_or(&reaction_raw);
+        let count = group.senders().count();
+        // log!("Found reaction {:?} with count {}", text_to_display, count);
+        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
+    }
+
+    // Debugging: draw the item ID as a reaction
+    if DRAW_ITEM_ID_REACTION {
+        label_text = format!("{label_text}<i>ID: {}</i>", id);
+    }
+
+    let html_reaction_view = message_item.html(id!(annotations));
+    html_reaction_view.set_text(&label_text);
+}
 
 
 

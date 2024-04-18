@@ -17,8 +17,7 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 
 [dependencies]
-# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "fix_panic_improve_html_whitespace" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
 
 anyhow = "1.0"
 chrono = "0.4"
@@ -37,6 +36,7 @@ tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.10.1"
 url = "2.2.2"
+emojis = "0.6.1"
 
 
 ###################################################################################################
