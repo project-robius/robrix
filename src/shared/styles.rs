@@ -29,7 +29,7 @@ live_design! {
     MESSAGE_FONT_SIZE = 12.0
     MESSAGE_TEXT_COLOR = #x555
     MESSAGE_TEXT_LINE_SPACING = 1.35
-    MESSAGE_TEXT_HEIGHT_FACTOR = 1.5
+    MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     MESSAGE_TEXT_STYLE = {
