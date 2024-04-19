@@ -1,12 +1,13 @@
 # Robrix: a Rust Matrix client built atop [Robius](https://github.com/project-robius)
 
-[![Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
+[![Robrix Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
+[![Project Robius Matrix Chat](https://img.shields.io/matrix/robius-general%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Project%20Robius%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius:matrix.org)
 
 Robrix is a Matrix chat client written in Rust to demonstrate the functionality of the Robius, a framework for multi-platform application development in Rust.
 
-> ⚠️ Robrix is just getting started and is not yet fully functional.
+> ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
 >
-> It is currently based on the [Makepad WeChat example](https://github.com/project-robius/makepad_wechat); only the first "Rooms" tab is in use.
+> Note that only the first "Rooms" tab of the UI is in use.
 
 The following table shows which host systems can currently be used to build Robrix for which target platforms.
 | Host OS | Target Platform | Builds? | Runs? |
@@ -81,7 +82,9 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
 - [ ] Display multimedia (audio/video/gif) message events
-- [ ] Display reactions (annotations)
+- [x] Display reactions (annotations)
+- [ ] Handle opening links on click
+- [ ] Linkify plaintext hyperlinks
 - [ ] Inline link previews
 - [ ] Inline reply view
 - [x] Send messages (standalone, no replies)
