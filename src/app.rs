@@ -5,6 +5,7 @@ use makepad_widgets::*;
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
+    import makepad_draw::shader::std::*;
 
     import crate::home::home_screen::HomeScreen
     import crate::home::room_screen::RoomScreen
@@ -16,31 +17,88 @@ live_design! {
     import crate::profile::my_profile_screen::MyProfileScreen
 
     import crate::shared::clickable_view::ClickableView
+    import crate::shared::styles::*;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
     ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
     ICON_ME = dep("crate://self/resources/icons/me.svg")
 
-    H3_TEXT_REGULAR = {
-        font_size: 9.0,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
-    }
+
+    APP_TAB_COLOR = #344054
+    APP_TAB_COLOR_HOVER = #636e82
+    APP_TAB_COLOR_SELECTED = #091
 
     AppTab = <RadioButton> {
         width: Fit,
         height: Fill,
-        align: {x: 0.0, y: 0.0}
+        flow: Down,
+        align: {x: 0.5, y: 0.5},
+
+        icon_walk: {width: 20, height: 20, margin: 0.0}
+        label_walk: {margin: 0.0}
+
         draw_radio: {
             radio_type: Tab,
-            color_active: #fff,
-            color_inactive: #fff,
+
+            // Draws a horizontal line under the tab when selected or hovered.
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(
+                    20.0,
+                    self.rect_size.y - 2.5,
+                    self.rect_size.x - 40,
+                    self.rect_size.y - 4,
+                    0.5
+                );
+                sdf.fill(
+                    mix(
+                        mix(
+                            #0000,
+                            (APP_TAB_COLOR_HOVER),
+                            self.hover
+                        ),
+                        (APP_TAB_COLOR_SELECTED),
+                        self.selected
+                    )
+                );
+                return sdf.result;
+            }
         }
+
         draw_text: {
-            color_selected: #0b0,
-            color_unselected: #000,
-            color_unselected_hover: #111,
-            text_style: <H3_TEXT_REGULAR> {}
+            color_unselected: (APP_TAB_COLOR)
+            color_unselected_hover: (APP_TAB_COLOR_HOVER)
+            color_selected: (APP_TAB_COLOR_SELECTED)
+
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color_unselected,
+                        self.color_unselected_hover,
+                        self.hover
+                    ),
+                    self.color_selected,
+                    self.selected
+                )
+            }
+        }
+
+        draw_icon: {
+            instance color_unselected: (APP_TAB_COLOR)
+            instance color_unselected_hover: (APP_TAB_COLOR_HOVER)
+            instance color_selected: (APP_TAB_COLOR_SELECTED)
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color_unselected,
+                        self.color_unselected_hover,
+                        self.hover
+                    ),
+                    self.color_selected,
+                    self.selected
+                )
+            }
         }
     }
 
@@ -69,11 +127,13 @@ live_design! {
 
                         mobile_menu = <RoundedView> {
                             width: Fill,
-                            height: 80,
-                            flow: Right, spacing: 6.0, padding: 10
+                            height: 75,
+                            flow: Right,
+                            // spacing: 6.0,
+                            padding: {bottom: 5.0},
                             draw_bg: {
                                 instance radius: 0.0,
-                                instance border_width: 1.0,
+                                instance border_width: 0.0,
                                 instance border_color: #aaa,
                                 color: #fff
                             }
@@ -84,65 +144,41 @@ live_design! {
                                     label: "Rooms"
                                     draw_icon: {
                                         svg_file: (ICON_CHAT),
-                                        fn get_color(self) -> vec4 {
-                                            return mix(
-                                                #000,
-                                                #0b0,
-                                                self.selected
-                                            )
-                                        }
                                     }
                                     width: Fill,
-                                    icon_walk: {width: 20, height: 20}
-                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                    flow: Down,
+                                    spacing: 5.0,
+                                    align: {x: 0.5, y: 0.5}
                                 }
                                 tab2 = <AppTab> {
                                     label: "DMs",
                                     draw_icon: {
                                         svg_file: (ICON_CONTACTS),
-                                        fn get_color(self) -> vec4 {
-                                            return mix(
-                                                #000,
-                                                #0b0,
-                                                self.selected
-                                            )
-                                        }
                                     }
                                     width: Fill
-                                    icon_walk: {width: 20, height: 20}
-                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                    flow: Down,
+                                    spacing: 5.0,
+                                    align: {x: 0.5, y: 0.5}
                                 }
                                 tab3 = <AppTab> {
                                     label: "Spaces",
                                     draw_icon: {
                                         svg_file: (ICON_DISCOVER),
-                                        fn get_color(self) -> vec4 {
-                                            return mix(
-                                                #000,
-                                                #0b0,
-                                                self.selected
-                                            )
-                                        }
                                     }
                                     width: Fill
-                                    icon_walk: {width: 20, height: 20}
-                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                    flow: Down,
+                                    spacing: 5.0,
+                                    align: {x: 0.5, y: 0.5}
                                 }
                                 tab4 = <AppTab> {
                                     label: "Profile",
                                     draw_icon: {
                                         svg_file: (ICON_ME),
-                                        fn get_color(self) -> vec4 {
-                                            return mix(
-                                                #000,
-                                                #0b0,
-                                                self.selected
-                                            )
-                                        }
                                     }
                                     width: Fill
-                                    icon_walk: {width: 20, height: 20}
-                                    flow: Down, spacing: 5.0, align: {x: 0.5, y: 0.5}
+                                    flow: Down,
+                                    spacing: 5.0,
+                                    align: {x: 0.5, y: 0.5}
                                 }
                             }
                         }
@@ -197,10 +233,18 @@ live_design! {
                         header = {
                             content = {
                                 title_container = {
+                                    padding: { bottom: 22 }
                                     title = {
+                                        width: Fit,
                                         text: "Loading room..."
+                                        draw_text: {
+                                            color: (MESSAGE_TEXT_COLOR),
+                                        }
                                     }
                                 }
+                                button_container = { left_button = {
+                                    icon_walk: {width: 14, height: 68},
+                                } }
                             }
                         }
                         body = {

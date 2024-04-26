@@ -50,6 +50,7 @@ live_design! {
                 padding: { top: 1.0 } // for better vertical alignment
                 draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 15. }
+                    color: #777,
                 }
                 text: ""
             }

@@ -18,7 +18,7 @@ live_design! {
     }
 
     USERNAME_FONT_SIZE = 13.0
-    USERNAME_TEXT_COLOR = #x060 // dark blue
+    USERNAME_TEXT_COLOR = #x060 // dark green
     USERNAME_TEXT_STYLE = {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
         font_size: (USERNAME_FONT_SIZE),
