@@ -115,7 +115,7 @@ live_design! {
                     color: #000,
                     text_style: <REGULAR_TEXT>{font_size: 11.},
                 }
-                text: "My WeChat ID: wxid_123n43kjl123hjg"
+                text: "ID: user@matrix:org"
             }
 
             <Image> {

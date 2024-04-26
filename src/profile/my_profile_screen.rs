@@ -91,7 +91,7 @@ live_design! {
                             color: #6
                             text_style: <REGULAR_TEXT>{},
                         }
-                        text: "facu"
+                        text: "Profile"
                     }
                 }
             }

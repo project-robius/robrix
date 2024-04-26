@@ -102,7 +102,7 @@ live_design! {
                         color: #000,
                         text_style: <TEXT_SUB>{font_size: 20.},
                     }
-                    text:"facu"
+                    text:"Me"
                 }
 
                 <View> {
@@ -118,7 +118,7 @@ live_design! {
                                 color: #6a6a6a,
                                 text_style: <REGULAR_TEXT>{font_size: 11.},
                             }
-                            text: "WeChat ID:"
+                            text: "User ID:"
                         }
 
                         wechat_id = <Label> {
@@ -126,7 +126,7 @@ live_design! {
                                 color: #6a6a6a,
                                 text_style: <REGULAR_TEXT>{font_size: 11.},
                             }
-                            text: "wxid_123n43kjl123hjg"
+                            text: "user@matrix.org"
                         }
                     }
 

@@ -42,9 +42,10 @@ live_design! {
                 width: Fill, height: Fit
                 draw_text:{
                     wrap: Ellipsis,
-                    text_style: <REGULAR_TEXT>{
+                    text_style: <MESSAGE_TEXT_STYLE>{
                         font_size: 10.5
                     },
+                    color: (MESSAGE_TEXT_COLOR),
                 }
                 text: "[Latest message unknown]"
             }
