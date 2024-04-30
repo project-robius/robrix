@@ -92,7 +92,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Reply button, send reply
 - [ ] Error display banners: no connection, failure to login, sync timeout.
 - [ ] Collapsible/expandable view of contiguous "small" events
-- [ ] Encrypted rooms, decrypting messages
+- [ ] E2EE device verification, decrypt message content
 
 ### Auxiliary/admin features: login, registration, settings
 - [ ] Username/password login screen
