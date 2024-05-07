@@ -11,7 +11,7 @@ live_design! {
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
-            color: #EDEDED;
+            color: #EEEEEE,
         }
 
         input = <TextInput> {
@@ -21,13 +21,26 @@ live_design! {
             align: {y: 0.5}
             empty_message: "Search..."
             draw_bg: {
-                color: #fff
+                color: #F9F9F9
             }
             draw_text: {
-                text_style:<REGULAR_TEXT>{},
+                color: (MESSAGE_TEXT_COLOR),
+                text_style: <MESSAGE_TEXT_STYLE>{},
 
                 fn get_color(self) -> vec4 {
-                    return #ccc
+                    return mix(
+                        mix(
+                            mix(
+                                #xFFFFFF55,
+                                #xFFFFFF88,
+                                self.hover
+                            ),
+                            self.color,
+                            self.focus
+                        ),
+                        #BBBBBB,
+                        self.is_empty
+                    )
                 }
             }
 
