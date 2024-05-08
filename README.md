@@ -9,6 +9,14 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 >
 > Note that only the first "Rooms" tab of the UI is in use.
 
+Check out these links for more info:
+  * Robrix: a Matrix chat client and more ([GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
+    * Videos: *coming soon!*
+    * Slides:
+      [PowerPoint (22MB)](https://github.com/project-robius/files/raw/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206,%202024.pptx),
+      [PDF version (16MB)](https://github.com/project-robius/files/blob/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206%2C%202024.pdf)
+
+
 The following table shows which host systems can currently be used to build Robrix for which target platforms.
 | Host OS | Target Platform | Builds? | Runs? |
 | ------- | --------------- | ------- | ----- |
