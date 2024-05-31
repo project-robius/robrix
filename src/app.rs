@@ -141,7 +141,7 @@ live_design! {
                             mobile_modes = <View> {
                                 tab1 = <AppTab> {
                                     animator: {selected = {default: on}}
-                                    label: "Rooms"
+                                    text: "Rooms"
                                     draw_icon: {
                                         svg_file: (ICON_CHAT),
                                     }
@@ -151,7 +151,7 @@ live_design! {
                                     align: {x: 0.5, y: 0.5}
                                 }
                                 tab2 = <AppTab> {
-                                    label: "DMs",
+                                    text: "DMs",
                                     draw_icon: {
                                         svg_file: (ICON_CONTACTS),
                                     }
@@ -161,7 +161,7 @@ live_design! {
                                     align: {x: 0.5, y: 0.5}
                                 }
                                 tab3 = <AppTab> {
-                                    label: "Spaces",
+                                    text: "Spaces",
                                     draw_icon: {
                                         svg_file: (ICON_DISCOVER),
                                     }
@@ -171,7 +171,7 @@ live_design! {
                                     align: {x: 0.5, y: 0.5}
                                 }
                                 tab4 = <AppTab> {
-                                    label: "Profile",
+                                    text: "Profile",
                                     draw_icon: {
                                         svg_file: (ICON_ME),
                                     }
