@@ -548,8 +548,9 @@ impl Widget for RoomScreen {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
-        // Handle actions on this widget, e.g., it being hidden or shown.
+        // Handle actions at the RoomScreen level.
         if let Event::Actions(actions) = event {
+            // Handle the send message button being clicked.
             if self.button(id!(send_message_button)).clicked(&actions) {
                 let msg_input_widget = self.text_input(id!(message_input));
                 let entered_text = msg_input_widget.text();
@@ -800,11 +801,10 @@ impl TimelineRef {
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Handle actions on this widget, e.g., it being hidden or shown.
         if let Event::Actions(actions) = event {
             for action in actions {
-                let stack_view_subwidget_action = action.as_widget_action().cast();
-                match stack_view_subwidget_action {
+                // Handle the timeline being hidden or shown.
+                match action.as_widget_action().cast() {
                     StackNavigationTransitionAction::HideBegin => {
                         self.hide_timeline();
                         continue;
@@ -818,6 +818,12 @@ impl Widget for Timeline {
                     | StackNavigationTransitionAction::ShowDone
                     | StackNavigationTransitionAction::None => { }
                 }
+
+                // Handle a link being clicked.
+                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+                    log!("Timeline::handle_event(): link clicked: {:?}", url);
+                }
+
 
                 // Handle other actions here
                 // TODO: handle actions upon an item being clicked.
