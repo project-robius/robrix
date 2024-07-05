@@ -822,6 +822,20 @@ impl Widget for Timeline {
                 // Handle a link being clicked.
                 if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
                     log!("Timeline::handle_event(): link clicked: {:?}", url);
+                    if url.starts_with("https://matrix.to/#/") {
+                        // TODO: show a pop-up pane with the user's profile, or a room preview pane.
+                        //
+                        // There are four kinds of matrix.to schemes:
+                        // See here: <https://github.com/matrix-org/matrix.to?tab=readme-ov-file#url-scheme>
+                        // 1. Rooms: https://matrix.to/#/#matrix:matrix.org
+                        // 2. Rooms by ID: https://matrix.to/#/!cURbafjkfsMDVwdRDQ:matrix.org
+                        // 3. Users: https://matrix.to/#/@matthew:matrix.org
+                        // 4. Messages: https://matrix.to/#/#matrix:matrix.org/$1448831580433WbpiJ:jki.re
+                    } else {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}: {:?}", url, e);
+                        }
+                    }
                 }
 
 
