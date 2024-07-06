@@ -15,9 +15,9 @@ repository = "https://github.com/project-robius/robrix"
 version = "0.0.1-pre-alpha"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
-
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "rik_with_old_font_stack" }
 robius-open = "0.1.0"
 
 anyhow = "1.0"

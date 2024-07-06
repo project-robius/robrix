@@ -80,6 +80,7 @@ live_design! {
             align: { x: 0.5, y: 0.5 }
             draw_text: {
                 wrap: Word,
+                color: (MESSAGE_TEXT_COLOR),
                 text_style: <REGULAR_TEXT>{}
             }
             text: "Loading joined rooms..."
