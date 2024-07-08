@@ -91,7 +91,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Rich text formatting for message bodies
 - [ ] Display multimedia (audio/video/gif) message events
 - [x] Display reactions (annotations)
-- [ ] Handle opening links on click
+- [x] Handle opening links on click
 - [ ] Linkify plaintext hyperlinks
 - [ ] Inline link previews
 - [ ] Inline reply view
