@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -821,8 +821,8 @@ impl Widget for Timeline {
 
                 // Handle a link being clicked.
                 if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-                    log!("Timeline::handle_event(): link clicked: {:?}", url);
                     if url.starts_with("https://matrix.to/#/") {
+                        log!("TODO: handle Matrix link internally: {url:?}");
                         // TODO: show a pop-up pane with the user's profile, or a room preview pane.
                         //
                         // There are four kinds of matrix.to schemes:
@@ -1106,13 +1106,17 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                let msg_body_field = item.html_or_plaintext(id!(content.message));
                 // Draw the message body, either as rich HTML or as plaintext.
                 if let Some(formatted_body) = text.formatted.as_ref()
                     .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
                 {
-                    item.html_or_plaintext(id!(message)).show_html(formatted_body);
+                    msg_body_field.show_html(utils::linkify(formatted_body.as_ref()));
                 } else {
-                    item.html_or_plaintext(id!(message)).show_plaintext(&text.body);
+                    match utils::linkify(&text.body) {
+                        Cow::Owned(linkified_html) => msg_body_field.show_html(&linkified_html),
+                        Cow::Borrowed(plaintext)   => msg_body_field.show_plaintext(plaintext),
+                    }
                 }
                 // Draw any reactions to the message.
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
