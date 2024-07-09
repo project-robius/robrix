@@ -233,7 +233,7 @@ live_design! {
                         header = {
                             content = {
                                 title_container = {
-                                    padding: { bottom: 22 }
+                                    padding: { bottom: 0 }
                                     title = {
                                         width: Fit,
                                         text: "Loading room..."
@@ -243,7 +243,7 @@ live_design! {
                                     }
                                 }
                                 button_container = { left_button = {
-                                    icon_walk: {width: 14, height: 68},
+                                    icon_walk: {width: 12, height: 68},
                                 } }
                             }
                         }
