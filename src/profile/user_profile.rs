@@ -317,18 +317,21 @@ live_design! {
         width: Fit,
         height: Fill,
 
-        wrapper = <RoundedView> {
-            width: Fit
-            height: Fit
-            flow: Down
-            padding: 10
-            spacing: 10
+        // TODO FIXME: I would like to wrap the entire content in a RoundedView,
+        //             but it breaks everything when I try.
 
-            show_bg: true
-            draw_bg: {
-                color: #fff
-                radius: 3
-            }
+        // wrapper = <RoundedView> {
+        //     width: Fit
+        //     height: Fit
+        //     flow: Down
+        //     padding: 10
+        //     spacing: 10
+
+        //     show_bg: true
+        //     draw_bg: {
+        //         color: #fff
+        //         radius: 3
+        //     }
 
 
             // The "X" close button on the top left
@@ -364,21 +367,22 @@ live_design! {
                 user_profile_view = <UserProfileView> { }
             }
 
-            animator: {
-                panel = {
-                    default: show,
-                    show = {
-                        redraw: true,
-                        from: {all: Forward {duration: 0.3}}
-                        ease: ExpDecay {d1: 0.80, d2: 0.97}
-                        apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
-                    }
-                    hide = {
-                        redraw: true,
-                        from: {all: Forward {duration: 0.3}}
-                        ease: ExpDecay {d1: 0.80, d2: 0.97}
-                        apply: {main_content = { width: 110, draw_bg: {opacity: 0.0} }}
-                    }
+        // }
+
+        animator: {
+            panel = {
+                default: show,
+                show = {
+                    redraw: true,
+                    from: {all: Forward {duration: 0.3}}
+                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
+                }
+                hide = {
+                    redraw: true,
+                    from: {all: Forward {duration: 0.3}}
+                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: {main_content = { width: 110, draw_bg: {opacity: 0.0} }}
                 }
             }
         }
@@ -410,7 +414,7 @@ impl Widget for UserProfileSlidingPane {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
-        if !self.visible { return; }
+        // if !self.visible { return; }
 
         // Determine whether we should close the pane.
         let close_pane = match event {
@@ -421,6 +425,7 @@ impl Widget for UserProfileSlidingPane {
             _ => false,
         };
         if close_pane {
+            self.animator_play(cx, id!(panel.hide));
             cx.widget_action(self.widget_uid(), &scope.path, PortalAction::Close);
         }
 
@@ -438,7 +443,7 @@ impl Widget for UserProfileSlidingPane {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
-
+        self.visible = true;
         self.label(id!(user_id)).set_text(user_id.as_str());
         self.label(id!(role_info)).set_text(&format!("Role in {}", room_id.as_str()));
 
@@ -453,9 +458,18 @@ impl Widget for UserProfileSlidingPane {
 }
 
 impl UserProfileSlidingPaneRef {
-    pub fn set_info(&mut self, room_id: OwnedRoomId, user_id: OwnedUserId) {
+    pub fn set_info(&self, room_id: OwnedRoomId, user_id: OwnedUserId) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.info = Some((room_id, user_id));
+        }
+    }
+
+    pub fn show(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            log!("\n#########\nShowing user profile pane");
+            inner.visible = true;
+            inner.animator_play(cx, id!(panel.show));
+            inner.redraw(cx);
         }
     }
 }

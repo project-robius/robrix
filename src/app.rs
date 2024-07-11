@@ -256,11 +256,13 @@ live_design! {
 
                 } // end of StackNavigation
             
-                portal_root = <Portal> {
-                    user_profile_sliding_pane_portal = <PortalView> {
-                        user_profile_sliding_pane = <UserProfileSlidingPane> { }
-                    }
-                }
+
+                // portal_root = <Portal> {
+                //     user_profile_sliding_pane_portal = <PortalView> {
+                //         user_profile_sliding_pane = <UserProfileSlidingPane> { }
+                //     }
+                // }
+
             } // end of body
         }
     }
@@ -397,8 +399,10 @@ impl MatchEvent for App {
 
             // Handle the action that requests to show the user profile sliding pane.
             if let ShowUserProfileAction::ShowUserProfile(room_id, user_id) = action.as_widget_action().cast() {
-                let mut pane = self.ui.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+                log!("\n#########\nReceived ShowUserProfileAction: {:?}\n", (&room_id, &user_id));
+                let pane = self.ui.user_profile_sliding_pane(id!(user_profile_sliding_pane));
                 pane.set_info(room_id, user_id);
+                pane.show(cx);
                 // TODO: Hack for error that when you first open the modal, doesnt draw until an event
                 // this forces the entire ui to rerender, still weird that only happens the first time.
                 self.ui.redraw(cx);
