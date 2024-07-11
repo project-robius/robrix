@@ -151,7 +151,7 @@ live_design! {
             draw_text: {
                 wrap: Line,
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_FONT_SIZE>{ },
+                text_style: <MESSAGE_TEXT_STYLE>{ },
             }
             text: "User ID"
         }

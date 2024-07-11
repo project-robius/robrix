@@ -8,6 +8,9 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
 
+    import crate::shared::styles::*;
+    import crate::shared::clickable_view::ClickableView
+    import crate::shared::portal::*;
     import crate::home::home_screen::HomeScreen
     import crate::home::room_screen::RoomScreen
     import crate::contacts::contacts_screen::ContactsScreen
@@ -16,9 +19,7 @@ live_design! {
     import crate::discover::moments_screen::MomentsScreen
     import crate::profile::profile_screen::ProfileScreen
     import crate::profile::my_profile_screen::MyProfileScreen
-    import crate::shared::clickable_view::ClickableView
-    import crate::shared::portal::*;
-    import crate::shared::styles::*;
+    import crate::profile::user_profile::UserProfileSlidingPane
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")

@@ -67,8 +67,6 @@ live_design! {
     COLOR_META = #xccc
     COLOR_META_INV = #xfffa
     COLOR_OVERLAY_BG = #x000000d8
-    COLOR_DIVIDER = #x00000018
-    COLOR_DIVIDER_DARK = #x00000044
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
     
