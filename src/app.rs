@@ -1,5 +1,6 @@
 use crate::home::rooms_list::RoomListAction;
 use crate::home::room_screen::*;
+use crate::profile::user_profile::{ShowUserProfileAction, UserProfileSlidingPaneWidgetRefExt};
 use makepad_widgets::*;
 
 live_design! {
@@ -15,8 +16,8 @@ live_design! {
     import crate::discover::moments_screen::MomentsScreen
     import crate::profile::profile_screen::ProfileScreen
     import crate::profile::my_profile_screen::MyProfileScreen
-
     import crate::shared::clickable_view::ClickableView
+    import crate::shared::portal::*;
     import crate::shared::styles::*;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
@@ -184,6 +185,29 @@ live_design! {
                         }
                     }
 
+                    rooms_stack_view = <StackNavigationView> {
+                        header = {
+                            content = {
+                                title_container = {
+                                    padding: { bottom: 0 }
+                                    title = {
+                                        width: Fit,
+                                        text: "Loading room..."
+                                        draw_text: {
+                                            color: (MESSAGE_TEXT_COLOR),
+                                        }
+                                    }
+                                }
+                                button_container = { left_button = {
+                                    icon_walk: {width: 12, height: 68},
+                                } }
+                            }
+                        }
+                        body = {
+                            room_screen = <RoomScreen> {}
+                        }
+                    }
+
                     moments_stack_view = <StackNavigationView> {
                         header = {
                             content = {
@@ -229,30 +253,14 @@ live_design! {
                         }
                     }
 
-                    rooms_stack_view = <StackNavigationView> {
-                        header = {
-                            content = {
-                                title_container = {
-                                    padding: { bottom: 0 }
-                                    title = {
-                                        width: Fit,
-                                        text: "Loading room..."
-                                        draw_text: {
-                                            color: (MESSAGE_TEXT_COLOR),
-                                        }
-                                    }
-                                }
-                                button_container = { left_button = {
-                                    icon_walk: {width: 12, height: 68},
-                                } }
-                            }
-                        }
-                        body = {
-                            room_screen = <RoomScreen> {}
-                        }
+                } // end of StackNavigation
+            
+                portal_root = <Portal> {
+                    user_profile_sliding_pane_portal = <PortalView> {
+                        user_profile_sliding_pane = <UserProfileSlidingPane> { }
                     }
                 }
-            }
+            } // end of body
         }
     }
 }
@@ -265,10 +273,8 @@ pub struct App {
     ui: WidgetRef,
 }
 
-impl LiveRegister for App {
-    fn live_register(cx: &mut Cx) {
-        makepad_widgets::live_design(cx);
 
+/*
         // shared
         crate::shared::styles::live_design(cx);
         crate::shared::helpers::live_design(cx);
@@ -300,6 +306,21 @@ impl LiveRegister for App {
         // profile
         crate::profile::profile_screen::live_design(cx);
         crate::profile::my_profile_screen::live_design(cx);
+
+*/
+
+impl LiveRegister for App {
+    fn live_register(cx: &mut Cx) {
+        // Order matters here, as some widget definitions depend on others.
+        // `makepad_widgets` must be registered first,
+        // then `shared`` widgets (in which styles are defined),
+        // then other modules widgets.
+        makepad_widgets::live_design(cx);
+        crate::shared::live_design(cx);
+        crate::home::live_design(cx);
+        crate::contacts::live_design(cx);
+        crate::discover::live_design(cx);
+        crate::profile::live_design(cx);
     }
 }
 
@@ -335,6 +356,7 @@ impl MatchEvent for App {
     */
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        // Handle the user selecting a tab in the mobile menu on bottom.
         self.ui.radio_button_set(ids!(
             mobile_modes.tab1,
             mobile_modes.tab2,
@@ -353,10 +375,34 @@ impl MatchEvent for App {
             ),
         );
 
-        self.handle_rooms_list_action(&actions);
+        // Handle stack navigation actions, e.g., navigating to/from a room screen
+        let mut stack_navigation = self.ui.stack_navigation(id!(navigation));
+        stack_navigation.handle_stack_view_actions(cx, &actions);
 
-        let mut navigation = self.ui.stack_navigation(id!(navigation));
-        navigation.handle_stack_view_actions(cx, &actions);
+
+        for action in actions {
+            // Handle the user selecting a room to view (a RoomPreview in the RoomsList).
+            if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {                
+                // Set the title of the RoomScreen's header to the room name.
+                stack_navigation.set_title(
+                    live_id!(rooms_stack_view),
+                    &room_name.unwrap_or_else(|| format!("Room {}", &room_id)),
+                );
+                // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
+                stack_navigation
+                    .room_screen(id!(rooms_stack_view.room_screen))
+                    .set_displayed_room(room_id);
+            }
+
+            // Handle the action that requests to show the user profile sliding pane.
+            if let ShowUserProfileAction::ShowUserProfile(room_id, user_id) = action.as_widget_action().cast() {
+                let mut pane = self.ui.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+                pane.set_info(room_id, user_id);
+                // TODO: Hack for error that when you first open the modal, doesnt draw until an event
+                // this forces the entire ui to rerender, still weird that only happens the first time.
+                self.ui.redraw(cx);
+            }
+        }
     }
 }
 
@@ -365,27 +411,5 @@ impl AppMain for App {
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
-    }
-}
-
-impl App {
-    fn handle_rooms_list_action(&mut self, actions: &Actions) {
-        for action in actions {
-            // Handle the user selecting a room to view (a RoomPreview in the RoomsList).
-            if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {
-                let stack_navigation = self.ui.stack_navigation(id!(navigation));
-                
-                // Set the title of the RoomScreen's header to the room name.
-                stack_navigation.set_title(
-                    live_id!(rooms_stack_view),
-                    &room_name.unwrap_or_else(|| format!("Room {}", &room_id)),
-                );
-
-                // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
-                stack_navigation
-                    .room_screen(id!(rooms_stack_view.room_screen))
-                    .set_displayed_room(room_id);
-            }
-        }
     }
 }

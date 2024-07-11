@@ -12,7 +12,7 @@ use matrix_sdk::ruma::{
             history_visibility::HistoryVisibility,
             join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
         }, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent
-    }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId,
+    }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
 };
 use matrix_sdk_ui::timeline::{
     self, AnyOtherFullStateEventContent, BundledReactions, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -38,6 +38,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
+    import crate::profile::user_profile::UserProfileSlidingPane;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -118,15 +119,6 @@ live_design! {
         }
         padding: 9.0
         text: ""
-    }
-    
-    LineH = <RoundedView> {
-        width: Fill,
-        height: 2,
-        margin: 0.0
-        padding: 0.0,
-        spacing: 0.0
-        draw_bg: {color: (COLOR_DIVIDER)}
     }
 
     Timestamp = <Label> {
@@ -438,99 +430,116 @@ live_design! {
             color: #fff
         }
 
-        <KeyboardView> {
+        <View> {
             width: Fill, height: Fill,
-            flow: Down,
-
-            // First, display the timeline of all messages/events.
-            timeline = <Timeline> {}
+            flow: Overlay,
             
-            // Below that, display a view that holds the message input bar.
-            <View> {
-                width: Fill, height: Fit
-                flow: Right, align: {y: 1.0}, padding: 10.
-                show_bg: true,
-                draw_bg: {
-                    color: #fff
-                }
+            <KeyboardView> {
+                width: Fill, height: Fill,
+                flow: Down,
 
-                message_input = <TextInput> {
-                    width: Fill, height: Fit, margin: 0
-                    align: {y: 0.5}
-                    empty_message: "Write a message (in Markdown) ..."
+                // First, display the timeline of all messages/events.
+                timeline = <Timeline> {}
+                
+                // Below that, display a view that holds the message input bar.
+                <View> {
+                    width: Fill, height: Fit
+                    flow: Right, align: {y: 1.0}, padding: 10.
+                    show_bg: true,
                     draw_bg: {
-                        color: #F9F9F9
+                        color: #fff
                     }
-                    draw_text: {
-                        color: (MESSAGE_TEXT_COLOR),
-                        text_style: <MESSAGE_TEXT_STYLE>{},
 
-                        fn get_color(self) -> vec4 {
-                            return mix(
-                                mix(
+                    message_input = <TextInput> {
+                        width: Fill, height: Fit, margin: 0
+                        align: {y: 0.5}
+                        empty_message: "Write a message (in Markdown) ..."
+                        draw_bg: {
+                            color: #F9F9F9
+                        }
+                        draw_text: {
+                            color: (MESSAGE_TEXT_COLOR),
+                            text_style: <MESSAGE_TEXT_STYLE>{},
+
+                            fn get_color(self) -> vec4 {
+                                return mix(
                                     mix(
-                                        #xFFFFFF55,
-                                        #xFFFFFF88,
-                                        self.hover
+                                        mix(
+                                            #xFFFFFF55,
+                                            #xFFFFFF88,
+                                            self.hover
+                                        ),
+                                        self.color,
+                                        self.focus
                                     ),
-                                    self.color,
-                                    self.focus
-                                ),
-                                #BBBBBB,
-                                self.is_empty
-                            )
+                                    #BBBBBB,
+                                    self.is_empty
+                                )
+                            }
+                        }
+
+                        // TODO find a way to override colors
+                        draw_cursor: {
+                            instance focus: 0.0
+                            uniform border_radius: 0.5
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                sdf.box(
+                                    0.,
+                                    0.,
+                                    self.rect_size.x,
+                                    self.rect_size.y,
+                                    self.border_radius
+                                )
+                                sdf.fill(mix(#0f0, #0b0, self.focus));
+                                return sdf.result
+                            }
+                        }
+
+                        // TODO find a way to override colors
+                        draw_select: {
+                            instance hover: 0.0
+                            instance focus: 0.0
+                            uniform border_radius: 2.0
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                sdf.box(
+                                    0.,
+                                    0.,
+                                    self.rect_size.x,
+                                    self.rect_size.y,
+                                    self.border_radius
+                                )
+                                sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
+                                return sdf.result
+                            }
                         }
                     }
 
-                    // TODO find a way to override colors
-                    draw_cursor: {
-                        instance focus: 0.0
-                        uniform border_radius: 0.5
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(
-                                0.,
-                                0.,
-                                self.rect_size.x,
-                                self.rect_size.y,
-                                self.border_radius
-                            )
-                            sdf.fill(mix(#0f0, #0b0, self.focus));
-                            return sdf.result
-                        }
-                    }
+                    // <Image> {
+                    //     source: (IMG_SMILEY_FACE_BW),
+                    //     width: 36., height: 36.
+                    // }
 
-                    // TODO find a way to override colors
-                    draw_select: {
-                        instance hover: 0.0
-                        instance focus: 0.0
-                        uniform border_radius: 2.0
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(
-                                0.,
-                                0.,
-                                self.rect_size.x,
-                                self.rect_size.y,
-                                self.border_radius
-                            )
-                            sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
-                            return sdf.result
-                        }
+                    // <Image> {
+                    //     source: (IMG_PLUS),
+                    //     width: 36., height: 36.
+                    // }
+
+                    send_message_button = <IconButton> {
+                        draw_icon: {svg_file: (ICO_SEND)},
+                        icon_walk: {width: 15.0, height: Fit},
                     }
                 }
-                // <Image> {
-                //     source: (IMG_SMILEY_FACE_BW),
-                //     width: 36., height: 36.
-                // }
-                // <Image> {
-                //     source: (IMG_PLUS),
-                //     width: 36., height: 36.
-                // }
-                send_message_button = <IconButton> {
-                    draw_icon: {svg_file: (ICO_SEND)},
-                    icon_walk: {width: 15.0, height: Fit},
-                }
+            }
+
+            <View> {
+                width: Fill,
+                height: Fill,
+                align: { x: 1.0 },
+                flow: Right,
+
+                <UserProfileSlidingPane> { }
             }
         }
     }
@@ -833,7 +842,7 @@ impl Widget for Timeline {
                         // 4. Messages: https://matrix.to/#/#matrix:matrix.org/$1448831580433WbpiJ:jki.re
                     } else {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}: {:?}", url, e);
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
                         }
                     }
                 }
@@ -920,6 +929,7 @@ impl Widget for Timeline {
         let Some(tl_state) = self.tl_state.as_mut() else {
             return DrawStep::done()
         };
+        let room_id = &tl_state.room_id;
         let tl_items = &tl_state.items;
 
         // Determine length of the portal list based on the number of timeline items.
@@ -964,6 +974,7 @@ impl Widget for Timeline {
                                     cx,
                                     list,
                                     item_id,
+                                    room_id,
                                     event_tl_item,
                                     message,
                                     prev_event,
@@ -975,6 +986,7 @@ impl Widget for Timeline {
                                 cx,
                                 list,
                                 item_id,
+                                room_id,
                                 event_tl_item,
                                 &RedactedMessageEventMarker,
                                 item_drawn_status,
@@ -983,6 +995,7 @@ impl Widget for Timeline {
                                 cx,
                                 list,
                                 item_id,
+                                room_id,
                                 event_tl_item,
                                 membership_change,
                                 item_drawn_status,
@@ -991,6 +1004,7 @@ impl Widget for Timeline {
                                 cx,
                                 list,
                                 item_id,
+                                room_id,
                                 event_tl_item,
                                 profile_change,
                                 item_drawn_status,
@@ -999,6 +1013,7 @@ impl Widget for Timeline {
                                 cx,
                                 list,
                                 item_id,
+                                room_id,
                                 event_tl_item,
                                 other,
                                 item_drawn_status,
@@ -1069,6 +1084,7 @@ fn populate_message_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
+    room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -1208,6 +1224,7 @@ fn populate_message_view(
         let (username, profile_drawn) = set_avatar_and_get_username(
             cx,
             item.avatar(id!(profile.avatar)),
+            room_id,
             event_tl_item,
         );
         item.label(id!(content.username)).set_text(&username);
@@ -1561,6 +1578,7 @@ fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
+    room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
@@ -1578,18 +1596,17 @@ fn populate_small_state_event(
     }
 
     // If the profile has been drawn, we can just quickly grab the user's display name
-    // instead of having to call `set_avatar_and_get_username()` again.
-    let username_opt = if skip_redrawing_profile {
-        get_profile_display_name(event_tl_item)
-    } else {
-        None
-    };
+    // instead of having to call `set_avatar_and_get_username` again.
+    let username_opt = skip_redrawing_profile
+        .then(|| get_profile_display_name(event_tl_item))
+        .flatten();
     
     let username = username_opt.unwrap_or_else(|| {
-        // As a fallback, call `set_avatar_and_get_username()` to get the user's display name.
+        // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
         let (username, profile_drawn) = set_avatar_and_get_username(
             cx,
             item.avatar(id!(avatar)),
+            room_id,
             event_tl_item,
         );
         // Draw the timestamp as part of the profile.
@@ -1654,15 +1671,19 @@ fn set_timestamp(
 fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
+    room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
 ) -> (String, bool) {
     let username: String;
     let mut profile_drawn = false;
 
+    let user_id = event_tl_item.sender();
+
     // A closure to set the item's avatar to text data,
     // skipping the first `skip` characters of the given `name`.
     let set_avatar_text = |name: &str, skip: usize| {
         avatar.show_text(
+            Some((room_id.to_owned(), user_id.to_owned())),
             name.graphemes(true)
                 .skip(skip)
                 .next()
@@ -1697,14 +1718,15 @@ fn set_avatar_and_get_username(
             let (skip, un) = if let Some(dn) = profile.display_name.as_ref() {
                 (0, dn.to_owned())
             } else {
-                (1, event_tl_item.sender().as_str().to_owned())
+                (1, user_id.to_string())
             };
             username = un;
 
             // Draw the avatar image if available, otherwise set the avatar to text.
             let drew_avatar_img = avatar_img.map(|data|
-                avatar.show_image(|img|
-                    utils::load_png_or_jpg(&img, cx, &data)
+                avatar.show_image(
+                    Some((room_id.to_owned(), user_id.to_owned())),
+                    |img| utils::load_png_or_jpg(&img, cx, &data)
                 ).is_ok()
             ).unwrap_or(false);
             
@@ -1714,7 +1736,7 @@ fn set_avatar_and_get_username(
         }
         other => {
             // log!("populate_message_view(): sender profile not ready yet for event {_other:?}");
-            username = event_tl_item.sender().as_str().to_owned();
+            username = user_id.to_string();
             set_avatar_text(&username, 1);
             // If there was an error fetching the profile, treat that condition as fully drawn,
             // since we don't yet have a good way to re-request profile information.

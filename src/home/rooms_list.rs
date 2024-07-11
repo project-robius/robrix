@@ -347,10 +347,11 @@ impl Widget for RoomsList {
                     }
                     match room_info.avatar {
                         RoomPreviewAvatar::Text(ref text) => {
-                            item.avatar(id!(avatar)).show_text(text);
+                            item.avatar(id!(avatar)).show_text(None, text);
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
                             let _ = item.avatar(id!(avatar)).show_image(
+                                None,
                                 |img| utils::load_png_or_jpg(&img, cx, img_bytes)
                             );
                         }
