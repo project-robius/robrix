@@ -219,7 +219,7 @@ live_design! {
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
                 }
-                icon_walk: {width: 22, height: 16, margin: {left: -4, right: -4, top: 1, bottom: -1} }
+                icon_walk: {width: 22, height: 16, margin: {left: -5, right: -3, top: 1, bottom: -1} }
                 text: "Direct Message"
             }
 
@@ -286,14 +286,15 @@ live_design! {
                 height: Fill
                 flow: Overlay,
 
+                user_profile_view = <UserProfileView> { }
+
                 // The "X" close button on the top left
                 close_button = <MoxinButton> {
-                    padding: 10,
                     width: Fit,
                     height: Fit,
                     align: {x: 0.0, y: 0.0},
-
-                    margin: -15,
+                    margin: 5
+                    padding: 10,
 
                     draw_icon: {
                         svg_file: (ICON_CLOSE),
@@ -301,10 +302,12 @@ live_design! {
                             return #000;
                         }
                     }
-                    icon_walk: {width: 12, height: 12}
+                    draw_bg: {
+                        color: #ccc,
+                        color_hover: #fff,
+                    }
+                    icon_walk: {width: 16, height: 16}
                 }
-
-                user_profile_view = <UserProfileView> { }
             }
 
         // }
