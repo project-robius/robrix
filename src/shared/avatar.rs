@@ -104,7 +104,6 @@ impl Widget for Avatar {
                 cx.set_key_focus(area);
             }
             Hit::FingerUp(_fue) => {
-                log!("\n#########\nEmitting action upon Avatar clicked: {:?}\n", self.info);
                 cx.widget_action(
                     widget_uid,
                     &scope.path,

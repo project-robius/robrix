@@ -1,8 +1,6 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 
-use crate::shared::portal::*;
-
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
@@ -10,7 +8,6 @@ live_design! {
 
     import crate::shared::helpers::*;
     import crate::shared::styles::*;
-    import crate::shared::portal::*;
     import crate::shared::avatar::*;
 
     // Copied from Moxin
@@ -30,13 +27,18 @@ live_design! {
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
     MoxinButton = <Button> {
+        width: Fit, 
+        height: Fit,
+        spacing: 10,
+        padding: {top: 10, bottom: 10, left: 15, right: 15}
+
         draw_bg: {
-            instance color: #0000
+            instance color: #EDFCF2
             instance color_hover: #fff
-            instance border_width: 1.0
-            instance border_color: #0000
+            instance border_width: 1.2
+            instance border_color: #D0D5DD
             instance border_color_hover: #fff
-            instance radius: 2.5
+            instance radius: 3.0
 
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -64,7 +66,7 @@ live_design! {
         }
 
         draw_icon: {
-            instance color: #fff
+            instance color: #000
             instance color_hover: #000
             uniform rotation_angle: 0.0,
 
@@ -103,10 +105,11 @@ live_design! {
                 )))
             }
         }
-        icon_walk: {width: 14, height: 14}
+        icon_walk: {width: 16, height: 16}
 
         draw_text: {
-            text_style: <REGULAR_TEXT>{font_size: 9},
+            text_style: <REGULAR_TEXT>{font_size: 10},
+            color: #000
             fn get_color(self) -> vec4 {
                 return self.color;
             }
@@ -114,33 +117,37 @@ live_design! {
     }
 
 
-    ICON_BLOCK_USER = dep("crate://self/resources/icons/prohibited.svg")
-    ICON_CLOSE      = dep("crate://self/resources/icons/close.svg")
-    ICON_START_CHAT = dep("crate://self/resources/icons/start_chat.svg")
-    ICON_COPY       = dep("crate://self/resources/icons/copy.svg")
-    ICON_JUMP       = dep("crate://self/resources/icons/go_back.svg")
+    ICON_BLOCK_USER  = dep("crate://self/resources/icons/forbidden.svg")
+    ICON_CLOSE       = dep("crate://self/resources/icons/close.svg")
+    ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
+    ICON_COPY        = dep("crate://self/resources/icons/copy.svg")
+    ICON_JUMP        = dep("crate://self/resources/icons/go_back.svg")
 
 
-    UserProfileView = <View> {
-        width: Fill, height: Fill
-        flow: Down, spacing: 10.
+    UserProfileView = <ScrollXYView> {
+        width: Fill,
+        height: Fill,
+        align: {x: 0.5, y: 0},
+        spacing: 15,
+        flow: Down,
 
         show_bg: true,
         draw_bg: {
-            color: #ddd
+            color: #f3f3fa
+            // 241, 244, 251
         }
 
         avatar = <Avatar> {
-            width: Fill,
-            height: Fit,
+            width: 150,
+            height: 150,
             margin: 10.0,
         }
 
         user_name = <Label> {
             width: Fill, height: Fit
             draw_text: {
-                wrap: Word,
-                color: #x444,
+                wrap: Line,
+                color: #000,
                 text_style: <USERNAME_TEXT_STYLE>{ },
             }
             text: "User Name"
@@ -151,163 +158,103 @@ live_design! {
             draw_text: {
                 wrap: Line,
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ },
+                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
             }
             text: "User ID"
         }
 
-        <LineH> { }
+        <LineH> { padding: 15 }
 
-        role_info_section_label = <Label> {
-            width: Fill, height: Fit
-            draw_text: {
-                text_style: <USERNAME_TEXT_STYLE>{},
-                color: #000
+        <View> {
+            width: Fill,
+            height: Fit,
+            flow: Down,
+            spacing: 15,
+            align: {x: 0.0, y: 0.0}
+
+            role_info_section_label = <Label> {
+                width: Fill, height: Fit
+                padding: {left: 15}
+                draw_text: {
+                    wrap: Line,
+                    text_style: <USERNAME_TEXT_STYLE>{},
+                    color: #000
+                }
+                text: "Role in this room"
             }
-            text: "Role in this room"
-        }
 
-        role_info = <View> {
             role_info_label = <Label> {
                 width: Fill, height: Fit
+                padding: {left: 30}
                 draw_text: {
-                    wrap: Word,
-                    color: #000,
-                    text_style: <REGULAR_TEXT>{},
+                    wrap: Line,
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
                 }
                 text: "Default"
             }
-        }
 
-        <LineH> { }
+            <LineH> { padding: 15 }
 
-        <Label> {
-            draw_text: {
-                text_style: <REGULAR_TEXT>{},
-                color: #000
+            <Label> {
+                width: Fill, height: Fit
+                padding: {left: 15}
+                draw_text: {
+                    wrap: Line,
+                    text_style: <USERNAME_TEXT_STYLE>{},
+                    color: #000
+                }
+                text: "Actions"
             }
-            text: "Actions"
         }
 
         actions = <View> {
             width: Fill, height: Fit
-            flow: RightWrap,
-            align: {x: 0.0, y: 0.5}
-            spacing: 20
+            flow: Down,
+            spacing: 10
+            padding: {left: 25, bottom: 50 }
 
 
             direct_message_button = <MoxinButton> {
-                width: Fit,
-                height: Fit,
-                padding: {top: 10, bottom: 10, left: 14, right: 14}
-                spacing: 10
-
                 draw_icon: {
-                    svg_file: (ICON_START_CHAT)
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
+                    svg_file: (ICON_DOUBLE_CHAT)
                 }
-                icon_walk: {width: 14, height: 14}
-
-                draw_bg: {
-                    instance radius: 2.0,
-                    border_color: #D0D5DD,
-                    border_width: 1.2,
-                    color: #EDFCF2,
-                }
-
+                icon_walk: {width: 22, height: 16, margin: {left: -4, right: -4, top: 1, bottom: -1} }
                 text: "Direct Message"
-                draw_text:{
-                    text_style: <REGULAR_TEXT>{font_size: 10},
-                    color: #x0
-                }
             }
 
             copy_link_to_user_button = <MoxinButton> {
-                width: Fit,
-                height: Fit,
-                padding: {top: 10, bottom: 10, left: 14, right: 14}
-                spacing: 10
-
                 draw_icon: {
                     svg_file: (ICON_COPY)
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
                 }
-                icon_walk: {width: 14, height: 14}
-
-                draw_bg: {
-                    instance radius: 2.0,
-                    border_color: #D0D5DD,
-                    border_width: 1.2,
-                    color: #EDFCF2,
-                }
-
+                icon_walk: {width: 16, height: 16, margin: {right: -2} }
                 text: "Copy Link to User"
-                draw_text:{
-                    text_style: <REGULAR_TEXT>{font_size: 10},
-                    color: #x0
-                }
             }
 
             jump_to_read_receipt_button = <MoxinButton> {
-                width: Fit,
-                height: Fit,
-                padding: {top: 10, bottom: 10, left: 14, right: 14}
-                spacing: 10
-
                 draw_icon: {
                     svg_file: (ICON_JUMP)
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
                 }
-                icon_walk: {width: 14, height: 14}
-
-                draw_bg: {
-                    instance radius: 2.0,
-                    border_color: #D0D5DD,
-                    border_width: 1.2,
-                    color: #EDFCF2,
-                }
-
+                icon_walk: {width: 14, height: 16, margin: {left: -1, right: 2}}
                 text: "Jump to Read Receipt"
-                draw_text:{
-                    text_style: <REGULAR_TEXT>{font_size: 10},
-                    color: #x0
-                }
             }
 
             block_user_button = <MoxinButton> {
-                width: Fit,
-                height: Fit,
-                padding: {top: 10, bottom: 10, left: 14, right: 14}
-                spacing: 10
-
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
+                    color: (COLOR_DANGER_RED),
                 }
-                icon_walk: {width: 14, height: 14}
+                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
                 draw_bg: {
-                    instance radius: 2.0,
-                    border_color: #D0D5DD,
-                    border_width: 1.2,
-                    color: #EDFCF2,
+                    border_color: (COLOR_DANGER_RED),
+                    color: #fff0f0
                 }
-
                 text: "Ignore/Block User"
                 draw_text:{
-                    text_style: <REGULAR_TEXT>{font_size: 10},
-                    color: #x0
+                    color: (COLOR_DANGER_RED),
                 }
             }
-
         }
     }
 
@@ -334,20 +281,19 @@ live_design! {
         //     }
 
 
-            // The "X" close button on the top left
-            <View> {
+            main_content = <FadeView> {
                 width: Fill,
-                height: Fit,
-                flow: Right
-                align: {x: 0.0, y: 0.0}
+                height: Fill
+                flow: Overlay,
 
-                padding: 8.0
-
+                // The "X" close button on the top left
                 close_button = <MoxinButton> {
+                    padding: 10,
                     width: Fit,
                     height: Fit,
+                    align: {x: 0.0, y: 0.0},
 
-                    margin: {top: -8}
+                    margin: -15,
 
                     draw_icon: {
                         svg_file: (ICON_CLOSE),
@@ -357,12 +303,6 @@ live_design! {
                     }
                     icon_walk: {width: 12, height: 12}
                 }
-            }
-
-
-            main_content = <FadeView> {
-                width: 300
-                height: Fill
 
                 user_profile_view = <UserProfileView> { }
             }
@@ -374,13 +314,13 @@ live_design! {
                 default: show,
                 show = {
                     redraw: true,
-                    from: {all: Forward {duration: 0.3}}
+                    from: {all: Forward {duration: 0.4}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
                 }
                 hide = {
                     redraw: true,
-                    from: {all: Forward {duration: 0.3}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
                     apply: {main_content = { width: 110, draw_bg: {opacity: 0.0} }}
                 }
@@ -426,7 +366,6 @@ impl Widget for UserProfileSlidingPane {
         };
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
-            cx.widget_action(self.widget_uid(), &scope.path, PortalAction::Close);
         }
 
         // TODO: handle button clicks for things like:
@@ -466,7 +405,6 @@ impl UserProfileSlidingPaneRef {
 
     pub fn show(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            log!("\n#########\nShowing user profile pane");
             inner.visible = true;
             inner.animator_play(cx, id!(panel.show));
             inner.redraw(cx);

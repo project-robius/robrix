@@ -22,6 +22,7 @@ use rangemap::RangeSet;
 use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
+    profile::user_profile::{ShowUserProfileAction, UserProfileSlidingPaneWidgetExt},
     shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
     sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
@@ -537,7 +538,7 @@ live_design! {
                 align: { x: 1.0 },
                 flow: Right,
 
-                <UserProfileSlidingPane> { }
+                user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
         }
     }
@@ -554,8 +555,8 @@ impl Widget for RoomScreen {
         self.view.draw_walk(cx, scope, walk)
     }
 
+    // Handle events and actions at the RoomScreen level.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
-        // Handle actions at the RoomScreen level.
         if let Event::Actions(actions) = event {
             // Handle the send message button being clicked.
             if self.button(id!(send_message_button)).clicked(&actions) {
@@ -577,6 +578,18 @@ impl Widget for RoomScreen {
                         message,
                         // TODO: support replies to specific messages, attaching mentions, rich text (html), etc.
                     });
+                }
+            }
+
+            for action in actions {
+                // Handle the action that requests to show the user profile sliding pane.
+                if let ShowUserProfileAction::ShowUserProfile(room_id, user_id) = action.as_widget_action().cast() {
+                    let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+                    pane.set_info(room_id, user_id);
+                    pane.show(cx);
+                    // TODO: Hack for error that when you first open the modal, doesnt draw until an event
+                    // this forces the entire ui to rerender, still weird that only happens the first time.
+                    self.redraw(cx);
                 }
             }
         }
@@ -844,7 +857,6 @@ impl Widget for Timeline {
                         }
                     }
                 }
-
 
                 // Handle other actions here
                 // TODO: handle actions upon an item being clicked.
