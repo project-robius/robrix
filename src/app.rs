@@ -267,42 +267,6 @@ pub struct App {
     ui: WidgetRef,
 }
 
-
-/*
-        // shared
-        crate::shared::styles::live_design(cx);
-        crate::shared::helpers::live_design(cx);
-        crate::shared::header::live_design(cx);
-        crate::shared::search_bar::live_design(cx);
-        crate::shared::popup_menu::live_design(cx);
-        crate::shared::dropdown_menu::live_design(cx);
-        crate::shared::clickable_view::live_design(cx);
-        crate::shared::avatar::live_design(cx);
-        crate::shared::text_or_image::live_design(cx);
-        crate::shared::html_or_plaintext::live_design(cx);
-
-        // home - chats
-        crate::home::home_screen::live_design(cx);
-        crate::home::rooms_list::live_design(cx);
-        crate::home::room_screen::live_design(cx);
-
-        // contacts
-        crate::contacts::contacts_screen::live_design(cx);
-        crate::contacts::contacts_group::live_design(cx);
-        crate::contacts::contacts_list::live_design(cx);
-        crate::contacts::add_contact_screen::live_design(cx);
-
-        // discover
-        crate::discover::discover_screen::live_design(cx);
-        crate::discover::moment_list::live_design(cx);
-        crate::discover::moments_screen::live_design(cx);
-
-        // profile
-        crate::profile::profile_screen::live_design(cx);
-        crate::profile::my_profile_screen::live_design(cx);
-
-*/
-
 impl LiveRegister for App {
     fn live_register(cx: &mut Cx) {
         // Order matters here, as some widget definitions depend on others.
