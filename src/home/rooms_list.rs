@@ -351,7 +351,7 @@ impl Widget for RoomsList {
                         }
                         RoomPreviewAvatar::Image(ref img_bytes) => {
                             let _ = item.avatar(id!(avatar)).show_image(
-                                None,
+                                None, // don't make room preview avatars clickable.
                                 |img| utils::load_png_or_jpg(&img, cx, img_bytes)
                             );
                         }

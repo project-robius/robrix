@@ -19,10 +19,9 @@ use matrix_sdk_ui::timeline::{
 };
 
 use rangemap::RangeSet;
-use unicode_segmentation::UnicodeSegmentation;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    profile::user_profile::{ShowUserProfileAction, UserProfileSlidingPaneWidgetExt},
+    profile::user_profile::{ShowUserProfileAction, UserProfileInfo, UserProfileSlidingPaneWidgetExt},
     shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
     sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
@@ -549,6 +548,7 @@ live_design! {
 struct RoomScreen {
     #[deref] view: View,
     #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] room_name: String,
 }
 impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -583,9 +583,12 @@ impl Widget for RoomScreen {
 
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(room_id, user_id) = action.as_widget_action().cast() {
+                if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
                     let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
-                    pane.set_info(room_id, user_id);
+                    pane.set_info(UserProfileInfo {
+                        avatar_info,
+                        room_name: self.room_name.clone(),
+                    });
                     pane.show(cx);
                     // TODO: Hack for error that when you first open the modal, doesnt draw until an event
                     // this forces the entire ui to rerender, still weird that only happens the first time.
@@ -599,8 +602,9 @@ impl Widget for RoomScreen {
 }
 impl RoomScreenRef {
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(&self, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(&self, room_name: String, room_id: OwnedRoomId) {
         let Some(mut room_screen) = self.borrow_mut() else { return };
+        room_screen.room_name = room_name;
         room_screen.room_id = Some(room_id.clone());
         room_screen.timeline(id!(timeline)).set_room(room_id);
     }
@@ -1689,19 +1693,6 @@ fn set_avatar_and_get_username(
 
     let user_id = event_tl_item.sender();
 
-    // A closure to set the item's avatar to text data,
-    // skipping the first `skip` characters of the given `name`.
-    let set_avatar_text = |name: &str, skip: usize| {
-        avatar.show_text(
-            Some((room_id.to_owned(), user_id.to_owned())),
-            name.graphemes(true)
-                .skip(skip)
-                .next()
-                .map(ToString::to_string)
-                .unwrap_or_default()
-        );
-    };
-
     // Set sender to the display name if available, otherwise the user id.
     match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
@@ -1725,29 +1716,33 @@ fn set_avatar_and_get_username(
             };
             
             // Set the username to the display name if available, otherwise the user ID after the '@'.
-            let (skip, un) = if let Some(dn) = profile.display_name.as_ref() {
-                (0, dn.to_owned())
-            } else {
-                (1, user_id.to_string())
-            };
-            username = un;
+            username = profile.display_name
+                .as_ref()
+                .cloned()
+                .unwrap_or_else(|| user_id.to_string());
 
             // Draw the avatar image if available, otherwise set the avatar to text.
             let drew_avatar_img = avatar_img.map(|data|
                 avatar.show_image(
-                    Some((room_id.to_owned(), user_id.to_owned())),
+                    Some((username.clone(), user_id.to_owned(), room_id.to_owned(), data.clone())),
                     |img| utils::load_png_or_jpg(&img, cx, &data)
                 ).is_ok()
             ).unwrap_or(false);
             
             if !drew_avatar_img {
-                set_avatar_text(&username, skip);
+                avatar.show_text(
+                    Some((user_id.to_owned(), room_id.to_owned())),
+                    username.clone(),
+                );
             }
         }
         other => {
             // log!("populate_message_view(): sender profile not ready yet for event {_other:?}");
             username = user_id.to_string();
-            set_avatar_text(&username, 1);
+            avatar.show_text(
+                    Some((user_id.to_owned(), room_id.to_owned())),
+                username.clone(),
+            );
             // If there was an error fetching the profile, treat that condition as fully drawn,
             // since we don't yet have a good way to re-request profile information.
             profile_drawn = matches!(other, TimelineDetails::Error(_));

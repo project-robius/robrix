@@ -1,5 +1,9 @@
+use std::ops::Deref;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use crate::{
+    shared::avatar::{AvatarInfo, AvatarWidgetExt},
+    utils,
+};
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -27,7 +31,7 @@ live_design! {
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
     MoxinButton = <Button> {
-        width: Fit, 
+        width: Fit,
         height: Fit,
         spacing: 10,
         padding: {top: 10, bottom: 10, left: 15, right: 15}
@@ -172,7 +176,7 @@ live_design! {
             spacing: 15,
             align: {x: 0.0, y: 0.0}
 
-            role_info_section_label = <Label> {
+            role_info_title_label = <Label> {
                 width: Fill, height: Fit
                 padding: {left: 15}
                 draw_text: {
@@ -261,56 +265,50 @@ live_design! {
 
     UserProfileSlidingPane = {{UserProfileSlidingPane}} {
         flow: Overlay,
-        width: Fit,
+        width: Fill,
         height: Fill,
+        align: {x: 1.0, y: 0}
 
-        // TODO FIXME: I would like to wrap the entire content in a RoundedView,
-        //             but it breaks everything when I try.
-
-        // wrapper = <RoundedView> {
-        //     width: Fit
-        //     height: Fit
-        //     flow: Down
-        //     padding: 10
-        //     spacing: 10
-
-        //     show_bg: true
-        //     draw_bg: {
-        //         color: #fff
-        //         radius: 3
-        //     }
-
-
-            main_content = <FadeView> {
-                width: Fill,
-                height: Fill
-                flow: Overlay,
-
-                user_profile_view = <UserProfileView> { }
-
-                // The "X" close button on the top left
-                close_button = <MoxinButton> {
-                    width: Fit,
-                    height: Fit,
-                    align: {x: 0.0, y: 0.0},
-                    margin: 5
-                    padding: 10,
-
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        fn get_color(self) -> vec4 {
-                            return #000;
-                        }
-                    }
-                    draw_bg: {
-                        color: #ccc,
-                        color_hover: #fff,
-                    }
-                    icon_walk: {width: 16, height: 16}
+        bg_view = <View> {
+            width: Fill
+            height: Fill
+            visible: false,
+            show_bg: true
+            draw_bg: {
+                fn pixel(self) -> vec4 {
+                    return vec4(0., 0., 0., 0.7)
                 }
             }
+        }
 
-        // }
+        main_content = <FadeView> {
+            width: 300,
+            height: Fill
+            flow: Overlay,
+
+            user_profile_view = <UserProfileView> { }
+
+            // The "X" close button on the top left
+            close_button = <MoxinButton> {
+                width: Fit,
+                height: Fit,
+                align: {x: 0.0, y: 0.0},
+                margin: 7,
+                padding: 10,
+
+                draw_icon: {
+                    svg_file: (ICON_CLOSE),
+                    fn get_color(self) -> vec4 {
+                        return #fff;
+                    }
+                }
+                draw_bg: {
+                    color: #777,
+                    color_hover: #fff,
+                }
+                icon_walk: {width: 16, height: 16}
+            }
+        }
 
         animator: {
             panel = {
@@ -325,7 +323,7 @@ live_design! {
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 110, draw_bg: {opacity: 0.0} }}
+                    apply: {main_content = { width: 0, draw_bg: {opacity: 0.0} }}
                 }
             }
         }
@@ -335,20 +333,42 @@ live_design! {
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum ShowUserProfileAction {
-    ShowUserProfile(OwnedRoomId, OwnedUserId),
+    ShowUserProfile(AvatarInfo),
     None,
 }
 
+#[derive(Clone, Debug)]
+pub struct UserProfileInfo {
+    pub avatar_info: AvatarInfo,
+    pub room_name: String,
+}
+impl Deref for UserProfileInfo {
+    type Target = AvatarInfo;
+    fn deref(&self) -> &Self::Target {
+        &self.avatar_info
+    }
+}
+impl UserProfileInfo {
+    fn role_in_room_title(&self) -> String {
+        if self.room_name.is_empty() {
+            format!("Role in Room ID: {}", self.room_id.as_str())
+        } else {
+            format!("Role in {}", self.room_name)
+        }
+    }
+
+    fn role_in_room(&self) -> &str {
+        // TODO: acquire a user's role in the room to set their `role_info_label``
+        "<TODO>"
+    }
+}
 
 #[derive(Live, LiveHook, Widget)]
 pub struct UserProfileSlidingPane {
-    #[deref]
-    view: View,
+    #[deref] view: View,
+    #[animator] animator: Animator,
 
-    #[animator]
-    animator: Animator,
-
-    #[rust] info: Option<(OwnedRoomId, OwnedUserId)>,
+    #[rust] info: Option<UserProfileInfo>,
 }
 
 impl Widget for UserProfileSlidingPane {
@@ -359,7 +379,8 @@ impl Widget for UserProfileSlidingPane {
         }
         // if !self.visible { return; }
 
-        // Determine whether we should close the pane.
+        // Close the pane if the close button is clicked, the back mouse button is clicked,
+        // the escape key is pressed, or the back button is pressed.
         let close_pane = match event {
             Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
             Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
@@ -369,6 +390,7 @@ impl Widget for UserProfileSlidingPane {
         };
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
+            self.view(id!(bg_view)).set_visible(false);
         }
 
         // TODO: handle button clicks for things like:
@@ -381,28 +403,33 @@ impl Widget for UserProfileSlidingPane {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some((room_id, user_id)) = self.info.clone() else {
+        let Some(info) = self.info.clone() else {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
         self.visible = true;
-        self.label(id!(user_id)).set_text(user_id.as_str());
-        self.label(id!(role_info)).set_text(&format!("Role in {}", room_id.as_str()));
 
-        // TODO: use room_id & user_id to retrieve and set other fields:
-        // * avatar
-        // * user_name
-        // * role_info_section_label
-        // * role_info_label
+        // Set the user name, using the user ID as a fallback.
+        self.label(id!(user_name)).set_text(info.user_name());
+        self.label(id!(user_id)).set_text(info.user_id.as_str());
+        self.label(id!(role_info_title_label)).set_text(&info.role_in_room_title());
+
+        // Set the avatar image, using the user name as a fallback.
+        let avatar_ref = self.avatar(id!(avatar));
+        info.avatar_img_data.as_ref()
+            .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, &data)).ok())
+            .unwrap_or_else(|| avatar_ref.show_text(None, info.user_name()));
+
+        self.label(id!(role_info_label)).set_text(info.role_in_room());
 
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl UserProfileSlidingPaneRef {
-    pub fn set_info(&self, room_id: OwnedRoomId, user_id: OwnedUserId) {
+    pub fn set_info(&self, info: UserProfileInfo) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.info = Some((room_id, user_id));
+            inner.info = Some(info);
         }
     }
 
@@ -410,6 +437,7 @@ impl UserProfileSlidingPaneRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.visible = true;
             inner.animator_play(cx, id!(panel.show));
+            inner.view(id!(bg_view)).set_visible(true);
             inner.redraw(cx);
         }
     }

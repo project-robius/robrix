@@ -378,14 +378,12 @@ impl MatchEvent for App {
             // Handle the user selecting a room to view (a RoomPreview in the RoomsList).
             if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {                
                 // Set the title of the RoomScreen's header to the room name.
-                stack_navigation.set_title(
-                    live_id!(rooms_stack_view),
-                    &room_name.unwrap_or_else(|| format!("Room {}", &room_id)),
-                );
+                let displayed_room_name = room_name.unwrap_or_else(|| format!("Room ID {}", &room_id));
+                stack_navigation.set_title(live_id!(rooms_stack_view), &displayed_room_name);
                 // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                 stack_navigation
                     .room_screen(id!(rooms_stack_view.room_screen))
-                    .set_displayed_room(room_id);
+                    .set_displayed_room(displayed_room_name, room_id);
             }
         }
     }
