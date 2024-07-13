@@ -115,3 +115,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] User profile settings screen
 - [ ] Persistence of app state to disk
 
+
+## Known problems/issues
+ - URLs do not wrap properly; that is a Makepad-side problem.
+ - Matrix-specific links are not yet fully handled (https://matrix.to/...)

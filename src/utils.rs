@@ -69,6 +69,16 @@ pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Opti
     Local.timestamp_millis_opt(millis).single()
 }
 
+/// Returns the first "letter" (Unicode grapheme) of given user name,
+/// skipping any leading "@" characters.
+pub fn user_name_first_letter(user_name: &str) -> Option<&str> {
+    use unicode_segmentation::UnicodeSegmentation;
+    user_name
+        .graphemes(true)
+        .filter(|&g| g != "@")
+        .next()
+}
+
 
 /// A const-compatible version of [`MediaFormat`].
 #[derive(Clone, Debug)]
