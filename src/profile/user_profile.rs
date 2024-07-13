@@ -30,7 +30,7 @@ live_design! {
     //
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
-    MoxinButton = <Button> {
+    UserProfileActionButton = <Button> {
         width: Fit,
         height: Fit,
         spacing: 10,
@@ -219,7 +219,7 @@ live_design! {
             padding: {left: 25, bottom: 50 }
 
 
-            direct_message_button = <MoxinButton> {
+            direct_message_button = <UserProfileActionButton> {
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
                 }
@@ -227,7 +227,7 @@ live_design! {
                 text: "Direct Message"
             }
 
-            copy_link_to_user_button = <MoxinButton> {
+            copy_link_to_user_button = <UserProfileActionButton> {
                 draw_icon: {
                     svg_file: (ICON_COPY)
                 }
@@ -235,7 +235,7 @@ live_design! {
                 text: "Copy Link to User"
             }
 
-            jump_to_read_receipt_button = <MoxinButton> {
+            jump_to_read_receipt_button = <UserProfileActionButton> {
                 draw_icon: {
                     svg_file: (ICON_JUMP)
                 }
@@ -243,7 +243,7 @@ live_design! {
                 text: "Jump to Read Receipt"
             }
 
-            block_user_button = <MoxinButton> {
+            block_user_button = <UserProfileActionButton> {
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
                     color: (COLOR_DANGER_RED),
@@ -289,7 +289,7 @@ live_design! {
             user_profile_view = <UserProfileView> { }
 
             // The "X" close button on the top left
-            close_button = <MoxinButton> {
+            close_button = <UserProfileActionButton> {
                 width: Fit,
                 height: Fit,
                 align: {x: 0.0, y: 0.0},
