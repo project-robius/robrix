@@ -112,7 +112,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Room creation
 - [ ] Room settings/info screen
 - [ ] Room members pane
-- [ ] User profile settings screen
+- [x] Side panel for info on a user in a room (click on their Avatar)
+- [ ] User settings screen
 - [ ] Persistence of app state to disk
 
 
