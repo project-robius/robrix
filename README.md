@@ -97,7 +97,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
 - [ ] Interactive reaction button, send reactions
-- [ ] Reply button, send reply
+- [ ] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [ ] Error display banners: no connection, failure to login, sync timeout.
 - [ ] Collapsible/expandable view of contiguous "small" events
 - [ ] E2EE device verification, decrypt message content
