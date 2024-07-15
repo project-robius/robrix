@@ -180,7 +180,7 @@ live_design! {
                 width: Fill, height: Fit
                 padding: {left: 15}
                 draw_text: {
-                    wrap: Line,
+                    wrap: Word,
                     text_style: <USERNAME_TEXT_STYLE>{},
                     color: #000
                 }
@@ -427,6 +427,14 @@ impl Widget for UserProfileSlidingPane {
 }
 
 impl UserProfileSlidingPaneRef {
+    /// Returns `true` if the pane is both currently visible *and*
+    /// animator is in the `show` state.
+    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
+        self.borrow().map_or(false, |inner|
+            inner.visible && inner.animator_in_state(cx, id!(panel.show))
+        )
+    }
+
     pub fn set_info(&self, info: UserProfileInfo) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.info = Some(info);
@@ -441,4 +449,6 @@ impl UserProfileSlidingPaneRef {
             inner.redraw(cx);
         }
     }
+
+
 }

@@ -557,6 +557,8 @@ impl Widget for RoomScreen {
 
     // Handle events and actions at the RoomScreen level.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
+        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+
         if let Event::Actions(actions) = event {
             // Handle the send message button being clicked.
             if self.button(id!(send_message_button)).clicked(&actions) {
@@ -584,7 +586,6 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
-                    let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
                     pane.set_info(UserProfileInfo {
                         avatar_info,
                         room_name: self.room_name.clone(),
@@ -596,10 +597,20 @@ impl Widget for RoomScreen {
                 }
             }
         }
-        // Forward the event to the inner view, and thus, the inner timeline.
-        self.view.handle_event(cx, event, scope)
+
+        // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
+        // if the user profile sliding pane is not visible.
+        if event.requires_visibility() && pane.is_currently_shown(cx) {
+            // Forward the event to the user profile sliding pane,
+            // preventing the underlying timeline view from receiving it.
+            pane.handle_event(cx, event, scope);
+        } else {
+            // Forward the event to the inner timeline view.
+            self.view.handle_event(cx, event, scope);
+        }
     }
 }
+
 impl RoomScreenRef {
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     pub fn set_displayed_room(&self, room_name: String, room_id: OwnedRoomId) {
