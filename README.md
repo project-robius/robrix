@@ -93,8 +93,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
-- [ ] Inline link previews: https://github.com/project-robius/robrix/issues/81
-- [ ] Inline reply view
+- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
+- [ ] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
 - [ ] Interactive reaction button, send reactions
 - [ ] Reply button, send reply
