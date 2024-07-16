@@ -312,7 +312,7 @@ live_design! {
 
         animator: {
             panel = {
-                default: show,
+                default: hide,
                 show = {
                     redraw: true,
                     from: {all: Forward {duration: 0.4}}
