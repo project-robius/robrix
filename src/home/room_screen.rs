@@ -618,7 +618,8 @@ impl Widget for RoomScreen {
                                 // There is no synchronous way to get the user's full profile info
                                 // including the details of their room membership,
                                 // so we fill in with the details we *do* know currently,
-                                // show the user profile sliding pane, and then fire off
+                                // show the UserProfileSlidingPane, and then after that,
+                                // the UserProfileSlidingPane itself will fire off
                                 // an async request to get the rest of the details.
                                 timeline.show_user_profile(
                                     cx,
@@ -633,17 +634,10 @@ impl Widget for RoomScreen {
                                             room_id: self.room_id.clone().unwrap(),
                                         },
                                         room_name: self.room_name.clone(),
+                                        // TODO: provide the extra `via` parameters from `matrix_to_uri.via()`.
                                         room_member: None,
                                     },
                                 );
-
-                                // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
-                                submit_async_request(MatrixRequest::GetUserProfile {
-                                    user_id: user_id.to_owned(),
-                                    room_id: self.room_id.clone(),
-                                    local_only: false,
-                                });
-
                                 link_was_handled = true;
                             }
                             MatrixId::Event(room_id, event_id) => {
