@@ -37,7 +37,7 @@ rangemap = "1.5.0"
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
 tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.10.1"
-url = "2.2.2"
+url = "2.5.0"
 emojis = "0.6.1"
 
 

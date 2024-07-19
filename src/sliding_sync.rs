@@ -5,21 +5,12 @@ use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
 use makepad_widgets::{SignalToUI, error, log};
 use matrix_sdk::{
-    Client,
-    ruma::{
-        assign,
-        OwnedRoomId,
+    config::RequestConfig, media::MediaRequest, ruma::{
         api::client::{
             session::get_login_types::v3::LoginType,
-            sync::sync_events::v4::{SyncRequestListFilters, self},
-        },
-        events::{StateEventType, FullStateEventContent, room::message::RoomMessageEventContent}, MilliSecondsSinceUnixEpoch, UInt,
-    },
-    SlidingSyncList,
-    SlidingSyncMode,
-    config::RequestConfig,
-    media::MediaRequest,
-    Room,
+            sync::sync_events::v4::{self, SyncRequestListFilters},
+        }, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomId, OwnedUserId, UInt
+    }, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, BackPaginationStatus, PaginationOptions, SlidingSyncRoomExt, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
@@ -30,7 +21,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::BTreeMap, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
-use crate::{home::{rooms_list::{self, RoomPreviewEntry, RoomsListUpdate, RoomPreviewAvatar, enqueue_rooms_list_update}, room_screen::TimelineUpdate}, media_cache::MediaCacheEntry, utils::MEDIA_THUMBNAIL_FORMAT};
+use crate::{home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::{MediaCacheEntry, AVATAR_CACHE}, profile::user_profile::{enqueue_user_profile_update, UserProfile, UserProfileUpdate}, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
 
 
@@ -128,6 +119,13 @@ pub enum MatrixRequest {
     /// This can be *very* slow depending on the number of members in the room.
     FetchRoomMembers {
         room_id: OwnedRoomId,
+    },
+    /// Request to fetch profile information for a specific user.
+    GetUserProfile {
+        user_id: OwnedUserId,
+        room_id: Option<OwnedRoomId>,
+        /// If `true`, we will not attempt to fetch missing details from the server.
+        local_only: bool,
     },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
@@ -236,6 +234,74 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     SignalToUI::set_ui_signal();
                 });
             }
+
+            MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending get user profile request: user: {user_id}, \
+                        room: {room_id:?}, local_only: {local_only}...",
+                    );
+                    let mut avatar_url: Option<OwnedMxcUri> = None;
+                    let mut update = None;
+                    if let Some(room_id) = room_id.as_ref() {
+                        if let Some(room) = client.get_room(room_id) {
+                            let member = if local_only {
+                                room.get_member_no_sync(&user_id).await
+                            } else {
+                                room.get_member(&user_id).await
+                            };
+                            if let Ok(Some(room_member)) = member {
+                                avatar_url = room_member.avatar_url().map(|u| u.to_owned());
+                                update = Some(UserProfileUpdate {
+                                    new_profile: UserProfile {
+                                        username: room_member.display_name().map(|u| u.to_owned()),
+                                        user_id: user_id.clone(),
+                                        avatar_img_data: None, // will be fetched below
+                                    },
+                                    room_member: Some((room_id.to_owned(), room_member)),
+                                });
+                            } else {
+                                log!("User profile request: user {user_id} was not a member of room {room_id}");
+                            }
+                        } else {
+                            log!("User profile request: client could not get room with ID {room_id}");
+                        }
+                    }
+
+                    if update.is_none() && !local_only {
+                        // Note: in newer versions of the SDK, `client.get_profile()` is now `client.account().get_profile()`.
+                        if let Ok(response) = client.get_profile(&user_id).await {
+                            avatar_url = response.avatar_url;
+                            update = Some(UserProfileUpdate {
+                                new_profile: UserProfile {
+                                    username: response.displayname,
+                                    user_id: user_id.clone(),
+                                    avatar_img_data: None, // will be fetched below
+                                },
+                                room_member: None,
+                            });
+                        } else {
+                            log!("User profile request: client could not get user with ID {user_id}");
+                        }
+                    }
+
+                    if let Some(mut u) = update {
+                        log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                        if let Some(uri) = avatar_url {
+                            let avatar_img_data = AVATAR_CACHE
+                                .get_media_or_fetch_async(client, uri, None)
+                                .await;
+                            u.new_profile.avatar_img_data = avatar_img_data;
+                        }
+                        enqueue_user_profile_update(u);
+                        SignalToUI::set_ui_signal();
+                    } else {
+                        log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                    }
+                });
+            }
+
+                
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = CLIENT.get() else { continue };

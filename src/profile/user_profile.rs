@@ -1,9 +1,86 @@
-use std::ops::Deref;
+use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::Deref, sync::Arc};
+use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
+use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId}};
 use crate::{
-    shared::avatar::{AvatarInfo, AvatarWidgetExt},
+    shared::avatar::AvatarWidgetExt,
     utils,
 };
+
+thread_local! {
+    /// A cache of each user's profile and the rooms they are a member of, indexed by user ID.
+    static USER_PROFILE_CACHE: RefCell<BTreeMap<OwnedUserId, UserProfileCacheEntry>> = RefCell::new(BTreeMap::new());
+}
+struct UserProfileCacheEntry {
+    user_profile: UserProfile,
+    room_members: BTreeMap<OwnedRoomId, RoomMember>,
+}
+
+/// The queue of user profile updates waiting to be processed by the UI thread's event handler.
+static PENDING_USER_PROFILE_UPDATES: SegQueue<UserProfileUpdate> = SegQueue::new();
+
+/// Enqueues a new user profile update and signals the UI
+/// such that the new update will be handled by the user profile sliding pane widget.
+pub fn enqueue_user_profile_update(update: UserProfileUpdate) {
+    PENDING_USER_PROFILE_UPDATES.push(update);
+    SignalToUI::set_ui_signal();
+}
+
+/// A fully-fetched user profile, with info about the user's membership in a given room.
+pub struct UserProfileUpdate {
+    pub new_profile: UserProfile,
+    pub room_member: Option<(OwnedRoomId, RoomMember)>,
+}
+impl Deref for UserProfileUpdate {
+    type Target = UserProfile;
+    fn deref(&self) -> &Self::Target {
+        &self.new_profile
+    }
+}
+
+/// Information retrieved about a user: their displayable name, ID, and avatar image.
+#[derive(Clone, Debug)]
+pub struct UserProfile {
+    pub user_id: OwnedUserId,
+    pub username: Option<String>,
+    pub avatar_img_data: Option<Arc<[u8]>>,
+}
+impl UserProfile {
+    /// Returns the user's displayable name, using the user ID as a fallback.
+    pub fn displayable_name(&self) -> &str {
+        if let Some(un) = self.username.as_ref() {
+            if !un.is_empty() {
+                return un.as_str();
+            }
+        }
+        self.user_id.as_str()
+    }
+
+    /// Returns the first "letter" (Unicode grapheme) of the user's name or user ID,
+    /// skipping any leading "@" characters.
+    #[allow(unused)]
+    pub fn first_letter(&self) -> &str {
+        self.username.as_deref()
+            .and_then(|un| utils::user_name_first_letter(un))
+            .or_else(|| utils::user_name_first_letter(self.user_id.as_str()))
+            .unwrap_or_default()
+    }
+}
+
+
+/// Information needed to display an avatar widget: a user profile and room ID.
+#[derive(Clone, Debug)]
+pub struct AvatarInfo {
+    pub user_profile: UserProfile,
+    pub room_id: OwnedRoomId,
+}
+impl Deref for AvatarInfo {
+    type Target = UserProfile;
+    fn deref(&self) -> &Self::Target {
+        &self.user_profile
+    }
+}
+
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -337,18 +414,20 @@ pub enum ShowUserProfileAction {
     None,
 }
 
+/// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
-pub struct UserProfileInfo {
+pub struct UserProfilePaneInfo {
     pub avatar_info: AvatarInfo,
     pub room_name: String,
+    pub room_member: Option<RoomMember>,
 }
-impl Deref for UserProfileInfo {
+impl Deref for UserProfilePaneInfo {
     type Target = AvatarInfo;
     fn deref(&self) -> &Self::Target {
         &self.avatar_info
     }
 }
-impl UserProfileInfo {
+impl UserProfilePaneInfo {
     fn role_in_room_title(&self) -> String {
         if self.room_name.is_empty() {
             format!("Role in Room ID: {}", self.room_id.as_str())
@@ -359,6 +438,7 @@ impl UserProfileInfo {
 
     fn role_in_room(&self) -> &str {
         // TODO: acquire a user's role in the room to set their `role_info_label``
+        //       Also, note that the user may not even be a member of the room.
         "<TODO>"
     }
 }
@@ -368,7 +448,7 @@ pub struct UserProfileSlidingPane {
     #[deref] view: View,
     #[animator] animator: Animator,
 
-    #[rust] info: Option<UserProfileInfo>,
+    #[rust] info: Option<UserProfilePaneInfo>,
 }
 
 impl Widget for UserProfileSlidingPane {
@@ -393,6 +473,56 @@ impl Widget for UserProfileSlidingPane {
             self.view(id!(bg_view)).set_visible(false);
         }
 
+        // Handle the user profile info being updated by a background task.
+        let mut redraw_this_pane = false;
+        if let Event::Signal = event {
+            USER_PROFILE_CACHE.with_borrow_mut(|cache| {
+                while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
+                    // If the `update` applies to the info being displayed by this
+                    // user profile sliding pane, update its `info.
+                    if let Some(our_info) = self.info.as_mut() {
+                        if our_info.user_profile.user_id == update.user_id {
+                            our_info.avatar_info.user_profile = update.new_profile.clone();
+                            // If the update also includes room member info for the room
+                            // that we're currently displaying the user profile info for, update that too.
+                            if let Some((room_id, room_member)) = update.room_member.clone() {
+                                if room_id == our_info.room_id {
+                                    our_info.room_member = Some(room_member);
+                                }
+                            }
+                            redraw_this_pane = true;
+                        }
+                    }
+                    // Insert the updated info into the cache
+                    match cache.entry(update.user_id.clone()) {
+                        Entry::Occupied(mut entry) => {
+                            let entry_mut = entry.get_mut();
+                            entry_mut.user_profile = update.new_profile;
+                            if let Some((room_id, room_member)) = update.room_member {
+                                entry_mut.room_members.insert(room_id, room_member);
+                            }
+                        }
+                        Entry::Vacant(entry) => {
+                            let mut room_members_map = BTreeMap::new();
+                            if let Some((room_id, room_member)) = update.room_member {
+                                room_members_map.insert(room_id, room_member);
+                            }
+                            entry.insert(
+                                UserProfileCacheEntry {
+                                    user_profile: update.new_profile,
+                                    room_members: room_members_map,
+                                }
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
+        if redraw_this_pane {
+            self.redraw(cx);
+        }
+
         // TODO: handle button clicks for things like:
         // * direct_message_button
         // * copy_link_to_user_button
@@ -410,7 +540,7 @@ impl Widget for UserProfileSlidingPane {
         self.visible = true;
 
         // Set the user name, using the user ID as a fallback.
-        self.label(id!(user_name)).set_text(info.user_name());
+        self.label(id!(user_name)).set_text(info.displayable_name());
         self.label(id!(user_id)).set_text(info.user_id.as_str());
         self.label(id!(role_info_title_label)).set_text(&info.role_in_room_title());
 
@@ -418,7 +548,7 @@ impl Widget for UserProfileSlidingPane {
         let avatar_ref = self.avatar(id!(avatar));
         info.avatar_img_data.as_ref()
             .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, &data)).ok())
-            .unwrap_or_else(|| avatar_ref.show_text(None, info.user_name()));
+            .unwrap_or_else(|| avatar_ref.show_text(None, info.displayable_name()));
 
         self.label(id!(role_info_label)).set_text(info.role_in_room());
 
@@ -435,7 +565,7 @@ impl UserProfileSlidingPaneRef {
         )
     }
 
-    pub fn set_info(&self, info: UserProfileInfo) {
+    pub fn set_info(&self, info: UserProfilePaneInfo) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.info = Some(info);
         }
