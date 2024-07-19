@@ -12,7 +12,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 
 use crate::{
-    profile::user_profile::ShowUserProfileAction,
+    profile::user_profile::{AvatarInfo, ShowUserProfileAction, UserProfile},
     utils,
 };
 
@@ -88,32 +88,6 @@ live_design! {
 }
 
 
-#[derive(Clone, Debug)]
-pub struct AvatarInfo {
-    pub user_name: String,
-    pub user_id: OwnedUserId,
-    pub room_id: OwnedRoomId,
-    pub avatar_img_data: Option<Arc<[u8]>>,
-}
-impl AvatarInfo {
-    pub fn user_name(&self) -> &str {
-        if self.user_name.is_empty() {
-            self.user_id.as_str()
-        } else {
-            self.user_name.as_str()
-        }
-    }
-
-    /// Returns the first "letter" (Unicode grapheme) of the user's name or user ID,
-    /// skipping any leading "@" characters.
-    pub fn first_letter(&self) -> &str {
-        utils::user_name_first_letter(&self.user_name)
-            .or_else(|| utils::user_name_first_letter(self.user_id.as_str()))
-            .unwrap_or_default()
-    }
-}
-
-
 #[derive(LiveHook, Live, Widget)]
 pub struct Avatar {
     #[deref] view: View,
@@ -163,23 +137,28 @@ impl Avatar {
     /// and the image invisible.
     ///
     /// ## Arguments
-    /// * `info`: information about the user represented by this avatar.
+    /// * `info`: information about the user represented by this avatar, including a tuple of
+    ///    the user ID, displayable user name, and room ID.
     ///    * Set this to `Some` to enable a user to click/tap on the Avatar itself.
     ///    * Set this to `None` to disable the click/tap action.
-    /// * `user_name`: the displayable user name for this avatar.
+    /// * `username`: the displayable text for this avatar, either a user name or user ID.
     ///    Only the first non-`@` letter (Unicode grapheme) is displayed.
     pub fn show_text<T: AsRef<str>>(
         &mut self,
-        info: Option<(OwnedUserId, OwnedRoomId)>,
-        user_name: T,
+        info: Option<(OwnedUserId, Option<String>, OwnedRoomId)>,
+        username: T,
     ) {
-        self.info = info.map(|(user_id, room_id)| AvatarInfo {
-            user_name: user_name.as_ref().to_string(),
-            user_id,
-            room_id,
-            avatar_img_data: None,
-        });
-        self.set_text(user_name.as_ref());
+        self.info = info.map(|(user_id, username, room_id)|
+            AvatarInfo {
+                user_profile: UserProfile {
+                    user_id,
+                    username,
+                    avatar_img_data: None,
+                },
+                room_id,
+            }
+        );
+        self.set_text(username.as_ref());
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -196,23 +175,27 @@ impl Avatar {
     ///    If `image_set_function` returns an error, no change is made to the avatar.
     pub fn show_image<F, E>(
         &mut self,
-        info: Option<(String, OwnedUserId, OwnedRoomId, Arc<[u8]>)>,
+        info: Option<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)>,
         image_set_function: F,
     ) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
     {
-        self.info = info.map(|(user_name, user_id, room_id, img_data)| AvatarInfo {
-            user_name,
-            user_id,
-            room_id,
-            avatar_img_data: Some(img_data),
-        });
-
         let img_ref = self.image(id!(img_view.img));
         let res = image_set_function(img_ref);
         if res.is_ok() {
             self.view(id!(img_view)).set_visible(true);
             self.view(id!(text_view)).set_visible(false);
+
+            self.info = info.map(|(user_id, username, room_id, img_data)|
+                AvatarInfo {
+                    user_profile: UserProfile {
+                        user_id,
+                        username,
+                        avatar_img_data: Some(img_data),
+                    },
+                    room_id,
+                }
+            );
         }
         res
     }
@@ -231,18 +214,18 @@ impl AvatarRef {
     /// See [`Avatar::show_text()`].
     pub fn show_text<T: AsRef<str>>(
         &self,
-        info: Option<(OwnedUserId, OwnedRoomId)>,
-        user_name: T,
+        info: Option<(OwnedUserId, Option<String>, OwnedRoomId)>,
+        username: T,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_text(info, user_name);
+            inner.show_text(info, username);
         }
     }
 
     /// See [`Avatar::show_image()`].
     pub fn show_image<F, E>(
         &self,
-        info: Option<(String, OwnedUserId, OwnedRoomId, Arc<[u8]>)>,
+        info: Option<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)>,
         image_set_function: F,
     ) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>

@@ -1,9 +1,85 @@
-use std::ops::Deref;
+use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::Deref, sync::Arc};
+use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
+use matrix_sdk::{room::RoomMember, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
 use crate::{
-    shared::avatar::{AvatarInfo, AvatarWidgetExt},
-    utils,
+    shared::avatar::AvatarWidgetExt, sliding_sync::{submit_async_request, MatrixRequest}, utils
 };
+
+thread_local! {
+    /// A cache of each user's profile and the rooms they are a member of, indexed by user ID.
+    static USER_PROFILE_CACHE: RefCell<BTreeMap<OwnedUserId, UserProfileCacheEntry>> = RefCell::new(BTreeMap::new());
+}
+struct UserProfileCacheEntry {
+    user_profile: UserProfile,
+    room_members: BTreeMap<OwnedRoomId, RoomMember>,
+}
+
+/// The queue of user profile updates waiting to be processed by the UI thread's event handler.
+static PENDING_USER_PROFILE_UPDATES: SegQueue<UserProfileUpdate> = SegQueue::new();
+
+/// Enqueues a new user profile update and signals the UI
+/// such that the new update will be handled by the user profile sliding pane widget.
+pub fn enqueue_user_profile_update(update: UserProfileUpdate) {
+    PENDING_USER_PROFILE_UPDATES.push(update);
+    SignalToUI::set_ui_signal();
+}
+
+/// A fully-fetched user profile, with info about the user's membership in a given room.
+pub struct UserProfileUpdate {
+    pub new_profile: UserProfile,
+    pub room_member: Option<(OwnedRoomId, RoomMember)>,
+}
+impl Deref for UserProfileUpdate {
+    type Target = UserProfile;
+    fn deref(&self) -> &Self::Target {
+        &self.new_profile
+    }
+}
+
+/// Information retrieved about a user: their displayable name, ID, and avatar image.
+#[derive(Clone, Debug)]
+pub struct UserProfile {
+    pub user_id: OwnedUserId,
+    pub username: Option<String>,
+    pub avatar_img_data: Option<Arc<[u8]>>,
+}
+impl UserProfile {
+    /// Returns the user's displayable name, using the user ID as a fallback.
+    pub fn displayable_name(&self) -> &str {
+        if let Some(un) = self.username.as_ref() {
+            if !un.is_empty() {
+                return un.as_str();
+            }
+        }
+        self.user_id.as_str()
+    }
+
+    /// Returns the first "letter" (Unicode grapheme) of the user's name or user ID,
+    /// skipping any leading "@" characters.
+    #[allow(unused)]
+    pub fn first_letter(&self) -> &str {
+        self.username.as_deref()
+            .and_then(|un| utils::user_name_first_letter(un))
+            .or_else(|| utils::user_name_first_letter(self.user_id.as_str()))
+            .unwrap_or_default()
+    }
+}
+
+
+/// Information needed to display an avatar widget: a user profile and room ID.
+#[derive(Clone, Debug)]
+pub struct AvatarInfo {
+    pub user_profile: UserProfile,
+    pub room_id: OwnedRoomId,
+}
+impl Deref for AvatarInfo {
+    type Target = UserProfile;
+    fn deref(&self) -> &Self::Target {
+        &self.user_profile
+    }
+}
+
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -176,7 +252,7 @@ live_design! {
             spacing: 15,
             align: {x: 0.0, y: 0.0}
 
-            role_info_title_label = <Label> {
+            membership_title_label = <Label> {
                 width: Fill, height: Fit
                 padding: {left: 15}
                 draw_text: {
@@ -184,7 +260,18 @@ live_design! {
                     text_style: <USERNAME_TEXT_STYLE>{},
                     color: #000
                 }
-                text: "Role in this room"
+                text: "Membership in this room"
+            }
+
+            membership_status_label = <Label> {
+                width: Fill, height: Fit
+                padding: {left: 30}
+                draw_text: {
+                    wrap: Line,
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
+                }
+                text: "Unknown"
             }
 
             role_info_label = <Label> {
@@ -195,7 +282,7 @@ live_design! {
                     color: (MESSAGE_TEXT_COLOR),
                     text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
                 }
-                text: "Default"
+                text: "Unknown"
             }
 
             <LineH> { padding: 15 }
@@ -337,29 +424,52 @@ pub enum ShowUserProfileAction {
     None,
 }
 
+/// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
-pub struct UserProfileInfo {
+pub struct UserProfilePaneInfo {
     pub avatar_info: AvatarInfo,
     pub room_name: String,
+    pub room_member: Option<RoomMember>,
 }
-impl Deref for UserProfileInfo {
+impl Deref for UserProfilePaneInfo {
     type Target = AvatarInfo;
     fn deref(&self) -> &Self::Target {
         &self.avatar_info
     }
 }
-impl UserProfileInfo {
-    fn role_in_room_title(&self) -> String {
+impl UserProfilePaneInfo {
+    fn membership_title(&self) -> String {
         if self.room_name.is_empty() {
-            format!("Role in Room ID: {}", self.room_id.as_str())
+            format!("Membership in Room {}", self.room_id.as_str())
         } else {
-            format!("Role in {}", self.room_name)
+            format!("Membership in {}", self.room_name)
         }
     }
 
-    fn role_in_room(&self) -> &str {
-        // TODO: acquire a user's role in the room to set their `role_info_label``
-        "<TODO>"
+    fn membership_status(&self) -> &str {
+        self.room_member.as_ref().map_or(
+            "Not a Member",
+            |member| match member.membership() {
+                MembershipState::Join => "Status: Joined",
+                MembershipState::Leave => "Status: Left",
+                MembershipState::Ban => "Status: Banned",
+                MembershipState::Invite => "Status: Invited",
+                MembershipState::Knock => "Status: Knocking",
+                _ => "Status: Unknown",
+            }
+        )
+    }
+
+    fn role_in_room(&self) -> Cow<'_, str> {
+        self.room_member.as_ref().map_or(
+            "Role: Unknown".into(),
+            |member| match member.normalized_power_level() {
+                100 => "Role: Owner".into(),
+                50  => "Role: Moderator".into(),
+                0   => "Role: Default".into(),
+                c   => format!("Role: Power Level {c}").into(),
+            }
+        )
     }
 }
 
@@ -368,7 +478,7 @@ pub struct UserProfileSlidingPane {
     #[deref] view: View,
     #[animator] animator: Animator,
 
-    #[rust] info: Option<UserProfileInfo>,
+    #[rust] info: Option<UserProfilePaneInfo>,
 }
 
 impl Widget for UserProfileSlidingPane {
@@ -393,6 +503,56 @@ impl Widget for UserProfileSlidingPane {
             self.view(id!(bg_view)).set_visible(false);
         }
 
+        // Handle the user profile info being updated by a background task.
+        let mut redraw_this_pane = false;
+        if let Event::Signal = event {
+            USER_PROFILE_CACHE.with_borrow_mut(|cache| {
+                while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
+                    // If the `update` applies to the info being displayed by this
+                    // user profile sliding pane, update its `info.
+                    if let Some(our_info) = self.info.as_mut() {
+                        if our_info.user_profile.user_id == update.user_id {
+                            our_info.avatar_info.user_profile = update.new_profile.clone();
+                            // If the update also includes room member info for the room
+                            // that we're currently displaying the user profile info for, update that too.
+                            if let Some((room_id, room_member)) = update.room_member.clone() {
+                                if room_id == our_info.room_id {
+                                    our_info.room_member = Some(room_member);
+                                }
+                            }
+                            redraw_this_pane = true;
+                        }
+                    }
+                    // Insert the updated info into the cache
+                    match cache.entry(update.user_id.clone()) {
+                        Entry::Occupied(mut entry) => {
+                            let entry_mut = entry.get_mut();
+                            entry_mut.user_profile = update.new_profile;
+                            if let Some((room_id, room_member)) = update.room_member {
+                                entry_mut.room_members.insert(room_id, room_member);
+                            }
+                        }
+                        Entry::Vacant(entry) => {
+                            let mut room_members_map = BTreeMap::new();
+                            if let Some((room_id, room_member)) = update.room_member {
+                                room_members_map.insert(room_id, room_member);
+                            }
+                            entry.insert(
+                                UserProfileCacheEntry {
+                                    user_profile: update.new_profile,
+                                    room_members: room_members_map,
+                                }
+                            );
+                        }
+                    }
+                }
+            });
+        }
+
+        if redraw_this_pane {
+            self.redraw(cx);
+        }
+
         // TODO: handle button clicks for things like:
         // * direct_message_button
         // * copy_link_to_user_button
@@ -410,45 +570,85 @@ impl Widget for UserProfileSlidingPane {
         self.visible = true;
 
         // Set the user name, using the user ID as a fallback.
-        self.label(id!(user_name)).set_text(info.user_name());
+        self.label(id!(user_name)).set_text(info.displayable_name());
         self.label(id!(user_id)).set_text(info.user_id.as_str());
-        self.label(id!(role_info_title_label)).set_text(&info.role_in_room_title());
 
         // Set the avatar image, using the user name as a fallback.
         let avatar_ref = self.avatar(id!(avatar));
         info.avatar_img_data.as_ref()
             .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, &data)).ok())
-            .unwrap_or_else(|| avatar_ref.show_text(None, info.user_name()));
+            .unwrap_or_else(|| avatar_ref.show_text(None, info.displayable_name()));
 
-        self.label(id!(role_info_label)).set_text(info.role_in_room());
+        // Set the membership status and role in the room.
+        self.label(id!(membership_title_label)).set_text(&info.membership_title());
+        self.label(id!(membership_status_label)).set_text(info.membership_status());
+        self.label(id!(role_info_label)).set_text(info.role_in_room().as_ref());
 
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
-impl UserProfileSlidingPaneRef {
+
+impl UserProfileSlidingPane {
     /// Returns `true` if the pane is both currently visible *and*
     /// animator is in the `show` state.
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        self.borrow().map_or(false, |inner|
-            inner.visible && inner.animator_in_state(cx, id!(panel.show))
-        )
+        self.visible && self.animator_in_state(cx, id!(panel.show))
     }
 
-    pub fn set_info(&self, info: UserProfileInfo) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.info = Some(info);
+    /// Sets the info to be displayed in this user profile sliding pane.
+    ///
+    /// If the `room_member` field is `None`, this function will attempt to
+    /// retrieve the user's room membership info from the local cache.
+    /// If the user's room membership info is not found in the cache,
+    /// it will submit a request to asynchronously fetch it from the server.
+    pub fn set_info(&mut self, mut info: UserProfilePaneInfo) {
+        if info.room_member.is_none() {
+            USER_PROFILE_CACHE.with_borrow(|cache| {
+                if let Some(entry) = cache.get(&info.user_id) {
+                    if let Some(room_member) = entry.room_members.get(&info.room_id) {
+                        log!("Found user {} room member info in cache", info.user_id);
+                        info.room_member = Some(room_member.clone());
+                    }
+                }
+            });
         }
+        if info.room_member.is_none() {
+            log!("Did not find user {} room member info in cache, fetching from server.", info.user_id);
+            // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
+            submit_async_request(MatrixRequest::GetUserProfile {
+                user_id: info.user_id.to_owned(),
+                room_id: Some(info.room_id.clone()),
+                local_only: false,
+            });
+        }
+        self.info = Some(info);
     }
 
+    pub fn show(&mut self, cx: &mut Cx) {
+        self.visible = true;
+        self.animator_play(cx, id!(panel.show));
+        self.view(id!(bg_view)).set_visible(true);
+        self.redraw(cx);
+    }
+}
+
+impl UserProfileSlidingPaneRef {
+    /// See [`UserProfileSlidingPane::is_currently_shown()`]
+    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_currently_shown(cx)
+    }
+
+    /// See [`UserProfileSlidingPane::set_info()`]
+    pub fn set_info(&self, info: UserProfilePaneInfo) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_info(info);
+    }
+
+    /// See [`UserProfileSlidingPane::show()`]
     pub fn show(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.visible = true;
-            inner.animator_play(cx, id!(panel.show));
-            inner.view(id!(bg_view)).set_visible(true);
-            inner.redraw(cx);
-        }
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show(cx);
     }
-
-
 }
