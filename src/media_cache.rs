@@ -3,9 +3,72 @@ use makepad_widgets::{error, log};
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::{MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}};
 
-pub static AVATAR_CACHE: Mutex<MediaCache> = Mutex::new(MediaCache::new(MEDIA_THUMBNAIL_FORMAT, None));
-
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
+
+pub static AVATAR_CACHE: MediaCacheLocked = MediaCacheLocked(Mutex::new(MediaCache::new(MEDIA_THUMBNAIL_FORMAT, None)));
+
+pub struct MediaCacheLocked(Mutex<MediaCache>);
+impl Deref for MediaCacheLocked {
+    type Target = Mutex<MediaCache>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl MediaCacheLocked {
+    /// Similar to [`Self::try_get_media_or_fetch()`], but immediately fires off an async request
+    /// on the current task to fetch the media, blocking until the request completes.
+    ///
+    /// Unlike other functions, this is intended for use in background tasks or other async contexts
+    /// where it is not latency-sensitive, and safe to block on the async request.
+    /// Thus, it must be implemented on the `MediaCacheLocked` type, which is safe to hold a reference to
+    /// across an await point, whereas a mutable reference to a locked `MediaCache` is not (i.e., a `MutexGuard`).
+    pub async fn get_media_or_fetch_async(
+        &self,
+        client: &matrix_sdk::Client,
+        mxc_uri: OwnedMxcUri,
+        media_format: Option<MediaFormat>,
+    ) -> Option<Arc<[u8]>> {
+        let destination = {
+            match self.lock().unwrap().entry(mxc_uri.clone()) {
+                Entry::Vacant(vacant) => vacant
+                    .insert(Arc::new(Mutex::new(MediaCacheEntry::Requested)))
+                    .clone(),
+                Entry::Occupied(occupied) => match occupied.get().lock().unwrap().deref() {
+                    MediaCacheEntry::Loaded(data) => return Some(data.clone()),
+                    MediaCacheEntry::Failed => return None,
+                    // If already requested (a fetch is in process),
+                    // we return None for now and allow the `insert_into_cache` function
+                    // emit a UI Signal when the fetch completes,
+                    // which will trigger a re-draw of the UI,
+                    // and thus a re-fetch of any visible avatars.
+                    MediaCacheEntry::Requested => return None,
+                }
+            }
+        };
+
+        let media_request = MediaRequest {
+            source: MediaSource::Plain(mxc_uri),
+            format: media_format.unwrap_or_else(|| self.lock().unwrap().default_format.clone().into()),
+        };
+
+        let res = client
+            .media()
+            .get_media_content(&media_request, true)
+            .await;
+        let res: matrix_sdk::Result<Arc<[u8]>> = res.map(|d| d.into());
+        let retval = res
+            .as_ref()
+            .ok()
+            .cloned();
+        insert_into_cache(
+            &destination,
+            media_request,
+            res,
+            None,
+        );
+        retval
+    }
+}
 
 /// An entry in the media cache. 
 #[derive(Debug, Clone)]
@@ -97,18 +160,18 @@ impl MediaCache {
         );
         MediaCacheEntry::Requested
     }
-
 }
 
 /// Insert data into a previously-requested media cache entry.
-fn insert_into_cache(
+fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
     _request: MediaRequest,
-    data: matrix_sdk::Result<Vec<u8>>,
+    data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     let new_value = match data {
         Ok(data) => {
+            let data = data.into();
             
             // debugging: dump out the media image to disk
             if false {
@@ -127,7 +190,7 @@ fn insert_into_cache(
                 }
             }
 
-            MediaCacheEntry::Loaded(data.into())
+            MediaCacheEntry::Loaded(data)
         }
         Err(e) => {
             error!("Failed to fetch media for {:?}: {e:?}", _request.source);

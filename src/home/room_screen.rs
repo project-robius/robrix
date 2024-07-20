@@ -11,8 +11,9 @@ use matrix_sdk::ruma::{
             guest_access::GuestAccess,
             history_visibility::HistoryVisibility,
             join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
-        }, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent
-    }, uint, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
+        },
+        AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
+    }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
 };
 use matrix_sdk_ui::timeline::{
     self, AnyOtherFullStateEventContent, BundledReactions, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -21,7 +22,7 @@ use matrix_sdk_ui::timeline::{
 use rangemap::RangeSet;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    profile::user_profile::{ShowUserProfileAction, UserProfileInfo, UserProfileSlidingPaneWidgetExt},
+    profile::user_profile::{AvatarInfo, ShowUserProfileAction, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
     shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
     sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
@@ -568,6 +569,7 @@ impl Widget for RoomScreen {
     // Handle events and actions at the RoomScreen level.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let timeline = self.timeline(id!(timeline));
 
         if let Event::Actions(actions) = event {
             // Handle the send message button being clicked.
@@ -611,14 +613,93 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
-                    pane.set_info(UserProfileInfo {
-                        avatar_info,
-                        room_name: self.room_name.clone(),
-                    });
-                    pane.show(cx);
-                    // TODO: Hack for error that when you first open the modal, doesnt draw until an event
-                    // this forces the entire ui to rerender, still weird that only happens the first time.
-                    self.redraw(cx);
+                    timeline.show_user_profile(
+                        cx,
+                        &pane,
+                        UserProfilePaneInfo {
+                            avatar_info,
+                            room_name: self.room_name.clone(),
+                            room_member: None,
+                        },
+                    );
+                }
+
+                // Handle a link being clicked.
+                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+                    let mut link_was_handled = false;
+                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                        match matrix_to_uri.id() {
+                            MatrixId::Room(room_id) => {
+                                log!("TODO: open room {}", room_id);
+                                link_was_handled = true;
+                            }
+                            MatrixId::RoomAlias(room_alias) => {
+                                log!("TODO: open room alias {}", room_alias);
+                                link_was_handled = true;
+                            }
+                            MatrixId::User(user_id) => {
+                                log!("Opening matrix.to user link for {}", user_id);
+
+                                // There is no synchronous way to get the user's full profile info
+                                // including the details of their room membership,
+                                // so we fill in with the details we *do* know currently,
+                                // show the UserProfileSlidingPane, and then after that,
+                                // the UserProfileSlidingPane itself will fire off
+                                // an async request to get the rest of the details.
+                                timeline.show_user_profile(
+                                    cx,
+                                    &pane,
+                                    UserProfilePaneInfo {
+                                        avatar_info: AvatarInfo {
+                                            user_profile: UserProfile {
+                                                user_id: user_id.to_owned(),
+                                                username: None,
+                                                avatar_img_data: None,
+                                            },
+                                            room_id: self.room_id.clone().unwrap(),
+                                        },
+                                        room_name: self.room_name.clone(),
+                                        // TODO: provide the extra `via` parameters from `matrix_to_uri.via()`.
+                                        room_member: None,
+                                    },
+                                );
+                                link_was_handled = true;
+                            }
+                            MatrixId::Event(room_id, event_id) => {
+                                log!("TODO: open event {} in room {}", event_id, room_id);
+                                link_was_handled = true;
+                            }
+                            _ => { } 
+                        }
+                    }
+
+                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                        match matrix_uri.id() {
+                            MatrixId::Room(room_id) => {
+                                log!("TODO: open room {}", room_id);
+                                link_was_handled = true;
+                            }
+                            MatrixId::RoomAlias(room_alias) => {
+                                log!("TODO: open room alias {}", room_alias);
+                                link_was_handled = true;
+                            }
+                            MatrixId::User(user_id) => {
+                                log!("TODO: open user {}", user_id);
+                                link_was_handled = true;
+                            }
+                            MatrixId::Event(room_id, event_id) => {
+                                log!("TODO: open event {} in room {}", event_id, room_id);
+                                link_was_handled = true;
+                            }
+                            _ => { } 
+                        }
+                    }
+                    
+                    if !link_was_handled {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                        }
+                    }
                 }
             }
         }
@@ -857,6 +938,20 @@ impl TimelineRef {
         let Some(mut timeline) = self.borrow_mut() else { return };
         timeline.room_id = Some(room_id);
     }
+
+    /// Shows the user profile sliding pane with the given avatar info.
+    fn show_user_profile(
+        &self,
+        cx: &mut Cx,
+        pane: &UserProfileSlidingPaneRef,
+        info: UserProfilePaneInfo,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        pane.set_info(info);
+        pane.show(cx);
+        // Not sure if this redraw is necessary
+        inner.redraw(cx);
+    }
 }
 
 impl Widget for Timeline {
@@ -877,25 +972,6 @@ impl Widget for Timeline {
                     StackNavigationTransitionAction::HideEnd
                     | StackNavigationTransitionAction::ShowDone
                     | StackNavigationTransitionAction::None => { }
-                }
-
-                // Handle a link being clicked.
-                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-                    if url.starts_with("https://matrix.to/#/") {
-                        log!("TODO: handle Matrix link internally: {url:?}");
-                        // TODO: show a pop-up pane with the user's profile, or a room preview pane.
-                        //
-                        // There are four kinds of matrix.to schemes:
-                        // See here: <https://github.com/matrix-org/matrix.to?tab=readme-ov-file#url-scheme>
-                        // 1. Rooms: https://matrix.to/#/#matrix:matrix.org
-                        // 2. Rooms by ID: https://matrix.to/#/!cURbafjkfsMDVwdRDQ:matrix.org
-                        // 3. Users: https://matrix.to/#/@matthew:matrix.org
-                        // 4. Messages: https://matrix.to/#/#matrix:matrix.org/$1448831580433WbpiJ:jki.re
-                    } else {
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                        }
-                    }
                 }
 
                 // Handle other actions here
@@ -974,6 +1050,7 @@ impl Widget for Timeline {
         // Forward events to this Timeline's inner child view.
         self.view.handle_event(cx, event, scope);
     }
+
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let Some(tl_state) = self.tl_state.as_mut() else {
@@ -1752,36 +1829,36 @@ fn set_avatar_and_get_username(
             };
             
             // Set the username to the display name if available, otherwise the user ID after the '@'.
-            username = profile.display_name
-                .as_ref()
-                .cloned()
-                .unwrap_or_else(|| user_id.to_string());
+            let username_opt = profile.display_name.clone();
+            username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
 
             // Draw the avatar image if available, otherwise set the avatar to text.
             let drew_avatar_img = avatar_img.map(|data|
                 avatar.show_image(
-                    Some((username.clone(), user_id.to_owned(), room_id.to_owned(), data.clone())),
+                    Some((user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
                     |img| utils::load_png_or_jpg(&img, cx, &data)
                 ).is_ok()
             ).unwrap_or(false);
             
             if !drew_avatar_img {
                 avatar.show_text(
-                    Some((user_id.to_owned(), room_id.to_owned())),
-                    username.clone(),
+                    Some((user_id.to_owned(), username_opt, room_id.to_owned())),
+                    &username,
                 );
             }
         }
-        other => {
-            // log!("populate_message_view(): sender profile not ready yet for event {_other:?}");
+
+        // If the profile is not ready, use the user ID for both the username and the avatar.
+        not_ready => {
+            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
             username = user_id.to_string();
             avatar.show_text(
-                    Some((user_id.to_owned(), room_id.to_owned())),
-                username.clone(),
+                    Some((user_id.to_owned(), None, room_id.to_owned())),
+                &username,
             );
             // If there was an error fetching the profile, treat that condition as fully drawn,
             // since we don't yet have a good way to re-request profile information.
-            profile_drawn = matches!(other, TimelineDetails::Error(_));
+            profile_drawn = matches!(not_ready, TimelineDetails::Error(_));
         }
     }
 
