@@ -48,6 +48,7 @@ live_design! {
     ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
+    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     TEXT_SUB = {
         font_size: (10),
@@ -69,6 +70,9 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
+
+    // Threshold to determine after how many messages scrolled past above the jump to bottom button appears
+    YOUR_THRESHOLD = 10.0;
     
     FillerY = <View> {width: Fill}
     
@@ -414,8 +418,14 @@ live_design! {
             DayDivider = <DayDivider> {}
             ReadMarker = <ReadMarker> {}
         }
-    }
 
+        // Add jump to bottom button with circular background
+        jump_to_bottom_button = <IconButton> {
+            draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+            icon_walk: {width: 15.0, height: Fit}
+        }
+        
+    }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
@@ -438,7 +448,7 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
-                
+
                 // Below that, display a view that holds the message input bar.
                 <View> {
                     width: Fill, height: Fit
@@ -580,6 +590,21 @@ impl Widget for RoomScreen {
                         message,
                         // TODO: support replies to specific messages, attaching mentions, rich text (html), etc.
                     });
+                }
+            }
+
+            // Handle the jump to bottom button being clicked.
+            if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
+                let max_delta : usize= 100;
+                let speed : f64 = 1000.0;
+                // Access Timeline and then its PortalList
+                if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
+                    // Access the PortalListRef within Timeline
+                    let mut portal_list = timeline.portal_list(id!(list));
+                    // Call smooth_scroll_to_end on the PortalList
+                    portal_list.smooth_scroll_to_end(cx, max_delta, speed);
+                } else {
+                    log!("Timeline is not available");
                 }
             }
 
