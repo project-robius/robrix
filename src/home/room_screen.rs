@@ -71,9 +71,6 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-
-    // Threshold to determine after how many messages scrolled past above the jump to bottom button appears
-    YOUR_THRESHOLD = 10.0;
     
     FillerY = <View> {width: Fill}
     
@@ -420,7 +417,7 @@ live_design! {
             ReadMarker = <ReadMarker> {}
         }
 
-        // Add jump to bottom button with circular background
+        // Add jump to bottom button
         jump_to_bottom_button = <IconButton> {
             draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
             icon_walk: {width: 15.0, height: Fit}
