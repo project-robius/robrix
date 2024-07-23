@@ -398,6 +398,7 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
+        flow: Overlay,
 
         list = <PortalList> {
             auto_tail: true, // set to `true` to lock the view to the last item.
@@ -417,10 +418,32 @@ live_design! {
             ReadMarker = <ReadMarker> {}
         }
 
-        // Add jump to bottom button
-        jump_to_bottom_button = <IconButton> {
-            draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-            icon_walk: {width: 15.0, height: Fit}
+        // A jump to bottom button that appears when the timeline is not at the bottom.
+        jump_to_bottom_view = <View> {
+            width: Fill,
+            height: Fill,
+            flow: Down,
+            align: {x: 1.0, y: 1.0},
+            margin: {right: 15.0, bottom: 15.0},
+            // TODO: set `visible: false` by default. Then, in the Rust code,
+            //       set `visible: true` when the timeline is not scrolled to bottom.
+
+            jump_to_bottom_button = <IconButton> {
+                width: 50, height: 50,
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                // draw a circular background for the button
+                draw_bg: {
+                    instance background_color: #edededee,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x)
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result
+                    }
+                }
+            }
         }
         
     }
@@ -592,19 +615,12 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the jump to bottom button being clicked.
+            // If the jump to bottom button was clicked, auto-scroll to the bottom.
             if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                let max_delta : usize= 100;
-                let speed : f64 = 1000.0;
-                // Access Timeline and then its PortalList
-                if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
-                    // Access the PortalListRef within Timeline
-                    let mut portal_list = timeline.portal_list(id!(list));
-                    // Call smooth_scroll_to_end on the PortalList
-                    portal_list.smooth_scroll_to_end(cx, max_delta, speed);
-                } else {
-                    log!("Timeline is not available");
-                }
+                let max_delta: usize = 100;
+                let speed: f64 = 1000.0;
+                self.portal_list(id!(timeline.list))
+                    .smooth_scroll_to_end(cx, max_delta, speed);
             }
 
             for action in actions {
