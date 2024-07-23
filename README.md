@@ -3,7 +3,7 @@
 [![Robrix Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
 [![Project Robius Matrix Chat](https://img.shields.io/matrix/robius-general%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Project%20Robius%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius:matrix.org)
 
-Robrix is a Matrix chat client written in Rust to demonstrate the functionality of the Robius, a framework for multi-platform application development in Rust.
+Robrix is a Matrix chat client written in Rust to demonstrate the functionality of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust.
 
 > ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
 >
