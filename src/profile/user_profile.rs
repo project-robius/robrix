@@ -418,7 +418,8 @@ live_design! {
 
 
             direct_message_button = <UserProfileActionButton> {
-                enabled: false, // TODO: support this button
+                // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
+                enabled: false,
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
                 }
