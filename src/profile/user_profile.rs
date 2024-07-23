@@ -626,22 +626,25 @@ impl Widget for UserProfileSlidingPane {
                     // Apply this update to the current user profile pane (if relevant).
                     if let Some(our_info) = self.info.as_mut() {
                         let val = update.apply_to_current_pane(our_info);
-                        log!("Applied user profile update to current pane, returned {}", val);
                         redraw_this_pane |= val;
                     }
                     // Insert the updated info into the cache
                     update.apply_to_cache(cache);
                 }
+
+                // TODO: it's probably better to re-fetch the user profile info from the cache here
+                //       just once, after all updates have been processed, instead of doing it
+                //       repeatedly for each update.
+                //       That also  has the side benefit of avoiding a timing issue where a UI Signal
+                //       does not happend at the same time as a user profile element being fetched,
+                //       such as an avatar coming in later after the Signal has already been handled.
             });
         }
 
         if redraw_this_pane {
-            log!("Redrawing user profile pane due to user profile update");
+            // log!("Redrawing user profile pane due to user profile update");
             self.redraw(cx);
         }
-
-        let copy_link_to_user_button = self.button(id!(copy_link_to_user_button));
-        let ignore_user_button = self.button(id!(ignore_user_button));
 
         let Some(info) = self.info.as_ref() else { return };
 
@@ -649,7 +652,7 @@ impl Widget for UserProfileSlidingPane {
 
             // TODO: handle actions for the `direct_message_button`
 
-            if copy_link_to_user_button.clicked(actions) {
+            if self.button(id!(copy_link_to_user_button)).clicked(actions) {
                 let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
                 cx.copy_to_clipboard(&matrix_to_uri);
                 // TODO: show a toast message instead of a log message
@@ -662,7 +665,7 @@ impl Widget for UserProfileSlidingPane {
 
             // The `ignore_user_button` require room membership info.
             if let Some(room_member) = info.room_member.as_ref() {
-                if ignore_user_button.clicked(actions) {
+                if self.button(id!(ignore_user_button)).clicked(actions) {
                     submit_async_request(MatrixRequest::IgnoreUser {
                         ignore: !room_member.is_ignored(),
                         room_id: info.room_id.clone(),
@@ -679,11 +682,11 @@ impl Widget for UserProfileSlidingPane {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some(info) = self.info.clone() else {
+        self.visible = true;
+        let Some(info) = self.info.as_ref() else {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
-        self.visible = true;
 
         // Set the user name, using the user ID as a fallback.
         self.label(id!(user_name)).set_text(info.displayable_name());
