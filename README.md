@@ -113,6 +113,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Room settings/info screen
 - [ ] Room members pane
 - [x] Side panel for info on a user in a room (click on their Avatar)
+- [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
 - [ ] Persistence of app state to disk
 
@@ -120,3 +121,4 @@ These are generally sorted in order of priority. If you're interested in helping
 ## Known problems/issues
  - URLs do not wrap properly; that is a Makepad-side problem.
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
+ - Ignoring/unignoring a user clears all timelines and requires an app reboot (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703)
