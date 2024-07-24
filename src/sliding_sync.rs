@@ -9,7 +9,7 @@ use matrix_sdk::{
         api::client::{
             session::get_login_types::v3::LoginType,
             sync::sync_events::v4::{self, SyncRequestListFilters},
-        }, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomId, OwnedUserId, UInt
+        }, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt
     }, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, BackPaginationStatus, PaginationOptions, SlidingSyncRoomExt, TimelineItem, TimelineItemContent}, Timeline};
@@ -142,6 +142,8 @@ pub enum MatrixRequest {
         /// which is only needed because it isn't present in the `RoomMember` object.
         room_id: OwnedRoomId,
     },
+    /// Request to resolve a room alias into a room ID and the servers that know about that room.
+    ResolveRoomAlias(OwnedRoomAliasId),
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with four arguments: the `destination`, the `media_request`,
@@ -356,6 +358,16 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                             });
                         }
                     }
+                });
+            }
+
+            MatrixRequest::ResolveRoomAlias(room_alias) => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _resolve_task = Handle::current().spawn(async move {
+                    log!("Sending resolve room alias request for {room_alias}...");
+                    let res = client.resolve_room_alias(&room_alias).await;
+                    log!("Resolved room alias {room_alias} to: {res:?}");
+                    todo!("Send the resolved room alias back to the UI thread somehow.");
                 });
             }
 

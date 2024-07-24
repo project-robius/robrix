@@ -616,6 +616,7 @@ impl Widget for UserProfileSlidingPane {
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
             self.view(id!(bg_view)).set_visible(false);
+            return;
         }
 
         // Handle the user profile info being updated by a background task.
