@@ -1,5 +1,5 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
-use makepad_widgets::{error, log};
+use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::{MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}};
 
@@ -202,4 +202,5 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     if let Some(sender) = update_sender {
         let _ = sender.send(TimelineUpdate::MediaFetched);
     }
+    SignalToUI::set_ui_signal();
 }
