@@ -1,9 +1,9 @@
 use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::Deref, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{room::RoomMember, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
+use matrix_sdk::{room::RoomMember, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
 use crate::{
-    shared::avatar::AvatarWidgetExt, sliding_sync::{submit_async_request, MatrixRequest}, utils
+    shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, submit_async_request, MatrixRequest}, utils
 };
 
 thread_local! {
@@ -25,15 +25,126 @@ pub fn enqueue_user_profile_update(update: UserProfileUpdate) {
     SignalToUI::set_ui_signal();
 }
 
-/// A fully-fetched user profile, with info about the user's membership in a given room.
-pub struct UserProfileUpdate {
-    pub new_profile: UserProfile,
-    pub room_member: Option<(OwnedRoomId, RoomMember)>,
+/// A user profile update, which can include changes to a user's full profile
+/// and/or room membership info.
+pub enum UserProfileUpdate {
+    /// A fully-fetched user profile, with info about the user's membership in a given room.
+    Full {
+        new_profile: UserProfile,
+        room_id: OwnedRoomId,
+        room_member: RoomMember,
+    },
+    /// An update to the user's room membership info only, without any profile changes.
+    RoomMemberOnly {
+        room_id: OwnedRoomId,
+        room_member: RoomMember,
+    },
+    /// An update to the user's profile only, without changes to room membership info.
+    UserProfileOnly(UserProfile),
 }
-impl Deref for UserProfileUpdate {
-    type Target = UserProfile;
-    fn deref(&self) -> &Self::Target {
-        &self.new_profile
+impl UserProfileUpdate {
+    /// Returns the user ID associated with this update.
+    #[allow(unused)]
+    pub fn user_id(&self) -> &UserId {
+        match self {
+            UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
+            UserProfileUpdate::RoomMemberOnly { room_member, .. } => &room_member.user_id(),
+            UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
+        }
+    }
+
+    /// Applies this update to the given user profile pane info,
+    /// only if the user_id and room_id match that of the update.
+    ///
+    /// Returns `true` if the update resulted in any actual content changes.
+    fn apply_to_current_pane(&self, info: &mut UserProfilePaneInfo) -> bool {
+        match self {
+            UserProfileUpdate::Full { new_profile, room_id, room_member } => {
+                if info.user_id == new_profile.user_id {
+                    info.avatar_info.user_profile = new_profile.clone();
+                    if &info.room_id == room_id {
+                        info.room_member = Some(room_member.clone());
+                    }
+                    return true;
+                }
+            }
+            UserProfileUpdate::RoomMemberOnly { room_id, room_member } => {
+                log!("Applying RoomMemberOnly update to user profile pane info: user_id={}, room_id={}, ignored={}",
+                    room_member.user_id(), room_id, room_member.is_ignored(),
+                );
+                if info.user_id == room_member.user_id() && &info.room_id == room_id {
+                    log!("RoomMemberOnly update matches user profile pane info, updating room member.");
+                    info.room_member = Some(room_member.clone());
+                    return true;
+                }
+            }
+            UserProfileUpdate::UserProfileOnly(new_profile) => {
+                if info.user_id == new_profile.user_id {
+                    info.avatar_info.user_profile = new_profile.clone();
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Applies this update to the given user profile info cache.
+    fn apply_to_cache(self, cache: &mut BTreeMap<OwnedUserId, UserProfileCacheEntry>) {
+        match self {
+            UserProfileUpdate::Full { new_profile, room_id, room_member } => {
+                match cache.entry(new_profile.user_id.to_owned()) {
+                    Entry::Occupied(mut entry) => {
+                        let entry_mut = entry.get_mut();
+                        entry_mut.user_profile = new_profile;
+                        entry_mut.room_members.insert(room_id, room_member);
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(UserProfileCacheEntry {
+                            user_profile: new_profile,
+                            room_members: {
+                                let mut room_members_map = BTreeMap::new();
+                                room_members_map.insert(room_id, room_member);
+                                room_members_map
+                            },
+                        });
+                    }
+                }
+            }
+            UserProfileUpdate::RoomMemberOnly { room_id, room_member } => {
+                match cache.entry(room_member.user_id().to_owned()) {
+                    Entry::Occupied(mut entry) =>{
+                        entry.get_mut().room_members.insert(room_id, room_member);
+                    }
+                    Entry::Vacant(entry) => {
+                        // This shouldn't happen, but we can still technically handle it correctly.
+                        warning!("BUG: User profile cache entry not found for user {} when handling RoomMemberOnly update", room_member.user_id());
+                        entry.insert(UserProfileCacheEntry {
+                            user_profile: UserProfile {
+                                user_id: room_member.user_id().to_owned(),
+                                username: None,
+                                avatar_img_data: None,
+                            },
+                            room_members: {
+                                let mut room_members_map = BTreeMap::new();
+                                room_members_map.insert(room_id, room_member);
+                                room_members_map
+                            },
+                        });
+                    }
+                }
+            }
+            UserProfileUpdate::UserProfileOnly(new_profile) => {
+                match cache.entry(new_profile.user_id.to_owned()) {
+                    Entry::Occupied(mut entry) => entry.get_mut().user_profile = new_profile,
+                    Entry::Vacant(entry) => {
+                        entry.insert(UserProfileCacheEntry {
+                            user_profile: new_profile,
+                            room_members: BTreeMap::new(),
+                        });
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -307,6 +418,8 @@ live_design! {
 
 
             direct_message_button = <UserProfileActionButton> {
+                // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
+                enabled: false,
                 draw_icon: {
                     svg_file: (ICON_DOUBLE_CHAT)
                 }
@@ -323,6 +436,7 @@ live_design! {
             }
 
             jump_to_read_receipt_button = <UserProfileActionButton> {
+                enabled: false, // TODO: support this button
                 draw_icon: {
                     svg_file: (ICON_JUMP)
                 }
@@ -330,7 +444,7 @@ live_design! {
                 text: "Jump to Read Receipt"
             }
 
-            block_user_button = <UserProfileActionButton> {
+            ignore_user_button = <UserProfileActionButton> {
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
                     color: (COLOR_DANGER_RED),
@@ -341,7 +455,7 @@ live_design! {
                     border_color: (COLOR_DANGER_RED),
                     color: #fff0f0
                 }
-                text: "Ignore/Block User"
+                text: "Ignore (Block) User"
                 draw_text:{
                     color: (COLOR_DANGER_RED),
                 }
@@ -463,6 +577,7 @@ impl UserProfilePaneInfo {
     fn role_in_room(&self) -> Cow<'_, str> {
         self.room_member.as_ref().map_or(
             "Role: Unknown".into(),
+            // TODO: in newer SDK versions, use `member.suggested_role_for_power_level()`
             |member| match member.normalized_power_level() {
                 100 => "Role: Owner".into(),
                 50  => "Role: Moderator".into(),
@@ -508,66 +623,70 @@ impl Widget for UserProfileSlidingPane {
         if let Event::Signal = event {
             USER_PROFILE_CACHE.with_borrow_mut(|cache| {
                 while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
-                    // If the `update` applies to the info being displayed by this
-                    // user profile sliding pane, update its `info.
+                    // Apply this update to the current user profile pane (if relevant).
                     if let Some(our_info) = self.info.as_mut() {
-                        if our_info.user_profile.user_id == update.user_id {
-                            our_info.avatar_info.user_profile = update.new_profile.clone();
-                            // If the update also includes room member info for the room
-                            // that we're currently displaying the user profile info for, update that too.
-                            if let Some((room_id, room_member)) = update.room_member.clone() {
-                                if room_id == our_info.room_id {
-                                    our_info.room_member = Some(room_member);
-                                }
-                            }
-                            redraw_this_pane = true;
-                        }
+                        let val = update.apply_to_current_pane(our_info);
+                        redraw_this_pane |= val;
                     }
                     // Insert the updated info into the cache
-                    match cache.entry(update.user_id.clone()) {
-                        Entry::Occupied(mut entry) => {
-                            let entry_mut = entry.get_mut();
-                            entry_mut.user_profile = update.new_profile;
-                            if let Some((room_id, room_member)) = update.room_member {
-                                entry_mut.room_members.insert(room_id, room_member);
-                            }
-                        }
-                        Entry::Vacant(entry) => {
-                            let mut room_members_map = BTreeMap::new();
-                            if let Some((room_id, room_member)) = update.room_member {
-                                room_members_map.insert(room_id, room_member);
-                            }
-                            entry.insert(
-                                UserProfileCacheEntry {
-                                    user_profile: update.new_profile,
-                                    room_members: room_members_map,
-                                }
-                            );
-                        }
-                    }
+                    update.apply_to_cache(cache);
                 }
+
+                // TODO: it's probably better to re-fetch the user profile info from the cache here
+                //       just once, after all updates have been processed, instead of doing it
+                //       repeatedly for each update.
+                //       That also  has the side benefit of avoiding a timing issue where a UI Signal
+                //       does not happend at the same time as a user profile element being fetched,
+                //       such as an avatar coming in later after the Signal has already been handled.
             });
         }
 
         if redraw_this_pane {
+            // log!("Redrawing user profile pane due to user profile update");
             self.redraw(cx);
         }
 
-        // TODO: handle button clicks for things like:
-        // * direct_message_button
-        // * copy_link_to_user_button
-        // * jump_to_read_receipt_button
-        // * block_user_button
+        let Some(info) = self.info.as_ref() else { return };
 
+        if let Event::Actions(actions) = event {
+
+            // TODO: handle actions for the `direct_message_button`
+
+            if self.button(id!(copy_link_to_user_button)).clicked(actions) {
+                let matrix_to_uri = info.user_id.matrix_to_uri().to_string();
+                cx.copy_to_clipboard(&matrix_to_uri);
+                // TODO: show a toast message instead of a log message
+                log!("Copied user ID to clipboard: {matrix_to_uri}");
+            }
+
+            // TODO: implement the third button: `jump_to_read_receipt_button`,
+            //       which involves calling `Timeline::latest_user_read_receipt()`
+            //       or `Room::load_user_receipt()`, which are async functions.
+
+            // The `ignore_user_button` require room membership info.
+            if let Some(room_member) = info.room_member.as_ref() {
+                if self.button(id!(ignore_user_button)).clicked(actions) {
+                    submit_async_request(MatrixRequest::IgnoreUser {
+                        ignore: !room_member.is_ignored(),
+                        room_id: info.room_id.clone(),
+                        room_member: room_member.clone(),
+                    });
+                    log!("Submitting request to {}ignore user {}.",
+                        if room_member.is_ignored() { "un" } else { "" },
+                        info.user_id,
+                    );
+                }
+            }
+        }
     }
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some(info) = self.info.clone() else {
+        self.visible = true;
+        let Some(info) = self.info.as_ref() else {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
-        self.visible = true;
 
         // Set the user name, using the user ID as a fallback.
         self.label(id!(user_name)).set_text(info.displayable_name());
@@ -583,6 +702,30 @@ impl Widget for UserProfileSlidingPane {
         self.label(id!(membership_title_label)).set_text(&info.membership_title());
         self.label(id!(membership_status_label)).set_text(info.membership_status());
         self.label(id!(role_info_label)).set_text(info.role_in_room().as_ref());
+
+        // Draw and enable/disable the buttons according to user and room membership info:
+        // * `direct_message_button` is disabled if the user is the same as the account user,
+        //    since you cannot direct message yourself.
+        // * `copy_link_to_user_button` is always enabled with the same text.
+        // * `jump_to_read_receipt_button` is always enabled with the same text.
+        // * `ignore_user_button` is disabled if the user is not a member of the room,
+        //    or if the user is the same as the account user, since you cannot ignore yourself.
+        //    * The button text changes to "Unignore" if the user is already ignored.
+        let is_pane_showing_current_account = info.room_member.as_ref()
+            .map(|rm| rm.is_account_user())
+            .unwrap_or_else(|| get_client()
+                .map_or(false, |client| client.user_id() == Some(&info.user_id))
+            );
+
+        // TODO: uncomment the line below once the `direct_message_button` logic is implemented.
+        // self.button(id!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
+
+        let ignore_user_button = self.button(id!(ignore_user_button));
+        ignore_user_button.set_enabled(!is_pane_showing_current_account && info.room_member.is_some());
+        ignore_user_button.set_text(info.room_member.as_ref()
+            .and_then(|rm| rm.is_ignored().then_some("Unignore (Unblock) User"))
+            .unwrap_or("Ignore (Block) User")
+        );
 
         self.view.draw_walk(cx, scope, walk)
     }

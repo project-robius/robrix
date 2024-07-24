@@ -5,7 +5,7 @@ use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
 use makepad_widgets::{SignalToUI, error, log};
 use matrix_sdk::{
-    config::RequestConfig, media::MediaRequest, ruma::{
+    config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
         api::client::{
             session::get_login_types::v3::LoginType,
             sync::sync_events::v4::{self, SyncRequestListFilters},
@@ -120,12 +120,27 @@ pub enum MatrixRequest {
     FetchRoomMembers {
         room_id: OwnedRoomId,
     },
-    /// Request to fetch profile information for a specific user.
+    /// Request to fetch profile information for the given user ID.
     GetUserProfile {
         user_id: OwnedUserId,
+        /// * If `Some`, the user is known to be a member of a room, so this will
+        ///   fetch the user's profile from that room's membership info.
+        /// * If `None`, the user's profile info will be fetched from the server
+        ///   in a room-agnostic manner, and no room membership info will be returned.
         room_id: Option<OwnedRoomId>,
-        /// If `true`, we will not attempt to fetch missing details from the server.
+        /// * If `true` (not recommended), only the local cache will be accessed.
+        /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
+    },
+    /// Request to ignore/block or unignore/unblock a user.
+    IgnoreUser {
+        /// Whether to ignore (`true`) or unignore (`false`) the user.
+        ignore: bool,
+        /// The room membership info of the user to (un)ignore.
+        room_member: RoomMember,
+        /// The room ID of the room where the user is a member,
+        /// which is only needed because it isn't present in the `RoomMember` object.
+        room_id: OwnedRoomId,
     },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
@@ -137,7 +152,7 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<MediaCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-    /// Request to send a message to the given room's timeline.
+    /// Request to send a message to the given room.
     SendMessage {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
@@ -243,6 +258,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     );
                     let mut avatar_url: Option<OwnedMxcUri> = None;
                     let mut update = None;
+
                     if let Some(room_id) = room_id.as_ref() {
                         if let Some(room) = client.get_room(room_id) {
                             let member = if local_only {
@@ -252,13 +268,14 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                             };
                             if let Ok(Some(room_member)) = member {
                                 avatar_url = room_member.avatar_url().map(|u| u.to_owned());
-                                update = Some(UserProfileUpdate {
+                                update = Some(UserProfileUpdate::Full {
                                     new_profile: UserProfile {
                                         username: room_member.display_name().map(|u| u.to_owned()),
                                         user_id: user_id.clone(),
                                         avatar_img_data: None, // will be fetched below
                                     },
-                                    room_member: Some((room_id.to_owned(), room_member)),
+                                    room_id: room_id.to_owned(),
+                                    room_member,
                                 });
                             } else {
                                 log!("User profile request: user {user_id} was not a member of room {room_id}");
@@ -272,36 +289,75 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         // Note: in newer versions of the SDK, `client.get_profile()` is now `client.account().get_profile()`.
                         if let Ok(response) = client.get_profile(&user_id).await {
                             avatar_url = response.avatar_url;
-                            update = Some(UserProfileUpdate {
-                                new_profile: UserProfile {
+                            update = Some(UserProfileUpdate::UserProfileOnly(
+                                UserProfile {
                                     username: response.displayname,
                                     user_id: user_id.clone(),
                                     avatar_img_data: None, // will be fetched below
-                                },
-                                room_member: None,
-                            });
+                                }
+                            ));
                         } else {
                             log!("User profile request: client could not get user with ID {user_id}");
                         }
                     }
 
-                    if let Some(mut u) = update {
+                    if let Some(mut upd) = update {
                         log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
                         if let Some(uri) = avatar_url {
-                            let avatar_img_data = AVATAR_CACHE
-                                .get_media_or_fetch_async(client, uri, None)
-                                .await;
-                            u.new_profile.avatar_img_data = avatar_img_data;
+                            match upd {
+                                UserProfileUpdate::UserProfileOnly(ref mut new_profile)
+                                | UserProfileUpdate::Full { ref mut new_profile, .. } => {
+                                    new_profile.avatar_img_data = AVATAR_CACHE
+                                        .get_media_or_fetch_async(client, uri, None)
+                                        .await;
+                                }
+                                _ => { }
+                            }
                         }
-                        enqueue_user_profile_update(u);
-                        SignalToUI::set_ui_signal();
+                        enqueue_user_profile_update(upd);
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
                     }
                 });
             }
 
-                
+            MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _ignore_task = Handle::current().spawn(async move {
+                    let user_id = room_member.user_id();
+                    log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
+                    let ignore_result = if ignore {
+                        room_member.ignore().await
+                    } else {
+                        room_member.unignore().await
+                    };
+
+                    log!("{} user {user_id} {}",
+                        if ignore { "Ignoring" } else { "Unignoring" },
+                        if ignore_result.is_ok() { "succeeded." } else { "failed." },
+                    );
+
+                    // We need to re-acquire the `RoomMember` object now that its state
+                    // has changed, i.e., the user has been (un)ignored).
+                    // We then need to send an update to replace the cached `RoomMember`
+                    // with the now-stale ignored state.
+                    if let Some(room) = ignore_result.is_ok()
+                        .then(|| client.get_room(&room_id))
+                        .flatten()
+                    {
+                        if let Ok(Some(new_room_member)) = room.get_member(user_id).await {
+                            log!("Enqueueing user profile update for user {user_id}, who went from {}ignored to {}ignored.",
+                                if room_member.is_ignored() { "" } else { "un" },
+                                if new_room_member.is_ignored() { "" } else { "un" },
+                            );
+                            enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
+                                room_id,
+                                room_member: new_room_member,
+                            });
+                        }
+                    }
+                });
+            }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = CLIENT.get() else { continue };
@@ -438,6 +494,10 @@ static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeM
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
+
+pub fn get_client() -> Option<Client> {
+    CLIENT.get().cloned()
+}
 
 /// Returns the timeline update sender and receiver endpoints for the given room,
 /// if and only if the receiver exists.
@@ -777,7 +837,7 @@ async fn timeline_subscriber_handler(
 
     let send_update = |timeline_items: Vector<Arc<TimelineItem>>, changed_indices: Range<usize>, clear_cache: bool, num_updates: usize| {
         if num_updates > 0 {
-            // log!("timeline_subscriber: applied {num_updates} updates for room {room_id}. Clear cache? {clear_cache}. Changes: {changed_indices:?}.");
+            // log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
             sender.send(TimelineUpdate::NewItems {
                 items: timeline_items,
                 changed_indices,
