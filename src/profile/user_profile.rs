@@ -1,7 +1,7 @@
 use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{room::RoomMember, ruma::events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId};
+use matrix_sdk::{room::RoomMember, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
 use crate::{
     shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, submit_async_request, MatrixRequest}, utils
 };
@@ -57,6 +57,7 @@ impl UserProfileUpdate {
     /// only if the user_id and room_id match that of the update.
     ///
     /// Returns `true` if the update resulted in any actual content changes.
+    #[allow(unused)]
     fn apply_to_current_pane(&self, info: &mut UserProfilePaneInfo) -> bool {
         match self {
             UserProfileUpdate::Full { new_profile, room_id, room_member } => {
