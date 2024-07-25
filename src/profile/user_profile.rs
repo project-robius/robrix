@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::Deref, sync::Arc};
+use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{room::RoomMember, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
@@ -57,6 +57,7 @@ impl UserProfileUpdate {
     /// only if the user_id and room_id match that of the update.
     ///
     /// Returns `true` if the update resulted in any actual content changes.
+    #[allow(unused)]
     fn apply_to_current_pane(&self, info: &mut UserProfilePaneInfo) -> bool {
         match self {
             UserProfileUpdate::Full { new_profile, room_id, room_member } => {
@@ -190,7 +191,11 @@ impl Deref for AvatarInfo {
         &self.user_profile
     }
 }
-
+impl DerefMut for AvatarInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.user_profile
+    }
+}
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -551,6 +556,11 @@ impl Deref for UserProfilePaneInfo {
         &self.avatar_info
     }
 }
+impl DerefMut for UserProfilePaneInfo {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.avatar_info
+    }
+}
 impl UserProfilePaneInfo {
     fn membership_title(&self) -> String {
         if self.room_name.is_empty() {
@@ -616,6 +626,7 @@ impl Widget for UserProfileSlidingPane {
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
             self.view(id!(bg_view)).set_visible(false);
+            return;
         }
 
         // Handle the user profile info being updated by a background task.
@@ -623,21 +634,18 @@ impl Widget for UserProfileSlidingPane {
         if let Event::Signal = event {
             USER_PROFILE_CACHE.with_borrow_mut(|cache| {
                 while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
-                    // Apply this update to the current user profile pane (if relevant).
-                    if let Some(our_info) = self.info.as_mut() {
-                        let val = update.apply_to_current_pane(our_info);
-                        redraw_this_pane |= val;
-                    }
                     // Insert the updated info into the cache
                     update.apply_to_cache(cache);
                 }
 
-                // TODO: it's probably better to re-fetch the user profile info from the cache here
-                //       just once, after all updates have been processed, instead of doing it
-                //       repeatedly for each update.
-                //       That also  has the side benefit of avoiding a timing issue where a UI Signal
-                //       does not happend at the same time as a user profile element being fetched,
-                //       such as an avatar coming in later after the Signal has already been handled.
+                // Apply this update to the current user profile pane (if relevant).
+                if let Some(our_info) = self.info.as_mut() {
+                    if let Some(new_info) = cache.get(&our_info.user_id) {
+                        our_info.user_profile = new_info.user_profile.clone();
+                        our_info.room_member = new_info.room_members.get(&our_info.room_id).cloned();
+                        redraw_this_pane = true;
+                    }
+                }
             });
         }
 

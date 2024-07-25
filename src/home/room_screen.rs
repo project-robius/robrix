@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 
 use imbl::Vector;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{
+use matrix_sdk::{ruma::{
     events::{
         room::{
             guest_access::GuestAccess,
@@ -14,7 +14,7 @@ use matrix_sdk::ruma::{
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
     }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
-};
+}, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, AnyOtherFullStateEventContent, BundledReactions, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
@@ -24,7 +24,7 @@ use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
     profile::user_profile::{AvatarInfo, ShowUserProfileAction, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
     shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
-    sliding_sync::{submit_async_request, take_timeline_update_receiver, MatrixRequest},
+    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
 };
 
@@ -639,16 +639,28 @@ impl Widget for RoomScreen {
 
                 // Handle a link being clicked.
                 if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-                    let mut link_was_handled = false;
-                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                        match matrix_to_uri.id() {
+                    // A closure that handles both MatrixToUri and MatrixUri links.
+                    let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+                        match id {
                             MatrixId::Room(room_id) => {
-                                log!("TODO: open room {}", room_id);
-                                link_was_handled = true;
+                                if self.room_id.as_ref() == Some(room_id) {
+                                    return true;
+                                }
+                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                                    log!("TODO: jump to known room {}", room_id);
+                                } else {
+                                    log!("TODO: fetch and display room preview for room {}", room_id);
+                                }
+
+                                true
                             }
                             MatrixId::RoomAlias(room_alias) => {
                                 log!("TODO: open room alias {}", room_alias);
-                                link_was_handled = true;
+                                // TODO: open a room loading screen that shows a spinner
+                                //       while our background async task calls Client::resolve_room_alias()
+                                //       and then either jumps to the room if known, or fetches and displays
+                                //       a room preview for that room.
+                                true
                             }
                             MatrixId::User(user_id) => {
                                 log!("Opening matrix.to user link for {}", user_id);
@@ -672,42 +684,31 @@ impl Widget for RoomScreen {
                                             room_id: self.room_id.clone().unwrap(),
                                         },
                                         room_name: self.room_name.clone(),
-                                        // TODO: provide the extra `via` parameters from `matrix_to_uri.via()`.
+                                        // TODO: use the extra `via` parameters
                                         room_member: None,
                                     },
                                 );
-                                link_was_handled = true;
+                                true
                             }
                             MatrixId::Event(room_id, event_id) => {
                                 log!("TODO: open event {} in room {}", event_id, room_id);
-                                link_was_handled = true;
+                                // TODO: this requires the same first step as the `MatrixId::Room` case above,
+                                //       but then we need to call Room::event_with_context() to get the event
+                                //       and its context (surrounding events ?).
+                                true
                             }
-                            _ => { } 
+                            _ => false,
                         }
+                    };
+
+                    let mut link_was_handled = false;
+                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                        link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+                    }
+                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                        link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
                     }
 
-                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                        match matrix_uri.id() {
-                            MatrixId::Room(room_id) => {
-                                log!("TODO: open room {}", room_id);
-                                link_was_handled = true;
-                            }
-                            MatrixId::RoomAlias(room_alias) => {
-                                log!("TODO: open room alias {}", room_alias);
-                                link_was_handled = true;
-                            }
-                            MatrixId::User(user_id) => {
-                                log!("TODO: open user {}", user_id);
-                                link_was_handled = true;
-                            }
-                            MatrixId::Event(room_id, event_id) => {
-                                log!("TODO: open event {} in room {}", event_id, room_id);
-                                link_was_handled = true;
-                            }
-                            _ => { } 
-                        }
-                    }
-                    
                     if !link_was_handled {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
