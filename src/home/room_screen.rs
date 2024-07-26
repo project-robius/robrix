@@ -426,7 +426,7 @@ live_design! {
             align: {x: 1.0, y: 1.0},
             margin: {right: 15.0, bottom: 15.0},
             // TODO: set `visible: false` by default. Then, in the Rust code,
-            //       set `visible: true` when the timeline is not scrolled to bottom.
+            //       set `visible: true` when the timeline is not scrolled to bottom.\
 
             jump_to_bottom_button = <IconButton> {
                 width: 50, height: 50,
@@ -716,6 +716,10 @@ impl Widget for RoomScreen {
                     }
                 }
             }
+            // Update the visibility of the jump-to-bottom button based on scrolling.
+            if self.portal_list(id!(timeline.list)).scrolled(&actions) {
+                update_jump_to_bottom_visibility(self, cx);
+            }
         }
 
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
@@ -728,6 +732,7 @@ impl Widget for RoomScreen {
             // Forward the event to the inner timeline view.
             self.view.handle_event(cx, event, scope);
         }
+
     }
 }
 
@@ -739,6 +744,26 @@ impl RoomScreenRef {
         room_screen.room_id = Some(room_id.clone());
         room_screen.timeline(id!(timeline)).set_room(room_id);
     }
+
+    // /// Updates the visibility of the jump-to-bottom button based on the scroll position.
+    // pub fn update_jump_to_bottom_visibility(&self, cx: &mut Cx) {
+    //     if let Some(room_screen) = self.borrow() {
+    //         let timeline = room_screen.timeline(id!(timeline));
+    //         let portal_list = timeline.portal_list(id!(list));
+
+    //         // Get the scroll position and viewport size
+    //         let scroll_pos = portal_list.scroll_position();
+    //         let viewport_height = room_screen.view.area().rect(cx).size.y;
+    //         let visibility_threshold = viewport_height * 1.5;
+
+    //         // Determine if the button should be visible
+    //         let should_be_visible = scroll_pos > visibility_threshold;
+
+    //         // Update the visibility of the jump-to-bottom button
+    //         let jump_to_bottom_view = timeline.view(id!(jump_to_bottom_view));
+    //         jump_to_bottom_view.set_visible(should_be_visible);
+    //     }
+    // }
 }
 
 
@@ -1886,4 +1911,25 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
     } else {
         None
     }
+}
+
+fn update_jump_to_bottom_visibility(
+    room_screen: &RoomScreen,
+    cx: &mut Cx
+) {
+    let timeline = room_screen.timeline(id!(timeline));
+    let portal_list = timeline.portal_list(id!(list));
+
+    // Get the scroll position and viewport size
+    let scroll_pos = portal_list.scroll_position();
+    let viewport_height = room_screen.view.area().rect(cx).size.y;
+    log!("Scroll position: {scroll_pos}, viewport height: {viewport_height}");
+    let visibility_threshold = viewport_height * 1.5;
+
+    // Determine if the button should be visible
+    let should_be_visible = scroll_pos > visibility_threshold;
+
+    // Update the visibility of the jump-to-bottom button
+    let jump_to_bottom_view = timeline.view(id!(jump_to_bottom_view));
+    jump_to_bottom_view.set_visible(should_be_visible);
 }
