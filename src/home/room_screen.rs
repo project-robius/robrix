@@ -49,6 +49,7 @@ live_design! {
     ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
+    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     TEXT_SUB = {
         font_size: (10),
@@ -397,6 +398,7 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
+        flow: Overlay,
 
         list = <PortalList> {
             auto_tail: true, // set to `true` to lock the view to the last item.
@@ -415,8 +417,36 @@ live_design! {
             DayDivider = <DayDivider> {}
             ReadMarker = <ReadMarker> {}
         }
-    }
 
+        // A jump to bottom button that appears when the timeline is not at the bottom.
+        jump_to_bottom_view = <View> {
+            width: Fill,
+            height: Fill,
+            flow: Down,
+            align: {x: 1.0, y: 1.0},
+            margin: {right: 15.0, bottom: 15.0},
+            // TODO: set `visible: false` by default. Then, in the Rust code,
+            //       set `visible: true` when the timeline is not scrolled to bottom.\
+
+            jump_to_bottom_button = <IconButton> {
+                width: 50, height: 50,
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                // draw a circular background for the button
+                draw_bg: {
+                    instance background_color: #edededee,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x)
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result
+                    }
+                }
+            }
+        }
+        
+    }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
@@ -439,7 +469,7 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
-                
+
                 // Below that, display a view that holds the message input bar.
                 <View> {
                     width: Fill, height: Fit
@@ -585,6 +615,14 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // If the jump to bottom button was clicked, auto-scroll to the bottom.
+            if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
+                let max_delta: usize = 100;
+                let speed: f64 = 1000.0;
+                self.portal_list(id!(timeline.list))
+                    .smooth_scroll_to_end(cx, max_delta, speed);
+            }
+
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
@@ -678,6 +716,10 @@ impl Widget for RoomScreen {
                     }
                 }
             }
+            // Update the visibility of the jump-to-bottom button based on scrolling.
+            if self.portal_list(id!(timeline.list)).scrolled(&actions) {
+                update_jump_to_bottom_visibility(self, cx);
+            }
         }
 
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
@@ -690,6 +732,7 @@ impl Widget for RoomScreen {
             // Forward the event to the inner timeline view.
             self.view.handle_event(cx, event, scope);
         }
+
     }
 }
 
@@ -701,6 +744,26 @@ impl RoomScreenRef {
         room_screen.room_id = Some(room_id.clone());
         room_screen.timeline(id!(timeline)).set_room(room_id);
     }
+
+    // /// Updates the visibility of the jump-to-bottom button based on the scroll position.
+    // pub fn update_jump_to_bottom_visibility(&self, cx: &mut Cx) {
+    //     if let Some(room_screen) = self.borrow() {
+    //         let timeline = room_screen.timeline(id!(timeline));
+    //         let portal_list = timeline.portal_list(id!(list));
+
+    //         // Get the scroll position and viewport size
+    //         let scroll_pos = portal_list.scroll_position();
+    //         let viewport_height = room_screen.view.area().rect(cx).size.y;
+    //         let visibility_threshold = viewport_height * 1.5;
+
+    //         // Determine if the button should be visible
+    //         let should_be_visible = scroll_pos > visibility_threshold;
+
+    //         // Update the visibility of the jump-to-bottom button
+    //         let jump_to_bottom_view = timeline.view(id!(jump_to_bottom_view));
+    //         jump_to_bottom_view.set_visible(should_be_visible);
+    //     }
+    // }
 }
 
 
@@ -1848,4 +1911,25 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
     } else {
         None
     }
+}
+
+fn update_jump_to_bottom_visibility(
+    room_screen: &RoomScreen,
+    cx: &mut Cx
+) {
+    let timeline = room_screen.timeline(id!(timeline));
+    let portal_list = timeline.portal_list(id!(list));
+
+    // Get the scroll position and viewport size
+    let scroll_pos = portal_list.scroll_position();
+    let viewport_height = room_screen.view.area().rect(cx).size.y;
+    log!("Scroll position: {scroll_pos}, viewport height: {viewport_height}");
+    let visibility_threshold = viewport_height * 1.5;
+
+    // Determine if the button should be visible
+    let should_be_visible = scroll_pos > visibility_threshold;
+
+    // Update the visibility of the jump-to-bottom button
+    let jump_to_bottom_view = timeline.view(id!(jump_to_bottom_view));
+    jump_to_bottom_view.set_visible(should_be_visible);
 }
