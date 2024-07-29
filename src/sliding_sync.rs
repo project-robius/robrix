@@ -3,7 +3,7 @@ use clap::Parser;
 use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use makepad_widgets::{SignalToUI, error, log};
+use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
         api::client::{
@@ -158,6 +158,15 @@ pub enum MatrixRequest {
     SendMessage {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
+    },
+    /// Sends a notice to the given room that the current user is or is not typing.
+    ///
+    /// This request does not return a response or notify the UI thread, and
+    /// furthermore, there is no need to send a follow-up request to stop typing
+    /// (though you certainly can do so).
+    SendTypingNotice {
+        room_id: OwnedRoomId,
+        typing: bool,
     }
 }
 
@@ -357,6 +366,18 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 room_member: new_room_member,
                             });
                         }
+                    }
+                });
+            }
+        
+            MatrixRequest::SendTypingNotice { room_id, typing } => {
+                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                    error!("BUG: client/room not found for typing notice request {room_id}");
+                    continue;
+                };
+                let _typing_task = Handle::current().spawn(async move {
+                    if let Err(e) = room.typing_notice(typing).await {
+                        error!("Failed to send typing notice to room {room_id}: {e:?}");
                     }
                 });
             }

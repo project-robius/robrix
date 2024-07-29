@@ -585,6 +585,14 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Handle a typing action on the message input box.
+            if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
+                submit_async_request(MatrixRequest::SendTypingNotice {
+                    room_id: self.room_id.clone().unwrap(),
+                    typing: !new_text.is_empty(),
+                });
+            }
+
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
