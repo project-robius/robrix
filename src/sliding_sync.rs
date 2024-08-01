@@ -397,7 +397,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     //
                     // Note that here we only proactively re-paginate the *current* room
                     // (the one being viewed by the user when this ignore request was issued),
-                    // and all other rooms will be re-paginated in on-demand when they are viewed.
+                    // and all other rooms will be re-paginated in `handle_ignore_user_list_subscriber()`.`
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id,
                         num_events: 50,
