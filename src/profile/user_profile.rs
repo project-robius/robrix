@@ -1,7 +1,7 @@
 use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{room::RoomMember, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
+use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
 use crate::{
     shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, submit_async_request, MatrixRequest}, utils
 };
@@ -587,12 +587,10 @@ impl UserProfilePaneInfo {
     fn role_in_room(&self) -> Cow<'_, str> {
         self.room_member.as_ref().map_or(
             "Role: Unknown".into(),
-            // TODO: in newer SDK versions, use `member.suggested_role_for_power_level()`
-            |member| match member.normalized_power_level() {
-                100 => "Role: Owner".into(),
-                50  => "Role: Moderator".into(),
-                0   => "Role: Default".into(),
-                c   => format!("Role: Power Level {c}").into(),
+            |member| match member.suggested_role_for_power_level() {
+                RoomMemberRole::Administrator => "Role: Admin".into(),
+                RoomMemberRole::Moderator => "Role: Moderator".into(),
+                RoomMemberRole::User => "Role: Standard User".into(),
             }
         )
     }

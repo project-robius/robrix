@@ -16,7 +16,7 @@ use matrix_sdk::{ruma::{
     }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, AnyOtherFullStateEventContent, BundledReactions, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, ReactionsByKeyBySender, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use rangemap::RangeSet;
@@ -860,8 +860,8 @@ impl Timeline {
         if !tl_state.fully_paginated {
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: room_id.clone(),
-                batch_size: 50,
-                max_events: 50,
+                num_events: 50,
+                forwards: false,
             })
         } else {
             // log!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
@@ -1367,7 +1367,7 @@ fn populate_message_view(
 
 
 
-fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &BundledReactions, id: usize) {
+fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &ReactionsByKeyBySender, id: usize) {
     const DRAW_ITEM_ID_REACTION: bool = false;
     if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
         return;
@@ -1376,14 +1376,14 @@ fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &BundledR
     // now that we know there are reactions to show.
     message_item.view(id!(content.message_menu)).set_visible(true);
     let mut label_text = String::new();
-    for (reaction_raw, group) in reactions.iter() {
+    for (reaction_raw, reaction_senders) in reactions.iter() {
         // Just take the first char of the emoji, which ignores any variant selectors.
         let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
         let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
         let text_to_display = emojis::get(&reaction_str)
             .and_then(|e| e.shortcode())
             .unwrap_or(&reaction_raw);
-        let count = group.senders().count();
+        let count = reaction_senders.len();
         // log!("Found reaction {:?} with count {}", text_to_display, count);
         label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
     }

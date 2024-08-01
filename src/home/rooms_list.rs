@@ -130,7 +130,7 @@ pub enum RoomsListUpdate {
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
-        room_name: String,
+        new_room_name: String,
     },
     /// Update the avatar (image) for the given room.
     UpdateRoomAvatar {
@@ -231,9 +231,9 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
-                    RoomsListUpdate::UpdateRoomName { room_id, room_name } => {
+                    RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
-                            room.room_name = Some(room_name);
+                            room.room_name = Some(new_room_name);
                         } else {
                             error!("Error: couldn't find room {room_id} to update room name");
                         }
