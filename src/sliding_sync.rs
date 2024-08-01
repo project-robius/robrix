@@ -6,9 +6,8 @@ use imbl::Vector;
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType,
-        events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt
-    }, sliding_sync::http::request::ListFilters, Client, Room, SlidingSyncList, SlidingSyncMode
+        api::client::session::get_login_types::v3::LoginType, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt
+    }, sliding_sync::http::request::{AccountData, E2EE, ListFilters, ToDevice}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
@@ -54,6 +53,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     let homeserver_url = cli.homeserver.as_ref()
         .map(|h| h.as_str())
         .unwrap_or("https://matrix-client.matrix.org/");
+        // .unwrap_or("https://matrix.org/");
     let mut builder = Client::builder().homeserver_url(homeserver_url);
 
     if let Some(proxy) = cli.proxy {
@@ -660,7 +660,17 @@ async fn async_main_loop() -> Result<()> {
     let sliding_sync = client
         .sliding_sync("main-sync")?
         .sliding_sync_proxy("https://slidingsync.lab.matrix.org".try_into()?)
-        .with_all_extensions()
+        // .with_all_extensions()
+        // we enable the account-data extension
+        .with_account_data_extension(
+            assign!(AccountData::default(), { enabled: Some(true) }),
+        )
+        // and the e2ee extension
+        .with_e2ee_extension(assign!(E2EE::default(), { enabled: Some(true) }))
+        // and the to-device extension
+        .with_to_device_extension(
+            assign!(ToDevice::default(), { enabled: Some(true) }),
+        )
         // .add_cached_list(visible_room_list).await?
         .add_list(visible_room_list)
         .build()
