@@ -388,10 +388,25 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 if new_room_member.is_ignored() { "" } else { "un" },
                             );
                             enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
-                                room_id,
+                                room_id: room_id.clone(),
                                 room_member: new_room_member,
                             });
                         }
+                    }
+
+                    // After a successful (un)ignore operation, all timelines get completely cleared,
+                    // so we must re-fetch all timelines for all rooms.
+                    // Start with the current room, since that's the one being displayed.
+                    for room_id_to_paginate in client.get_room(&room_id)
+                        .into_iter()
+                        .chain(client.joined_rooms())
+                        .map(|room| room.room_id().to_owned())
+                    {
+                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                            room_id: room_id_to_paginate,
+                            num_events: 50,
+                            forwards: false,
+                        });
                     }
                 });
             }
