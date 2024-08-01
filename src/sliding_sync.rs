@@ -54,7 +54,10 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         .map(|h| h.as_str())
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
-    let mut builder = Client::builder().homeserver_url(homeserver_url);
+    let mut builder = Client::builder()
+        .homeserver_url(homeserver_url)
+        // The matrix homeserver's sliding sync proxy doesn't support Simplified MSC3575.
+        .simplified_sliding_sync(false);
 
     if let Some(proxy) = cli.proxy {
         builder = builder.proxy(proxy);
