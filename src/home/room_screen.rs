@@ -622,7 +622,6 @@ impl Widget for RoomScreen {
             if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
                 self.portal_list(id!(timeline.list))
                     .smooth_scroll_to_end(cx, SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS, SCROLL_TO_BOTTOM_SPEED);
-                // Trigger a redraw to ensure visibility is updated
                 self.redraw(cx);
             }
 
