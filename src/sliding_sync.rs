@@ -372,10 +372,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     if ignore_result.is_err() {
                         return;
                     }
-                    // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
-                    // Therefore, we need to re-fetch all timelines for all rooms,
-                    // and currently the only way to actually accomplish this is via pagination.
-                    // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
 
                     // We need to re-acquire the `RoomMember` object now that its state
                     // has changed, i.e., the user has been (un)ignored).
@@ -394,20 +390,19 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         }
                     }
 
-                    // After a successful (un)ignore operation, all timelines get completely cleared,
-                    // so we must re-fetch all timelines for all rooms.
-                    // Start with the current room, since that's the one being displayed.
-                    for room_id_to_paginate in client.get_room(&room_id)
-                        .into_iter()
-                        .chain(client.joined_rooms())
-                        .map(|room| room.room_id().to_owned())
-                    {
-                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                            room_id: room_id_to_paginate,
-                            num_events: 50,
-                            forwards: false,
-                        });
-                    }
+                    // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
+                    // Therefore, we need to re-fetch all timelines for all rooms,
+                    // and currently the only way to actually accomplish this is via pagination.
+                    // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
+                    //
+                    // Note that here we only proactively re-paginate the *current* room
+                    // (the one being viewed by the user when this ignore request was issued),
+                    // and all other rooms will be re-paginated in on-demand when they are viewed.
+                    submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                        room_id,
+                        num_events: 50,
+                        forwards: false,
+                    });
                 });
             }
         
@@ -652,6 +647,9 @@ async fn async_main_loop() -> Result<()> {
 
     let (client, _token) = login(cli).await?;
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
+
+    // Listen for updates to the ignored user list.
+    handle_ignore_user_list_subscriber(client.clone());
 
     let mut filters = ListFilters::default();
     filters.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
@@ -901,6 +899,28 @@ async fn async_main_loop() -> Result<()> {
     } else {
         bail!("sync loop ended unexpectedly")
     }
+}
+
+
+fn handle_ignore_user_list_subscriber(client: Client) {
+    let mut subscriber = client.subscribe_to_ignore_user_list_changes();
+    Handle::current().spawn(async move {
+        while let Some(_ignore_list) = subscriber.next().await {
+            log!("Received an updated ignored-user list: {_ignore_list:?}");
+
+            // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
+            // Therefore, we need to re-fetch all timelines for all rooms,
+            // and currently the only way to actually accomplish this is via pagination.
+            // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
+            for joined_room in client.joined_rooms() {
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id: joined_room.room_id().to_owned(),
+                    num_events: 50,
+                    forwards: false,
+                });
+            }
+        }
+    });
 }
 
 
