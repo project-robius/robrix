@@ -6,8 +6,8 @@ use imbl::Vector;
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt
-    }, sliding_sync::http::request::{AccountData, E2EE, ListFilters, ToDevice}, Client, Room, SlidingSyncList, SlidingSyncMode
+        api::client::session::get_login_types::v3::LoginType, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+    }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
@@ -15,7 +15,7 @@ use tokio::{
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::BTreeMap, ops::Range, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
 use crate::{home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::{MediaCacheEntry, AVATAR_CACHE}, profile::user_profile::{enqueue_user_profile_update, UserProfile, UserProfileUpdate}, utils::MEDIA_THUMBNAIL_FORMAT};
@@ -570,6 +570,22 @@ pub fn get_client() -> Option<Client> {
     CLIENT.get().cloned()
 }
 
+/// The list of users that the current user has chosen to ignore.
+/// Ideally we shouldn't have to maintain this list ourselves,
+/// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
+static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
+
+/// Returns a deep clone of the current list of ignored users.
+pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
+    IGNORED_USERS.lock().unwrap().clone()
+}
+
+/// Returns whether the given user ID is currently being ignored.
+pub fn is_user_ignored(user_id: &UserId) -> bool {
+    IGNORED_USERS.lock().unwrap().contains(user_id)
+}
+
+
 /// Returns the timeline update sender and receiver endpoints for the given room,
 /// if and only if the receiver exists.
 ///
@@ -720,7 +736,7 @@ async fn async_main_loop() -> Result<()> {
             Some(Err(e)) => {
                 error!("sync loop was stopped by client error processing: {e}");
                 stream_error = Some(e);
-                continue;
+                break;
             }
             None => {
                 error!("sync loop ended unexpectedly");
@@ -902,11 +918,33 @@ async fn async_main_loop() -> Result<()> {
 }
 
 
+#[allow(unused)]
+async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserId>> {
+    use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
+    let ignored_users = client.account()
+        .account_data::<IgnoredUserListEventContent>()
+        .await
+        .ok()??
+        .deserialize()
+        .ok()?
+        .ignored_users
+        .into_keys()
+        .collect();
+
+    Some(ignored_users)
+}
+
+
 fn handle_ignore_user_list_subscriber(client: Client) {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
     Handle::current().spawn(async move {
-        while let Some(_ignore_list) = subscriber.next().await {
-            log!("Received an updated ignored-user list: {_ignore_list:?}");
+        while let Some(ignore_list) = subscriber.next().await {
+            log!("Received an updated ignored-user list: {ignore_list:?}");
+            let ignored_users_set = ignore_list
+                .into_iter()
+                .filter_map(|u| OwnedUserId::try_from(u).ok())
+                .collect::<BTreeSet<_>>();
+            *IGNORED_USERS.lock().unwrap() = ignored_users_set;
 
             // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
             // Therefore, we need to re-fetch all timelines for all rooms,
