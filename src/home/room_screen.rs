@@ -995,6 +995,7 @@ impl Widget for Timeline {
                         if clear_cache {
                             tl.content_drawn_since_last_update.clear();
                             tl.profile_drawn_since_last_update.clear();
+                            tl.fully_paginated = false;
                         } else {
                             tl.content_drawn_since_last_update.remove(changed_indices.clone());
                             tl.profile_drawn_since_last_update.remove(changed_indices.clone());

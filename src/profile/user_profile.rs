@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
 use crate::{
-    shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, submit_async_request, MatrixRequest}, utils
+    shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
 };
 
 thread_local! {
@@ -728,9 +728,12 @@ impl Widget for UserProfileSlidingPane {
 
         let ignore_user_button = self.button(id!(ignore_user_button));
         ignore_user_button.set_enabled(!is_pane_showing_current_account && info.room_member.is_some());
-        ignore_user_button.set_text(info.room_member.as_ref()
-            .and_then(|rm| rm.is_ignored().then_some("Unignore (Unblock) User"))
-            .unwrap_or("Ignore (Block) User")
+        // Unfortunately the Matrix SDK's RoomMember type does not properly track
+        // the `ignored` state of a user, so we have to maintain it separately.
+        let is_ignored = info.room_member.as_ref()
+            .is_some_and(|rm| is_user_ignored(rm.user_id()));
+        ignore_user_button.set_text(
+            if is_ignored { "Unignore (Unblock) User" } else { "Ignore (Block) User" }
         );
 
         self.view.draw_walk(cx, scope, walk)
