@@ -618,10 +618,17 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // If the jump to bottom button was clicked, auto-scroll to the bottom.
+            // Handle the jump to bottom button: update its visibility, and handle clicks.
+            let mut portal_list = self.portal_list(id!(timeline.list));
+            if portal_list.scrolled(&actions) {
+                self.update_jump_to_bottom_visibility(cx, &portal_list);
+            }
             if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                self.portal_list(id!(timeline.list))
-                    .smooth_scroll_to_end(cx, SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS, SCROLL_TO_BOTTOM_SPEED);
+                portal_list.smooth_scroll_to_end(
+                    cx,
+                    SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
+                    SCROLL_TO_BOTTOM_SPEED,
+                );
                 self.redraw(cx);
             }
 
@@ -718,12 +725,6 @@ impl Widget for RoomScreen {
                     }
                 }
             }
-
-            // Update the visibility of the jump-to-bottom button based on scrolling.
-            if self.portal_list(id!(timeline.list)).scrolled(&actions) {
-                update_jump_to_bottom_visibility(self, cx);
-            }
-
         }
 
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
@@ -737,6 +738,25 @@ impl Widget for RoomScreen {
             self.view.handle_event(cx, event, scope);
         }
 
+    }
+}
+
+impl RoomScreen {
+    /// Updates the visibility of the jump-to-bottom button based on the scroll position.
+    fn update_jump_to_bottom_visibility(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        let scroll_pos = portal_list.scroll_position();
+        let is_scrolled_to_bottom = if scroll_pos >= 0.0 {
+            // Scrolled to bottom = scrolling up AND not at the top
+            scroll_pos < SCROLL_TO_BOTTOM_THRESHOLD
+                && scroll_pos != 0.0
+        } else {
+            // Scrolled to bottom = scrolling down OR not at the bottom
+            scroll_pos > -SCROLL_TO_BOTTOM_THRESHOLD
+                || !portal_list.further_items_bellow_exist()
+        };
+        self.view(id!(jump_to_bottom_view))
+            .set_visible(!is_scrolled_to_bottom);
+        self.redraw(cx);
     }
 }
 
@@ -1895,24 +1915,4 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
     } else {
         None
     }
-}
-
-/// Updates the visibility of the jump-to-bottom button based on the scroll position.
-fn update_jump_to_bottom_visibility(room_screen: &mut RoomScreen, cx: &mut Cx) {
-    let timeline = room_screen.timeline(id!(timeline));
-    let portal_list = timeline.portal_list(id!(list));
-    let scroll_pos = portal_list.scroll_position();
-    let is_scrolled_to_bottom: bool;
-    // Determine if the list is scrolled to the bottom
-    if scroll_pos >= 0.0 {
-        // Scrolled to bottom = scrolling up AND not at the top
-        is_scrolled_to_bottom = scroll_pos < SCROLL_TO_BOTTOM_THRESHOLD && scroll_pos != 0.0;
-    } else {
-        // Scrolled to bottom = scrolling down OR not at the bottom
-        is_scrolled_to_bottom = scroll_pos > -SCROLL_TO_BOTTOM_THRESHOLD || !portal_list.further_items_bellow_exist();
-
-    }
-    timeline.view(id!(jump_to_bottom_view))
-        .set_visible(!is_scrolled_to_bottom);
-    room_screen.redraw(cx);
 }
