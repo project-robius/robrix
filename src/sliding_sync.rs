@@ -6,10 +6,10 @@ use imbl::Vector;
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+        api::client::session::get_login_types::v3::LoginType, assign, events::{room::message::{ForwardThread, RoomMessageEventContent}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
-use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, TimelineItem, TimelineItemContent}, Timeline};
+use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
@@ -165,6 +165,7 @@ pub enum MatrixRequest {
     SendMessage {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
+	replied_to: Option<RepliedToInfo>
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -439,7 +440,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 });
             }
 
-            MatrixRequest::SendMessage { room_id, message } => {
+            MatrixRequest::SendMessage { room_id, message, replied_to } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -453,10 +454,20 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
-                    match timeline.send(message.into()).await {
-                        Ok(_send_handle) => log!("Sent message to room {room_id}."),
-                        Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
-                    }
+		    match replied_to {
+			Some(replied_to_info) => {
+			    match timeline.send_reply(message.into(), replied_to_info, ForwardThread::Yes).await {
+				Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
+				Err(_e) => error!("Failed to send reply message to room {room_id}: {_e:?}"),
+			    };
+			}
+			None => {
+			    match timeline.send(message.into()).await {
+				Ok(_send_handle) => log!("Sent message to room {room_id}."),
+				Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+			    }
+			}
+		    }
                     SignalToUI::set_ui_signal();
                 });
             }
