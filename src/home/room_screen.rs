@@ -8,7 +8,6 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use font_atlas::Borrow;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
