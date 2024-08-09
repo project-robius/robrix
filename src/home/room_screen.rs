@@ -22,7 +22,7 @@ use matrix_sdk_ui::timeline::{
 use rangemap::RangeSet;
 use crate::{
     media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    profile::user_profile::{AvatarInfo, ShowUserProfileAction, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
+    profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache},
     shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
     sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
@@ -558,6 +558,12 @@ impl Widget for RoomScreen {
 
     // Handle events and actions at the RoomScreen level.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
+        // A UI Signal indicates that something was updated in the background,
+        // so we first check to see if it was a user profile update.
+        if let Event::Signal = event {
+            user_profile_cache::process_user_profile_updates(cx);
+        }
+
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let timeline = self.timeline(id!(timeline));
 
@@ -645,7 +651,7 @@ impl Widget for RoomScreen {
                                     cx,
                                     &pane,
                                     UserProfilePaneInfo {
-                                        avatar_info: AvatarInfo {
+                                        avatar_info: UserProfileAndRoomId {
                                             user_profile: UserProfile {
                                                 user_id: user_id.to_owned(),
                                                 username: None,
@@ -931,7 +937,7 @@ impl TimelineRef {
         info: UserProfilePaneInfo,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        pane.set_info(info);
+        pane.set_info(cx, info);
         pane.show(cx);
         // Not sure if this redraw is necessary
         inner.redraw(cx);

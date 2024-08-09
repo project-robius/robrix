@@ -12,7 +12,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 
 use crate::{
-    profile::user_profile::{AvatarInfo, ShowUserProfileAction, UserProfile},
+    profile::user_profile::{UserProfileAndRoomId, ShowUserProfileAction, UserProfile},
     utils,
 };
 
@@ -92,7 +92,7 @@ live_design! {
 pub struct Avatar {
     #[deref] view: View,
 
-    #[rust] info: Option<AvatarInfo>,
+    #[rust] info: Option<UserProfileAndRoomId>,
 }
 
 impl Widget for Avatar {
@@ -149,7 +149,7 @@ impl Avatar {
         username: T,
     ) {
         self.info = info.map(|(user_id, username, room_id)|
-            AvatarInfo {
+            UserProfileAndRoomId {
                 user_profile: UserProfile {
                     user_id,
                     username,
@@ -187,7 +187,7 @@ impl Avatar {
             self.view(id!(text_view)).set_visible(false);
 
             self.info = info.map(|(user_id, username, room_id, img_data)|
-                AvatarInfo {
+                UserProfileAndRoomId {
                     user_profile: UserProfile {
                         user_id,
                         username,
