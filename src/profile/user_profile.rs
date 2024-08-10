@@ -1,19 +1,54 @@
 use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
 use makepad_widgets::*;
-use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId}};
+use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedMxcUri, OwnedRoomId, OwnedUserId}};
 use crate::{
-    shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
+    avatar_cache::{self, AvatarCacheEntry}, shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
 };
 
 use super::user_profile_cache::{self, get_user_profile_and_room_members, get_user_room_member_info};
 
+/// The currently-known state of a user's avatar.
+#[derive(Clone, Debug)]
+#[allow(unused)]
+pub enum AvatarState {
+    /// It isn't yet known if this user has an avatar.
+    Unknown,
+    /// It is known that this user does or does not have an avatar.
+    Known(Option<OwnedMxcUri>),
+    /// This user does have an avatar, and it has been fetched successfully.
+    Loaded(Arc<[u8]>),
+    /// This user does have an avatar, but we failed to fetch it.
+    Failed,
+}
+impl AvatarState {
+    /// Returns the avatar data, if in the `Loaded` state.
+    pub fn data(&self) -> Option<&Arc<[u8]>> {
+        if let AvatarState::Loaded(data) = self {
+            Some(data)
+        } else {
+            None
+        }
+    }
 
-/// Information retrieved about a user: their displayable name, ID, and avatar image.
+    /// Returns the avatar URI, if in the `Known` state and it exists.
+    pub fn uri(&self) -> Option<&OwnedMxcUri> {
+        if let AvatarState::Known(Some(uri)) = self {
+            Some(uri)
+        } else {
+            None
+        }
+    }
+}
+
+/// Information retrieved about a user: their displayable name, ID, and known avatar state.
 #[derive(Clone, Debug)]
 pub struct UserProfile {
     pub user_id: OwnedUserId,
+    /// The user's default display name, if set.
+    /// Note that a user may have per-room display names,
+    /// so this should be considered a fallback.
     pub username: Option<String>,
-    pub avatar_img_data: Option<Arc<[u8]>>,
+    pub avatar_state: AvatarState,
 }
 impl UserProfile {
     /// Returns the user's displayable name, using the user ID as a fallback.
@@ -405,19 +440,19 @@ pub enum ShowUserProfileAction {
 /// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
 pub struct UserProfilePaneInfo {
-    pub avatar_info: UserProfileAndRoomId,
+    pub profile_and_room_id: UserProfileAndRoomId,
     pub room_name: String,
     pub room_member: Option<RoomMember>,
 }
 impl Deref for UserProfilePaneInfo {
     type Target = UserProfileAndRoomId;
     fn deref(&self) -> &Self::Target {
-        &self.avatar_info
+        &self.profile_and_room_id
     }
 }
 impl DerefMut for UserProfilePaneInfo {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.avatar_info
+        &mut self.profile_and_room_id
     }
 }
 impl UserProfilePaneInfo {
@@ -500,6 +535,19 @@ impl Widget for UserProfileSlidingPane {
                 ) {
                     our_info.user_profile = new_profile;
                     our_info.room_member = room_member;
+                    // Use the avatar URI from the `room_member`, as it will be the most up-to-date
+                    // and specific to the room that this user profile sliding pane is currently being shown for.
+                    if let Some(avatar_uri) = our_info.room_member.as_ref()
+                        .and_then(|rm| rm.avatar_url().map(|u| u.to_owned()))
+                    {
+                        our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
+                    }
+                    // If we know the avatar URI, try to get/fetch the actual avatar image data.
+                    if let AvatarState::Known(Some(uri)) = &our_info.avatar_state {
+                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
+                            our_info.avatar_state = AvatarState::Loaded(data);
+                        }
+                    }
                     redraw_this_pane = true;
                 }
             }
@@ -557,7 +605,8 @@ impl Widget for UserProfileSlidingPane {
 
         // Set the avatar image, using the user name as a fallback.
         let avatar_ref = self.avatar(id!(avatar));
-        info.avatar_img_data.as_ref()
+        info.avatar_state
+            .data()
             .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, &data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(None, info.displayable_name()));
 
@@ -619,7 +668,8 @@ impl UserProfileSlidingPane {
                 &info.room_id,
             ) {
                 log!("Found user {} room member info in cache", info.user_id);
-                info.room_member = Some(room_member.clone());
+                info.avatar_state = AvatarState::Known(room_member.avatar_url().map(|uri| uri.to_owned()));
+                info.room_member = Some(room_member);
             }
         }
         if info.room_member.is_none() {

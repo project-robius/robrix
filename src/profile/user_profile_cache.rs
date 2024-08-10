@@ -3,6 +3,8 @@ use makepad_widgets::{log, warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
+use crate::profile::user_profile::AvatarState;
+
 use super::user_profile::{UserProfile, UserProfilePaneInfo};
 
 thread_local! {
@@ -19,8 +21,7 @@ struct UserProfileCacheEntry {
 /// The queue of user profile updates waiting to be processed by the UI thread's event handler.
 static PENDING_USER_PROFILE_UPDATES: SegQueue<UserProfileUpdate> = SegQueue::new();
 
-/// Enqueues a new user profile update and signals the UI
-/// such that the new update will be handled by the user profile sliding pane widget.
+/// Enqueues a new user profile update and signals the UI that an update is available.
 pub fn enqueue_user_profile_update(update: UserProfileUpdate) {
     PENDING_USER_PROFILE_UPDATES.push(update);
     SignalToUI::set_ui_signal();
@@ -63,7 +64,7 @@ impl UserProfileUpdate {
         match self {
             UserProfileUpdate::Full { new_profile, room_id, room_member } => {
                 if info.user_id == new_profile.user_id {
-                    info.avatar_info.user_profile = new_profile.clone();
+                    info.profile_and_room_id.user_profile = new_profile.clone();
                     if &info.room_id == room_id {
                         info.room_member = Some(room_member.clone());
                     }
@@ -82,7 +83,7 @@ impl UserProfileUpdate {
             }
             UserProfileUpdate::UserProfileOnly(new_profile) => {
                 if info.user_id == new_profile.user_id {
-                    info.avatar_info.user_profile = new_profile.clone();
+                    info.profile_and_room_id.user_profile = new_profile.clone();
                     return true;
                 }
             }
@@ -114,7 +115,7 @@ impl UserProfileUpdate {
             }
             UserProfileUpdate::RoomMemberOnly { room_id, room_member } => {
                 match cache.entry(room_member.user_id().to_owned()) {
-                    Entry::Occupied(mut entry) =>{
+                    Entry::Occupied(mut entry) => {
                         entry.get_mut().room_members.insert(room_id, room_member);
                     }
                     Entry::Vacant(entry) => {
@@ -124,7 +125,7 @@ impl UserProfileUpdate {
                             user_profile: UserProfile {
                                 user_id: room_member.user_id().to_owned(),
                                 username: None,
-                                avatar_img_data: None,
+                                avatar_state: AvatarState::Known(room_member.avatar_url().map(|url| url.to_owned())),
                             },
                             room_members: {
                                 let mut room_members_map = BTreeMap::new();
@@ -171,15 +172,17 @@ pub fn process_user_profile_updates(_cx: &mut Cx) {
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
 #[allow(unused)]
-pub fn with_user_profile<F>(_cx: &mut Cx, user_id: &UserId, f: F)
+pub fn with_user_profile<F, R>(_cx: &mut Cx, user_id: &UserId, f: F) -> Option<R>
 where
-    F: FnOnce(&UserProfile, &BTreeMap<OwnedRoomId, RoomMember>)
+    F: FnOnce(&UserProfile, &BTreeMap<OwnedRoomId, RoomMember>) -> R,
 {
     USER_PROFILE_CACHE.with_borrow(|cache| {
         if let Some(entry) = cache.get(user_id) {
-            f(&entry.user_profile, &entry.room_members);
+            Some(f(&entry.user_profile, &entry.room_members))
+        } else {
+            None
         }
-    });
+    })
 }
 
 /// Returns a clone of the cached user profile for the given user ID, if it exists.
