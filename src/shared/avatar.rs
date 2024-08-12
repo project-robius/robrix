@@ -12,7 +12,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 
 use crate::{
-    profile::user_profile::{UserProfileAndRoomId, ShowUserProfileAction, UserProfile},
+    profile::user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId},
     utils,
 };
 
@@ -153,7 +153,7 @@ impl Avatar {
                 user_profile: UserProfile {
                     user_id,
                     username,
-                    avatar_img_data: None,
+                    avatar_state: AvatarState::Unknown,
                 },
                 room_id,
             }
@@ -191,7 +191,7 @@ impl Avatar {
                     user_profile: UserProfile {
                         user_id,
                         username,
-                        avatar_img_data: Some(img_data),
+                        avatar_state: AvatarState::Loaded(img_data),
                     },
                     room_id,
                 }

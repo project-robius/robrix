@@ -8,9 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{
     events::{
         room::{
-            guest_access::GuestAccess,
-            history_visibility::HistoryVisibility,
-            join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
+            avatar, guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
     }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
@@ -21,11 +19,7 @@ use matrix_sdk_ui::timeline::{
 
 use rangemap::RangeSet;
 use crate::{
-    media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    profile::{user_profile::{ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache},
-    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
-    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
-    utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 
 live_design! {
@@ -562,6 +556,7 @@ impl Widget for RoomScreen {
         // so we first check to see if it was a user profile update.
         if let Event::Signal = event {
             user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
         }
 
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
@@ -601,12 +596,12 @@ impl Widget for RoomScreen {
 
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
+                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     timeline.show_user_profile(
                         cx,
                         &pane,
                         UserProfilePaneInfo {
-                            avatar_info,
+                            profile_and_room_id,
                             room_name: self.room_name.clone(),
                             room_member: None,
                         },
@@ -651,11 +646,11 @@ impl Widget for RoomScreen {
                                     cx,
                                     &pane,
                                     UserProfilePaneInfo {
-                                        avatar_info: UserProfileAndRoomId {
+                                        profile_and_room_id: UserProfileAndRoomId {
                                             user_profile: UserProfile {
                                                 user_id: user_id.to_owned(),
                                                 username: None,
-                                                avatar_img_data: None,
+                                                avatar_state: AvatarState::Unknown,
                                             },
                                             room_id: self.room_id.clone().unwrap(),
                                         },
@@ -1774,12 +1769,14 @@ fn set_timestamp(
 /// The specific behavior is as follows:
 /// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
 ///   will be the user's display name and avatar image, if available.
+///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
 /// * If no avatar image is available, then the `avatar` will be set to the first character
 ///   of the user's display name, if available.
 /// * If the user's display name is not available or has not been set, the user ID
 ///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile is not yet ready, then the `username` and `avatar`
-///   will be the user ID and the first character of that user ID, respectively.
+/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
+///   our user profile cache , then the `username` and `avatar`  will be the user ID
+///   and the first character of that user ID, respectively.
 ///
 /// ## Return
 /// Returns a tuple of:
@@ -1792,66 +1789,54 @@ fn set_avatar_and_get_username(
     room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
 ) -> (String, bool) {
-    let username: String;
-    let mut profile_drawn = false;
-
     let user_id = event_tl_item.sender();
 
-    // Set sender to the display name if available, otherwise the user id.
-    match event_tl_item.sender_profile() {
+    // Get the display name and avatar URL from the sender's profile, if available,
+    // or if the profile isn't ready, fall back to qeurying our user profile cache.
+    let (username_opt, avatar_state) = match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
-            // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = match profile.avatar_url.as_ref() {
-                Some(uri) => match AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None) {
-                    MediaCacheEntry::Loaded(data) => {
-                        profile_drawn = true;
-                        Some(data)
-                    }
-                    MediaCacheEntry::Failed => {
-                        profile_drawn = true;
-                        None
-                    }
-                    MediaCacheEntry::Requested => None,
-                }
-                None => {
-                    profile_drawn = true;
-                    None
-                }
-            };
-            
-            // Set the username to the display name if available, otherwise the user ID after the '@'.
-            let username_opt = profile.display_name.clone();
-            username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
-
-            // Draw the avatar image if available, otherwise set the avatar to text.
-            let drew_avatar_img = avatar_img.map(|data|
-                avatar.show_image(
-                    Some((user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
-                    |img| utils::load_png_or_jpg(&img, cx, &data)
-                ).is_ok()
-            ).unwrap_or(false);
-            
-            if !drew_avatar_img {
-                avatar.show_text(
-                    Some((user_id.to_owned(), username_opt, room_id.to_owned())),
-                    &username,
-                );
-            }
+            (profile.display_name.clone(), AvatarState::Known(profile.avatar_url.clone()))
         }
-
-        // If the profile is not ready, use the user ID for both the username and the avatar.
-        not_ready => {
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            username = user_id.to_string();
-            avatar.show_text(
-                    Some((user_id.to_owned(), None, room_id.to_owned())),
-                &username,
-            );
-            // If there was an error fetching the profile, treat that condition as fully drawn,
-            // since we don't yet have a good way to re-request profile information.
-            profile_drawn = matches!(not_ready, TimelineDetails::Error(_));
+        _not_ready => {
+            // log!("populate_message_view(): sender profile not ready yet for event {_not_ready:?}");
+            user_profile_cache::with_user_profile(cx, user_id, |profile, room_members| {
+                room_members.get(room_id)
+                    .map(|rm| (
+                        rm.display_name().map(|n| n.to_owned()),
+                        AvatarState::Known(rm.avatar_url().map(|u| u.to_owned()))
+                    ))
+                    .unwrap_or_else(|| (
+                        profile.username.clone(),
+                        profile.avatar_state.clone(),
+                    ))
+                })
+                .unwrap_or((None, AvatarState::Unknown))
         }
-    }
+    };
+
+    let (avatar_img_data_opt, profile_drawn) = match avatar_state {
+        AvatarState::Loaded(data) => (Some(data), true),
+        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
+            AvatarCacheEntry::Loaded(data) => (Some(data), true),
+            AvatarCacheEntry::Failed => (None, true),
+            AvatarCacheEntry::Requested => (None, false),
+        }
+        AvatarState::Known(None) | AvatarState::Failed => (None, true),
+        AvatarState::Unknown => (None, false),
+    };
+
+    // Set sender to the display name if available, otherwise the user id.
+    let username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
+
+    // Set the sender's avatar image, or use the username if no image is available.
+    avatar_img_data_opt.and_then(|data| avatar.show_image(
+        Some((user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
+        |img| utils::load_png_or_jpg(&img, cx, &data)
+    ).ok())
+    .unwrap_or_else(|| avatar.show_text(
+        Some((user_id.to_owned(), username_opt, room_id.to_owned())),
+        &username,
+    ));
 
     (username, profile_drawn)
 }
