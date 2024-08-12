@@ -8,9 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{
     events::{
         room::{
-            guest_access::GuestAccess,
-            history_visibility::HistoryVisibility,
-            join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
+            avatar, guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
     }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
@@ -558,6 +556,7 @@ impl Widget for RoomScreen {
         // so we first check to see if it was a user profile update.
         if let Event::Signal = event {
             user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
         }
 
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));

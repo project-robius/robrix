@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::{Cx, SignalToUI};
 use matrix_sdk::ruma::{MxcUri, OwnedMxcUri};
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{shared::avatar::Avatar, sliding_sync::{submit_async_request, MatrixRequest}};
 
 
 thread_local! {
@@ -58,6 +58,9 @@ pub fn process_avatar_updates(_cx: &mut Cx) {
 /// Returns the cached avatar for the given Matrix URI if it exists,
 /// or submits a request to fetch it from the server if it isn't already cached.
 ///
+/// If a request has already been submitted, it will not re-submit a duplicate request
+/// and will simply return `AvatarCacheEntry::Requested`.
+///
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
@@ -70,11 +73,7 @@ pub fn get_or_fetch_avatar(
             Entry::Vacant(vacant) => {
                 vacant.insert(AvatarCacheEntry::Requested);
             },
-            Entry::Occupied(occupied) => match occupied.get() {
-                entry @ AvatarCacheEntry::Loaded(_) => return entry.clone(),
-                AvatarCacheEntry::Failed => return AvatarCacheEntry::Failed,
-                AvatarCacheEntry::Requested => { }
-            },
+            Entry::Occupied(occupied) => return occupied.get().clone(),
         }
         
         submit_async_request(MatrixRequest::FetchAvatar {

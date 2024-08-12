@@ -524,6 +524,7 @@ impl Widget for UserProfileSlidingPane {
         // A UI Signal indicates this user profile was updated by a background task.
         if let Event::Signal = event {
             user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
 
             // Re-fetch the currently-displayed user profile info from the cache in case it was updated.
             let mut redraw_this_pane = false;
