@@ -1,17 +1,17 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::BTreeMap, ops::{Deref, DerefMut, Range}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{
     events::{
         room::{
-            avatar, guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
+            guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
-    }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
+    }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, ReactionsByKeyBySender, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -767,6 +767,8 @@ struct TimelineUiState {
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.
     /// When `true`, further backwards pagination requests will not be sent.
+    ///
+    /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
@@ -813,10 +815,16 @@ struct TimelineUiState {
 /// and restored when navigating back to a timeline (upon `Show`).
 #[derive(Default, Debug)]
 struct SavedState {
-    /// The ID of the first item in the timeline's PortalList that is currently visible.
-    ///
-    /// TODO: expose scroll position from PortalList and use that instead, which is more accurate.
-    first_id: usize,
+    /// The index of the first item in the timeline's PortalList that is currently visible,
+    /// and the scroll offset from the top of the list's viewport to the beginning of that item.
+    first_index_and_scroll: Option<(usize, f64)>,
+    /// The unique ID of the event that corresponds to the first item visible in the timeline.
+    first_event_id: Option<OwnedEventId>,
+
+    /// The content of the message input box.
+    draft: Option<String>,
+    /// The position of the cursor head and tail in the message input box.
+    cursor: (usize, usize),
 }
 
 impl Timeline {
@@ -901,8 +909,20 @@ impl Timeline {
             log!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
             return;
         };
-        let first_id = self.portal_list(id!(list)).first_id();
-        tl.saved_state.first_id = first_id;
+        let portal_list = self.portal_list(id!(list));
+        let first_index = portal_list.first_id();
+        tl.saved_state.first_index_and_scroll = Some((
+            first_index,
+            portal_list.scroll_position(),
+        ));
+        tl.saved_state.first_event_id = tl.items
+            .get(first_index)
+            .and_then(|item| item
+                .as_event()
+                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+            );
+
+
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
     }
@@ -912,8 +932,12 @@ impl Timeline {
     /// Note: this accepts a direct reference to the timeline's UI state,
     /// so this function must not try to re-obtain it by accessing `self.tl_state`.
     fn restore_state(&mut self, tl_state: &TimelineUiState) {
-        let first_id = tl_state.saved_state.first_id;
-        self.portal_list(id!(list)).set_first_id(first_id);
+        if let Some((first_index, scroll_from_first_id)) = tl_state.saved_state.first_index_and_scroll {
+            self.portal_list(id!(list))
+                .set_first_id_and_scroll(first_index, scroll_from_first_id);
+        }
+
+        // TODO: restore the message input box's draft text and cursor head/tail positions.
     }
 }
 
@@ -973,26 +997,50 @@ impl Widget for Timeline {
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
-            let orig_first_id = portal_list.first_id();
             let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        // Determine which item is currently visible the top of the screen
+                        // TODO: we can often avoid the following loops that iterate ovoer the `items` list
+                        //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
+                        //       any index that comes before (is less than) the above `orig_first_id`.
+
+                        let orig_first_id = portal_list.first_id();
+                        let scroll_from_first_id = portal_list.scroll_position();
+
+                        // Determine which item is currently visible the top of the screen (the first event)
                         // so that we can jump back to that position instantly after applying this update.
-                        if let Some(top_event_id) = tl.items.get(orig_first_id).map(|item| item.unique_id()) {
+                        let current_first_event_id_opt = tl.items
+                            .get(orig_first_id)
+                            .and_then(|item| item.as_event()
+                                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+                            );
+                        
+                        log!("current_first_event_id_opt: {current_first_event_id_opt:?}, orig_first_id: {orig_first_id}");
+                        if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
-                                if item.unique_id() == top_event_id {
+                                let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
+                                    continue
+                                };
+                                if top_event_id.deref() == item_event_id {
                                     if orig_first_id != idx {
-                                        log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to index {idx}");
-                                        portal_list.set_first_id(idx);
+                                        log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to new index {idx}");
+                                        portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
                                     }
+                                    break;
+                                } else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
+                                    // TODO: should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
+                                    log!("!!!!!!!!!!!!!!!!!!!!!!! Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
+                                    portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
                                     break;
                                 }
                             }
+                        } else {
+                            warning!("Couldn't get unique event ID for event at the top of room {:?}", tl.room_id);
                         }
+
                         if clear_cache {
                             tl.content_drawn_since_last_update.clear();
                             tl.profile_drawn_since_last_update.clear();
@@ -1050,9 +1098,9 @@ impl Widget for Timeline {
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
         // Start the actual drawing procedure.
-        while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
+        while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
-            let portal_list_ref = list_item.as_portal_list();
+            let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let list = list_ref.deref_mut();
         
@@ -1164,6 +1212,28 @@ impl Widget for Timeline {
                 item.draw_all(cx, &mut Scope::empty());
             }
         }
+
+
+        // Note: we shouldn't need to save any states here, as the `TimelineUpdate::NewItems` event handler
+        //       will be able to query the event ID of the first/top item in the timeline 
+        //       **BEFORE** it actually applies the new items to the timeline's TimelineUiState.
+
+        /*
+        let first_index = portal_list.first_id();
+        let scroll_from_first_id = portal_list.scroll_position();
+
+        // TODO: the PortalList doesn't support this yet, but we should get the scroll positions
+        //       of other nearby item IDs as well, in case the first item ID corresponds to
+        //       a virtual event or an event that doesn't have a valid `event_id()`,
+        //       such that we can jump back to the same relative position in the timeline after an update.
+        let first_event_id = tl_items
+            .get(first_index)
+            .and_then(|item| item.as_event()
+                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+            );
+        tl_state.saved_state.first_event_id = first_event_id;
+        */
+
         DrawStep::done()
     }
 }

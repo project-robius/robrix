@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::{Cx, SignalToUI};
 use matrix_sdk::ruma::{MxcUri, OwnedMxcUri};
 
-use crate::{shared::avatar::Avatar, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 
 thread_local! {

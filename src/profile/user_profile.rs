@@ -5,7 +5,7 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry}, shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
 };
 
-use super::user_profile_cache::{self, get_user_profile_and_room_members, get_user_room_member_info};
+use super::user_profile_cache::{self, get_user_profile_and_room_member, get_user_room_member_info};
 
 /// The currently-known state of a user's avatar.
 #[derive(Clone, Debug)]
@@ -529,7 +529,7 @@ impl Widget for UserProfileSlidingPane {
             // Re-fetch the currently-displayed user profile info from the cache in case it was updated.
             let mut redraw_this_pane = false;
             if let Some(our_info) = self.info.as_mut() {
-                if let (Some(new_profile), room_member) = get_user_profile_and_room_members(
+                if let (Some(new_profile), room_member) = get_user_profile_and_room_member(
                     cx,
                     &our_info.user_id,
                     &our_info.room_id,
@@ -669,7 +669,9 @@ impl UserProfileSlidingPane {
                 &info.room_id,
             ) {
                 log!("Found user {} room member info in cache", info.user_id);
-                info.avatar_state = AvatarState::Known(room_member.avatar_url().map(|uri| uri.to_owned()));
+                if let Some(uri) = room_member.avatar_url() {
+                    info.avatar_state = AvatarState::Known(Some(uri.to_owned()));
+                }
                 info.room_member = Some(room_member);
             }
         }
@@ -681,6 +683,11 @@ impl UserProfileSlidingPane {
                 room_id: Some(info.room_id.clone()),
                 local_only: false,
             });
+        }
+        if let AvatarState::Known(Some(uri)) = &info.avatar_state {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(_cx, uri.clone()) {
+                info.avatar_state = AvatarState::Loaded(data);
+            }
         }
         self.info = Some(info);
     }

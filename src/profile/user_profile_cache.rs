@@ -203,7 +203,7 @@ pub fn get_user_profile(_cx: &mut Cx, user_id: &UserId) -> Option<UserProfile> {
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
-pub fn get_user_profile_and_room_members(
+pub fn get_user_profile_and_room_member(
     _cx: &mut Cx,
     user_id: &UserId,
     room_id: &RoomId,
