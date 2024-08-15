@@ -817,6 +817,8 @@ struct TimelineUiState {
 struct SavedState {
     /// The index of the first item in the timeline's PortalList that is currently visible,
     /// and the scroll offset from the top of the list's viewport to the beginning of that item.
+    /// If this is `None`, then the timeline has not yet been scrolled by the user
+    /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
     /// The unique ID of the event that corresponds to the first item visible in the timeline.
     first_event_id: Option<OwnedEventId>,
@@ -906,7 +908,7 @@ impl Timeline {
     /// Note: after calling this function, the timeline's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
-            log!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
+            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
             return;
         };
         let portal_list = self.portal_list(id!(list));
@@ -935,6 +937,10 @@ impl Timeline {
         if let Some((first_index, scroll_from_first_id)) = tl_state.saved_state.first_index_and_scroll {
             self.portal_list(id!(list))
                 .set_first_id_and_scroll(first_index, scroll_from_first_id);
+        } else {
+            // If the first index is not set, then the timeline has not yet been scrolled by the user,
+            // so we set the portal list to "tail" (track) the bottom of the list.
+            self.portal_list(id!(list)).set_tail_range(true);
         }
 
         // TODO: restore the message input box's draft text and cursor head/tail positions.
@@ -997,19 +1003,14 @@ impl Widget for Timeline {
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
+            let orig_first_id = portal_list.first_id();
+            let scroll_from_first_id = portal_list.scroll_position();
             let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        // TODO: we can often avoid the following loops that iterate ovoer the `items` list
-                        //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                        //       any index that comes before (is less than) the above `orig_first_id`.
-
-                        let orig_first_id = portal_list.first_id();
-                        let scroll_from_first_id = portal_list.scroll_position();
-
                         // Determine which item is currently visible the top of the screen (the first event)
                         // so that we can jump back to that position instantly after applying this update.
                         let current_first_event_id_opt = tl.items
@@ -1018,7 +1019,26 @@ impl Widget for Timeline {
                                 .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
                             );
                         
-                        log!("current_first_event_id_opt: {current_first_event_id_opt:?}, orig_first_id: {orig_first_id}");
+                        log!("current_first_event_id_opt: {current_first_event_id_opt:?}, orig_first_id: {orig_first_id}, old items: {}, new items: {}",
+                            tl.items.len(), items.len(),
+                        );
+
+                        if items.is_empty() {
+                            log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
+
+                            // TODO: Save the current first event ID before it gets removed
+                            //       such that we can jump back to that position later after applying this update.
+
+                            // TODO: here we need to re-build the timeline via TimelineBuilder
+                            //       and set the TimelineFocus to one of the above-saved event IDs.
+                        }
+
+                        // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
+                        //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
+                        //       any index that comes before (is less than) the above `orig_first_id`.
+
+
+                        
                         if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
                                 let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
