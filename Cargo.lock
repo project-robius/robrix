@@ -1659,7 +1659,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1668,7 +1668,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1676,7 +1676,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1685,7 +1685,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -1700,17 +1700,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "0.7.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "makepad-html"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1718,7 +1718,7 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -1729,7 +1729,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-live-compiler"
 version = "0.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -1739,7 +1739,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -1747,7 +1747,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1755,7 +1755,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -1765,7 +1765,7 @@ dependencies = [
 [[package]]
 name = "makepad-markdown"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1773,17 +1773,17 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-micro-serde-derive",
 ]
@@ -1791,7 +1791,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1799,12 +1799,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "makepad-platform"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-android-state",
  "makepad-futures",
@@ -1822,7 +1822,7 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -1837,7 +1837,7 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "0.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -1845,7 +1845,7 @@ dependencies = [
 [[package]]
 name = "makepad-vector"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "ttf-parser",
 ]
@@ -1853,7 +1853,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -1862,7 +1862,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -1875,7 +1875,7 @@ dependencies = [
 [[package]]
 name = "makepad-windows"
 version = "0.51.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "windows-core 0.51.1 (git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack)",
  "windows-targets 0.48.5",
@@ -1884,7 +1884,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "bitflags 2.4.1",
 ]
@@ -1892,7 +1892,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.54"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "simd-adler32",
 ]
@@ -1900,7 +1900,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -1908,7 +1908,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "makepad-zune-core",
  "makepad-zune-inflate",
@@ -3692,7 +3692,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "ttf-parser"
 version = "0.19.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 
 [[package]]
 name = "typenum"
@@ -3780,9 +3780,9 @@ checksum = "7d817255e1bed6dfd4ca47258685d14d2bdcfbc64fdc9e3819bd5848057b8ecc"
 
 [[package]]
 name = "unicode-segmentation"
-version = "1.10.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dd624098567895118886609431a7c3b8f516e41d30e0643f03d94592a147e36"
+checksum = "d4c87d22b6e3f4a18d4d40ef354e97c90fcb14dd91d7dc0aa9d8a1172ebf7202"
 
 [[package]]
 name = "universal-hash"
@@ -4071,7 +4071,7 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.51.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c3075a9cbc4a7362966e396ac2ab274ef9d51936"
+source = "git+https://github.com/kevinaboos/makepad?branch=rik_with_old_font_stack#c01523452879b19ab485f68fd1cbf90e657b1dfc"
 dependencies = [
  "windows-targets 0.48.5",
 ]
