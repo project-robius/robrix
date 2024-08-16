@@ -454,7 +454,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         log!("BUG: room info not found for send message request {room_id}");
                         continue;
                     };
-
                     room_info.timeline.clone()
                 };
 

@@ -804,9 +804,47 @@ struct TimelineUiState {
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
     
+    /// The index and scroll position of the first three events that have been drawn
+    /// in the most recent draw pass of this timeline's PortalList.
+    ///
+    /// We save three events because one of 3 adjacent timeline items is (practically)
+    /// guaranteed to be a standard real event that has a true unique ID.
+    /// (For example, not day dividers, not read markers, etc.)
+    ///
+    /// If any of the `event_ids` are `Some`, this indicates that the timeline was
+    /// fully cleared and is in the process of being restored via pagination,
+    /// but it has not yet been paginated enough to the point where one of events
+    /// in this list are visible.
+    /// Once the timeline has been sufficiently paginated to display
+    /// one of the events in this list, all `event_ids` should be set to `None`.`
+    first_three_events: FirstDrawnEvents<3>,
+
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
+}
+
+/// The item index, scroll position, and optional unique IDs of the first `N` events
+/// that have been drawn in the most recent draw pass of a timeline's PortalList.
+#[derive(Debug)]
+struct FirstDrawnEvents<const N: usize> {
+    index_and_scroll: [ItemIndexScroll; N],
+    event_ids: [Option<OwnedEventId>; N],
+}
+impl<const N: usize> Default for FirstDrawnEvents<N> {
+    fn default() -> Self {
+        Self {
+            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
+            event_ids: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+/// 
+#[derive(Clone, Copy, Debug, Default)]
+struct ItemIndexScroll {
+    index: usize,
+    scroll: f64,
 }
 
 /// States that are necessary to save in order to maintain a consistent UI display for a timeline.
@@ -854,6 +892,7 @@ impl Timeline {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                first_three_events: Default::default(),
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 saved_state: SavedState::default(),
             };
@@ -1026,11 +1065,26 @@ impl Widget for Timeline {
                         if items.is_empty() {
                             log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
 
-                            // TODO: Save the current first event ID before it gets removed
+                            // If the bottom of the timeline (the last event) is visible, then we should
+                            // set the timeline to live mode.
+                            // If the bottom of the timelien is *not* visible, then we should
+                            // set the timeline to Focused mode.
+
+                            // TODO: Save the event IDs of the top 3 items before we apply this update,
+                            //       which indicates this timeline is in the process of being restored,
                             //       such that we can jump back to that position later after applying this update.
 
                             // TODO: here we need to re-build the timeline via TimelineBuilder
                             //       and set the TimelineFocus to one of the above-saved event IDs.
+                            
+                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode 
+                            //       can be changed after creation, but I do not see any methods to actually do that.
+                            //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
+                            //
+                            //       As such, we probably need to create a new async request enum variant
+                            //       that tells the background async task to build a new timeline 
+                            //       (either in live mode or focused mode around one or more events)
+                            //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                         }
 
                         // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
@@ -1126,8 +1180,10 @@ impl Widget for Timeline {
         
             list.set_item_range(cx, 0, last_item_id);
 
-            while let Some(item_id) = list.next_visible_item(cx) {
-                // log!("Drawing item {}", item_id);
+            let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
+
+            while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
+                // log!("Drawing item {} at scroll: {}", item_id, scroll_offset);
                 let item = if item_id == 0 {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                 } else {
@@ -1138,6 +1194,14 @@ impl Widget for Timeline {
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
                         continue;
                     };
+
+                    if let Some(index_and_scroll) = item_index_and_scroll_iter.next() {
+                        // log!("########### Saving item ID {} and scroll {} for room {}, at_end? {}",
+                        //     item_id, scroll, room_id,
+                        //     if list.is_at_end() { "Y" } else { "N" },
+                        // );
+                        *index_and_scroll = ItemIndexScroll { index: item_id, scroll };
+                    }
 
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
