@@ -96,7 +96,10 @@ live_design! {
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
 
-            search_bar = <SearchBar> {}
+            search_bar = <View> {
+                padding: 10.
+                <SearchBar> {}
+            }            
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
             status_label = <StatusLabel> {}
