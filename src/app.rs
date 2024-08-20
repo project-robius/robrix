@@ -10,11 +10,6 @@ live_design! {
     import crate::shared::portal::*;
     import crate::home::home_screen::HomeScreen
     import crate::home::room_screen::RoomScreen
-    import crate::contacts::contacts_screen::ContactsScreen
-    import crate::contacts::add_contact_screen::AddContactScreen
-    import crate::discover::discover_screen::DiscoverScreen
-    import crate::discover::moments_screen::MomentsScreen
-    import crate::profile::profile_screen::ProfileScreen
     import crate::profile::my_profile_screen::MyProfileScreen
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
