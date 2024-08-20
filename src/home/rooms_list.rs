@@ -70,10 +70,6 @@ live_design! {
         width: Fill, height: Fit,
         align: { x: 0.5, y: 0.5 }
         padding: 15.0,
-        draw_bg: {
-            color: #f4f4f4
-        }
-        show_bg: true,
 
         label = <Label> {
             width: Fill,
@@ -96,20 +92,12 @@ live_design! {
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
 
-            search_bar = <View> {
-                padding: 10.
-                <SearchBar> {}
-            }            
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
             status_label = <StatusLabel> {}
             bottom_filler = <View> {
                 width: Fill,
                 height: 100.0,
-                draw_bg: {
-                    color: #f4f4f4
-                }
-                show_bg: true,
             }
         }
     }
@@ -292,7 +280,7 @@ impl Widget for RoomsList {
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
         let count = self.all_rooms.len();
-        let last_item_id = count + 1; // Add 1 for the search bar up top.
+        let last_item_id = count;
 
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
@@ -304,12 +292,8 @@ impl Widget for RoomsList {
             list.set_item_range(cx, 0, last_item_id + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                // Draw the search bar as the top entry.
-                let item = if item_id == 0 {
-                    list.item(cx, item_id, live_id!(search_bar)).unwrap()
-                }
                 // Draw the status label as the bottom entry.
-                else if item_id == last_item_id {
+                let item = if item_id == last_item_id {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     if count > 0 {
                         let text = format!("Found {count} joined rooms.");
@@ -332,7 +316,7 @@ impl Widget for RoomsList {
                 // Draw actual room preview entries.
                 else {
                     let item = list.item(cx, item_id, live_id!(room_preview)).unwrap();
-                    let index_of_room = item_id as usize - 1; // -1 to account for the search bar
+                    let index_of_room = item_id as usize;
                     let room_info = &self.all_rooms[index_of_room];
     
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);

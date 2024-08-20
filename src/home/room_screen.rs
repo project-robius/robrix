@@ -447,7 +447,7 @@ live_design! {
             flow: Overlay,
             show_bg: true
             draw_bg: {
-                color: #F
+                color: #f
             }
             
             <KeyboardView> {

@@ -6,10 +6,6 @@ live_design! {
 
     ClickableView = {{ClickableView}} {
         width: Fit, height: Fit
-        show_bg: true
-        draw_bg: {
-            color: #fff
-        }
     }
 }
 

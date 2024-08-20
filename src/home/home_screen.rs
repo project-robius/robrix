@@ -8,7 +8,9 @@ live_design! {
     import crate::home::rooms_list::RoomsList;
     import crate::home::main_content::MainContent;
 
-    Spaces = <View> {
+    ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
+
+    Spaces = <View> {c
         padding: {top: 40.}
         width: 60.
         flow: Down
@@ -53,10 +55,39 @@ live_design! {
         }
     }
 
-    SideBar = <View> {
-        padding: {top: 40.}
+    SideBar = <RoundedView> {
+        padding: {top: 40., left: 20., right: 20.}
         width: 400, height: Fill
-        flow: Down
+        flow: Down, spacing: 20.
+        show_bg: true,
+        draw_bg: {
+            radius: 2.0
+            border_color: #x0
+        }
+        <View> {
+            width: Fill, height: Fit
+            flow: Right, spacing: 15.
+            align: {x: 0.0, y: 0.5}
+            <Icon> {
+                draw_icon: {
+                    svg_file: (ICON_COLLAPSE),
+                    fn get_color(self) -> vec4 {
+                        return #666;
+                    }
+                }
+                icon_walk: {width: 12, height: Fit}
+            }
+
+            label = <Label> {
+                text: "Rooms",
+                draw_text: {
+                    color: #x0,
+                    text_style: {
+                        font_size: 13.0
+                    }
+                }
+            }
+        }
         <RoomsList> {}
     }
 

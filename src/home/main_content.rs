@@ -9,28 +9,27 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
+
     import crate::home::room_screen::RoomScreen;
+    import crate::shared::search_bar::SearchBar;
 
     MainContent = {{MainContent}} {
-        padding: {top: 40.}
+        padding: {top: 10.}
         width: Fill, height: Fill
-        flow: Down
+        flow: Down, spacing: 10.
         show_bg: true
         draw_bg: {
             color: #E
         }
         align: {x: 0.5, y: 0.5}
+
+        <SearchBar> {}
         
         welcome = <View> {
             align: {x: 0.5, y: 0.5}
             welcome_message = <RoundedView> {
                 padding: 40.
-                show_bg: true,
-                width: Fit, height: Fit
-                draw_bg: {
-                    radius: 4.0
-                    color: #f2
-                }
+                width: Fit, height: Fit                
 
                 <Label> {
                     text: "Welcome to Robrix",
