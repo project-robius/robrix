@@ -17,7 +17,7 @@ live_design! {
         flow: Down
         show_bg: true
         draw_bg: {
-            color: #f
+            color: #E
         }
         align: {x: 0.5, y: 0.5}
         

@@ -420,12 +420,35 @@ live_design! {
         width: Fill, height: Fill,
         show_bg: true,
         draw_bg: {
-            color: #fff
+            color: #E
+        }
+        flow: Down, spacing: 0.0
+        
+        tab_title = <View> {
+            width: Fit, height: Fit,
+            align: {x: 0.0, y: 0.5},
+            padding: 10.
+            show_bg: true
+            draw_bg: {
+                color: #f
+            }
+            room_name = <Label> {
+                draw_text: {
+                    color: #4
+                    text_style: {
+                        font_size: 10.
+                    }
+                }
+            }
         }
 
         <View> {
             width: Fill, height: Fill,
             flow: Overlay,
+            show_bg: true
+            draw_bg: {
+                color: #F
+            }
             
             <KeyboardView> {
                 width: Fill, height: Fill,
@@ -709,6 +732,7 @@ impl RoomScreenRef {
         room_screen.room_name = room_name;
         room_screen.room_id = Some(room_id.clone());
         room_screen.timeline(id!(timeline)).set_room(room_id);
+        room_screen.label(id!(room_name)).set_text(&room_screen.room_name);
     }
 }
 

@@ -42,7 +42,7 @@ live_design! {
             width: Fill,
             height: Fit,
 
-            empty_message: "Filter files"
+            empty_message: "Search"
 
             draw_text: {
                 text_style: { font_size: 10 },
