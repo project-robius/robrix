@@ -752,7 +752,7 @@ impl RoomScreen {
         } else {
             // Scrolled to bottom = scrolling down OR not at the bottom
             scroll_pos > -SCROLL_TO_BOTTOM_THRESHOLD
-                || !portal_list.further_items_bellow_exist()
+                || portal_list.is_at_end()
         };
         self.view(id!(jump_to_bottom_view))
             .set_visible(!is_scrolled_to_bottom);
