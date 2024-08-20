@@ -203,7 +203,7 @@ live_design! {
                             }
                         }
                         body = {
-                            room_screen = <RoomScreen> {}
+                            // room_screen = <RoomScreen> {}
                         }
                     }
 
@@ -337,19 +337,6 @@ impl MatchEvent for App {
         let mut stack_navigation = self.ui.stack_navigation(id!(navigation));
         stack_navigation.handle_stack_view_actions(cx, &actions);
 
-
-        for action in actions {
-            // Handle the user selecting a room to view (a RoomPreview in the RoomsList).
-            if let RoomListAction::Selected { room_index: _, room_id, room_name } = action.as_widget_action().cast() {                
-                // Set the title of the RoomScreen's header to the room name.
-                let displayed_room_name = room_name.unwrap_or_else(|| format!("Room ID {}", &room_id));
-                stack_navigation.set_title(live_id!(rooms_stack_view), &displayed_room_name);
-                // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
-                stack_navigation
-                    .room_screen(id!(rooms_stack_view.room_screen))
-                    .set_displayed_room(displayed_room_name, room_id);
-            }
-        }
     }
 }
 

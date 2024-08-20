@@ -278,7 +278,6 @@ impl Widget for RoomsList {
                         }
                     );
 
-                    cx.widget_action(widget_uid, &scope.path, StackNavigationAction::NavigateTo(live_id!(rooms_stack_view)));
                 }
             }
         }

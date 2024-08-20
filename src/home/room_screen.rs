@@ -990,7 +990,9 @@ impl TimelineRef {
     /// Sets this timeline widget to display the timeline for the given room.
     fn set_room(&self, room_id: OwnedRoomId) {
         let Some(mut timeline) = self.borrow_mut() else { return };
+        timeline.hide_timeline(); // TODO: re-organize these methods
         timeline.room_id = Some(room_id);
+        timeline.show_timeline();
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
@@ -1015,12 +1017,12 @@ impl Widget for Timeline {
                 // Handle the timeline being hidden or shown.
                 match action.as_widget_action().cast() {
                     StackNavigationTransitionAction::HideBegin => {
-                        self.hide_timeline();
+                        // self.hide_timeline();
                         continue;
                     }
                     StackNavigationTransitionAction::ShowBegin => {
-                        self.show_timeline();
-                        self.redraw(cx);
+                        // self.show_timeline();
+                        // self.redraw(cx);
                         continue;
                     }
                     StackNavigationTransitionAction::HideEnd
