@@ -1012,34 +1012,6 @@ impl TimelineRef {
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                // Handle the timeline being hidden or shown.
-                match action.as_widget_action().cast() {
-                    StackNavigationTransitionAction::HideBegin => {
-                        // self.hide_timeline();
-                        continue;
-                    }
-                    StackNavigationTransitionAction::ShowBegin => {
-                        // self.show_timeline();
-                        // self.redraw(cx);
-                        continue;
-                    }
-                    StackNavigationTransitionAction::HideEnd
-                    | StackNavigationTransitionAction::ShowDone
-                    | StackNavigationTransitionAction::None => { }
-                }
-
-                // Handle other actions here
-                // TODO: handle actions upon an item being clicked.
-                // for (item_id, item) in self.list.items_with_actions(&actions) {
-                //     if item.button(id!(likes)).clicked(&actions) {
-                //         log!("hello {}", item_id);
-                //     }
-                // }
-            }
-        }
-
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {

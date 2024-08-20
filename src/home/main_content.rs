@@ -95,9 +95,7 @@ impl MatchEvent for MainContent {
                     log!("Room selected: {}", room_id);
                     self.panel_status = PanelStatus::Rooms(vec![room_id.clone()]);
 
-                    // Set the title of the RoomScreen's header to the room name.
                     let displayed_room_name = room_name.unwrap_or_else(|| format!("Room ID {}", &room_id));
-                    // stack_navigation.set_title(live_id!(rooms_stack_view), &displayed_room_name);
                     // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                     self.view
                         .room_screen(id!(room_screen))
