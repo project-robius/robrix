@@ -1,7 +1,5 @@
 pub use makepad_widgets;
 pub mod app;
-mod contacts;
-mod discover;
 pub mod home;
 mod profile;
 pub mod shared;

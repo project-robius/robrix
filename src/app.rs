@@ -129,8 +129,6 @@ impl LiveRegister for App {
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
         crate::home::live_design(cx);
-        crate::contacts::live_design(cx);
-        crate::discover::live_design(cx);
         crate::profile::live_design(cx);
     }
 }

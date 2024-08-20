@@ -3,7 +3,6 @@ use makepad_widgets::Cx;
 pub mod avatar;
 pub mod clickable_view;
 pub mod dropdown_menu;
-pub mod header;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod modal;
@@ -17,7 +16,6 @@ pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
     styles::live_design(cx);
     helpers::live_design(cx);
-    header::live_design(cx);
     search_bar::live_design(cx);
     popup_menu::live_design(cx);
     dropdown_menu::live_design(cx);
