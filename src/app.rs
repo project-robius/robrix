@@ -104,7 +104,7 @@ live_design! {
 
     App = {{App}} {
         ui: <Window> {
-            window: {inner_size: vec2(400, 800)},
+            window: {inner_size: vec2(1280, 800)},
             pass: {clear_color: #2A}
 
             body = {
