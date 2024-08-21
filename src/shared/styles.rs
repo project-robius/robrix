@@ -2,7 +2,7 @@ use makepad_widgets::*;
 
 live_design! {
     TITLE_TEXT = {
-        font_size: (12),
+        font_size: (13),
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
@@ -12,12 +12,12 @@ live_design! {
     }
 
     TEXT_SUB = {
-        font_size: (9),
+        font_size: (8),
         height_factor: 1.5,
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
-    USERNAME_FONT_SIZE = 13.0
+    USERNAME_FONT_SIZE = 12.0
     USERNAME_TEXT_COLOR = #x060 // dark green
     USERNAME_TEXT_STYLE = {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
@@ -26,7 +26,7 @@ live_design! {
     }
 
 
-    MESSAGE_FONT_SIZE = 12.0
+    MESSAGE_FONT_SIZE = 11.0
     MESSAGE_TEXT_COLOR = #x555
     MESSAGE_TEXT_LINE_SPACING = 1.35
     MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
