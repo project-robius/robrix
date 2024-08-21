@@ -472,7 +472,35 @@ live_design! {
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
                         draw_bg: {
-                            color: #F9F9F9
+                            color: #fff
+                            instance radius: 2.0
+                            instance border_width: 0.8
+                            instance border_color: #D0D5DD
+                            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+                
+                            fn get_color(self) -> vec4 {
+                                return self.color
+                            }
+                
+                            fn get_border_color(self) -> vec4 {
+                                return self.border_color
+                            }
+                
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                                sdf.box(
+                                    self.inset.x + self.border_width,
+                                    self.inset.y + self.border_width,
+                                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
+                                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
+                                    max(1.0, self.radius)
+                                )
+                                sdf.fill_keep(self.get_color())
+                                if self.border_width > 0.0 {
+                                    sdf.stroke(self.get_border_color(), self.border_width)
+                                }
+                                return sdf.result;
+                            }
                         }
                         draw_text: {
                             color: (MESSAGE_TEXT_COLOR),
@@ -527,7 +555,7 @@ live_design! {
                                     self.rect_size.y,
                                     self.border_radius
                                 )
-                                sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
+                                sdf.fill(mix(#dfffd6, #bfffb0, self.focus));
                                 return sdf.result
                             }
                         }
@@ -545,7 +573,7 @@ live_design! {
 
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
-                        icon_walk: {width: 15.0, height: Fit},
+                        icon_walk: {width: 18.0, height: Fit},
                     }
                 }
             }
