@@ -18,9 +18,41 @@ live_design! {
     import crate::shared::clickable_view::ClickableView;
     import crate::shared::avatar::Avatar;
 
+    // This will become a custom widget to add hovering and other animations.
     RoomPreview = <ClickableView> {
         flow: Right, spacing: 10., padding: 10.
         width: Fill, height: Fit
+        show_bg: true
+        draw_bg: {
+            instance border_width: 0.0
+            instance border_color: #0000
+            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+            instance radius: 2.5
+            
+            fn get_color(self) -> vec4 {
+                return self.color
+            }
+            
+            fn get_border_color(self) -> vec4 {
+                return self.border_color
+            }
+            
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.inset.x + self.border_width,
+                    self.inset.y + self.border_width,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
+                    max(1.0, self.radius)
+                )
+                sdf.fill_keep(self.get_color())
+                if self.border_width > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_width)
+                }
+                return sdf.result;
+            }
+        }
 
         avatar = <Avatar> {}
 
@@ -63,6 +95,32 @@ live_design! {
         }
     }
 
+    RoomPreviewSelected = <RoomPreview> {
+        draw_bg: {
+            color: (COLOR_SELECTED_PRIMARY)
+        }
+
+        preview = {
+            room_name = {
+                draw_text: {
+                    color: (COLOR_PRIMARY)
+                }
+            }
+
+            latest_message = {
+                draw_text: {
+                    color: (COLOR_PRIMARY)
+                }
+            }
+        }
+
+        timestamp = {
+            draw_text: {
+                color: (COLOR_PRIMARY)
+            }
+        }
+    }
+
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
 
@@ -93,6 +151,7 @@ live_design! {
             flow: Down, spacing: 0.0
 
             room_preview = <RoomPreview> {}
+            room_preview_selected = <RoomPreviewSelected> {}
             empty = <Empty> {}
             status_label = <StatusLabel> {}
             bottom_filler = <View> {
@@ -195,6 +254,8 @@ pub struct RoomsList {
     #[rust] rooms_list_map: HashMap<u64, usize>,
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
+    /// The index of the currently selected room
+    #[rust] current_active_room_index: Option<usize>
 }
 
 impl Widget for RoomsList {
@@ -259,6 +320,7 @@ impl Widget for RoomsList {
                     .map(|(_, &room_index)| room_index)
                 {
                     let room_details = &self.all_rooms[room_index];
+                    self.current_active_room_index = Some(room_index);
                     cx.widget_action(
                         widget_uid,
                         &scope.path,
@@ -315,7 +377,12 @@ impl Widget for RoomsList {
                 }
                 // Draw actual room preview entries.
                 else {
-                    let item = list.item(cx, item_id, live_id!(room_preview)).unwrap();
+                    let item_template = if self.current_active_room_index == Some(item_id) {
+                        live_id!(room_preview_selected)
+                    } else {
+                        live_id!(room_preview)
+                    };
+                    let item = list.item(cx, item_id, item_template).unwrap();
                     let index_of_room = item_id as usize;
                     let room_info = &self.all_rooms[index_of_room];
     
