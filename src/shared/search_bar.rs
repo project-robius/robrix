@@ -8,6 +8,7 @@ live_design! {
     import crate::shared::styles::*;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
+    COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
     SearchBar = <RoundedView> {
         width: Fill,
@@ -15,24 +16,24 @@ live_design! {
 
         show_bg: true,
         draw_bg: {
-            color: #fff
+            color: (COLORP_PRIMARY)
         }
 
-        padding: {top: 3, bottom: 3, left: 20, right: 20}
+        padding: {top: 3, bottom: 3, left: 10, right: 20}
         spacing: 4,
         align: {x: 0.0, y: 0.5},
 
         draw_bg: {
-            radius: 6.0,
-            border_color: #D0D5DD,
-            border_width: 1.0,
+            radius: 0.0,
+            border_color: #d8d8d8,
+            border_width: 0.6,
         }
 
         <Icon> {
             draw_icon: {
                 svg_file: (ICON_SEARCH),
                 fn get_color(self) -> vec4 {
-                    return #666;
+                    return (COLOR_TEXT_INPUT_IDLE);
                 }
             }
             icon_walk: {width: 14, height: Fit}
@@ -47,7 +48,7 @@ live_design! {
             draw_text: {
                 text_style: { font_size: 10 },
                 fn get_color(self) -> vec4 {
-                    return #555
+                    return (COLOR_TEXT_INPUT_IDLE);
                 }
             }
     
@@ -89,8 +90,8 @@ live_design! {
             }
     
             draw_bg: {
-                color: #fff
-                instance radius: 2.0
+                color: (COLOR_PRIMARY)
+                instance radius: 0.0
                 instance border_width: 0.0
                 instance border_color: #3
                 instance inset: vec4(0.0, 0.0, 0.0, 0.0)
