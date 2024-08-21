@@ -1,34 +1,28 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::BTreeMap, ops::{Deref, DerefMut, Range}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{
     events::{
         room::{
-            guest_access::GuestAccess,
-            history_visibility::HistoryVisibility,
-            join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource,
+            guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
-    }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId,
+    }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, AnyOtherFullStateEventContent, BundledReactions, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, ReactionsByKeyBySender, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 
 use rangemap::RangeSet;
 use crate::{
-    media_cache::{MediaCache, MediaCacheEntry, AVATAR_CACHE},
-    profile::user_profile::{AvatarInfo, ShowUserProfileAction, UserProfile, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
-    shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt},
-    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
-    utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 
-const SCROLL_TO_BOTTOM_THRESHOLD: f64 = 10.0;
+// const SCROLL_TO_BOTTOM_THRESHOLD: f64 = 10.0;
 const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 10;
 const SCROLL_TO_BOTTOM_SPEED: f64 = 80.0;
 
@@ -591,6 +585,13 @@ impl Widget for RoomScreen {
 
     // Handle events and actions at the RoomScreen level.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
+        // A UI Signal indicates that something was updated in the background,
+        // so we first check to see if it was a user profile update.
+        if let Event::Signal = event {
+            user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
+        }
+
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let timeline = self.timeline(id!(timeline));
 
@@ -621,7 +622,9 @@ impl Widget for RoomScreen {
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             let mut portal_list = self.portal_list(id!(timeline.list));
             if portal_list.scrolled(&actions) {
-                self.update_jump_to_bottom_visibility(cx, &portal_list);
+                // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
+                self.view(id!(jump_to_bottom_view))
+                    .set_visible(!portal_list.is_at_end());
             }
             if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
                 portal_list.smooth_scroll_to_end(
@@ -632,14 +635,22 @@ impl Widget for RoomScreen {
                 self.redraw(cx);
             }
 
+            // Handle a typing action on the message input box.
+            if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
+                submit_async_request(MatrixRequest::SendTypingNotice {
+                    room_id: self.room_id.clone().unwrap(),
+                    typing: !new_text.is_empty(),
+                });
+            }
+
             for action in actions {
                 // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(avatar_info) = action.as_widget_action().cast() {
+                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     timeline.show_user_profile(
                         cx,
                         &pane,
                         UserProfilePaneInfo {
-                            avatar_info,
+                            profile_and_room_id,
                             room_name: self.room_name.clone(),
                             room_member: None,
                         },
@@ -684,11 +695,11 @@ impl Widget for RoomScreen {
                                     cx,
                                     &pane,
                                     UserProfilePaneInfo {
-                                        avatar_info: AvatarInfo {
+                                        profile_and_room_id: UserProfileAndRoomId {
                                             user_profile: UserProfile {
                                                 user_id: user_id.to_owned(),
                                                 username: None,
-                                                avatar_img_data: None,
+                                                avatar_state: AvatarState::Unknown,
                                             },
                                             room_id: self.room_id.clone().unwrap(),
                                         },
@@ -738,25 +749,6 @@ impl Widget for RoomScreen {
             self.view.handle_event(cx, event, scope);
         }
 
-    }
-}
-
-impl RoomScreen {
-    /// Updates the visibility of the jump-to-bottom button based on the scroll position.
-    fn update_jump_to_bottom_visibility(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
-        let scroll_pos = portal_list.scroll_position();
-        let is_scrolled_to_bottom = if scroll_pos >= 0.0 {
-            // Scrolled to bottom = scrolling up AND not at the top
-            scroll_pos < SCROLL_TO_BOTTOM_THRESHOLD
-                && scroll_pos != 0.0
-        } else {
-            // Scrolled to bottom = scrolling down OR not at the bottom
-            scroll_pos > -SCROLL_TO_BOTTOM_THRESHOLD
-                || portal_list.is_at_end()
-        };
-        self.view(id!(jump_to_bottom_view))
-            .set_visible(!is_scrolled_to_bottom);
-        self.redraw(cx);
     }
 }
 
@@ -825,6 +817,8 @@ struct TimelineUiState {
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.
     /// When `true`, further backwards pagination requests will not be sent.
+    ///
+    /// This must be reset to `false` whenever the timeline is fully cleared.
     fully_paginated: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
@@ -860,9 +854,47 @@ struct TimelineUiState {
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
     
+    /// The index and scroll position of the first three events that have been drawn
+    /// in the most recent draw pass of this timeline's PortalList.
+    ///
+    /// We save three events because one of 3 adjacent timeline items is (practically)
+    /// guaranteed to be a standard real event that has a true unique ID.
+    /// (For example, not day dividers, not read markers, etc.)
+    ///
+    /// If any of the `event_ids` are `Some`, this indicates that the timeline was
+    /// fully cleared and is in the process of being restored via pagination,
+    /// but it has not yet been paginated enough to the point where one of events
+    /// in this list are visible.
+    /// Once the timeline has been sufficiently paginated to display
+    /// one of the events in this list, all `event_ids` should be set to `None`.`
+    first_three_events: FirstDrawnEvents<3>,
+
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
+}
+
+/// The item index, scroll position, and optional unique IDs of the first `N` events
+/// that have been drawn in the most recent draw pass of a timeline's PortalList.
+#[derive(Debug)]
+struct FirstDrawnEvents<const N: usize> {
+    index_and_scroll: [ItemIndexScroll; N],
+    event_ids: [Option<OwnedEventId>; N],
+}
+impl<const N: usize> Default for FirstDrawnEvents<N> {
+    fn default() -> Self {
+        Self {
+            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
+            event_ids: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+/// 
+#[derive(Clone, Copy, Debug, Default)]
+struct ItemIndexScroll {
+    index: usize,
+    scroll: f64,
 }
 
 /// States that are necessary to save in order to maintain a consistent UI display for a timeline.
@@ -871,10 +903,18 @@ struct TimelineUiState {
 /// and restored when navigating back to a timeline (upon `Show`).
 #[derive(Default, Debug)]
 struct SavedState {
-    /// The ID of the first item in the timeline's PortalList that is currently visible.
-    ///
-    /// TODO: expose scroll position from PortalList and use that instead, which is more accurate.
-    first_id: usize,
+    /// The index of the first item in the timeline's PortalList that is currently visible,
+    /// and the scroll offset from the top of the list's viewport to the beginning of that item.
+    /// If this is `None`, then the timeline has not yet been scrolled by the user
+    /// and the portal list will be set to "tail" (track) the bottom of the list.
+    first_index_and_scroll: Option<(usize, f64)>,
+    /// The unique ID of the event that corresponds to the first item visible in the timeline.
+    first_event_id: Option<OwnedEventId>,
+
+    /// The content of the message input box.
+    draft: Option<String>,
+    /// The position of the cursor head and tail in the message input box.
+    cursor: (usize, usize),
 }
 
 impl Timeline {
@@ -902,6 +942,7 @@ impl Timeline {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                first_three_events: Default::default(),
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 saved_state: SavedState::default(),
             };
@@ -919,8 +960,8 @@ impl Timeline {
         if !tl_state.fully_paginated {
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: room_id.clone(),
-                batch_size: 50,
-                max_events: 50,
+                num_events: 50,
+                forwards: false,
             })
         } else {
             // log!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
@@ -956,11 +997,23 @@ impl Timeline {
     /// Note: after calling this function, the timeline's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
-            log!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
+            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
             return;
         };
-        let first_id = self.portal_list(id!(list)).first_id();
-        tl.saved_state.first_id = first_id;
+        let portal_list = self.portal_list(id!(list));
+        let first_index = portal_list.first_id();
+        tl.saved_state.first_index_and_scroll = Some((
+            first_index,
+            portal_list.scroll_position(),
+        ));
+        tl.saved_state.first_event_id = tl.items
+            .get(first_index)
+            .and_then(|item| item
+                .as_event()
+                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+            );
+
+
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
     }
@@ -970,8 +1023,16 @@ impl Timeline {
     /// Note: this accepts a direct reference to the timeline's UI state,
     /// so this function must not try to re-obtain it by accessing `self.tl_state`.
     fn restore_state(&mut self, tl_state: &TimelineUiState) {
-        let first_id = tl_state.saved_state.first_id;
-        self.portal_list(id!(list)).set_first_id(first_id);
+        if let Some((first_index, scroll_from_first_id)) = tl_state.saved_state.first_index_and_scroll {
+            self.portal_list(id!(list))
+                .set_first_id_and_scroll(first_index, scroll_from_first_id);
+        } else {
+            // If the first index is not set, then the timeline has not yet been scrolled by the user,
+            // so we set the portal list to "tail" (track) the bottom of the list.
+            self.portal_list(id!(list)).set_tail_range(true);
+        }
+
+        // TODO: restore the message input box's draft text and cursor head/tail positions.
     }
 }
 
@@ -990,7 +1051,7 @@ impl TimelineRef {
         info: UserProfilePaneInfo,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        pane.set_info(info);
+        pane.set_info(cx, info);
         pane.show(cx);
         // Not sure if this redraw is necessary
         inner.redraw(cx);
@@ -1032,28 +1093,82 @@ impl Widget for Timeline {
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
             let orig_first_id = portal_list.first_id();
+            let scroll_from_first_id = portal_list.scroll_position();
             let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        // Determine which item is currently visible the top of the screen
+                        // Determine which item is currently visible the top of the screen (the first event)
                         // so that we can jump back to that position instantly after applying this update.
-                        if let Some(top_event_id) = tl.items.get(orig_first_id).map(|item| item.unique_id()) {
+                        let current_first_event_id_opt = tl.items
+                            .get(orig_first_id)
+                            .and_then(|item| item.as_event()
+                                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+                            );
+                        
+                        log!("current_first_event_id_opt: {current_first_event_id_opt:?}, orig_first_id: {orig_first_id}, old items: {}, new items: {}",
+                            tl.items.len(), items.len(),
+                        );
+
+                        if items.is_empty() {
+                            log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
+
+                            // If the bottom of the timeline (the last event) is visible, then we should
+                            // set the timeline to live mode.
+                            // If the bottom of the timelien is *not* visible, then we should
+                            // set the timeline to Focused mode.
+
+                            // TODO: Save the event IDs of the top 3 items before we apply this update,
+                            //       which indicates this timeline is in the process of being restored,
+                            //       such that we can jump back to that position later after applying this update.
+
+                            // TODO: here we need to re-build the timeline via TimelineBuilder
+                            //       and set the TimelineFocus to one of the above-saved event IDs.
+                            
+                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode 
+                            //       can be changed after creation, but I do not see any methods to actually do that.
+                            //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
+                            //
+                            //       As such, we probably need to create a new async request enum variant
+                            //       that tells the background async task to build a new timeline 
+                            //       (either in live mode or focused mode around one or more events)
+                            //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
+                        }
+
+                        // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
+                        //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
+                        //       any index that comes before (is less than) the above `orig_first_id`.
+
+
+                        
+                        if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
-                                if item.unique_id() == top_event_id {
+                                let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
+                                    continue
+                                };
+                                if top_event_id.deref() == item_event_id {
                                     if orig_first_id != idx {
-                                        log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to index {idx}");
-                                        portal_list.set_first_id(idx);
+                                        log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to new index {idx}");
+                                        portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
                                     }
+                                    break;
+                                } else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
+                                    // TODO: should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
+                                    log!("!!!!!!!!!!!!!!!!!!!!!!! Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
+                                    portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
                                     break;
                                 }
                             }
+                        } else {
+                            warning!("Couldn't get unique event ID for event at the top of room {:?}", tl.room_id);
                         }
+
                         if clear_cache {
                             tl.content_drawn_since_last_update.clear();
                             tl.profile_drawn_since_last_update.clear();
+                            tl.fully_paginated = false;
                         } else {
                             tl.content_drawn_since_last_update.remove(changed_indices.clone());
                             tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1107,16 +1222,18 @@ impl Widget for Timeline {
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
         // Start the actual drawing procedure.
-        while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
+        while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
-            let portal_list_ref = list_item.as_portal_list();
+            let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let list = list_ref.deref_mut();
         
             list.set_item_range(cx, 0, last_item_id);
 
-            while let Some(item_id) = list.next_visible_item(cx) {
-                // log!("Drawing item {}", item_id);
+            let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
+
+            while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
+                // log!("Drawing item {} at scroll: {}", item_id, scroll_offset);
                 let item = if item_id == 0 {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                 } else {
@@ -1127,6 +1244,14 @@ impl Widget for Timeline {
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
                         continue;
                     };
+
+                    if let Some(index_and_scroll) = item_index_and_scroll_iter.next() {
+                        // log!("########### Saving item ID {} and scroll {} for room {}, at_end? {}",
+                        //     item_id, scroll, room_id,
+                        //     if list.is_at_end() { "Y" } else { "N" },
+                        // );
+                        *index_and_scroll = ItemIndexScroll { index: item_id, scroll };
+                    }
 
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
@@ -1221,6 +1346,28 @@ impl Widget for Timeline {
                 item.draw_all(cx, &mut Scope::empty());
             }
         }
+
+
+        // Note: we shouldn't need to save any states here, as the `TimelineUpdate::NewItems` event handler
+        //       will be able to query the event ID of the first/top item in the timeline 
+        //       **BEFORE** it actually applies the new items to the timeline's TimelineUiState.
+
+        /*
+        let first_index = portal_list.first_id();
+        let scroll_from_first_id = portal_list.scroll_position();
+
+        // TODO: the PortalList doesn't support this yet, but we should get the scroll positions
+        //       of other nearby item IDs as well, in case the first item ID corresponds to
+        //       a virtual event or an event that doesn't have a valid `event_id()`,
+        //       such that we can jump back to the same relative position in the timeline after an update.
+        let first_event_id = tl_items
+            .get(first_index)
+            .and_then(|item| item.as_event()
+                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+            );
+        tl_state.saved_state.first_event_id = first_event_id;
+        */
+
         DrawStep::done()
     }
 }
@@ -1426,7 +1573,7 @@ fn populate_message_view(
 
 
 
-fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &BundledReactions, id: usize) {
+fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &ReactionsByKeyBySender, id: usize) {
     const DRAW_ITEM_ID_REACTION: bool = false;
     if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
         return;
@@ -1435,14 +1582,14 @@ fn draw_reactions(_cx: &mut Cx2d, message_item: &WidgetRef, reactions: &BundledR
     // now that we know there are reactions to show.
     message_item.view(id!(content.message_menu)).set_visible(true);
     let mut label_text = String::new();
-    for (reaction_raw, group) in reactions.iter() {
+    for (reaction_raw, reaction_senders) in reactions.iter() {
         // Just take the first char of the emoji, which ignores any variant selectors.
         let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
         let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
         let text_to_display = emojis::get(&reaction_str)
             .and_then(|e| e.shortcode())
             .unwrap_or(&reaction_raw);
-        let count = group.senders().count();
+        let count = reaction_senders.len();
         // log!("Found reaction {:?} with count {}", text_to_display, count);
         label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
     }
@@ -1826,12 +1973,14 @@ fn set_timestamp(
 /// The specific behavior is as follows:
 /// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
 ///   will be the user's display name and avatar image, if available.
+///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
 /// * If no avatar image is available, then the `avatar` will be set to the first character
 ///   of the user's display name, if available.
 /// * If the user's display name is not available or has not been set, the user ID
 ///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile is not yet ready, then the `username` and `avatar`
-///   will be the user ID and the first character of that user ID, respectively.
+/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
+///   our user profile cache , then the `username` and `avatar`  will be the user ID
+///   and the first character of that user ID, respectively.
 ///
 /// ## Return
 /// Returns a tuple of:
@@ -1844,66 +1993,54 @@ fn set_avatar_and_get_username(
     room_id: &RoomId,
     event_tl_item: &EventTimelineItem,
 ) -> (String, bool) {
-    let username: String;
-    let mut profile_drawn = false;
-
     let user_id = event_tl_item.sender();
 
-    // Set sender to the display name if available, otherwise the user id.
-    match event_tl_item.sender_profile() {
+    // Get the display name and avatar URL from the sender's profile, if available,
+    // or if the profile isn't ready, fall back to qeurying our user profile cache.
+    let (username_opt, avatar_state) = match event_tl_item.sender_profile() {
         TimelineDetails::Ready(profile) => {
-            // Set the sender's avatar image, or use a text character if no image is available.
-            let avatar_img = match profile.avatar_url.as_ref() {
-                Some(uri) => match AVATAR_CACHE.lock().unwrap().try_get_media_or_fetch(uri.clone(), None) {
-                    MediaCacheEntry::Loaded(data) => {
-                        profile_drawn = true;
-                        Some(data)
-                    }
-                    MediaCacheEntry::Failed => {
-                        profile_drawn = true;
-                        None
-                    }
-                    MediaCacheEntry::Requested => None,
-                }
-                None => {
-                    profile_drawn = true;
-                    None
-                }
-            };
-            
-            // Set the username to the display name if available, otherwise the user ID after the '@'.
-            let username_opt = profile.display_name.clone();
-            username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
-
-            // Draw the avatar image if available, otherwise set the avatar to text.
-            let drew_avatar_img = avatar_img.map(|data|
-                avatar.show_image(
-                    Some((user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
-                    |img| utils::load_png_or_jpg(&img, cx, &data)
-                ).is_ok()
-            ).unwrap_or(false);
-            
-            if !drew_avatar_img {
-                avatar.show_text(
-                    Some((user_id.to_owned(), username_opt, room_id.to_owned())),
-                    &username,
-                );
-            }
+            (profile.display_name.clone(), AvatarState::Known(profile.avatar_url.clone()))
         }
-
-        // If the profile is not ready, use the user ID for both the username and the avatar.
-        not_ready => {
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            username = user_id.to_string();
-            avatar.show_text(
-                    Some((user_id.to_owned(), None, room_id.to_owned())),
-                &username,
-            );
-            // If there was an error fetching the profile, treat that condition as fully drawn,
-            // since we don't yet have a good way to re-request profile information.
-            profile_drawn = matches!(not_ready, TimelineDetails::Error(_));
+        _not_ready => {
+            // log!("populate_message_view(): sender profile not ready yet for event {_not_ready:?}");
+            user_profile_cache::with_user_profile(cx, user_id, |profile, room_members| {
+                room_members.get(room_id)
+                    .map(|rm| (
+                        rm.display_name().map(|n| n.to_owned()),
+                        AvatarState::Known(rm.avatar_url().map(|u| u.to_owned()))
+                    ))
+                    .unwrap_or_else(|| (
+                        profile.username.clone(),
+                        profile.avatar_state.clone(),
+                    ))
+                })
+                .unwrap_or((None, AvatarState::Unknown))
         }
-    }
+    };
+
+    let (avatar_img_data_opt, profile_drawn) = match avatar_state {
+        AvatarState::Loaded(data) => (Some(data), true),
+        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
+            AvatarCacheEntry::Loaded(data) => (Some(data), true),
+            AvatarCacheEntry::Failed => (None, true),
+            AvatarCacheEntry::Requested => (None, false),
+        }
+        AvatarState::Known(None) | AvatarState::Failed => (None, true),
+        AvatarState::Unknown => (None, false),
+    };
+
+    // Set sender to the display name if available, otherwise the user id.
+    let username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
+
+    // Set the sender's avatar image, or use the username if no image is available.
+    avatar_img_data_opt.and_then(|data| avatar.show_image(
+        Some((user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
+        |img| utils::load_png_or_jpg(&img, cx, &data)
+    ).ok())
+    .unwrap_or_else(|| avatar.show_text(
+        Some((user_id.to_owned(), username_opt, room_id.to_owned())),
+        &username,
+    ));
 
     (username, profile_drawn)
 }

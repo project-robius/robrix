@@ -3,25 +3,22 @@ use clap::Parser;
 use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use makepad_widgets::{SignalToUI, error, log};
+use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::{
-            session::get_login_types::v3::LoginType,
-            sync::sync_events::v4::{self, SyncRequestListFilters},
-        }, assign, events::{room::message::RoomMessageEventContent, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt
-    }, Client, Room, SlidingSyncList, SlidingSyncMode
+        api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::RoomMessageEventContent, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+    }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
-use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, BackPaginationStatus, PaginationOptions, SlidingSyncRoomExt, TimelineItem, TimelineItemContent}, Timeline};
+use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::BTreeMap, ops::Range, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
-use crate::{home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::{MediaCacheEntry, AVATAR_CACHE}, profile::user_profile::{enqueue_user_profile_update, UserProfile, UserProfileUpdate}, utils::MEDIA_THUMBNAIL_FORMAT};
+use crate::{avatar_cache::AvatarUpdate, home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
 
 
@@ -56,7 +53,11 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     let homeserver_url = cli.homeserver.as_ref()
         .map(|h| h.as_str())
         .unwrap_or("https://matrix-client.matrix.org/");
-    let mut builder = Client::builder().homeserver_url(homeserver_url);
+        // .unwrap_or("https://matrix.org/");
+    let mut builder = Client::builder()
+        .homeserver_url(homeserver_url)
+        // The matrix homeserver's sliding sync proxy doesn't support Simplified MSC3575.
+        .simplified_sliding_sync(false);
 
     if let Some(proxy) = cli.proxy {
         builder = builder.proxy(proxy);
@@ -112,8 +113,14 @@ pub enum MatrixRequest {
     /// Request to paginate (backwards fetch) the older events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
-        batch_size: u16,
-        max_events: u16,
+        /// The maximum number of timeline events to fetch in each pagination batch.
+        num_events: u16,
+        /// Which "direction" to paginate in:
+        /// * `true`: paginate forwards to retrieve later events (towards the end of the timeline),
+        ///    which only works if the timeline is *focused* on a specific event.
+        /// * `false`: (default) paginate backwards to fill in earlier events (towards the start of the timeline),
+        ///    which works if the timeline is in either live mode and focused mode.
+        forwards: bool,
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
@@ -144,6 +151,13 @@ pub enum MatrixRequest {
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
+    /// Request to fetch an Avatar image from the server.
+    /// Upon completion of the async media request, the `on_fetched` function
+    /// will be invoked with the content of an `AvatarUpdate`.
+    FetchAvatar {
+        mxc_uri: OwnedMxcUri,
+        on_fetched: fn(AvatarUpdate),
+    },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with four arguments: the `destination`, the `media_request`,
@@ -158,6 +172,15 @@ pub enum MatrixRequest {
     SendMessage {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
+    },
+    /// Sends a notice to the given room that the current user is or is not typing.
+    ///
+    /// This request does not return a response or notify the UI thread, and
+    /// furthermore, there is no need to send a follow-up request to stop typing
+    /// (though you certainly can do so).
+    SendTypingNotice {
+        room_id: OwnedRoomId,
+        typing: bool,
     }
 }
 
@@ -179,7 +202,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
     
     while let Some(request) = receiver.recv().await {
         match request {
-            MatrixRequest::PaginateRoomTimeline { room_id, batch_size, max_events: _max_events } => {
+            MatrixRequest::PaginateRoomTimeline { room_id, num_events, forwards } => {
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -189,25 +212,34 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                     let room_id2 = room_id.clone();
                     let timeline_ref = room_info.timeline.clone();
+                    let timeline_ref2 = timeline_ref.clone();
                     let sender = room_info.timeline_update_sender.clone();
 
-                    if room_info.pagination_status_task.is_none() {
-                        let mut back_pagination_subscriber = room_info.timeline.back_pagination_status();
+                    // If the back-pagination status task is finished or doesn't exist, spawn a new one,
+                    // but only if the timeline is not already fully paginated.
+                    let should_spawn_pagination_status_task = match room_info.pagination_status_task.as_ref() {
+                        Some(t) => t.is_finished(),
+                        None => true,
+                    };
+                    if should_spawn_pagination_status_task {
                         room_info.pagination_status_task = Some(Handle::current().spawn( async move {
-                            loop {
-                                let status = back_pagination_subscriber.next().await;
-                                log!("### Timeline {room_id2} back pagination status: {:?}", status);
-                                match status {
-                                    Some(BackPaginationStatus::Idle) => {
-                                        sender.send(TimelineUpdate::PaginationIdle).unwrap();
-                                        SignalToUI::set_ui_signal();
+                            if let Some((pagination_status, mut pagination_stream)) = timeline_ref2.live_back_pagination_status().await {
+                                if !matches!(pagination_status, LiveBackPaginationStatus::Idle { hit_start_of_timeline: true }) {
+                                    while let Some(status) = pagination_stream.next().await {
+                                        log!("### Timeline {room_id2} back pagination status: {:?}", status);
+                                        match status {
+                                            LiveBackPaginationStatus::Idle { hit_start_of_timeline: false } => {
+                                                sender.send(TimelineUpdate::PaginationIdle).unwrap();
+                                                SignalToUI::set_ui_signal();
+                                            }
+                                            LiveBackPaginationStatus::Idle { hit_start_of_timeline: true } => {
+                                                sender.send(TimelineUpdate::TimelineStartReached).unwrap();
+                                                SignalToUI::set_ui_signal();
+                                                break;
+                                            }
+                                            _ => { }
+                                        }
                                     }
-                                    Some(BackPaginationStatus::TimelineStartReached) => {
-                                        sender.send(TimelineUpdate::TimelineStartReached).unwrap();
-                                        SignalToUI::set_ui_signal();
-                                        break;
-                                    }
-                                    _ => { }
                                 }
                             }
                         }));
@@ -219,14 +251,20 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
-                    log!("Sending pagination request for room {room_id}...");
-                    let res = timeline.paginate_backwards(
-                        // PaginationOptions::simple_request(batch_size)
-                        PaginationOptions::until_num_items(batch_size, _max_events)
-                    ).await;
+                    let direction = if forwards { "forwards" } else { "backwards" };
+                    log!("Sending {direction} pagination request for room {room_id}...");
+                    let res = if forwards {
+                        timeline.focused_paginate_forwards(num_events).await
+                    } else {
+                        timeline.paginate_backwards(num_events).await
+                    };
                     match res {
-                        Ok(_) => log!("Completed pagination request for room {room_id}."),
-                        Err(e) => error!("Error sending pagination request for room {room_id}: {e:?}"),
+                        Ok(_hit_start_or_end) => log!(
+                            "Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
+                            if forwards { "end" } else { "start" },
+                            if _hit_start_or_end { "yes" } else { "no" },
+                        ),
+                        Err(e) => error!("Error sending {direction} pagination request for room {room_id}: {e:?}"),
                     }
                 });
             }
@@ -258,7 +296,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     log!("Sending get user profile request: user: {user_id}, \
                         room: {room_id:?}, local_only: {local_only}...",
                     );
-                    let mut avatar_url: Option<OwnedMxcUri> = None;
+
                     let mut update = None;
 
                     if let Some(room_id) = room_id.as_ref() {
@@ -269,12 +307,11 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 room.get_member(&user_id).await
                             };
                             if let Ok(Some(room_member)) = member {
-                                avatar_url = room_member.avatar_url().map(|u| u.to_owned());
                                 update = Some(UserProfileUpdate::Full {
                                     new_profile: UserProfile {
                                         username: room_member.display_name().map(|u| u.to_owned()),
                                         user_id: user_id.clone(),
-                                        avatar_img_data: None, // will be fetched below
+                                        avatar_state: AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned())),
                                     },
                                     room_id: room_id.to_owned(),
                                     room_member,
@@ -288,14 +325,12 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     }
 
                     if update.is_none() && !local_only {
-                        // Note: in newer versions of the SDK, `client.get_profile()` is now `client.account().get_profile()`.
-                        if let Ok(response) = client.get_profile(&user_id).await {
-                            avatar_url = response.avatar_url;
+                        if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
                             update = Some(UserProfileUpdate::UserProfileOnly(
                                 UserProfile {
                                     username: response.displayname,
                                     user_id: user_id.clone(),
-                                    avatar_img_data: None, // will be fetched below
+                                    avatar_state: AvatarState::Known(response.avatar_url),
                                 }
                             ));
                         } else {
@@ -303,19 +338,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         }
                     }
 
-                    if let Some(mut upd) = update {
+                    if let Some(upd) = update {
                         log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
-                        if let Some(uri) = avatar_url {
-                            match upd {
-                                UserProfileUpdate::UserProfileOnly(ref mut new_profile)
-                                | UserProfileUpdate::Full { ref mut new_profile, .. } => {
-                                    new_profile.avatar_img_data = AVATAR_CACHE
-                                        .get_media_or_fetch_async(client, uri, None)
-                                        .await;
-                                }
-                                _ => { }
-                            }
-                        }
                         enqueue_user_profile_update(upd);
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
@@ -339,24 +363,51 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         if ignore_result.is_ok() { "succeeded." } else { "failed." },
                     );
 
+                    if ignore_result.is_err() {
+                        return;
+                    }
+
                     // We need to re-acquire the `RoomMember` object now that its state
-                    // has changed, i.e., the user has been (un)ignored).
+                    // has changed, i.e., the user has been (un)ignored.
                     // We then need to send an update to replace the cached `RoomMember`
                     // with the now-stale ignored state.
-                    if let Some(room) = ignore_result.is_ok()
-                        .then(|| client.get_room(&room_id))
-                        .flatten()
-                    {
+                    if let Some(room) = client.get_room(&room_id) {
                         if let Ok(Some(new_room_member)) = room.get_member(user_id).await {
                             log!("Enqueueing user profile update for user {user_id}, who went from {}ignored to {}ignored.",
                                 if room_member.is_ignored() { "" } else { "un" },
                                 if new_room_member.is_ignored() { "" } else { "un" },
                             );
                             enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
-                                room_id,
+                                room_id: room_id.clone(),
                                 room_member: new_room_member,
                             });
                         }
+                    }
+
+                    // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
+                    // Therefore, we need to re-fetch all timelines for all rooms,
+                    // and currently the only way to actually accomplish this is via pagination.
+                    // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
+                    //
+                    // Note that here we only proactively re-paginate the *current* room
+                    // (the one being viewed by the user when this ignore request was issued),
+                    // and all other rooms will be re-paginated in `handle_ignore_user_list_subscriber()`.`
+                    submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                        room_id,
+                        num_events: 50,
+                        forwards: false,
+                    });
+                });
+            }
+        
+            MatrixRequest::SendTypingNotice { room_id, typing } => {
+                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                    error!("BUG: client/room not found for typing notice request {room_id}");
+                    continue;
+                };
+                let _typing_task = Handle::current().spawn(async move {
+                    if let Err(e) = room.typing_notice(typing).await {
+                        error!("Failed to send typing notice to room {room_id}: {e:?}");
                     }
                 });
             }
@@ -368,6 +419,20 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     let res = client.resolve_room_alias(&room_alias).await;
                     log!("Resolved room alias {room_alias} to: {res:?}");
                     todo!("Send the resolved room alias back to the UI thread somehow.");
+                });
+            }
+
+            MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending fetch avatar request for {mxc_uri:?}...");
+                    let media_request = MediaRequest {
+                        source: MediaSource::Plain(mxc_uri.clone()),
+                        format: MEDIA_THUMBNAIL_FORMAT.into(),
+                    };
+                    let res = client.media().get_media_content(&media_request, true).await;
+                    log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
+                    on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
             }
 
@@ -389,15 +454,16 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         log!("BUG: room info not found for send message request {room_id}");
                         continue;
                     };
-
                     room_info.timeline.clone()
                 };
 
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
-                    timeline.send(message.into()).await;
-                    log!("Sent message to room {room_id}.");
+                    match timeline.send(message.into()).await {
+                        Ok(_send_handle) => log!("Sent message to room {room_id}."),
+                        Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+                    }
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -511,6 +577,22 @@ pub fn get_client() -> Option<Client> {
     CLIENT.get().cloned()
 }
 
+/// The list of users that the current user has chosen to ignore.
+/// Ideally we shouldn't have to maintain this list ourselves,
+/// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
+static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
+
+/// Returns a deep clone of the current list of ignored users.
+pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
+    IGNORED_USERS.lock().unwrap().clone()
+}
+
+/// Returns whether the given user ID is currently being ignored.
+pub fn is_user_ignored(user_id: &UserId) -> bool {
+    IGNORED_USERS.lock().unwrap().contains(user_id)
+}
+
+
 /// Returns the timeline update sender and receiver endpoints for the given room,
 /// if and only if the receiver exists.
 ///
@@ -589,18 +671,19 @@ async fn async_main_loop() -> Result<()> {
     let (client, _token) = login(cli).await?;
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
-    let mut filter = SyncRequestListFilters::default();
-    filter.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
+    // Listen for updates to the ignored user list.
+    handle_ignore_user_list_subscriber(client.clone());
+
+    let mut filters = ListFilters::default();
+    filters.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
 
     let visible_room_list_name = "VisibleRooms".to_owned();
     let visible_room_list = SlidingSyncList::builder(&visible_room_list_name)
-        // Load the most recent rooms, one at a time
-        .sort(vec!["by_recency".into()])
         .sync_mode(SlidingSyncMode::new_paging(5).maximum_number_of_rooms_to_fetch(50))
         // .sync_mode(SlidingSyncMode::new_growing(1))
         // only load a few timeline events per room to start with. We'll load more later on demand when a room is first viewed.
         .timeline_limit(20)
-        .filters(Some(filter))
+        .filters(Some(filters))
         .required_state(vec![ // we want to know immediately:
             (StateEventType::RoomEncryption, "".to_owned()),  // is it encrypted
             (StateEventType::RoomMember, "$LAZY".to_owned()), // lazily fetch room member profiles for users that have sent events
@@ -619,14 +702,14 @@ async fn async_main_loop() -> Result<()> {
         // .with_all_extensions()
         // we enable the account-data extension
         .with_account_data_extension(
-            assign!(v4::AccountDataConfig::default(), { enabled: Some(true) }),
-        ) 
+            assign!(AccountData::default(), { enabled: Some(true) }),
+        )
         // and the e2ee extension
-        .with_e2ee_extension(assign!(v4::E2EEConfig::default(), { enabled: Some(true) })) 
+        .with_e2ee_extension(assign!(E2EE::default(), { enabled: Some(true) }))
         // and the to-device extension
         .with_to_device_extension(
-            assign!(v4::ToDeviceConfig::default(), { enabled: Some(true) }),
-        ) 
+            assign!(ToDevice::default(), { enabled: Some(true) }),
+        )
         // .add_cached_list(visible_room_list).await?
         .add_list(visible_room_list)
         .build()
@@ -635,7 +718,6 @@ async fn async_main_loop() -> Result<()> {
 
     // let active_room_list_name = "ActiveRoom".to_owned();
     // let active_room_list = SlidingSyncList::builder(&active_room_list_name)
-    //     .sort(vec!["by_recency".into()])
     //     .sync_mode(SlidingSyncMode::new_paging(10))
     //     .timeline_limit(u32::MAX)
     //     .required_state(vec![ // we want to know immediately:
@@ -661,7 +743,7 @@ async fn async_main_loop() -> Result<()> {
             Some(Err(e)) => {
                 error!("sync loop was stopped by client error processing: {e}");
                 stream_error = Some(e);
-                continue;
+                break;
             }
             None => {
                 error!("sync loop ended unexpectedly");
@@ -674,6 +756,7 @@ async fn async_main_loop() -> Result<()> {
                 error!("Error: couldn't get Room {room_id:?} that had an update");
                 continue
             };
+            let room_name = room.compute_display_name().await;
 
             log!("\n{room_id:?} --> {:?} has an update
                 display_name: {:?},
@@ -690,7 +773,7 @@ async fn async_main_loop() -> Result<()> {
                 latest_event: {:?}
                 ",
                 room.name(),
-                room.display_name().await,
+                room_name,
                 room.topic(),
                 room.is_synced(), room.is_state_fully_synced(),
                 room.is_space(),
@@ -709,14 +792,24 @@ async fn async_main_loop() -> Result<()> {
 
             let Some(ssroom) = sliding_sync.get_room(&room_id).await else {
                 error!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
-                continue
+                continue;
             };
-            let Some(timeline) = ssroom.timeline().await else {
-                error!("Error: couldn't get timeline for room {room_id:?} that had an update.");
-                continue
-            };
-            
-            let room_name = ssroom.name();
+
+            // TODO: when the event cache handles its own cache, we can remove this.
+            client
+                .event_cache()
+                .add_initial_events(
+                    &room_id,
+                    ssroom.timeline_queue().iter().cloned().collect(),
+                    ssroom.prev_batch(),
+                )
+                .await?;
+
+            let timeline = Timeline::builder(&room)
+                .track_read_marker_and_receipts()
+                .build()
+                .await?;
+
             let latest_tl = timeline.latest_event().await;
 
             let mut room_exists = false;
@@ -760,13 +853,14 @@ async fn async_main_loop() -> Result<()> {
             }
 
             // Send an update to the rooms_list if the room name has changed.
-            if let Some(room_name) = room_name_changed {
+            if let Some(new_room_name) = room_name_changed {
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: room_id.clone(),
-                    room_name,
+                    new_room_name,
                 });
             }
 
+            let room_name_str = room_name.ok().map(|n| n.to_string());
             
             // Handle an entirely new room that we haven't seen before.
             if !room_exists {
@@ -781,12 +875,11 @@ async fn async_main_loop() -> Result<()> {
                     tl_arc.clone(),
                     timeline_update_sender.clone(),
                 ));
-                
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
                     room_id: Some(room_id.clone()),
                     latest: latest_tl.as_ref().map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
-                    avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
-                    room_name: room_name.clone(),
+                    avatar: avatar_from_room_name(room_name_str.as_deref().unwrap_or_default()),
+                    room_name: room_name_str.clone(),
                 }));
 
                 ALL_ROOM_INFO.lock().unwrap().insert(
@@ -810,7 +903,7 @@ async fn async_main_loop() -> Result<()> {
             // and we can't send an `UpdateRoomAvatar` update until after the `AddRoom` update has been sent.
             if room_avatar_changed {
                 Handle::current().spawn(async move {
-                    let avatar = room_avatar(&room, &room_name).await;
+                    let avatar = room_avatar(&room, &room_name_str).await;
                     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
                         room_id,
                         avatar,
@@ -829,6 +922,50 @@ async fn async_main_loop() -> Result<()> {
     } else {
         bail!("sync loop ended unexpectedly")
     }
+}
+
+
+#[allow(unused)]
+async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserId>> {
+    use matrix_sdk::ruma::events::ignored_user_list::IgnoredUserListEventContent;
+    let ignored_users = client.account()
+        .account_data::<IgnoredUserListEventContent>()
+        .await
+        .ok()??
+        .deserialize()
+        .ok()?
+        .ignored_users
+        .into_keys()
+        .collect();
+
+    Some(ignored_users)
+}
+
+
+fn handle_ignore_user_list_subscriber(client: Client) {
+    let mut subscriber = client.subscribe_to_ignore_user_list_changes();
+    Handle::current().spawn(async move {
+        while let Some(ignore_list) = subscriber.next().await {
+            log!("Received an updated ignored-user list: {ignore_list:?}");
+            let ignored_users_set = ignore_list
+                .into_iter()
+                .filter_map(|u| OwnedUserId::try_from(u).ok())
+                .collect::<BTreeSet<_>>();
+            *IGNORED_USERS.lock().unwrap() = ignored_users_set;
+
+            // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
+            // Therefore, we need to re-fetch all timelines for all rooms,
+            // and currently the only way to actually accomplish this is via pagination.
+            // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
+            for joined_room in client.joined_rooms() {
+                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                    room_id: joined_room.room_id().to_owned(),
+                    num_events: 50,
+                    forwards: false,
+                });
+            }
+        }
+    });
 }
 
 

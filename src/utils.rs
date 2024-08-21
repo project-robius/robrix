@@ -2,7 +2,7 @@ use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
-use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, api::client::media::get_content_thumbnail::v3::Method}, media::{MediaThumbnailSize, MediaFormat}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
@@ -86,7 +86,7 @@ pub enum MediaFormatConst {
     /// The file that was uploaded.
     File,
     /// A thumbnail of the file that was uploaded.
-    Thumbnail(MediaThumbnailSizeConst),
+    Thumbnail(MediaThumbnailSettingsConst),
 }
 impl From<MediaFormatConst> for MediaFormat {
     fn from(constant: MediaFormatConst) -> Self {
@@ -97,16 +97,29 @@ impl From<MediaFormatConst> for MediaFormat {
     }
 }
 
+/// A const-compatible version of [`MediaThumbnailSettings`].
+#[derive(Clone, Debug)]
+pub struct MediaThumbnailSettingsConst {
+    pub size: MediaThumbnailSizeConst,
+    pub animated: bool,
+}
+impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
+    fn from(constant: MediaThumbnailSettingsConst) -> Self {
+        Self {
+            size: constant.size.into(),
+            animated: constant.animated,
+        }
+    }
+}
+
 /// A const-compatible version of [`MediaThumbnailSize`].
 #[derive(Clone, Debug)]
 pub struct MediaThumbnailSizeConst {
     /// The desired resizing method.
     pub method: Method,
-
     /// The desired width of the thumbnail. The actual thumbnail may not match
     /// the size specified.
     pub width: u32,
-
     /// The desired height of the thumbnail. The actual thumbnail may not match
     /// the size specified.
     pub height: u32,
@@ -122,11 +135,16 @@ impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
 }
 
 /// The default media format to use for thumbnail requests.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(MediaThumbnailSizeConst {
-    method: Method::Scale,
-    width: 40,
-    height: 40,
-});
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst {
+        size: MediaThumbnailSizeConst {
+            method: Method::Scale,
+            width: 40,
+            height: 40,
+        },
+        animated: false,
+    }
+);
 
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
