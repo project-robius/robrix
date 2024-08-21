@@ -7,16 +7,17 @@ live_design! {
 
     import crate::home::rooms_list::RoomsList;
     import crate::home::main_content::MainContent;
+    import crate::shared::styles::*;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
 
-    Spaces = <View> {c
+    Spaces = <View> {
         padding: {top: 40.}
         width: 60.
         flow: Down
         show_bg: true
         draw_bg: {
-            color: #E8
+            color: (COLOR_SECONDARY)
         }
         filler_y = <View> {
             height: Fill,
@@ -55,14 +56,24 @@ live_design! {
         }
     }
 
-    SideBar = <RoundedView> {
+    SideBar = <View> {
         padding: {top: 40., left: 20., right: 20.}
         width: 400, height: Fill
         flow: Down, spacing: 20.
         show_bg: true,
         draw_bg: {
-            radius: 2.0
-            border_color: #x0
+            instance bg_color: (COLOR_PRIMARY)
+            instance border_color: #f2f2f2
+            instance border_width: 0.003
+
+            // Draws a right-side border
+            fn pixel(self) -> vec4 {            
+                if self.pos.x > 1.0 - self.border_width {
+                    return self.border_color;
+                } else {
+                    return self.bg_color;
+                }
+            }
         }
         <View> {
             width: Fill, height: Fit
@@ -93,10 +104,6 @@ live_design! {
 
     HomeScreen = <View> {
         flow: Right
-        show_bg: true,
-        draw_bg: {
-            color: #EEEEEE,
-        }
         <Spaces> {}
         <SideBar> {}
         <MainContent> {}

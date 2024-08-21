@@ -420,17 +420,18 @@ live_design! {
         width: Fill, height: Fill,
         show_bg: true,
         draw_bg: {
-            color: #E
+            color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
         
         tab_title = <View> {
             width: Fit, height: Fit,
             align: {x: 0.0, y: 0.5},
+            margin: {top: 10.0}
             padding: 10.
             show_bg: true
             draw_bg: {
-                color: #f
+                color: (COLOR_PRIMARY)
             }
             room_name = <Label> {
                 draw_text: {
@@ -447,7 +448,7 @@ live_design! {
             flow: Overlay,
             show_bg: true
             draw_bg: {
-                color: #f
+                color: (COLOR_PRIMARY_DARKER)
             }
             
             <KeyboardView> {
@@ -463,7 +464,7 @@ live_design! {
                     flow: Right, align: {y: 1.0}, padding: 10.
                     show_bg: true,
                     draw_bg: {
-                        color: #fff
+                        color: (COLOR_PRIMARY)
                     }
 
                     message_input = <TextInput> {

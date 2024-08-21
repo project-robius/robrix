@@ -10,16 +10,16 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
 
+    import crate::shared::styles::*;
     import crate::home::room_screen::RoomScreen;
     import crate::shared::search_bar::SearchBar;
 
     MainContent = {{MainContent}} {
-        padding: {top: 10.}
         width: Fill, height: Fill
-        flow: Down, spacing: 10.
+        flow: Down, 
         show_bg: true
         draw_bg: {
-            color: #E
+            color: (COLOR_PRIMARY_DARKER)
         }
         align: {x: 0.5, y: 0.5}
 

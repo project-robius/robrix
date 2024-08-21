@@ -59,4 +59,8 @@ live_design! {
     COLOR_DIVIDER_DARK = #x00000044
 
     COLOR_DANGER_RED = #xDC0005
+
+    COLOR_PRIMARY = #ffffff
+    COLOR_PRIMARY_DARKER = #fefefe
+    COLOR_SECONDARY = #eef2f4
 }
