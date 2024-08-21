@@ -10,12 +10,13 @@ live_design! {
     import crate::home::rooms_list::RoomsList;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
+    ICON_ADD = dep("crate://self/resources/icons/add.svg")
 
     CollapsableTitle = <View> {
         width: Fill, height: Fit
         flow: Right, spacing: 10.
         align: {x: 0.0, y: 0.5}
-        icon = <Icon> {
+        collapse_icon = <Icon> {
             draw_icon: {
                 svg_file: (ICON_COLLAPSE),
                 uniform rotation_angle: -90.0,
@@ -63,12 +64,32 @@ live_design! {
                 text_style: <TITLE_TEXT>{ font_size: 11}
             }
         }
+
+        <View> {
+            width: Fill
+        }
+
+        add_icon = <View> {
+            width: Fit
+            visible: false
+            padding: {right: 10}
+            align: {x: 0.5, y: 0.5}
+            <Icon> {
+                icon_walk: {width: 10, height: 10}
+                draw_icon: {
+                    svg_file: (ICON_ADD),
+                    fn get_color(self) -> vec4 {
+                        return #1C274C;
+                    }
+                }
+            }
+        }
     }
 
     RoomsSideBar = <View> {
         padding: {top: 20., left: 20., right: 20.}
         width: 400, height: Fill
-        flow: Down, spacing: 20.
+        flow: Down, spacing: 10
         show_bg: true,
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
@@ -91,22 +112,30 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
-        <CollapsableTitle> { 
-            title = {
-                text: "People"
+        <View> {
+            flow: Down, spacing: 20
+            padding: {top: 20}
+            width: Fill, height: Fit
+            <CollapsableTitle> { 
+                title = {
+                    text: "People"
+                }
             }
-        }
-        <CollapsableTitle> { 
-            title = {
-                text: "Channels"
+            <CollapsableTitle> { 
+                title = {
+                    text: "Channels"
+                }
             }
-        }
-        <CollapsableTitle> {
-            title = {
-                text: "Rooms"
-            }
-            icon = {
-                draw_icon: { rotation_angle: 0. }
+            <CollapsableTitle> {
+                title = {
+                    text: "Rooms"
+                }
+                collapse_icon = {
+                    draw_icon: { rotation_angle: 0. }
+                }
+                add_icon = {
+                    visible: true
+                }
             }
         }
         <RoomsList> {}
