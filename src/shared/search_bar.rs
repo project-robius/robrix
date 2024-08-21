@@ -16,7 +16,7 @@ live_design! {
 
         show_bg: true,
         draw_bg: {
-            color: (COLORP_PRIMARY)
+            color: (COLOR_PRIMARY)
         }
 
         padding: {top: 3, bottom: 3, left: 10, right: 20}

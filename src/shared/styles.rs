@@ -63,4 +63,6 @@ live_design! {
     COLOR_PRIMARY = #ffffff
     COLOR_PRIMARY_DARKER = #fefefe
     COLOR_SECONDARY = #eef2f4
+
+    COLOR_SELECTED_PRIMARY = #0f88fe
 }
