@@ -9,7 +9,7 @@ live_design! {
 
     WELCOME_TEXT_COLOR: #x4
 
-    WelcomeScreen = {{WelcomeScreen}} {
+    WelcomeScreen = <View> {
         width: Fill, height: Fill
         align: {x: 0.0, y: 0.5}
         welcome_message = <RoundedView> {
@@ -88,31 +88,5 @@ live_design! {
                 "
             }
         }
-    }
-}
-
-#[derive(Live, LiveHook, Widget)]
-pub struct WelcomeScreen {
-    #[deref]
-    view: View,
-}
-
-impl Widget for WelcomeScreen {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.redraw(cx);
-        self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl WelcomeScreenRef {
-    pub fn set_visible(&mut self, visible: bool) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.visible = visible;
     }
 }

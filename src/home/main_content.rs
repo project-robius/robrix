@@ -25,10 +25,7 @@ live_design! {
 
         <SearchBar> {}
 
-        welcome = <View> {
-            width: Fill, height: Fill
-            welcome_screen = <WelcomeScreen> {}
-        }
+        welcome = <WelcomeScreen> {}
         rooms = <View> {
             align: {x: 0.5, y: 0.5}
             width: Fill, height: Fill
@@ -76,12 +73,12 @@ impl MatchEvent for MainContent {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions.iter() {
             match action.as_widget_action().cast() {
+                // Whenever a room is selected, we hide the welcome message and switch the to the rooms screen.
                 RoomListAction::Selected {
                     room_id,
                     room_index: _,
                     room_name,
                 } => {
-                    log!("Room selected: {}", room_id);
                     self.panel_status = PanelStatus::DisplayingRooms;
 
                     let displayed_room_name =
