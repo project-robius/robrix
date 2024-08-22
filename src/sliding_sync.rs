@@ -6,7 +6,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, assign, events::{room::message::{ForwardThread, RoomMessageEventContent}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+        api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineItem, TimelineItemContent}, Timeline};
@@ -18,7 +18,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
-use crate::{home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::{MediaCacheEntry, AVATAR_CACHE}, profile::user_profile::{enqueue_user_profile_update, UserProfile, UserProfileUpdate}, utils::MEDIA_THUMBNAIL_FORMAT};
+use crate::{avatar_cache::AvatarUpdate, home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
 
 
@@ -151,6 +151,13 @@ pub enum MatrixRequest {
     },
     /// Request to resolve a room alias into a room ID and the servers that know about that room.
     ResolveRoomAlias(OwnedRoomAliasId),
+    /// Request to fetch an Avatar image from the server.
+    /// Upon completion of the async media request, the `on_fetched` function
+    /// will be invoked with the content of an `AvatarUpdate`.
+    FetchAvatar {
+        mxc_uri: OwnedMxcUri,
+        on_fetched: fn(AvatarUpdate),
+    },
     /// Request to fetch media from the server.
     /// Upon completion of the async media request, the `on_fetched` function
     /// will be invoked with four arguments: the `destination`, the `media_request`,
@@ -290,7 +297,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     log!("Sending get user profile request: user: {user_id}, \
                         room: {room_id:?}, local_only: {local_only}...",
                     );
-                    let mut avatar_url: Option<OwnedMxcUri> = None;
+
                     let mut update = None;
 
                     if let Some(room_id) = room_id.as_ref() {
@@ -301,12 +308,11 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                                 room.get_member(&user_id).await
                             };
                             if let Ok(Some(room_member)) = member {
-                                avatar_url = room_member.avatar_url().map(|u| u.to_owned());
                                 update = Some(UserProfileUpdate::Full {
                                     new_profile: UserProfile {
                                         username: room_member.display_name().map(|u| u.to_owned()),
                                         user_id: user_id.clone(),
-                                        avatar_img_data: None, // will be fetched below
+                                        avatar_state: AvatarState::Known(room_member.avatar_url().map(|u| u.to_owned())),
                                     },
                                     room_id: room_id.to_owned(),
                                     room_member,
@@ -321,12 +327,11 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                     if update.is_none() && !local_only {
                         if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                            avatar_url = response.avatar_url;
                             update = Some(UserProfileUpdate::UserProfileOnly(
                                 UserProfile {
                                     username: response.displayname,
                                     user_id: user_id.clone(),
-                                    avatar_img_data: None, // will be fetched below
+                                    avatar_state: AvatarState::Known(response.avatar_url),
                                 }
                             ));
                         } else {
@@ -334,19 +339,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         }
                     }
 
-                    if let Some(mut upd) = update {
+                    if let Some(upd) = update {
                         log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
-                        if let Some(uri) = avatar_url {
-                            match upd {
-                                UserProfileUpdate::UserProfileOnly(ref mut new_profile)
-                                | UserProfileUpdate::Full { ref mut new_profile, .. } => {
-                                    new_profile.avatar_img_data = AVATAR_CACHE
-                                        .get_media_or_fetch_async(client, uri, None)
-                                        .await;
-                                }
-                                _ => { }
-                            }
-                        }
                         enqueue_user_profile_update(upd);
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
@@ -375,7 +369,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     }
 
                     // We need to re-acquire the `RoomMember` object now that its state
-                    // has changed, i.e., the user has been (un)ignored).
+                    // has changed, i.e., the user has been (un)ignored.
                     // We then need to send an update to replace the cached `RoomMember`
                     // with the now-stale ignored state.
                     if let Some(room) = client.get_room(&room_id) {
@@ -426,6 +420,20 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     let res = client.resolve_room_alias(&room_alias).await;
                     log!("Resolved room alias {room_alias} to: {res:?}");
                     todo!("Send the resolved room alias back to the UI thread somehow.");
+                });
+            }
+
+            MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending fetch avatar request for {mxc_uri:?}...");
+                    let media_request = MediaRequest {
+                        source: MediaSource::Plain(mxc_uri.clone()),
+                        format: MEDIA_THUMBNAIL_FORMAT.into(),
+                    };
+                    let res = client.media().get_media_content(&media_request, true).await;
+                    log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
+                    on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
             }
 

@@ -5,6 +5,8 @@
 
 Robrix is a Matrix chat client written in Rust to demonstrate the functionality of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust.
 
+▶️  [Click here to see the Robrix project tracker!](https://github.com/orgs/project-robius/projects/4/)
+
 > ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
 >
 > Note that only the first "Rooms" tab of the UI is in use.
@@ -83,42 +85,44 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Fetch user profiles (displayable names)
 - [x] Fetch and display user profile avatars
 - [x] Backwards pagination (upon viewing a room timeline)
-- [ ] Dynamic backwards pagination based on scroll position/movement
-- [ ] Loading animation while waiting for pagination request
-- [x] Stable positioning of events view during timeline update
+- [ ] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
+- [ ] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
+- [x] Stable positioning of events during timeline update
+- [ ] Stable positioning of events after a full timeline clear: https://github.com/project-robius/robrix/issues/103 
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
-- [ ] Display multimedia (audio/video/gif) message events
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [ ] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
-- [ ] Interactive reaction button, send reactions
+- [ ] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
 - [ ] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
-- [ ] Error display banners: no connection, failure to login, sync timeout.
-- [ ] Collapsible/expandable view of contiguous "small" events
-- [ ] E2EE device verification, decrypt message content
+- [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
+- [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
+- [ ] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
-- [ ] Username/password login screen
-- [ ] SSO, other 3rd-party auth providers login screen
+- [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
+- [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs)
-- [ ] Search messages
-- [ ] Room browser / search
+- [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
+- [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
+- [ ] Room browser, search for public rooms
 - [ ] Room creation
 - [ ] Room settings/info screen
 - [ ] Room members pane
-- [x] Side panel for info on a user in a room (click on their Avatar)
+- [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
-- [ ] Persistence of app state to disk
+- [ ] Persistence of app state to disk: https://github.com/project-robius/robrix/issues/112
 
 
 ## Known problems/issues
  - URLs do not wrap properly; that is a Makepad-side problem.
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
- - Ignoring/unignoring a user clears all timelines and requires an app reboot (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703)
+ - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained

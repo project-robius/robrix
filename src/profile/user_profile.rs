@@ -1,160 +1,54 @@
-use std::{borrow::Cow, cell::RefCell, collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::Arc};
-use crossbeam_queue::SegQueue;
+use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
 use makepad_widgets::*;
-use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedRoomId, OwnedUserId, UserId}};
+use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedMxcUri, OwnedRoomId, OwnedUserId}};
 use crate::{
-    shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
+    avatar_cache::{self, AvatarCacheEntry}, shared::avatar::AvatarWidgetExt, sliding_sync::{get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
 };
 
-thread_local! {
-    /// A cache of each user's profile and the rooms they are a member of, indexed by user ID.
-    static USER_PROFILE_CACHE: RefCell<BTreeMap<OwnedUserId, UserProfileCacheEntry>> = RefCell::new(BTreeMap::new());
-}
-struct UserProfileCacheEntry {
-    user_profile: UserProfile,
-    room_members: BTreeMap<OwnedRoomId, RoomMember>,
-}
+use super::user_profile_cache::{self, get_user_profile_and_room_member, get_user_room_member_info};
 
-/// The queue of user profile updates waiting to be processed by the UI thread's event handler.
-static PENDING_USER_PROFILE_UPDATES: SegQueue<UserProfileUpdate> = SegQueue::new();
-
-/// Enqueues a new user profile update and signals the UI
-/// such that the new update will be handled by the user profile sliding pane widget.
-pub fn enqueue_user_profile_update(update: UserProfileUpdate) {
-    PENDING_USER_PROFILE_UPDATES.push(update);
-    SignalToUI::set_ui_signal();
+/// The currently-known state of a user's avatar.
+#[derive(Clone, Debug)]
+#[allow(unused)]
+pub enum AvatarState {
+    /// It isn't yet known if this user has an avatar.
+    Unknown,
+    /// It is known that this user does or does not have an avatar.
+    Known(Option<OwnedMxcUri>),
+    /// This user does have an avatar, and it has been fetched successfully.
+    Loaded(Arc<[u8]>),
+    /// This user does have an avatar, but we failed to fetch it.
+    Failed,
 }
-
-/// A user profile update, which can include changes to a user's full profile
-/// and/or room membership info.
-pub enum UserProfileUpdate {
-    /// A fully-fetched user profile, with info about the user's membership in a given room.
-    Full {
-        new_profile: UserProfile,
-        room_id: OwnedRoomId,
-        room_member: RoomMember,
-    },
-    /// An update to the user's room membership info only, without any profile changes.
-    RoomMemberOnly {
-        room_id: OwnedRoomId,
-        room_member: RoomMember,
-    },
-    /// An update to the user's profile only, without changes to room membership info.
-    UserProfileOnly(UserProfile),
-}
-impl UserProfileUpdate {
-    /// Returns the user ID associated with this update.
-    #[allow(unused)]
-    pub fn user_id(&self) -> &UserId {
-        match self {
-            UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
-            UserProfileUpdate::RoomMemberOnly { room_member, .. } => &room_member.user_id(),
-            UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
+impl AvatarState {
+    /// Returns the avatar data, if in the `Loaded` state.
+    pub fn data(&self) -> Option<&Arc<[u8]>> {
+        if let AvatarState::Loaded(data) = self {
+            Some(data)
+        } else {
+            None
         }
     }
 
-    /// Applies this update to the given user profile pane info,
-    /// only if the user_id and room_id match that of the update.
-    ///
-    /// Returns `true` if the update resulted in any actual content changes.
-    #[allow(unused)]
-    fn apply_to_current_pane(&self, info: &mut UserProfilePaneInfo) -> bool {
-        match self {
-            UserProfileUpdate::Full { new_profile, room_id, room_member } => {
-                if info.user_id == new_profile.user_id {
-                    info.avatar_info.user_profile = new_profile.clone();
-                    if &info.room_id == room_id {
-                        info.room_member = Some(room_member.clone());
-                    }
-                    return true;
-                }
-            }
-            UserProfileUpdate::RoomMemberOnly { room_id, room_member } => {
-                log!("Applying RoomMemberOnly update to user profile pane info: user_id={}, room_id={}, ignored={}",
-                    room_member.user_id(), room_id, room_member.is_ignored(),
-                );
-                if info.user_id == room_member.user_id() && &info.room_id == room_id {
-                    log!("RoomMemberOnly update matches user profile pane info, updating room member.");
-                    info.room_member = Some(room_member.clone());
-                    return true;
-                }
-            }
-            UserProfileUpdate::UserProfileOnly(new_profile) => {
-                if info.user_id == new_profile.user_id {
-                    info.avatar_info.user_profile = new_profile.clone();
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
-    /// Applies this update to the given user profile info cache.
-    fn apply_to_cache(self, cache: &mut BTreeMap<OwnedUserId, UserProfileCacheEntry>) {
-        match self {
-            UserProfileUpdate::Full { new_profile, room_id, room_member } => {
-                match cache.entry(new_profile.user_id.to_owned()) {
-                    Entry::Occupied(mut entry) => {
-                        let entry_mut = entry.get_mut();
-                        entry_mut.user_profile = new_profile;
-                        entry_mut.room_members.insert(room_id, room_member);
-                    }
-                    Entry::Vacant(entry) => {
-                        entry.insert(UserProfileCacheEntry {
-                            user_profile: new_profile,
-                            room_members: {
-                                let mut room_members_map = BTreeMap::new();
-                                room_members_map.insert(room_id, room_member);
-                                room_members_map
-                            },
-                        });
-                    }
-                }
-            }
-            UserProfileUpdate::RoomMemberOnly { room_id, room_member } => {
-                match cache.entry(room_member.user_id().to_owned()) {
-                    Entry::Occupied(mut entry) =>{
-                        entry.get_mut().room_members.insert(room_id, room_member);
-                    }
-                    Entry::Vacant(entry) => {
-                        // This shouldn't happen, but we can still technically handle it correctly.
-                        warning!("BUG: User profile cache entry not found for user {} when handling RoomMemberOnly update", room_member.user_id());
-                        entry.insert(UserProfileCacheEntry {
-                            user_profile: UserProfile {
-                                user_id: room_member.user_id().to_owned(),
-                                username: None,
-                                avatar_img_data: None,
-                            },
-                            room_members: {
-                                let mut room_members_map = BTreeMap::new();
-                                room_members_map.insert(room_id, room_member);
-                                room_members_map
-                            },
-                        });
-                    }
-                }
-            }
-            UserProfileUpdate::UserProfileOnly(new_profile) => {
-                match cache.entry(new_profile.user_id.to_owned()) {
-                    Entry::Occupied(mut entry) => entry.get_mut().user_profile = new_profile,
-                    Entry::Vacant(entry) => {
-                        entry.insert(UserProfileCacheEntry {
-                            user_profile: new_profile,
-                            room_members: BTreeMap::new(),
-                        });
-                    }
-                }
-            }
+    /// Returns the avatar URI, if in the `Known` state and it exists.
+    pub fn uri(&self) -> Option<&OwnedMxcUri> {
+        if let AvatarState::Known(Some(uri)) = self {
+            Some(uri)
+        } else {
+            None
         }
     }
 }
 
-/// Information retrieved about a user: their displayable name, ID, and avatar image.
+/// Information retrieved about a user: their displayable name, ID, and known avatar state.
 #[derive(Clone, Debug)]
 pub struct UserProfile {
     pub user_id: OwnedUserId,
+    /// The user's default display name, if set.
+    /// Note that a user may have per-room display names,
+    /// so this should be considered a fallback.
     pub username: Option<String>,
-    pub avatar_img_data: Option<Arc<[u8]>>,
+    pub avatar_state: AvatarState,
 }
 impl UserProfile {
     /// Returns the user's displayable name, using the user ID as a fallback.
@@ -179,19 +73,19 @@ impl UserProfile {
 }
 
 
-/// Information needed to display an avatar widget: a user profile and room ID.
+/// Basic info needed to populate the contents of an avatar widget.
 #[derive(Clone, Debug)]
-pub struct AvatarInfo {
+pub struct UserProfileAndRoomId {
     pub user_profile: UserProfile,
     pub room_id: OwnedRoomId,
 }
-impl Deref for AvatarInfo {
+impl Deref for UserProfileAndRoomId {
     type Target = UserProfile;
     fn deref(&self) -> &Self::Target {
         &self.user_profile
     }
 }
-impl DerefMut for AvatarInfo {
+impl DerefMut for UserProfileAndRoomId {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.user_profile
     }
@@ -539,26 +433,26 @@ live_design! {
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum ShowUserProfileAction {
-    ShowUserProfile(AvatarInfo),
+    ShowUserProfile(UserProfileAndRoomId),
     None,
 }
 
 /// Information needed to populate/display the user profile sliding pane.
 #[derive(Clone, Debug)]
 pub struct UserProfilePaneInfo {
-    pub avatar_info: AvatarInfo,
+    pub profile_and_room_id: UserProfileAndRoomId,
     pub room_name: String,
     pub room_member: Option<RoomMember>,
 }
 impl Deref for UserProfilePaneInfo {
-    type Target = AvatarInfo;
+    type Target = UserProfileAndRoomId;
     fn deref(&self) -> &Self::Target {
-        &self.avatar_info
+        &self.profile_and_room_id
     }
 }
 impl DerefMut for UserProfilePaneInfo {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.avatar_info
+        &mut self.profile_and_room_id
     }
 }
 impl UserProfilePaneInfo {
@@ -627,29 +521,41 @@ impl Widget for UserProfileSlidingPane {
             return;
         }
 
-        // Handle the user profile info being updated by a background task.
-        let mut redraw_this_pane = false;
+        // A UI Signal indicates this user profile was updated by a background task.
         if let Event::Signal = event {
-            USER_PROFILE_CACHE.with_borrow_mut(|cache| {
-                while let Some(update) = PENDING_USER_PROFILE_UPDATES.pop() {
-                    // Insert the updated info into the cache
-                    update.apply_to_cache(cache);
-                }
+            user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
 
-                // Apply this update to the current user profile pane (if relevant).
-                if let Some(our_info) = self.info.as_mut() {
-                    if let Some(new_info) = cache.get(&our_info.user_id) {
-                        our_info.user_profile = new_info.user_profile.clone();
-                        our_info.room_member = new_info.room_members.get(&our_info.room_id).cloned();
-                        redraw_this_pane = true;
+            // Re-fetch the currently-displayed user profile info from the cache in case it was updated.
+            let mut redraw_this_pane = false;
+            if let Some(our_info) = self.info.as_mut() {
+                if let (Some(new_profile), room_member) = get_user_profile_and_room_member(
+                    cx,
+                    &our_info.user_id,
+                    &our_info.room_id,
+                ) {
+                    our_info.user_profile = new_profile;
+                    our_info.room_member = room_member;
+                    // Use the avatar URI from the `room_member`, as it will be the most up-to-date
+                    // and specific to the room that this user profile sliding pane is currently being shown for.
+                    if let Some(avatar_uri) = our_info.room_member.as_ref()
+                        .and_then(|rm| rm.avatar_url().map(|u| u.to_owned()))
+                    {
+                        our_info.avatar_state = AvatarState::Known(Some(avatar_uri));
                     }
+                    // If we know the avatar URI, try to get/fetch the actual avatar image data.
+                    if let AvatarState::Known(Some(uri)) = &our_info.avatar_state {
+                        if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, uri.to_owned()) {
+                            our_info.avatar_state = AvatarState::Loaded(data);
+                        }
+                    }
+                    redraw_this_pane = true;
                 }
-            });
-        }
-
-        if redraw_this_pane {
-            // log!("Redrawing user profile pane due to user profile update");
-            self.redraw(cx);
+            }
+            if redraw_this_pane {
+                // log!("Redrawing user profile pane due to user profile update");
+                self.redraw(cx);
+            }
         }
 
         let Some(info) = self.info.as_ref() else { return };
@@ -700,7 +606,8 @@ impl Widget for UserProfileSlidingPane {
 
         // Set the avatar image, using the user name as a fallback.
         let avatar_ref = self.avatar(id!(avatar));
-        info.avatar_img_data.as_ref()
+        info.avatar_state
+            .data()
             .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, &data)).ok())
             .unwrap_or_else(|| avatar_ref.show_text(None, info.displayable_name()));
 
@@ -754,16 +661,19 @@ impl UserProfileSlidingPane {
     /// retrieve the user's room membership info from the local cache.
     /// If the user's room membership info is not found in the cache,
     /// it will submit a request to asynchronously fetch it from the server.
-    pub fn set_info(&mut self, mut info: UserProfilePaneInfo) {
+    pub fn set_info(&mut self, _cx: &mut Cx, mut info: UserProfilePaneInfo) {
         if info.room_member.is_none() {
-            USER_PROFILE_CACHE.with_borrow(|cache| {
-                if let Some(entry) = cache.get(&info.user_id) {
-                    if let Some(room_member) = entry.room_members.get(&info.room_id) {
-                        log!("Found user {} room member info in cache", info.user_id);
-                        info.room_member = Some(room_member.clone());
-                    }
+            if let Some(room_member) = get_user_room_member_info(
+                _cx,
+                &info.user_id,
+                &info.room_id,
+            ) {
+                log!("Found user {} room member info in cache", info.user_id);
+                if let Some(uri) = room_member.avatar_url() {
+                    info.avatar_state = AvatarState::Known(Some(uri.to_owned()));
                 }
-            });
+                info.room_member = Some(room_member);
+            }
         }
         if info.room_member.is_none() {
             log!("Did not find user {} room member info in cache, fetching from server.", info.user_id);
@@ -773,6 +683,11 @@ impl UserProfileSlidingPane {
                 room_id: Some(info.room_id.clone()),
                 local_only: false,
             });
+        }
+        if let AvatarState::Known(Some(uri)) = &info.avatar_state {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(_cx, uri.clone()) {
+                info.avatar_state = AvatarState::Loaded(data);
+            }
         }
         self.info = Some(info);
     }
@@ -793,9 +708,9 @@ impl UserProfileSlidingPaneRef {
     }
 
     /// See [`UserProfileSlidingPane::set_info()`]
-    pub fn set_info(&self, info: UserProfilePaneInfo) {
+    pub fn set_info(&self, _cx: &mut Cx, info: UserProfilePaneInfo) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_info(info);
+        inner.set_info(_cx, info);
     }
 
     /// See [`UserProfileSlidingPane::show()`]
