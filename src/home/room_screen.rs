@@ -18,7 +18,7 @@ use matrix_sdk::{
                 history_visibility::HistoryVisibility,
                 join_rules::JoinRule,
                 message::{
-                    sanitize::remove_plain_reply_fallback, MessageFormat, MessageType,
+                    MessageFormat, MessageType,
                     RoomMessageEventContent,
                 },
                 MediaSource,
@@ -33,7 +33,7 @@ use matrix_sdk::{
 };
 use matrix_sdk_ui::timeline::{
     self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange,
-    Profile, ReactionsByKeyBySender, RepliedToInfo, ReplyContent, RoomMembershipChange,
+    Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange,
     TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem,
 };
 
@@ -71,14 +71,12 @@ live_design! {
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
     ICO_COMMENT = dep("crate://self/resources/icon_comment.svg")
-    ICO_REPLY = dep("crate://self/resources/icon_reply.svg")
+    ICO_REPLY = dep("crate://self/resources/icons/reply.svg")
     ICO_SEND = dep("crate://self/resources/icon_send.svg")
     ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
-    // TODO: Maybe replace with a specific reply icon.
-    ICO_REPLY = dep("crate://self/resources/icons/go_back.svg")
 
     TEXT_SUB = {
         font_size: (10),
@@ -161,6 +159,7 @@ live_design! {
 
     REACTION_TEXT_COLOR = #4c00b0
 
+    // The optional view that shows which message is being replied to.
     ReplyingPreview = <View> {
         visible: false
         width: Fill
@@ -179,7 +178,7 @@ live_design! {
                     text_style: <TEXT_SUB> {},
                     color: (COLOR_META)
                 }
-                text: "Replying"
+                text: "Replying to:"
             }
 
             filler = <View> {width: Fill, height: Fill}
@@ -278,7 +277,7 @@ live_design! {
         visible: true,
         width: Fit,
         height: Fit,
-        align: {x: 1, y: 1}
+        align: {x: 1, y: 0}
 
         draw_bg: {
             border_width: 0.0,
@@ -286,7 +285,6 @@ live_design! {
             radius: 2
         }
 
-        // TODO: Fix styles
         reply_button = <IconButton> {
             visible: false
             width: Fit,
@@ -295,10 +293,11 @@ live_design! {
             draw_icon: {
                 svg_file: (ICO_REPLY),
             }
-            icon_walk: {width: 12, height: 12}
+            icon_walk: {width: 15, height: 15, margin: {top: 4.0}}
         }
     }
 
+    // An optional view used to show reactions beneath a message.
     MessageAnnotations = <View> {
         visible: false,
         width: Fill,
@@ -330,7 +329,7 @@ live_design! {
         padding: 0.0,
         spacing: 0.0
 
-        // Only shown when the message is replying to another one
+        // Only shown when the user is drafting a reply to another message.
         reply_preview = <ReplyingPreview> {
             flow: Right
             cursor: Hand
@@ -627,7 +626,7 @@ live_design! {
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
 
-                // Below that, display a view that holds the message input bar.
+                // Below that, display the optional view that shows which message is being replied to.
                 replying_preview = <ReplyingPreview> {
                     flow: Down
                     content = {
@@ -637,6 +636,7 @@ live_design! {
                     }
                 }
 
+                // Below that, display a view that holds the message input bar.
                 <View> {
                     width: Fill, height: Fit
                     flow: Right, align: {y: 1.0}, padding: 10.
@@ -644,7 +644,6 @@ live_design! {
                     draw_bg: {
                         color: #fff
                     }
-
 
                     message_input = <TextInput> {
                         width: Fill, height: Fit, margin: 0
@@ -795,7 +794,7 @@ impl Widget for RoomScreen {
                                     .chars()
                                     .take(MAX_REPLYING_PREVIEW_BODY_LENGTH - 1)
                                     .collect();
-                                &(truncated + "…")
+                                &(truncated + "...")
                             } else {
                                 message.body()
                             };
@@ -1110,23 +1109,23 @@ impl Timeline {
         );
 
         let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
-                (existing, false)
-            } else {
-                let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
-                    .expect("BUG: couldn't get timeline state for first-viewed room.");
-                let new_tl_state = TimelineUiState {
-                    room_id: room_id.clone(),
-                    // We assume timelines being viewed for the first time haven't been fully paginated.
-                    fully_paginated: false,
-                    items: Vector::new(),
-                    content_drawn_since_last_update: RangeSet::new(),
-                    profile_drawn_since_last_update: RangeSet::new(),
-                    update_receiver,
-                    media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
-                    saved_state: SavedState::default(),
-                };
-                (new_tl_state, true)
+            (existing, false)
+        } else {
+            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
+                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let new_tl_state = TimelineUiState {
+                room_id: room_id.clone(),
+                // We assume timelines being viewed for the first time haven't been fully paginated.
+                fully_paginated: false,
+                items: Vector::new(),
+                content_drawn_since_last_update: RangeSet::new(),
+                profile_drawn_since_last_update: RangeSet::new(),
+                update_receiver,
+                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                saved_state: SavedState::default(),
             };
+            (new_tl_state, true)
+        };
 
         // log!("Timeline::set_room(): opening room {room_id}
         //     content_drawn_since_last_update: {:#?}
@@ -1278,7 +1277,7 @@ impl Widget for Timeline {
                                             });
                                         if let Some(index) = message_replied_to_tl_index {
                                             portal_list.set_first_id(index);
-					    self.redraw(cx);
+                                            self.redraw(cx);
                                         }
                                     }
                                 }
@@ -1434,22 +1433,22 @@ impl Widget for Timeline {
                                 item_drawn_status,
                             ),
                             TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    membership_change,
-                                    item_drawn_status,
+                                cx,
+                                list,
+                                item_id,
+                                room_id,
+                                event_tl_item,
+                                membership_change,
+                                item_drawn_status,
                             ),
                             TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    profile_change,
-                                    item_drawn_status,
+                                cx,
+                                list,
+                                item_id,
+                                room_id,
+                                event_tl_item,
+                                profile_change,
+                                item_drawn_status,
                             ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
@@ -1691,7 +1690,7 @@ fn populate_message_view(
             .set_text(&format!("{}", ts_millis.get()));
     }
 
-    // Check if the message is a reply and show reply preview
+    // If this message was "in reply to" another message, show a preview of the replied-to message
     if let Some(in_reply_to_details) = message.in_reply_to() {
         let reply_preview_view = item.view(id!(reply_preview));
         reply_preview_view.set_visible(true);
@@ -1699,6 +1698,7 @@ fn populate_message_view(
         match &in_reply_to_details.event {
             TimelineDetails::Ready(details) => {
                 let in_reply_to_body = match details.as_ref().content() {
+                    // TODO: use existing message display logic for this reply preview
                     TimelineItemContent::Message(m) => m.body(),
                     // TODO: Handle rest of the types of content
                     _ => "",
@@ -1724,7 +1724,7 @@ fn populate_message_view(
     }
 
     // TODO: This feels weird to do here, but the message widget needs to keep the
-    // id for sending events. and whether it can be replyed or not. Maybe handle this better.
+    // id for sending events. and whether it can be replied to or not. Maybe handle this better.
     item.as_message()
         .set_data(event_tl_item.can_be_replied_to(), item_id);
 
@@ -1889,7 +1889,7 @@ impl SmallStateEventContent for timeline::OtherState {
             }
             AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
                 Some(format!("set the main address of this room to {}.",
-                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
+                    content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
                 ))
             }
             AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
@@ -1897,10 +1897,10 @@ impl SmallStateEventContent for timeline::OtherState {
             }
             AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
                 Some(match content.guest_access {
-                GuestAccess::CanJoin => format!("has allowed guests to join this room."),
+                    GuestAccess::CanJoin => format!("has allowed guests to join this room."),
                     GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room."),
                 })
-                }
+            }
             AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
                 let visibility = match content.history_visibility {
                     HistoryVisibility::Invited => "invited users, since they were invited.",
@@ -1912,12 +1912,12 @@ impl SmallStateEventContent for timeline::OtherState {
             }
             AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
                 Some(match content.join_rule {
-                JoinRule::Public => format!("set this room to be joinable by anyone."),
+                    JoinRule::Public => format!("set this room to be joinable by anyone."),
                     JoinRule::Knock => format!("set this room to be joinable by invite only or by request."),
-                JoinRule::Private => format!("set this room to be private."),
+                    JoinRule::Private => format!("set this room to be private."),
                     JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions."),
                     JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions."),
-                JoinRule::Invite | _ => format!("set this room to be joinable by invite only."),
+                    JoinRule::Invite | _ => format!("set this room to be joinable by invite only."),
                 })
             }
             AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
@@ -2196,21 +2196,18 @@ fn set_avatar_and_get_username(
             username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
 
             // Draw the avatar image if available, otherwise set the avatar to text.
-            let drew_avatar_img = avatar_img
-                .map(|data| {
-                    avatar
-                        .show_image(
-                            Some((
-                                user_id.to_owned(),
-                                username_opt.clone(),
-                                room_id.to_owned(),
-                                data.clone(),
-                            )),
-                            |img| utils::load_png_or_jpg(&img, cx, &data),
-                        )
-                        .is_ok()
-                })
-                .unwrap_or(false);
+            let drew_avatar_img = avatar_img.map(|data| {
+                avatar.show_image(
+                    Some((
+                        user_id.to_owned(),
+                        username_opt.clone(),
+                        room_id.to_owned(),
+                        data.clone(),
+                    )),
+                    |img| utils::load_png_or_jpg(&img, cx, &data),
+                ).is_ok()
+            })
+            .unwrap_or(false);
 
             if !drew_avatar_img {
                 avatar.show_text(
@@ -2321,7 +2318,6 @@ impl Widget for Message {
             live! {
                 show_bg: true,
                 draw_bg: {color: (bg_color)}
-
             },
         );
 

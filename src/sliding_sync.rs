@@ -165,7 +165,7 @@ pub enum MatrixRequest {
     SendMessage {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
-	replied_to: Option<RepliedToInfo>
+        replied_to: Option<RepliedToInfo>,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -447,27 +447,23 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         log!("BUG: room info not found for send message request {room_id}");
                         continue;
                     };
-
                     room_info.timeline.clone()
                 };
 
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
-		    match replied_to {
-			Some(replied_to_info) => {
-			    match timeline.send_reply(message.into(), replied_to_info, ForwardThread::Yes).await {
-				Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
-				Err(_e) => error!("Failed to send reply message to room {room_id}: {_e:?}"),
-			    };
-			}
-			None => {
-			    match timeline.send(message.into()).await {
-				Ok(_send_handle) => log!("Sent message to room {room_id}."),
-				Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
-			    }
-			}
-		    }
+                    if let Some(replied_to_info) = replied_to {
+                        match timeline.send_reply(message.into(), replied_to_info, ForwardThread::Yes).await {
+                            Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
+                            Err(_e) => error!("Failed to send reply message to room {room_id}: {_e:?}"),
+                        }
+                    } else {
+                        match timeline.send(message.into()).await {
+                            Ok(_send_handle) => log!("Sent message to room {room_id}."),
+                            Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+                        }
+                    }
                     SignalToUI::set_ui_signal();
                 });
             }
