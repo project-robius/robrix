@@ -5,8 +5,8 @@ use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::RoomMessageEventContent, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+    config::RequestConfig, media::MediaRequest, room::{Receipts,RoomMember}, ruma::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, assign, event_id, events::{marked_unread::MarkedUnreadEventContent, receipt::ReceiptThread, room::{message::RoomMessageEventContent, MediaSource}, AnyRoomAccountDataEventContent, EventContent, FullStateEventContent, StateEventType}, owned_event_id, serde::Raw, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, TimelineItem, TimelineItemContent}, Timeline};
@@ -20,7 +20,7 @@ use url::Url;
 
 use crate::{avatar_cache::AvatarUpdate, home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
-
+use tokio::time::{sleep, Duration};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -181,6 +181,15 @@ pub enum MatrixRequest {
     SendTypingNotice {
         room_id: OwnedRoomId,
         typing: bool,
+    },
+    /// Read receipt
+    ReadReceipt{
+        room_id:OwnedRoomId,
+        event_id:OwnedEventId
+    },
+    FullyReadReceipt{
+        room_id:OwnedRoomId,
+        event_id:OwnedEventId
     }
 }
 
@@ -191,7 +200,6 @@ pub fn submit_async_request(req: MatrixRequest) {
         .send(req)
         .expect("BUG: async worker task receiver has died!");
 }
-
 
 /// The entry point for an async worker thread that can run async tasks.
 ///
@@ -466,6 +474,46 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     }
                     SignalToUI::set_ui_signal();
                 });
+            },
+            MatrixRequest::ReadReceipt { room_id,event_id }=>{
+                let timeline = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for send message request {room_id}");
+                        continue;
+                    };
+                   
+                    room_info.timeline.clone()
+                };
+                let _send_message_task = Handle::current().spawn(async move {
+                    
+                    sleep(Duration::from_secs(5)).await;
+                    match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Main, event_id.clone()).await {
+                        Ok(_send_handle) => log!("Sent message to room  {room_id}.fully_read_marker {event_id}"),
+                        Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+                    }
+                    SignalToUI::set_ui_signal();
+                });
+            },
+            MatrixRequest::FullyReadReceipt { room_id,event_id }=>{
+                let timeline = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for send message request {room_id}");
+                        continue;
+                    };
+                   
+                    room_info.timeline.clone()
+                };
+                let _send_message_task = Handle::current().spawn(async move {
+                    //sleep(Duration::from_secs(5)).await;
+                    let receipt = Receipts::new().fully_read_marker(event_id.clone());
+                    match timeline.send_multiple_receipts(receipt).await {
+                        Ok(_send_handle) => log!("Sent message to room  {room_id}.fully_read_marker {event_id}"),
+                        Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+                    }
+                    SignalToUI::set_ui_signal();
+                });
             }
 
         }
@@ -550,6 +598,10 @@ struct RoomInfo {
     room_id: OwnedRoomId,
     /// The timestamp of the latest event that we've seen for this room.
     latest_event_timestamp: MilliSecondsSinceUnixEpoch,
+    /// The latest event_id that we've seen for this room.
+    latest_event_id: OwnedEventId,
+    /// Last Read Eventid
+    last_read_event_id: Option<OwnedEventId>,
     /// A reference to this room's timeline of events.
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
@@ -565,6 +617,7 @@ struct RoomInfo {
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// The async task that is subscribed to the timeline's back-pagination status.
     pagination_status_task: Option<JoinHandle<()>>,
+
 }
 
 /// Information about all of the rooms we currently know about.
@@ -610,7 +663,6 @@ pub fn take_timeline_update_receiver(
             .map(|receiver| (ri.timeline_update_sender.clone(), receiver))
         )
 }
-
 
 async fn async_main_loop() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -752,12 +804,20 @@ async fn async_main_loop() -> Result<()> {
         };
 
         for room_id in update.rooms {
-            let Some(room) = client.get_room(&room_id) else {
+            let Some(mut room) = client.get_room(&room_id) else {
                 error!("Error: couldn't get Room {room_id:?} that had an update");
                 continue
             };
+            //room.set_unread_flag(true).unwrap();
             let room_name = room.compute_display_name().await;
-
+            // let marked_unread_content = MarkedUnreadEventContent::new(false);
+            // let full_event: AnyRoomAccountDataEventContent =
+            //     marked_unread_content.clone().into();
+            // room.set_account_data_raw(
+            //     marked_unread_content.event_type(),
+            //     Raw::new(&full_event).unwrap(),
+            // )
+            // .await?;
             log!("\n{room_id:?} --> {:?} has an update
                 display_name: {:?},
                 topic: {:?},
@@ -770,7 +830,8 @@ async fn async_main_loop() -> Result<()> {
                 history_visibility: {:?},
                 is_public: {:?},
                 join_rule: {:?},
-                latest_event: {:?}
+                latest_event: {:?},
+                unread_notification: {:?}
                 ",
                 room.name(),
                 room_name,
@@ -785,6 +846,7 @@ async fn async_main_loop() -> Result<()> {
                 room.is_public(),
                 room.join_rule(),
                 room.latest_event(),
+                room.unread_notification_counts()
             );
 
             // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
@@ -809,9 +871,10 @@ async fn async_main_loop() -> Result<()> {
                 .track_read_marker_and_receipts()
                 .build()
                 .await?;
-
+            
+            
             let latest_tl = timeline.latest_event().await;
-
+            
             let mut room_exists = false;
             let mut room_name_changed = None;
             let mut latest_event_changed = None;
@@ -889,6 +952,8 @@ async fn async_main_loop() -> Result<()> {
                         latest_event_timestamp: latest_tl.as_ref()
                             .map(|ev| ev.timestamp())
                             .unwrap_or(MilliSecondsSinceUnixEpoch(UInt::MIN)),
+                        latest_event_id:room.latest_event().map(|ev|ev.event_id().unwrap_or(owned_event_id!("$xxxxxx:example.org"))).unwrap_or(owned_event_id!("$xxxxxx:example.org")),
+                        last_read_event_id:None,
                         timeline: tl_arc,
                         pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),

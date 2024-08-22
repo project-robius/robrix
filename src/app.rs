@@ -1,6 +1,7 @@
 use crate::home::rooms_list::RoomListAction;
 use crate::home::room_screen::*;
 use makepad_widgets::*;
+use matrix_sdk::crypto::vodozemac::ecies::Message;
 
 live_design! {
     import makepad_widgets::base::*;
@@ -265,6 +266,10 @@ app_main!(App);
 pub struct App {
     #[live]
     ui: WidgetRef,
+    #[rust] 
+    is_focused: bool,
+    #[rust] 
+    unread_message:Vec<Message>
 }
 
 impl LiveRegister for App {
@@ -305,13 +310,14 @@ impl MatchEvent for App {
     fn handle_resume(&mut self, _cx: &mut Cx) {
         log!("App::handle_resume()");
     }
+    */
     fn handle_app_got_focus(&mut self, _cx: &mut Cx) {
         log!("App::handle_app_got_focus()");
     }
     fn handle_app_lost_focus(&mut self, _cx: &mut Cx) {
         log!("App::handle_app_lost_focus()");
     }
-    */
+    
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         // Handle the user selecting a tab in the mobile menu on bottom.
