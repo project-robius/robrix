@@ -43,6 +43,7 @@ live_design! {
     ICO_LIKES = dep("crate://self/resources/icon_likes.svg")
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
+    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     TEXT_SUB = {
         font_size: (10),
@@ -391,6 +392,7 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
+        flow: Overlay,
 
         list = <PortalList> {
             auto_tail: true, // set to `true` to lock the view to the last item.
@@ -409,8 +411,35 @@ live_design! {
             DayDivider = <DayDivider> {}
             ReadMarker = <ReadMarker> {}
         }
-    }
 
+        // A jump to bottom button that appears when the timeline is not at the bottom.
+        jump_to_bottom_view = <View> {
+            width: Fill,
+            height: Fill,
+            flow: Down,
+            align: {x: 1.0, y: 1.0},
+            margin: {right: 15.0, bottom: 15.0},
+            visible: false,
+
+            jump_to_bottom_button = <IconButton> {
+                width: 50, height: 50,
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                // draw a circular background for the button
+                draw_bg: {
+                    instance background_color: #edededee,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x)
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result
+                    }
+                }
+            }
+        }
+        
+    }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
@@ -433,7 +462,7 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
-                
+
                 // Below that, display a view that holds the message input bar.
                 <View> {
                     width: Fill, height: Fit
@@ -586,6 +615,26 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Handle the jump to bottom button: update its visibility, and handle clicks.
+            let mut portal_list = self.portal_list(id!(timeline.list));
+            let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+            if portal_list.scrolled(&actions) {
+                // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
+                jump_to_bottom_view.set_visible(!portal_list.is_at_end());
+            }
+
+            const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
+            const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
+            if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
+                portal_list.smooth_scroll_to_end(
+                    cx,
+                    SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
+                    SCROLL_TO_BOTTOM_SPEED,
+                );
+                jump_to_bottom_view.set_visible(false);
+                self.redraw(cx);
+            }
+
             // Handle a typing action on the message input box.
             if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
@@ -699,6 +748,7 @@ impl Widget for RoomScreen {
             // Forward the event to the inner timeline view.
             self.view.handle_event(cx, event, scope);
         }
+
     }
 }
 
