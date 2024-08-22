@@ -1,5 +1,4 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::home::room_screen::RoomScreenWidgetExt;
 
@@ -12,11 +11,12 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::home::room_screen::RoomScreen;
+    import crate::home::welcome_screen::WelcomeScreen;
     import crate::shared::search_bar::SearchBar;
 
     MainContent = {{MainContent}} {
         width: Fill, height: Fill
-        flow: Down, 
+        flow: Down,
         show_bg: true
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER)
@@ -24,28 +24,14 @@ live_design! {
         align: {x: 0.5, y: 0.5}
 
         <SearchBar> {}
-        
+
         welcome = <View> {
-            align: {x: 0.5, y: 0.5}
-            welcome_message = <RoundedView> {
-                padding: 40.
-                width: Fit, height: Fit                
-
-                <Label> {
-                    text: "Welcome to Robrix",
-                    draw_text: {
-                        color: #x4,
-                        text_style: {
-                            font_size: 20.0
-                        }
-                    }
-                }
-            }
+            width: Fill, height: Fill
+            welcome_screen = <WelcomeScreen> {}
         }
-
         rooms = <View> {
             align: {x: 0.5, y: 0.5}
-            width: Fill, height: Fill            
+            width: Fill, height: Fill
             room_screen = <RoomScreen> {}
         }
     }
@@ -63,8 +49,8 @@ pub struct MainContent {
 #[derive(Default)]
 enum PanelStatus {
     #[default]
-    Welcome,
-    Rooms(Vec<OwnedRoomId>), // TODO: decide on how to represent the list of tabs within the panel
+    DisplayingWelcome,
+    DisplayingRooms,
 }
 
 impl Widget for MainContent {
@@ -74,14 +60,14 @@ impl Widget for MainContent {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let PanelStatus::Welcome = self.panel_status {
+        if let PanelStatus::DisplayingWelcome = self.panel_status {
             self.view.view(id!(welcome)).set_visible(true);
             self.view.view(id!(rooms)).set_visible(false);
             return self.view.draw_walk(cx, scope, walk);
         }
         self.view.view(id!(welcome)).set_visible(false);
         self.view.view(id!(rooms)).set_visible(true);
-        
+
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -90,18 +76,23 @@ impl MatchEvent for MainContent {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions.iter() {
             match action.as_widget_action().cast() {
-                RoomListAction::Selected { room_id, room_index: _, room_name } => {
+                RoomListAction::Selected {
+                    room_id,
+                    room_index: _,
+                    room_name,
+                } => {
                     log!("Room selected: {}", room_id);
-                    self.panel_status = PanelStatus::Rooms(vec![room_id.clone()]);
+                    self.panel_status = PanelStatus::DisplayingRooms;
 
-                    let displayed_room_name = room_name.unwrap_or_else(|| format!("Room ID {}", &room_id));
+                    let displayed_room_name =
+                        room_name.unwrap_or_else(|| format!("Room ID {}", &room_id));
                     // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                     self.view
                         .room_screen(id!(room_screen))
                         .set_displayed_room(displayed_room_name, room_id);
                     self.redraw(cx);
-                },
-                _ => ()
+                }
+                _ => (),
             }
         }
     }
