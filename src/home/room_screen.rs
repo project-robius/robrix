@@ -22,10 +22,6 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 
-// const SCROLL_TO_BOTTOM_THRESHOLD: f64 = 10.0;
-const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 10;
-const SCROLL_TO_BOTTOM_SPEED: f64 = 80.0;
-
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
@@ -621,17 +617,21 @@ impl Widget for RoomScreen {
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             let mut portal_list = self.portal_list(id!(timeline.list));
+            let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
             if portal_list.scrolled(&actions) {
                 // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                self.view(id!(jump_to_bottom_view))
-                    .set_visible(!portal_list.is_at_end());
+                jump_to_bottom_view.set_visible(!portal_list.is_at_end());
             }
+
+            const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
+            const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
             if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
                 portal_list.smooth_scroll_to_end(
                     cx,
                     SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
                     SCROLL_TO_BOTTOM_SPEED,
                 );
+                jump_to_bottom_view.set_visible(false);
                 self.redraw(cx);
             }
 
