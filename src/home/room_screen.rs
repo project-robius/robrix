@@ -140,7 +140,7 @@ live_design! {
         // A subview that is only shown when a `ReplyPreview` is re-used
         // at the bottom of the RoomScreen (above the message input box)
         // to show which message a user is currently drafting a reply to.
-        header_wrapper = <View> {
+        reply_preview_header = <View> {
             width: Fill
             height: Fit
             flow: Right
@@ -171,7 +171,7 @@ live_design! {
             }
         }
 
-        content = <View> {
+        reply_preview_content = <View> {
             width: Fill
             height: Fit
             flow: Down
@@ -218,7 +218,7 @@ live_design! {
                 margin: { bottom: 10.0, top: 0.0, right: 5.0 }
                 align: {y: 0.5}
 
-                avatar = <Avatar> {
+                reply_preview_avatar = <Avatar> {
                     width: 19.,
                     height: 19.,
                     text_view = { text = { draw_text: {
@@ -226,7 +226,7 @@ live_design! {
                     }}}
                 }
 
-                username = <Label> {
+                reply_preview_username = <Label> {
                     width: Fill,
                     margin: { left: 5.0 }
                     draw_text: {
@@ -238,7 +238,7 @@ live_design! {
                 }
             }
 
-            body = <HtmlOrPlaintext> {
+            reply_preview_body = <HtmlOrPlaintext> {
                 html_view = {
                     html = {
                         font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
@@ -248,6 +248,8 @@ live_design! {
         }
     }
 
+    // A view that shows action buttons for a message,
+    // with buttons for sending a reply (and in the future, reactions).
     MessageMenu = <RoundedView> {
         visible: true,
         width: Fit,
@@ -309,11 +311,11 @@ live_design! {
             flow: Right
             cursor: Hand
             margin: { bottom: 10 }
-            header_wrapper = {
+            reply_preview_header = {
                 // TODO: use `visible: false,` instead of `width: 0`
                 width: 0
             }
-            content = {
+            reply_preview_content = {
                 margin: { left: 10 }
             }
         }
@@ -633,7 +635,7 @@ live_design! {
                 // Below that, display the optional view that shows which message is being replied to.
                 replying_preview = <ReplyPreview> {
                     flow: Down
-                    content = {
+                    reply_preview_content = {
                         draw_bg: {
                             vertical_bar_width: 0.0
                         }
@@ -779,19 +781,19 @@ impl Widget for RoomScreen {
                         if let Some(room_id) = &self.room_id {
                             let (replying_preview_username, _) = set_avatar_and_get_username(
                                 cx,
-                                replying_preview_view.avatar(id!(avatar)),
+                                replying_preview_view.avatar(id!(reply_preview_avatar)),
                                 room_id.as_ref(),
                                 message_to_reply.sender_profile(),
                                 message_to_reply.sender(),
                             );
 
                             replying_preview_view
-                                .label(id!(username))
+                                .label(id!(reply_preview_username))
                                 .set_text(replying_preview_username.as_str());
                         }
 
                         const MAX_REPLYING_PREVIEW_BODY_LENGTH: usize = 100;
-                        let replying_preview_body =
+                        let body_of_reply_preview =
                             if message.body().chars().count() > MAX_REPLYING_PREVIEW_BODY_LENGTH {
                                 let truncated: String = message
                                     .body()
@@ -804,8 +806,8 @@ impl Widget for RoomScreen {
                             };
 
                         replying_preview_view
-                            .html_or_plaintext(id!(body))
-                            .show_html(replying_preview_body);
+                            .html_or_plaintext(id!(reply_preview_body))
+                            .show_html(body_of_reply_preview);
                     }
 
                     match message_to_reply.replied_to_info() {
@@ -1732,10 +1734,11 @@ fn populate_message_view(
                         Cow::Borrowed(plaintext)   => msg_body_field.show_plaintext(plaintext),
                     }
                 }
-                // Draw any reactions to the message.
+                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message);
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
-                // We're done drawing the message content, so mark it as fully drawn.
-                new_drawn_status.content_drawn = true;
+                // We're done drawing the message content, so mark it as fully drawn
+                // *if and only if* the reply preview was also fully drawn.
+                new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
             }
         }
@@ -1761,6 +1764,11 @@ fn populate_message_view(
                     (None, None, None)
                 };
                 let text_or_image_ref = item.text_or_image(id!(content.message));
+
+                // Draw the ReplyPreview and reactions, if any are present.
+                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message);
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
+
                 match &image.source {
                     MediaSource::Plain(mxc_uri) => {
                         // now that we've obtained the image URI and its metadata, try to fetch the image.
@@ -1775,25 +1783,28 @@ fn populate_message_view(
                                     error!("{err_str}");
                                     text_or_image_ref.set_text(&err_str);
                                 }
-                                // Draw any reactions to the message.
-                                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
-                                // The image content is completely drawn here, ready to be marked as cached/drawn.
-                                new_drawn_status.content_drawn = true;
+
+                                // We're done drawing the image message content, so mark it as fully drawn
+                                // *if and only if* the reply preview was also fully drawn.
+                                new_drawn_status.content_drawn = is_reply_fully_drawn;
                             }
                             MediaCacheEntry::Requested => {
                                 text_or_image_ref.set_text(&format!("Fetching image from {:?}", mxc_uri));
+                                // Do not consider this image as being fully drawn, as we're still fetching it.
                             }
                             MediaCacheEntry::Failed => {
                                 text_or_image_ref.set_text(&format!("Failed to fetch image from {:?}", mxc_uri));
                                 // For now, we consider this as being "complete". In the future, we could support
                                 // retrying to fetch the image on a user click/tap.
-                                new_drawn_status.content_drawn = true;
+                                new_drawn_status.content_drawn = is_reply_fully_drawn;
                             }
                         }
                     }
                     MediaSource::Encrypted(encrypted) => {
                         text_or_image_ref.set_text(&format!("[TODO] fetch encrypted image at {:?}", encrypted.url));
-                        new_drawn_status.content_drawn = true; // considered complete, since we don't yet support this.
+                        // We consider this as "fully drawn" since we don't yet support encryption,
+                        // but *only if* the reply preview was also fully drawn.
+                        new_drawn_status.content_drawn = is_reply_fully_drawn;
                     }
                 };
                 (item, false)
@@ -1806,7 +1817,10 @@ fn populate_message_view(
             } else {
                 let kind = other.msgtype();
                 item.label(id!(content.message)).set_text(&format!("[TODO {kind:?}] {}", other.body()));
-                new_drawn_status.content_drawn = true;
+                // Draw the ReplyPreview and reactions, if any are present.
+                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message);
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
+                new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
             }
         }
@@ -1830,6 +1844,11 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = profile_drawn;
     }
 
+    // TODO: This feels weird to do here, but the message widget needs to keep the
+    // id for sending events. and whether it can be replied to or not. Maybe handle this better.
+    item.as_message()
+        .set_data(event_tl_item.can_be_replied_to(), item_id);
+
     // If we've previously drawn the item content, skip redrawing the timestamp and annotations.
     if used_cached_item && item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
         return (item, new_drawn_status);
@@ -1847,47 +1866,98 @@ fn populate_message_view(
             .set_text(&format!("{}", ts_millis.get()));
     }
 
-    // If this message was "in reply to" another message, show a preview of the replied-to message
-    if let Some(in_reply_to_details) = message.in_reply_to() {
-        let reply_preview_view = item.view(id!(reply_preview));
-        reply_preview_view.set_visible(true);
+    (item, new_drawn_status)
+}
 
+
+/// Draws a ReplyPreview above the given `message` if it was in-reply to another message.
+///
+/// If the given `message` was *not* in-reply to another message,
+/// this function will mark the ReplyPreview as non-visible and consider it fully drawn.
+///
+/// Returns whether the in-reply-to information was available and fully drawn,
+/// i.e., whether it can be considered as cached and not needing to be redrawn later.
+fn draw_replied_to_message(
+    cx: &mut Cx2d,
+    item: &WidgetRef,
+    room_id: &RoomId,
+    message: &timeline::Message,
+) -> bool {
+    let fully_drawn: bool;
+    let show_reply_preview: bool;
+    let reply_preview_view = item.view(id!(reply_preview));
+
+    if let Some(in_reply_to_details) = message.in_reply_to() {
+        show_reply_preview = true;
+        log!("Found replied-to message: {:?}", in_reply_to_details);
         match &in_reply_to_details.event {
             TimelineDetails::Ready(details) => {
-                let in_reply_to_body = match details.as_ref().content() {
+                log!("Found ready replied-to message: {:?}", details);
+                let in_reply_to_body: Cow<str> = match details.as_ref().content() {
                     // TODO: use existing message display logic for this reply preview
-                    TimelineItemContent::Message(m) => m.body(),
-                    // TODO: Handle rest of the types of content
-                    _ => "",
+                    TimelineItemContent::Message(m) => m.body().into(),
+                    TimelineItemContent::RedactedMessage => "[Message Redacted]".into(),
+                    TimelineItemContent::Sticker(sticker) => sticker.content().body.clone().into(),
+                    _other => format!("TODO: support reply previews for {:?}", _other).into(),
                 };
 
-                let (in_reply_to_username, _) = set_avatar_and_get_username(
+                let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
-                    reply_preview_view.avatar(id!(avatar)),
+                    reply_preview_view.avatar(id!(reply_preview_avatar)),
                     room_id,
                     details.sender_profile(),
                     details.sender(),
                 );
 
+                fully_drawn = is_avatar_fully_drawn;
+
                 reply_preview_view
-                    .label(id!(username))
+                    .label(id!(reply_preview_username))
                     .set_text(in_reply_to_username.as_str());
                 reply_preview_view
-                    .html_or_plaintext(id!(body))
-                    .show_html(in_reply_to_body);
+                    .html_or_plaintext(id!(reply_preview_body))
+                    .show_plaintext(in_reply_to_body);
             }
-            _ => {}
+            TimelineDetails::Error(_e) => {
+                fully_drawn = true;
+                reply_preview_view
+                    .label(id!(reply_preview_username))
+                    .set_text("[Error fetching username]");
+                reply_preview_view
+                    .avatar(id!(reply_preview_avatar))
+                    .show_text(None, "?");
+                reply_preview_view
+                    .html_or_plaintext(id!(reply_preview_body))
+                    .show_plaintext("[Error fetching replied-to event]");
+            }
+            TimelineDetails::Pending | TimelineDetails::Unavailable => {
+                // We don't have the replied-to message yet, so we can't fully draw the preview.
+                fully_drawn = false;
+                reply_preview_view
+                    .label(id!(reply_preview_username))
+                    .set_text("[Loading username...]");
+                reply_preview_view
+                    .avatar(id!(reply_preview_avatar))
+                    .show_text(None, "?");
+                reply_preview_view
+                    .html_or_plaintext(id!(reply_preview_body))
+                    .show_plaintext("[Loading replied-to message...]");
+
+                // TODO here: if Unavailable, submit an async request for `Timeline::fetch_details_for_event`
+            }
         }
+    } else {
+        // This message was not in reply to another message, so we don't need to show a reply preview.
+        show_reply_preview = false;
+        fully_drawn = true;
     }
 
-    // TODO: This feels weird to do here, but the message widget needs to keep the
-    // id for sending events. and whether it can be replied to or not. Maybe handle this better.
-    item.as_message()
-        .set_data(event_tl_item.can_be_replied_to(), item_id);
-
-    (item, new_drawn_status)
+    reply_preview_view.set_visible(show_reply_preview);
+    fully_drawn
 }
 
+
+/// Draws the reactions beneath the given `message_item`.
 fn draw_reactions(
     _cx: &mut Cx2d,
     message_item: &WidgetRef,
@@ -1926,6 +1996,7 @@ fn draw_reactions(
     let html_reaction_view = message_item.html(id!(message_annotations.html_content));
     html_reaction_view.set_text(&label_text);
 }
+
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
@@ -2442,7 +2513,7 @@ impl Widget for Message {
         // TODO: need vecs for apply_over(), maybe use an animator so we just set the state here
         // and the animator handles the color changes from inside the dsl.
         let default_color = vec3(1.0, 1.0, 1.0); // #ffffff
-        let hover_color = vec3(0.929, 0.929, 0.929); // #ededed
+        let hover_color = vec3(0.939, 0.939, 0.939); // #efefef
 
         let bg_color = if self.hovered {
             hover_color
