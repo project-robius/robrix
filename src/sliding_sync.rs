@@ -810,14 +810,7 @@ async fn async_main_loop() -> Result<()> {
             };
             //room.set_unread_flag(true).unwrap();
             let room_name = room.compute_display_name().await;
-            // let marked_unread_content = MarkedUnreadEventContent::new(false);
-            // let full_event: AnyRoomAccountDataEventContent =
-            //     marked_unread_content.clone().into();
-            // room.set_account_data_raw(
-            //     marked_unread_content.event_type(),
-            //     Raw::new(&full_event).unwrap(),
-            // )
-            // .await?;
+     
             log!("\n{room_id:?} --> {:?} has an update
                 display_name: {:?},
                 topic: {:?},

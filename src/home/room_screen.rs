@@ -563,20 +563,7 @@ impl Widget for RoomScreen {
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let timeline = self.timeline(id!(timeline));
         
-        if let Event::Actions(actions) = event {
-            
-            let portal_list = self.portal_list_set(ids!(timeline.list));
-            
-            for (item_id, item) in portal_list.items_with_actions(&actions) {
-                // if item.button(id!(likes)).clicked(&actions) {
-                //     log!("hello {}", item_id);
-                // }
-                println!("action in timeline {:?}",actions);
-
-                if let Some(finger) = item.as_view().finger_move(actions){
-                    println!("handle_actions in timeline finger{:?}",finger);
-                }
-            }
+        if let Event::Actions(actions) = event {        
             // Handle the send message button being clicked.
             if self.button(id!(send_message_button)).clicked(&actions) {
                 let msg_input_widget = self.text_input(id!(message_input));
@@ -777,6 +764,8 @@ pub struct Timeline {
     #[rust] last_read_event_id: Option<OwnedEventId>,
     /// Last EventId sent to backend for fully read receipt
     #[rust] last_fully_read_event_id: Option<OwnedEventId>,
+    /// Last EventId sent to backend for fully read receipt
+    #[rust] last_scroll_range: Option<Range<usize>>,
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -1033,27 +1022,23 @@ impl TimelineRef {
 
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Implements bottom-half screen click area to register fully read receipt for the first 3 events
+        // Implements bottom-half screen click area to register fully read receipt
         if let (Event::MouseDown(mouse),Some(room_id)) = (event,self.room_id.clone()){
             let height = self.view.area().rect(cx).size.y;
             if self.view.area().rect(cx).translate(DVec2{
                 x:0.0,
                 y:height/2.0
             }).contains(mouse.abs){
-                if let Some(tl_state) = &self.tl_state{                    
-                    let index_roll = tl_state.first_three_events.index_and_scroll;
-                    let mut last_fully_read_event = None;
-                    for item in index_roll.iter(){
-                        if let Some(a)= tl_state.items.get(item.index).and_then(|f|
-                            f.as_event().and_then(|f|f.event_id())
-                        ){
-                            last_fully_read_event = Some(a.to_owned());
+                if let Some(tl_state) = &self.tl_state{      
+                    let len = tl_state.items.len();
+                    if let Some(last_drawn) = tl_state.content_drawn_since_last_update.last().and_then(|f| Some(f.end)){
+                        if last_drawn <=len {
+                            if let Some(last_drawn_event_id) = tl_state.items.get(last_drawn-1).and_then(|f|f.as_event().and_then(|f|f.event_id())){
+                                submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_drawn_event_id.to_owned() });
+                            }
                         }
                     }
-                    
-                    if let Some(last_fully_read_event) = last_fully_read_event{
-                        submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_fully_read_event.clone() });
-                    }
+                   
                 }
             }
         }
@@ -1102,7 +1087,7 @@ impl Widget for Timeline {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
                         // Determine which item is currently visible the top of the screen (the first event)
                         // so that we can jump back to that position instantly after applying this update.
-                        
+                        println!("changed_indices {:?}",changed_indices);
                         let current_first_event_id_opt = tl.items
                             .get(orig_first_id)
                             .and_then(|item| item.as_event()
