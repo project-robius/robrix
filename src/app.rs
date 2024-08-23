@@ -266,10 +266,6 @@ app_main!(App);
 pub struct App {
     #[live]
     ui: WidgetRef,
-    #[rust] 
-    is_focused: bool,
-    #[rust] 
-    unread_message:Vec<Message>
 }
 
 impl LiveRegister for App {
@@ -310,14 +306,14 @@ impl MatchEvent for App {
     fn handle_resume(&mut self, _cx: &mut Cx) {
         log!("App::handle_resume()");
     }
-    */
+    
     fn handle_app_got_focus(&mut self, _cx: &mut Cx) {
         log!("App::handle_app_got_focus()");
     }
     fn handle_app_lost_focus(&mut self, _cx: &mut Cx) {
         log!("App::handle_app_lost_focus()");
     }
-    
+    */
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         // Handle the user selecting a tab in the mobile menu on bottom.

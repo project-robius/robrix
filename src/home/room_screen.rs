@@ -18,7 +18,7 @@ use matrix_sdk_ui::timeline::{
 
 use rangemap::RangeSet;
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, portal::PortalViewWidgetExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 
 live_design! {
@@ -551,7 +551,6 @@ impl Widget for RoomScreen {
 
     // Handle events and actions at the RoomScreen level.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope){
-       
         // A UI Signal indicates that something was updated in the background,
         // so we first check to see if it was a user profile update.
         if let Event::Signal = event {
@@ -563,7 +562,7 @@ impl Widget for RoomScreen {
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let timeline = self.timeline(id!(timeline));
         
-        if let Event::Actions(actions) = event {        
+        if let Event::Actions(actions) = event {
             // Handle the send message button being clicked.
             if self.button(id!(send_message_button)).clicked(&actions) {
                 let msg_input_widget = self.text_input(id!(message_input));
@@ -1045,7 +1044,7 @@ impl Widget for Timeline {
         
         if let Event::Actions(actions) = event {
             for action in actions {
-                // Handle the timeline being hidden or shown.                
+                // Handle the timeline being hidden or shown.       
                 match action.as_widget_action().cast() {
                     StackNavigationTransitionAction::HideBegin => {
                         self.hide_timeline();
@@ -1070,24 +1069,21 @@ impl Widget for Timeline {
                 // }
             }
         }
-       
+
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
-            
             let orig_first_id = portal_list.first_id();
             let scroll_from_first_id = portal_list.scroll_position();
             let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
-                
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
                         // Determine which item is currently visible the top of the screen (the first event)
                         // so that we can jump back to that position instantly after applying this update.
-                        println!("changed_indices {:?}",changed_indices);
                         let current_first_event_id_opt = tl.items
                             .get(orig_first_id)
                             .and_then(|item| item.as_event()
@@ -1122,6 +1118,7 @@ impl Widget for Timeline {
                             //       (either in live mode or focused mode around one or more events)
                             //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                         }else{
+                            // Save Last Event id and it's timestamp, which will be used to send read receipt
                             let current_last_event_id_opt = tl.items
                             .get(items.len())
                             .and_then(|item| item.as_event()
@@ -1151,9 +1148,7 @@ impl Widget for Timeline {
                      
                         if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
-                                let Some(item_event_id) = item.as_event().and_then(|ev| 
-                                    ev.event_id()
-                                    ) else {
+                                let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
                                     continue
                                 };
                                 if top_event_id.deref() == item_event_id {
@@ -1222,22 +1217,20 @@ impl Widget for Timeline {
         let Some(tl_state) = self.tl_state.as_mut() else {
             return DrawStep::done()
         };
-        
         let room_id = &tl_state.room_id;
         let tl_items = &tl_state.items;
 
         // Determine length of the portal list based on the number of timeline items.
         let last_item_id = tl_items.len();
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
-       
         // Start the actual drawing procedure.
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let list = list_ref.deref_mut();
-            // When scrolled to the bottom, send a read receipt for last event_id. Although Matrix SDK prevents sending read receipt for older event,
-            // timestamp of event for read receipt is also checked here. [WIP]
+            // When scrolled to the bottom, send a read receipt with last event_id. Although Matrix SDK prevents sending read receipt for older event,
+            // timestamp of event for read receipt is also checked here.
             if list.is_at_end(){
                 if let  Some(ref mut last_scroll_to_end_time) = self.last_scroll_to_end_time{
                     if last_scroll_to_end_time.elapsed() >std::time::Duration::new(2,0){
@@ -1278,7 +1271,7 @@ impl Widget for Timeline {
             let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
 
             while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
-                //log!("Drawing item {} at scroll: {}", item_id, scroll);
+                // log!("Drawing item {} at scroll: {}", item_id, scroll_offset);
                 let item = if item_id == 0 {
                     list.item(cx, item_id, live_id!(TopSpace)).unwrap()
                 } else {
@@ -1305,7 +1298,6 @@ impl Widget for Timeline {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-                    
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
@@ -1389,9 +1381,7 @@ impl Widget for Timeline {
                     item
                 };
                 item.draw_all(cx, &mut Scope::empty());
-            
             }
-            
         }
 
 

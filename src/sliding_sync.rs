@@ -617,7 +617,6 @@ struct RoomInfo {
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// The async task that is subscribed to the timeline's back-pagination status.
     pagination_status_task: Option<JoinHandle<()>>,
-
 }
 
 /// Information about all of the rooms we currently know about.
@@ -804,13 +803,11 @@ async fn async_main_loop() -> Result<()> {
         };
 
         for room_id in update.rooms {
-            let Some(mut room) = client.get_room(&room_id) else {
+            let Some(room) = client.get_room(&room_id) else {
                 error!("Error: couldn't get Room {room_id:?} that had an update");
                 continue
             };
-            //room.set_unread_flag(true).unwrap();
             let room_name = room.compute_display_name().await;
-     
             log!("\n{room_id:?} --> {:?} has an update
                 display_name: {:?},
                 topic: {:?},
@@ -823,8 +820,7 @@ async fn async_main_loop() -> Result<()> {
                 history_visibility: {:?},
                 is_public: {:?},
                 join_rule: {:?},
-                latest_event: {:?},
-                unread_notification: {:?}
+                latest_event: {:?}
                 ",
                 room.name(),
                 room_name,
@@ -838,8 +834,7 @@ async fn async_main_loop() -> Result<()> {
                 room.history_visibility(),
                 room.is_public(),
                 room.join_rule(),
-                room.latest_event(),
-                room.unread_notification_counts()
+                room.latest_event()
             );
 
             // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
@@ -867,7 +862,6 @@ async fn async_main_loop() -> Result<()> {
             
             
             let latest_tl = timeline.latest_event().await;
-            
             let mut room_exists = false;
             let mut room_name_changed = None;
             let mut latest_event_changed = None;
