@@ -129,21 +129,24 @@ live_design! {
 
     REACTION_TEXT_COLOR = #4c00b0
 
-    // The optional view that shows which message is being replied to.
-    ReplyingPreview = <View> {
+    // A preview of a message that is being replied to.
+    ReplyPreview = <View> {
         visible: false
         width: Fill
         height: Fit
         flow: Down
         padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
 
+        // A subview that is only shown when a `ReplyPreview` is re-used
+        // at the bottom of the RoomScreen (above the message input box)
+        // to show which message a user is currently drafting a reply to.
         header_wrapper = <View> {
             width: Fill
             height: Fit
             flow: Right
             align: {y: 0.5}
 
-            header = <Label> {
+            <Label> {
                 draw_text: {
                     text_style: <TEXT_SUB> {},
                     color: (COLOR_META)
@@ -166,7 +169,6 @@ live_design! {
                 }
                 icon_walk: {width: 12, height: 12}
             }
-
         }
 
         content = <View> {
@@ -217,8 +219,11 @@ live_design! {
                 align: {y: 0.5}
 
                 avatar = <Avatar> {
-                    width: 20.,
-                    height: 20.
+                    width: 19.,
+                    height: 19.,
+                    text_view = { text = { draw_text: {
+                        text_style: { font_size: 7.0 }
+                    }}}
                 }
 
                 username = <Label> {
@@ -299,12 +304,13 @@ live_design! {
         padding: 0.0,
         spacing: 0.0
 
-        // Only shown when the user is drafting a reply to another message.
-        reply_preview = <ReplyingPreview> {
+        // Only shown when this Message was in reply to another message.
+        reply_preview = <ReplyPreview> {
             flow: Right
             cursor: Hand
             margin: { bottom: 10 }
-            header_wrapper = <View> {
+            header_wrapper = {
+                // TODO: use `visible: false,` instead of `width: 0`
                 width: 0
             }
             content = {
@@ -469,7 +475,7 @@ live_design! {
                 height: 19.,
 
                 text_view = { text = { draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 7. }
+                    text_style: <TITLE_TEXT>{ font_size: 7.0 }
                 }}}
             }
 
@@ -625,7 +631,7 @@ live_design! {
                 timeline = <Timeline> {}
 
                 // Below that, display the optional view that shows which message is being replied to.
-                replying_preview = <ReplyingPreview> {
+                replying_preview = <ReplyPreview> {
                     flow: Down
                     content = {
                         draw_bg: {
