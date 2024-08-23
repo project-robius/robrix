@@ -598,10 +598,6 @@ struct RoomInfo {
     room_id: OwnedRoomId,
     /// The timestamp of the latest event that we've seen for this room.
     latest_event_timestamp: MilliSecondsSinceUnixEpoch,
-    /// The latest event_id that we've seen for this room.
-    latest_event_id: OwnedEventId,
-    /// Last Read Eventid
-    last_read_event_id: Option<OwnedEventId>,
     /// A reference to this room's timeline of events.
     timeline: Arc<Timeline>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
@@ -662,6 +658,7 @@ pub fn take_timeline_update_receiver(
             .map(|receiver| (ri.timeline_update_sender.clone(), receiver))
         )
 }
+
 
 async fn async_main_loop() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -808,6 +805,7 @@ async fn async_main_loop() -> Result<()> {
                 continue
             };
             let room_name = room.compute_display_name().await;
+
             log!("\n{room_id:?} --> {:?} has an update
                 display_name: {:?},
                 topic: {:?},
@@ -834,7 +832,7 @@ async fn async_main_loop() -> Result<()> {
                 room.history_visibility(),
                 room.is_public(),
                 room.join_rule(),
-                room.latest_event()
+                room.latest_event(),
             );
 
             // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
@@ -862,6 +860,7 @@ async fn async_main_loop() -> Result<()> {
             
             
             let latest_tl = timeline.latest_event().await;
+
             let mut room_exists = false;
             let mut room_name_changed = None;
             let mut latest_event_changed = None;

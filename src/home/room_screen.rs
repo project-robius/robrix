@@ -761,10 +761,6 @@ pub struct Timeline {
     #[rust] last_scroll_to_end_time:Option<std::time::Instant>,
     /// Last EventId sent to backend for read receipt
     #[rust] last_read_event_id: Option<OwnedEventId>,
-    /// Last EventId sent to backend for fully read receipt
-    #[rust] last_fully_read_event_id: Option<OwnedEventId>,
-    /// Last EventId sent to backend for fully read receipt
-    #[rust] last_scroll_range: Option<Range<usize>>,
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -1044,7 +1040,7 @@ impl Widget for Timeline {
         
         if let Event::Actions(actions) = event {
             for action in actions {
-                // Handle the timeline being hidden or shown.       
+                // Handle the timeline being hidden or shown.
                 match action.as_widget_action().cast() {
                     StackNavigationTransitionAction::HideBegin => {
                         self.hide_timeline();
@@ -1298,6 +1294,7 @@ impl Widget for Timeline {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
+
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
