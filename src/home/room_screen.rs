@@ -757,10 +757,6 @@ pub struct Timeline {
     #[rust] tl_state: Option<TimelineUiState>,
     /// The timestamp when App becomes in the background
     #[rust] last_read_event:Option<(OwnedEventId,MilliSecondsSinceUnixEpoch)>,
-    /// The timestamp for the last 
-    #[rust] last_scroll_to_end_time:Option<std::time::Instant>,
-    /// Last EventId sent to backend for read receipt
-    #[rust] last_read_event_id: Option<OwnedEventId>,
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -1113,29 +1109,6 @@ impl Widget for Timeline {
                             //       that tells the background async task to build a new timeline 
                             //       (either in live mode or focused mode around one or more events)
                             //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
-                        }else{
-                            // Save Last Event id and it's timestamp, which will be used to send read receipt
-                            let current_last_event_id_opt = tl.items
-                            .get(items.len())
-                            .and_then(|item| item.as_event()
-                                .and_then(|ev|{
-                                    if let Some(event_id) = ev.event_id(){
-                                        Some((event_id,ev.timestamp()))
-                                    }else{
-                                        None
-                                    }
-                                } )
-                            );
-                            if let Some((item_event_id,timestamp)) = current_last_event_id_opt{
-                                if let Some((ref mut last_event_id,ref mut last_timestamp)) = self.last_read_event{
-                                    if timestamp.as_secs() > last_timestamp.as_secs(){
-                                        *last_event_id = item_event_id.to_owned();
-                                        *last_timestamp = timestamp;
-                                    }
-                                }else {
-                                    self.last_read_event = Some((item_event_id.to_owned(),timestamp));
-                                }
-                            }
                         }
 
                         // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
@@ -1228,47 +1201,10 @@ impl Widget for Timeline {
             let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
             let list = list_ref.deref_mut();
-            // When scrolled to the bottom, send a read receipt with last event_id. Although Matrix SDK prevents sending read receipt for older event,
-            // timestamp of event for read receipt is also checked here.
-            if list.is_at_end(){
-                if let  Some(ref mut last_scroll_to_end_time) = self.last_scroll_to_end_time{
-                    if last_scroll_to_end_time.elapsed() >std::time::Duration::new(2,0){
-                        if let Some((ref event_id,_)) = self.last_read_event{
-                            if let Some(ref mut last_read_event_id) = self.last_read_event_id{
-                                if event_id!=last_read_event_id{
-                                    *last_read_event_id = event_id.clone();
-                                    submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:event_id.clone() });
-                                    *last_scroll_to_end_time = std::time::Instant::now();
-                                }
-                            }else{
-                                self.last_read_event_id = Some(event_id.clone());
-                                submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:event_id.clone() });
-                                *last_scroll_to_end_time = std::time::Instant::now();
-                            }
-                        }
-                    }
-                }else{
-                    if let Some((ref event_id,_)) = self.last_read_event{
-                        if let Some(ref mut last_read_event_id) = self.last_read_event_id{
-                            if event_id!=last_read_event_id{
-                                submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:event_id.clone() });
-                                self.last_scroll_to_end_time = Some(std::time::Instant::now());
-                                *last_read_event_id = event_id.clone();
-                            }
-                        }else{
-                            self.last_read_event_id = Some(event_id.clone());
-                            submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:event_id.clone() });
-                            self.last_scroll_to_end_time = Some(std::time::Instant::now());
-                        }
-                       
-                    }
-                }
-                    
-            }
+            
             list.set_item_range(cx, 0, last_item_id);
 
             let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
-
             while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
                 // log!("Drawing item {} at scroll: {}", item_id, scroll_offset);
                 let item = if item_id == 0 {
@@ -1382,6 +1318,45 @@ impl Widget for Timeline {
                 };
                 item.draw_all(cx, &mut Scope::empty());
             }
+            // Calculation for the last item id that has been drawn, and use it to send read receipt
+            let mut read_event_id = None;
+            let mut max = 0;
+            for v in tl_state.content_drawn_since_last_update.iter(){
+                if max <v.end{
+                    max = v.end;
+                }
+            }
+
+            // ensure we do not count the partial displayed text at the bottom
+            if max >1{
+                if let Some( (event_id,timestamp))=Some(max-1).and_then(|f|
+                    {//println!("item_index_scroll {:?}",f);
+                    tl_items.get(f).and_then(|f|f.as_event().and_then(|f|
+                    if let Some(event_id) = f.event_id(){
+                        Some((event_id,f.timestamp()))
+                    }else{
+                        None
+                    }
+                    ))}){
+                    let item_event_id: &OwnedEventId = &event_id.to_owned();
+              
+                    if let Some((ref mut last_event_id,ref mut last_timestamp)) = self.last_read_event{
+                        if timestamp.as_secs() > last_timestamp.as_secs(){
+                            *last_event_id = item_event_id.clone();
+                            read_event_id = Some(item_event_id.clone());
+                            *last_timestamp = timestamp;
+                        }
+                    }else {
+                        read_event_id = Some(item_event_id.clone());
+                        self.last_read_event = Some((item_event_id.to_owned(),timestamp));
+                    }
+                    if let Some(read_event_id) = read_event_id{
+                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:read_event_id.clone() });
+                    }
+                }
+            }
+            
+            
         }
 
 

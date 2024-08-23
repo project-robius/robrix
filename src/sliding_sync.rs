@@ -938,8 +938,6 @@ async fn async_main_loop() -> Result<()> {
                         latest_event_timestamp: latest_tl.as_ref()
                             .map(|ev| ev.timestamp())
                             .unwrap_or(MilliSecondsSinceUnixEpoch(UInt::MIN)),
-                        latest_event_id:room.latest_event().map(|ev|ev.event_id().unwrap_or(owned_event_id!("$xxxxxx:example.org"))).unwrap_or(owned_event_id!("$xxxxxx:example.org")),
-                        last_read_event_id:None,
                         timeline: tl_arc,
                         pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
