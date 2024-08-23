@@ -201,6 +201,7 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
+
 /// The entry point for an async worker thread that can run async tasks.
 ///
 /// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
@@ -857,8 +858,7 @@ async fn async_main_loop() -> Result<()> {
                 .track_read_marker_and_receipts()
                 .build()
                 .await?;
-            
-            
+
             let latest_tl = timeline.latest_event().await;
 
             let mut room_exists = false;

@@ -2,6 +2,7 @@
 //! along with a message input bar at the bottom.
 
 use std::{borrow::Cow, collections::BTreeMap, ops::{Deref, DerefMut, Range}, sync::{Arc, Mutex}};
+
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{
@@ -561,7 +562,7 @@ impl Widget for RoomScreen {
 
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let timeline = self.timeline(id!(timeline));
-        
+
         if let Event::Actions(actions) = event {
             // Handle the send message button being clicked.
             if self.button(id!(send_message_button)).clicked(&actions) {
@@ -715,7 +716,6 @@ impl RoomScreenRef {
 
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
-#[derive(Debug)]
 pub enum TimelineUpdate {
     /// The content of a room's timeline was updated in the background.
     NewItems {
@@ -1141,7 +1141,9 @@ impl Widget for Timeline {
                         // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
                         //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
                         //       any index that comes before (is less than) the above `orig_first_id`.
-                     
+
+
+
                         if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
                                 let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
@@ -1219,6 +1221,7 @@ impl Widget for Timeline {
         // Determine length of the portal list based on the number of timeline items.
         let last_item_id = tl_items.len();
         let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
+        
         // Start the actual drawing procedure.
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
