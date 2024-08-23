@@ -11,7 +11,7 @@ use matrix_sdk::{ruma::{
             guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
-    }, matrix_uri::MatrixId, uint, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+    }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange,
@@ -783,8 +783,9 @@ impl Widget for RoomScreen {
                                 cx,
                                 replying_preview_view.avatar(id!(reply_preview_avatar)),
                                 room_id.as_ref(),
-                                message_to_reply.sender_profile(),
                                 message_to_reply.sender(),
+                                message_to_reply.sender_profile(),
+                                message_to_reply.event_id(),
                             );
 
                             replying_preview_view
@@ -1020,6 +1021,12 @@ pub enum TimelineUpdate {
     /// meaning that it has completed its recent pagination request(s) and is now waiting
     /// for more requests, but that the start of the timeline has not yet been reached.
     PaginationIdle,
+    /// A notice that event details have been fetched from the server,
+    /// including a `result` that indicates whether the request was successful.
+    EventDetailsFetched {
+        event_id: OwnedEventId,
+        result: Result<(), matrix_sdk_ui::timeline::Error>,
+    },
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
@@ -1468,6 +1475,13 @@ impl Widget for Timeline {
                     TimelineUpdate::PaginationIdle => {
                         done_loading = true;
                     }
+                    TimelineUpdate::EventDetailsFetched { event_id: _event_id, result: _result } => {
+                        if let Err(_e) = _result {
+                            error!("Failed to fetch details fetched for event {_event_id} in room {}. Error: {_e:?}", tl.room_id);
+                        }
+                        // Here, to be most efficient, we could redraw only the updated event,
+                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    }
                     TimelineUpdate::RoomMembersFetched => {
                         log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
@@ -1734,7 +1748,7 @@ fn populate_message_view(
                         Cow::Borrowed(plaintext)   => msg_body_field.show_plaintext(plaintext),
                     }
                 }
-                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message);
+                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message, event_tl_item.event_id());
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
                 // We're done drawing the message content, so mark it as fully drawn
                 // *if and only if* the reply preview was also fully drawn.
@@ -1766,7 +1780,7 @@ fn populate_message_view(
                 let text_or_image_ref = item.text_or_image(id!(content.message));
 
                 // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message);
+                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message, event_tl_item.event_id());
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
 
                 match &image.source {
@@ -1818,7 +1832,7 @@ fn populate_message_view(
                 let kind = other.msgtype();
                 item.label(id!(content.message)).set_text(&format!("[TODO {kind:?}] {}", other.body()));
                 // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message);
+                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message, event_tl_item.event_id());
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
@@ -1837,8 +1851,9 @@ fn populate_message_view(
             cx,
             item.avatar(id!(profile.avatar)),
             room_id,
-            event_tl_item.sender_profile(),
             event_tl_item.sender(),
+            event_tl_item.sender_profile(),
+            event_tl_item.event_id(),
         );
         item.label(id!(content.username)).set_text(&username);
         new_drawn_status.profile_drawn = profile_drawn;
@@ -1882,6 +1897,7 @@ fn draw_replied_to_message(
     item: &WidgetRef,
     room_id: &RoomId,
     message: &timeline::Message,
+    message_event_id: Option<&EventId>,
 ) -> bool {
     let fully_drawn: bool;
     let show_reply_preview: bool;
@@ -1889,11 +1905,9 @@ fn draw_replied_to_message(
 
     if let Some(in_reply_to_details) = message.in_reply_to() {
         show_reply_preview = true;
-        log!("Found replied-to message: {:?}", in_reply_to_details);
         match &in_reply_to_details.event {
-            TimelineDetails::Ready(details) => {
-                log!("Found ready replied-to message: {:?}", details);
-                let in_reply_to_body: Cow<str> = match details.as_ref().content() {
+            TimelineDetails::Ready(replied_to_event) => {
+                let in_reply_to_body: Cow<str> = match replied_to_event.as_ref().content() {
                     // TODO: use existing message display logic for this reply preview
                     TimelineItemContent::Message(m) => m.body().into(),
                     TimelineItemContent::RedactedMessage => "[Message Redacted]".into(),
@@ -1905,8 +1919,9 @@ fn draw_replied_to_message(
                     cx,
                     reply_preview_view.avatar(id!(reply_preview_avatar)),
                     room_id,
-                    details.sender_profile(),
-                    details.sender(),
+                    replied_to_event.sender(),
+                    replied_to_event.sender_profile(),
+                    Some(in_reply_to_details.event_id.as_ref()),
                 );
 
                 fully_drawn = is_avatar_fully_drawn;
@@ -1930,7 +1945,7 @@ fn draw_replied_to_message(
                     .html_or_plaintext(id!(reply_preview_body))
                     .show_plaintext("[Error fetching replied-to event]");
             }
-            TimelineDetails::Pending | TimelineDetails::Unavailable => {
+            status @ TimelineDetails::Pending | status @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 reply_preview_view
@@ -1943,7 +1958,16 @@ fn draw_replied_to_message(
                     .html_or_plaintext(id!(reply_preview_body))
                     .show_plaintext("[Loading replied-to message...]");
 
-                // TODO here: if Unavailable, submit an async request for `Timeline::fetch_details_for_event`
+                // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
+                // not the details of the original event that this `message` is replying to.
+                if matches!(status, TimelineDetails::Unavailable) {
+                    if let Some(event_id) = message_event_id {
+                        submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                            room_id: room_id.to_owned(),
+                            event_id: event_id.to_owned(),
+                        });
+                    }
+                }
             }
         }
     } else {
@@ -2317,8 +2341,9 @@ fn populate_small_state_event(
             cx,
             item.avatar(id!(avatar)),
             room_id,
-            event_tl_item.sender_profile(),
             event_tl_item.sender(),
+            event_tl_item.sender_profile(),
+            event_tl_item.event_id(),
         );
         // Draw the timestamp as part of the profile.
         set_timestamp(
@@ -2364,8 +2389,11 @@ fn set_timestamp(
 }
 
 
-/// Sets the given avatar and returns a displayable username based on the given timeline event.
+/// Sets the given avatar and returns a displayable username based on the
+/// given profile and user ID of the sender of the event with the given event ID.
 ///
+/// If the sender profile is not ready, this function will submit an async request
+/// to fetch the sender profile from the server, but only if the event ID is `Some`.
 /// This function will always choose a nice, displayable username and avatar.
 ///
 /// The specific behavior is as follows:
@@ -2389,8 +2417,9 @@ fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
     room_id: &RoomId,
+    sender_user_id: &UserId, 
     sender_profile: &TimelineDetails<Profile>,
-    user_id: &UserId,
+    event_id: Option<&EventId>,
 ) -> (String, bool) {
     // Get the display name and avatar URL from the sender's profile, if available,
     // or if the profile isn't ready, fall back to qeurying our user profile cache.
@@ -2399,8 +2428,16 @@ fn set_avatar_and_get_username(
             (profile.display_name.clone(), AvatarState::Known(profile.avatar_url.clone()))
         }
         _not_ready => {
+            if matches!(_not_ready, TimelineDetails::Unavailable) {
+                if let Some(event_id) = event_id {
+                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                        room_id: room_id.to_owned(),
+                        event_id: event_id.to_owned(),
+                    });
+                }
+            }
             // log!("populate_message_view(): sender profile not ready yet for event {_not_ready:?}");
-            user_profile_cache::with_user_profile(cx, user_id, |profile, room_members| {
+            user_profile_cache::with_user_profile(cx, sender_user_id, |profile, room_members| {
                 room_members.get(room_id)
                     .map(|rm| (
                         rm.display_name().map(|n| n.to_owned()),
@@ -2427,15 +2464,15 @@ fn set_avatar_and_get_username(
     };
 
     // Set sender to the display name if available, otherwise the user id.
-    let username = username_opt.clone().unwrap_or_else(|| user_id.to_string());
+    let username = username_opt.clone().unwrap_or_else(|| sender_user_id.to_string());
 
     // Set the sender's avatar image, or use the username if no image is available.
     avatar_img_data_opt.and_then(|data| avatar.show_image(
-        Some((user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
+        Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
         |img| utils::load_png_or_jpg(&img, cx, &data)
     ).ok())
     .unwrap_or_else(|| avatar.show_text(
-        Some((user_id.to_owned(), username_opt, room_id.to_owned())),
+        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
         &username,
     ));
 
@@ -2513,7 +2550,7 @@ impl Widget for Message {
         // TODO: need vecs for apply_over(), maybe use an animator so we just set the state here
         // and the animator handles the color changes from inside the dsl.
         let default_color = vec3(1.0, 1.0, 1.0); // #ffffff
-        let hover_color = vec3(0.939, 0.939, 0.939); // #efefef
+        let hover_color = vec3(0.95, 0.95, 0.95); // #f3f3f3  (very light gray)
 
         let bg_color = if self.hovered {
             hover_color

@@ -6,7 +6,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+        api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineItem, TimelineItemContent}, Timeline};
@@ -121,6 +121,11 @@ pub enum MatrixRequest {
         /// * `false`: (default) paginate backwards to fill in earlier events (towards the start of the timeline),
         ///    which works if the timeline is in either live mode and focused mode.
         forwards: bool,
+    },
+    /// Request to fetch the full details of the given event in the given room's timeline.
+    FetchDetailsForEvent {
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
@@ -267,6 +272,35 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         ),
                         Err(e) => error!("Error sending {direction} pagination request for room {room_id}: {e:?}"),
                     }
+                });
+            }
+
+            MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for fetch details for event request {room_id}");
+                        continue;
+                    };
+
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                // Spawn a new async task that will make the actual fetch request.
+                let _fetch_task = Handle::current().spawn(async move {
+                    // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
+                    let result = timeline.fetch_details_for_event(&event_id).await;
+                    match result {
+                        Ok(_) => {
+                            // log!("Successfully fetched details for event {event_id} in room {room_id}.");
+                        }
+                        Err(ref e) => error!("Error fetching details for event {event_id} in room {room_id}: {e:?}"),
+                    }
+                    sender.send(TimelineUpdate::EventDetailsFetched {
+                        event_id,
+                        result,
+                    }).unwrap();
+                    SignalToUI::set_ui_signal();
                 });
             }
 
@@ -426,13 +460,13 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch avatar request for {mxc_uri:?}...");
+                    // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequest {
                         source: MediaSource::Plain(mxc_uri.clone()),
                         format: MEDIA_THUMBNAIL_FORMAT.into(),
                     };
                     let res = client.media().get_media_content(&media_request, true).await;
-                    log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
+                    // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
                     on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
             }
