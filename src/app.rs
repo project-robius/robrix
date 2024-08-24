@@ -1,7 +1,6 @@
 use crate::home::rooms_list::RoomListAction;
 use crate::home::room_screen::*;
 use makepad_widgets::*;
-use matrix_sdk::crypto::vodozemac::ecies::Message;
 
 live_design! {
     import makepad_widgets::base::*;

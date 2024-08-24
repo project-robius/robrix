@@ -1036,6 +1036,58 @@ impl Widget for Timeline {
         
         if let Event::Actions(actions) = event {
             for action in actions {
+                //handles scroll event to send regular read receipt with latest message drawn
+                if self.portal_list(id!(list)).scrolled(actions){
+                    if let (Some(ref tl_state),Some(ref room_id))= (&self.tl_state,&self.room_id){
+                        let tl_items = &tl_state.items;
+                        let mut read_event_id = None;
+                        let is_at_end = self.portal_list(id!(list)).is_at_end(); 
+                        let mut index_to_lookup = 0;
+                        if is_at_end{
+                            if tl_items.len() > 0{
+                                index_to_lookup = tl_items.len() -1;
+                            }
+                        }else{
+                            let mut max = 0;
+                            for v in tl_state.content_drawn_since_last_update.iter(){
+                                if max <v.end{
+                                    max = v.end;
+                                }
+                            }
+                            // ensure we do not count the partially displayed text at the bottom
+                            if max >1{
+                                index_to_lookup = max-1;
+                            }
+                        }
+                        if let Some( (event_id,timestamp))=Some(index_to_lookup).and_then(|f|
+                            {
+                                tl_items.get(f).and_then(|f|f.as_event().and_then(|f|
+                                if let Some(event_id) = f.event_id(){
+                                    Some((event_id,f.timestamp()))
+                                }else{
+                                    None
+                                }
+                            ))
+                            }){
+                            let item_event_id: &OwnedEventId = &event_id.to_owned();
+        
+                            if let Some((ref mut last_event_id,ref mut last_timestamp)) = self.last_read_event{
+                                if timestamp.as_secs() > last_timestamp.as_secs(){
+                                    *last_event_id = item_event_id.clone();
+                                    read_event_id = Some(item_event_id.clone());
+                                    *last_timestamp = timestamp;
+                                }
+                            }else {
+                                read_event_id = Some(item_event_id.clone());
+                                self.last_read_event = Some((item_event_id.to_owned(),timestamp));
+                            }
+                        }
+                        if let Some(read_event_id) = read_event_id{
+                            submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:read_event_id.clone() });
+                        }
+                    }
+                    
+                }
                 // Handle the timeline being hidden or shown.
                 match action.as_widget_action().cast() {
                     StackNavigationTransitionAction::HideBegin => {
@@ -1317,43 +1369,6 @@ impl Widget for Timeline {
                     item
                 };
                 item.draw_all(cx, &mut Scope::empty());
-            }
-            // Calculation for the last item id that has been drawn, and use it to send read receipt
-            let mut read_event_id = None;
-            let mut max = 0;
-            for v in tl_state.content_drawn_since_last_update.iter(){
-                if max <v.end{
-                    max = v.end;
-                }
-            }
-
-            // ensure we do not count the partial displayed text at the bottom
-            if max >1{
-                if let Some( (event_id,timestamp))=Some(max-1).and_then(|f|
-                    {//println!("item_index_scroll {:?}",f);
-                    tl_items.get(f).and_then(|f|f.as_event().and_then(|f|
-                    if let Some(event_id) = f.event_id(){
-                        Some((event_id,f.timestamp()))
-                    }else{
-                        None
-                    }
-                    ))}){
-                    let item_event_id: &OwnedEventId = &event_id.to_owned();
-              
-                    if let Some((ref mut last_event_id,ref mut last_timestamp)) = self.last_read_event{
-                        if timestamp.as_secs() > last_timestamp.as_secs(){
-                            *last_event_id = item_event_id.clone();
-                            read_event_id = Some(item_event_id.clone());
-                            *last_timestamp = timestamp;
-                        }
-                    }else {
-                        read_event_id = Some(item_event_id.clone());
-                        self.last_read_event = Some((item_event_id.to_owned(),timestamp));
-                    }
-                    if let Some(read_event_id) = read_event_id{
-                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:read_event_id.clone() });
-                    }
-                }
             }
             
             

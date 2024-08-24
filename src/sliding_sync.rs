@@ -20,7 +20,6 @@ use url::Url;
 
 use crate::{avatar_cache::AvatarUpdate, home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
-use tokio::time::{sleep, Duration};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -486,9 +485,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                    
                     room_info.timeline.clone()
                 };
-                let _send_message_task = Handle::current().spawn(async move {
-                    
-                    sleep(Duration::from_secs(5)).await;
+                let _send_message_task = Handle::current().spawn(async move {                    
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Main, event_id.clone()).await {
                         Ok(_send_handle) => log!("Sent message to room  {room_id}.fully_read_marker {event_id}"),
                         Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
@@ -507,7 +504,6 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     room_info.timeline.clone()
                 };
                 let _send_message_task = Handle::current().spawn(async move {
-                    //sleep(Duration::from_secs(5)).await;
                     let receipt = Receipts::new().fully_read_marker(event_id.clone());
                     match timeline.send_multiple_receipts(receipt).await {
                         Ok(_send_handle) => log!("Sent message to room  {room_id}.fully_read_marker {event_id}"),
