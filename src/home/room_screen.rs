@@ -129,54 +129,65 @@ live_design! {
 
     REACTION_TEXT_COLOR = #4c00b0
 
-    // A preview of a message that is being replied to.
-    ReplyPreview = <View> {
+    // The content of a reply preview, which shows a small preview
+    // of a message that was replied to.
+    //
+    // This is used in both the `RepliedToMessage` and `ReplyPreview` views.
+    ReplyPreviewContent = <View> {
+        width: Fill
+        height: Fit
+        flow: Down
+        padding: {left: 5.0, bottom: 5.0, top: 5.0}
+
+        <View> {
+            width: Fill
+            height: Fit
+            flow: Right
+            margin: { bottom: 10.0, top: 0.0, right: 5.0 }
+            align: {y: 0.5}
+
+            reply_preview_avatar = <Avatar> {
+                width: 19.,
+                height: 19.,
+                text_view = { text = { draw_text: {
+                    text_style: { font_size: 7.0 }
+                }}}
+            }
+
+            reply_preview_username = <Label> {
+                width: Fill,
+                margin: { left: 5.0 }
+                draw_text: {
+                    text_style: <USERNAME_TEXT_STYLE> { font_size: 10 },
+                    color: (USERNAME_TEXT_COLOR)
+                    wrap: Ellipsis,
+                }
+                text: "<Username not available>"
+            }
+        }
+
+        reply_preview_body = <HtmlOrPlaintext> {
+            html_view = {
+                html = {
+                    font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
+                }
+            }
+        }
+    }
+
+    // A small inline preview of a message that was replied to by another message
+    // within the room timeline.
+    // That is, this view contains a preview of the earlier message
+    // that is shown above the "in-reply-to" message.
+    RepliedToMessage = <View> {
         visible: false
         width: Fill
         height: Fit
         flow: Down
         padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
 
-        // A subview that is only shown when a `ReplyPreview` is re-used
-        // at the bottom of the RoomScreen (above the message input box)
-        // to show which message a user is currently drafting a reply to.
-        reply_preview_header = <View> {
-            width: Fill
-            height: Fit
-            flow: Right
-            align: {y: 0.5}
-
-            <Label> {
-                draw_text: {
-                    text_style: <TEXT_SUB> {},
-                    color: (COLOR_META)
-                }
-                text: "Replying to:"
-            }
-
-            filler = <View> {width: Fill, height: Fill}
-
-            // TODO: Fix style
-            cancel_reply_button = <IconButton> {
-                width: Fit,
-                height: Fit,
-
-                draw_icon: {
-                    svg_file: (ICO_CLOSE),
-                    fn get_color(self) -> vec4 {
-                       return (COLOR_META)
-                    }
-                }
-                icon_walk: {width: 12, height: 12}
-            }
-        }
-
-        reply_preview_content = <View> {
-            width: Fill
-            height: Fit
-            flow: Down
-            padding: {left: 5.0, bottom: 5.0, top: 5.0}
-
+        // A reply preview with a vertical bar drawn in the background.
+        replied_to_message_content = <ReplyPreviewContent> {
             show_bg: true
             draw_bg: {
                 instance vertical_bar_color: (USERNAME_TEXT_COLOR)
@@ -208,41 +219,6 @@ live_design! {
                     sdf.fill(self.vertical_bar_color);
 
                     return sdf.result;
-                }
-            }
-
-            <View> {
-                width: Fill
-                height: Fit
-                flow: Right
-                margin: { bottom: 10.0, top: 0.0, right: 5.0 }
-                align: {y: 0.5}
-
-                reply_preview_avatar = <Avatar> {
-                    width: 19.,
-                    height: 19.,
-                    text_view = { text = { draw_text: {
-                        text_style: { font_size: 7.0 }
-                    }}}
-                }
-
-                reply_preview_username = <Label> {
-                    width: Fill,
-                    margin: { left: 5.0 }
-                    draw_text: {
-                        text_style: <USERNAME_TEXT_STYLE> { font_size: 10 },
-                        color: (USERNAME_TEXT_COLOR)
-                        wrap: Ellipsis,
-                    }
-                    text: "<Username not available>"
-                }
-            }
-
-            reply_preview_body = <HtmlOrPlaintext> {
-                html_view = {
-                    html = {
-                        font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
-                    }
                 }
             }
         }
@@ -306,16 +282,12 @@ live_design! {
         padding: 0.0,
         spacing: 0.0
 
-        // Only shown when this Message was in reply to another message.
-        reply_preview = <ReplyPreview> {
+        // A preview of the earlier message that this message was in reply to.
+        replied_to_message = <RepliedToMessage> {
             flow: Right
             cursor: Hand
             margin: { bottom: 10 }
-            reply_preview_header = {
-                // TODO: use `visible: false,` instead of `width: 0`
-                width: 0
-            }
-            reply_preview_content = {
+            replied_to_message_content = {
                 margin: { left: 10 }
             }
         }
@@ -632,14 +604,49 @@ live_design! {
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
 
-                // Below that, display the optional view that shows which message is being replied to.
-                replying_preview = <ReplyPreview> {
+                // Below that, display an optional preview of the message that the user
+                // is currently drafting a replied to.
+                replying_preview = <View> {
+                    visible: false
+                    width: Fill
+                    height: Fit
                     flow: Down
-                    reply_preview_content = {
-                        draw_bg: {
-                            vertical_bar_width: 0.0
+                    padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
+            
+                    // Displays a "Replying to" label and a cancel button
+                    // above the preview of the message being replied to.
+                    <View> {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        align: {y: 0.5}
+            
+                        <Label> {
+                            draw_text: {
+                                text_style: <TEXT_SUB> {},
+                                color: (COLOR_META)
+                            }
+                            text: "Replying to:"
+                        }
+            
+                        filler = <View> {width: Fill, height: Fill}
+            
+                        // TODO: Fix style
+                        cancel_reply_button = <IconButton> {
+                            width: Fit,
+                            height: Fit,
+            
+                            draw_icon: {
+                                svg_file: (ICO_CLOSE),
+                                fn get_color(self) -> vec4 {
+                                   return (COLOR_META)
+                                }
+                            }
+                            icon_walk: {width: 12, height: 12}
                         }
                     }
+            
+                    reply_preview_content = <ReplyPreviewContent> { }
                 }
 
                 // Below that, display a view that holds the message input bar and send button.
@@ -781,7 +788,7 @@ impl Widget for RoomScreen {
                         if let Some(room_id) = &self.room_id {
                             let (replying_preview_username, _) = set_avatar_and_get_username(
                                 cx,
-                                replying_preview_view.avatar(id!(reply_preview_avatar)),
+                                replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
                                 room_id.as_ref(),
                                 message_to_reply.sender(),
                                 message_to_reply.sender_profile(),
@@ -789,7 +796,7 @@ impl Widget for RoomScreen {
                             );
 
                             replying_preview_view
-                                .label(id!(reply_preview_username))
+                                .label(id!(reply_preview_content.reply_preview_username))
                                 .set_text(replying_preview_username.as_str());
                         }
 
@@ -807,7 +814,7 @@ impl Widget for RoomScreen {
                             };
 
                         replying_preview_view
-                            .html_or_plaintext(id!(reply_preview_body))
+                            .html_or_plaintext(id!(reply_preview_content.reply_preview_body))
                             .show_html(body_of_reply_preview);
                     }
 
@@ -944,7 +951,7 @@ impl Widget for RoomScreen {
                         // TODO: support attaching mentions, rich text (html), etc.
                     });
 
-                    self.set_replying_to(None)
+                    self.set_replying_to(None);
                 }
             }
 
@@ -1900,11 +1907,11 @@ fn draw_replied_to_message(
     message_event_id: Option<&EventId>,
 ) -> bool {
     let fully_drawn: bool;
-    let show_reply_preview: bool;
-    let reply_preview_view = item.view(id!(reply_preview));
+    let show_reply: bool;
+    let replied_to_message = item.view(id!(replied_to_message));
 
     if let Some(in_reply_to_details) = message.in_reply_to() {
-        show_reply_preview = true;
+        show_reply = true;
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
                 let in_reply_to_body: Cow<str> = match replied_to_event.as_ref().content() {
@@ -1917,7 +1924,7 @@ fn draw_replied_to_message(
 
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
-                    reply_preview_view.avatar(id!(reply_preview_avatar)),
+                    replied_to_message.avatar(id!(replied_to_message_content.reply_preview_avatar)),
                     room_id,
                     replied_to_event.sender(),
                     replied_to_event.sender_profile(),
@@ -1926,36 +1933,36 @@ fn draw_replied_to_message(
 
                 fully_drawn = is_avatar_fully_drawn;
 
-                reply_preview_view
-                    .label(id!(reply_preview_username))
+                replied_to_message
+                    .label(id!(replied_to_message_content.reply_preview_username))
                     .set_text(in_reply_to_username.as_str());
-                reply_preview_view
+                replied_to_message
                     .html_or_plaintext(id!(reply_preview_body))
                     .show_plaintext(in_reply_to_body);
             }
             TimelineDetails::Error(_e) => {
                 fully_drawn = true;
-                reply_preview_view
-                    .label(id!(reply_preview_username))
+                replied_to_message
+                    .label(id!(replied_to_message_content.reply_preview_username))
                     .set_text("[Error fetching username]");
-                reply_preview_view
-                    .avatar(id!(reply_preview_avatar))
+                replied_to_message
+                    .avatar(id!(replied_to_message_content.reply_preview_avatar))
                     .show_text(None, "?");
-                reply_preview_view
-                    .html_or_plaintext(id!(reply_preview_body))
+                replied_to_message
+                    .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
                     .show_plaintext("[Error fetching replied-to event]");
             }
             status @ TimelineDetails::Pending | status @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
-                reply_preview_view
-                    .label(id!(reply_preview_username))
+                replied_to_message
+                    .label(id!(replied_to_message_content.reply_preview_username))
                     .set_text("[Loading username...]");
-                reply_preview_view
-                    .avatar(id!(reply_preview_avatar))
+                replied_to_message
+                    .avatar(id!(replied_to_message_content.reply_preview_avatar))
                     .show_text(None, "?");
-                reply_preview_view
-                    .html_or_plaintext(id!(reply_preview_body))
+                replied_to_message
+                    .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
                     .show_plaintext("[Loading replied-to message...]");
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
@@ -1971,12 +1978,12 @@ fn draw_replied_to_message(
             }
         }
     } else {
-        // This message was not in reply to another message, so we don't need to show a reply preview.
-        show_reply_preview = false;
+        // This message was not in reply to another message, so we don't need to show a reply.
+        show_reply = false;
         fully_drawn = true;
     }
 
-    reply_preview_view.set_visible(show_reply_preview);
+    replied_to_message.set_visible(show_reply);
     fully_drawn
 }
 
