@@ -39,6 +39,8 @@ live_design! {
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
     }
 
+    MESSAGE_REPLY_PREVIEW_FONT_SIZE = 9.5
+
     SMALL_STATE_FONT_SIZE = 9.5
     SMALL_STATE_TEXT_COLOR = #x999
     SMALL_STATE_TEXT_STYLE = {
