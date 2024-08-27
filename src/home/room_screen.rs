@@ -2028,92 +2028,109 @@ fn draw_replied_to_message(
 }
 
 
+/// Returns a text preview of the given timeline event as an Html-formatted string.
+pub fn preview_text_of_timeline_item(
+    content: &TimelineItemContent,
+    sender_username: &str,
+) -> String {
+    match content {
+        TimelineItemContent::Message(m) => match m.msgtype() {
+            MessageType::Audio(audio) => format!(
+                "[Audio]: <i>{}</i>",
+                if let Some(formatted_body) = audio.formatted.as_ref() {
+                    &formatted_body.body
+                } else {
+                    &audio.body
+                }
+            ),
+            MessageType::Emote(emote) => format!(
+                "<i>{} {}</i>",
+                sender_username,
+                if let Some(formatted_body) = emote.formatted.as_ref() {
+                    &formatted_body.body
+                } else {
+                    &emote.body
+                }
+            ),
+            MessageType::File(file) => format!(
+                "[File]: <i>{}</i>",
+                if let Some(formatted_body) = file.formatted.as_ref() {
+                    &formatted_body.body
+                } else {
+                    &file.body
+                }
+            ),
+            MessageType::Image(image) => format!(
+                "[Image]: <i>{}</i>",
+                if let Some(formatted_body) = image.formatted.as_ref() {
+                    &formatted_body.body
+                } else {
+                    &image.body
+                }
+            ),
+            MessageType::Location(location) => format!(
+                "[Location]: <i>{}</i>",
+                location.body,
+            ),
+            MessageType::Notice(notice) => format!("[Notice]: <i>{}</i>",
+                if let Some(formatted_body) = notice.formatted.as_ref() {
+                    &formatted_body.body
+                } else {
+                    &notice.body
+                }
+            ),
+            MessageType::ServerNotice(notice) => format!(
+                "[Server Notice]: <i>{} -- {}</i>",
+                notice.server_notice_type.as_str(),
+                notice.body,
+            ),
+            MessageType::Text(text) => {
+                text.formatted.as_ref()
+                    .and_then(|fb| (fb.format == MessageFormat::Html)
+                        .then(|| utils::linkify(&fb.body).to_string())
+                    )
+                    .unwrap_or_else(|| utils::linkify(&text.body).to_string())
+            }
+            MessageType::VerificationRequest(verification) => format!(
+                "[Verification Request] from device {} to user {}",
+                verification.from_device,
+                verification.to,
+            ),
+            MessageType::Video(video) => format!(
+                "[Video]: <i>{}</i>",
+                if let Some(formatted_body) = video.formatted.as_ref() {
+                    &formatted_body.body
+                } else {
+                    &video.body
+                }
+            ),
+            _ => String::new(),
+        }
+        TimelineItemContent::RedactedMessage => format!(
+            "[Message was redacted]",
+        ),
+        TimelineItemContent::Sticker(sticker) => format!(
+            "[Sticker]: <i>{}</i>",
+            sticker.content().body,
+        ),
+        _other => format!("[TODO]: <i>preview of other message type</i>"),
+    }
+}
+
+
 fn populate_preview_of_timeline_item(
     widget_out: &HtmlOrPlaintextRef,
     timeline_item_content: &TimelineItemContent,
     sender_username: &str,
 ) {
-    match timeline_item_content {
-        TimelineItemContent::Message(m) => match m.msgtype() {
-            MessageType::Audio(audio) => widget_out.show_html(
-                format!("<i>[Audio]: {}</i>",
-                    if let Some(formatted_body) = audio.formatted.as_ref() {
-                        &formatted_body.body
-                    } else {
-                        &audio.body
-                    }
-                )
-            ),
-            MessageType::Emote(emote) => widget_out.show_html(
-                format!("<i>{sender_username} {}</i>",
-                    if let Some(formatted_body) = emote.formatted.as_ref() {
-                        &formatted_body.body
-                    } else {
-                        &emote.body
-                    }
-                )
-            ),
-            MessageType::File(file) => widget_out.show_html(
-                format!("<i>[File]: {}</i>",
-                    if let Some(formatted_body) = file.formatted.as_ref() {
-                        &formatted_body.body
-                    } else {
-                        &file.body
-                    }
-                )
-            ),
-            MessageType::Image(image) => widget_out.show_html(
-                format!("<i>[Image]: {}</i>",
-                    if let Some(formatted_body) = image.formatted.as_ref() {
-                        &formatted_body.body
-                    } else {
-                        &image.body
-                    }
-                )
-            ),
-            MessageType::Location(location) => widget_out.show_html(
-                format!("<i>[Location]: {}</i>", location.body)
-            ),
-            MessageType::Notice(notice) => widget_out.show_html(
-                format!("<i>[Notice]: {}</i>",
-                    if let Some(formatted_body) = notice.formatted.as_ref() {
-                        &formatted_body.body
-                    } else {
-                        &notice.body
-                    }
-                )
-            ),
-            MessageType::ServerNotice(notice) => widget_out.show_html(
-                format!("<i>[Server Notice]: {} -- {}</i>", notice.server_notice_type.as_str(), notice.body)
-            ),
-            MessageType::Text(text) => populate_text_message_content(&widget_out, text),
-            MessageType::VerificationRequest(verification) => widget_out.show_html(
-                format!("<i>[Verification Request] from device {} to user {}</i>",
-                    verification.from_device,
-                    verification.to,
-                )
-            ),
-            MessageType::Video(video) => widget_out.show_html(
-                format!("<i>[Video]: {}</i>",
-                    if let Some(formatted_body) = video.formatted.as_ref() {
-                        &formatted_body.body
-                    } else {
-                        &video.body
-                    }
-                )
-            ),
-            _ => { }
+    if let TimelineItemContent::Message(m) = timeline_item_content {
+        if let MessageType::Text(text) = m.msgtype() {
+            return populate_text_message_content(&widget_out, text);
         }
-        TimelineItemContent::RedactedMessage => widget_out.show_html(
-            format!("<i>[Message Redacted]</i>")
-        ),
-        TimelineItemContent::Sticker(sticker) => widget_out.show_html(
-            format!("<i>[Sticker]: {}</i>", sticker.content().body)
-        ),
-        _other => widget_out.show_html(
-            format!("<i>[TODO: preview of other message type]</i>")
-        ),
-    };
+    }
+    widget_out.show_html(
+        preview_text_of_timeline_item(timeline_item_content, sender_username)
+    );
 }
 
 /// Draws the reactions beneath the given `message_item`.

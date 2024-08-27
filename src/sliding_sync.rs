@@ -9,7 +9,7 @@ use matrix_sdk::{
         api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
-use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineItem, TimelineItemContent}, Timeline};
+use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
@@ -18,7 +18,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
-use crate::{avatar_cache::AvatarUpdate, home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
+use crate::{avatar_cache::AvatarUpdate, home::{room_screen::{preview_text_of_timeline_item, TimelineUpdate}, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
 use crate::message_display::DisplayerExt;
 
 
@@ -919,7 +919,19 @@ async fn async_main_loop() -> Result<()> {
                 ));
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
                     room_id: Some(room_id.clone()),
-                    latest: latest_tl.as_ref().map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
+                    latest: latest_tl.as_ref().map(|ev| {
+                        let sender_username = match ev.sender_profile() {
+                            TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+                            _ => None,
+                        }.unwrap_or_else(|| ev.sender().as_str());
+                        (
+                            ev.timestamp(),
+                            format!("<b>{}</b>: {}",
+                                sender_username,
+                                preview_text_of_timeline_item(ev.content(), sender_username),
+                            )
+                        )
+                    }),
                     avatar: avatar_from_room_name(room_name_str.as_deref().unwrap_or_default()),
                     room_name: room_name_str.clone(),
                 }));
