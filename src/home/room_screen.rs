@@ -8,7 +8,7 @@ use makepad_widgets::*;
 use matrix_sdk::{ruma::{
     events::{
         room::{
-            guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType, RoomMessageEventContent}, MediaSource
+            guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent, TextMessageEventContent}, MediaSource
         },
         AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent,
     }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
@@ -20,7 +20,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    avatar_cache::{self, AvatarCacheEntry}, media_cache::{MediaCache, MediaCacheEntry}, profile::{user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}, shared::{avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}}, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -167,11 +167,14 @@ live_design! {
         }
 
         reply_preview_body = <HtmlOrPlaintext> {
-            html_view = {
-                html = {
-                    font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
+            html_view = { html = {
+                font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
+            } }
+            plaintext_view = { pt_label = {
+                draw_text: {
+                    text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) },
                 }
-            }
+            } }
         }
     }
 
@@ -784,47 +787,41 @@ impl Widget for RoomScreen {
                 {
                     let replying_preview_view = self.view(id!(replying_preview));
 
-                    if let Some(message) = message_to_reply.content().as_message() {
-                        if let Some(room_id) = &self.room_id {
-                            let (replying_preview_username, _) = set_avatar_and_get_username(
-                                cx,
-                                replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
-                                room_id.as_ref(),
-                                message_to_reply.sender(),
-                                message_to_reply.sender_profile(),
-                                message_to_reply.event_id(),
-                            );
+                    let (replying_preview_username, _) = set_avatar_and_get_username(
+                        cx,
+                        replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
+                        self.room_id.as_ref().unwrap(),
+                        message_to_reply.sender(),
+                        message_to_reply.sender_profile(),
+                        message_to_reply.event_id(),
+                    );
 
-                            replying_preview_view
-                                .label(id!(reply_preview_content.reply_preview_username))
-                                .set_text(replying_preview_username.as_str());
-                        }
+                    replying_preview_view
+                        .label(id!(reply_preview_content.reply_preview_username))
+                        .set_text(replying_preview_username.as_str());
 
-                        const MAX_REPLYING_PREVIEW_BODY_LENGTH: usize = 100;
-                        let body_of_reply_preview =
-                            if message.body().chars().count() > MAX_REPLYING_PREVIEW_BODY_LENGTH {
-                                let truncated: String = message
-                                    .body()
-                                    .chars()
-                                    .take(MAX_REPLYING_PREVIEW_BODY_LENGTH - 1)
-                                    .collect();
-                                &(truncated + "...")
-                            } else {
-                                message.body()
-                            };
+                    // const MAX_REPLYING_PREVIEW_BODY_LENGTH: usize = 100;
+                    // let body_of_reply_preview =
+                    //     if message.body().chars().count() > MAX_REPLYING_PREVIEW_BODY_LENGTH {
+                    //         let truncated: String = message
+                    //             .body()
+                    //             .chars()
+                    //             .take(MAX_REPLYING_PREVIEW_BODY_LENGTH - 1)
+                    //             .collect();
+                    //         &(truncated + "...")
+                    //     } else {
+                    //         message.body()
+                    //     };
 
-                        replying_preview_view
-                            .html_or_plaintext(id!(reply_preview_content.reply_preview_body))
-                            .show_html(body_of_reply_preview);
-                    }
+                    // TODO: truncate the reply preview body to 2-3 lines or something
 
-                    match message_to_reply.replied_to_info() {
-                        Ok(replied_to_info) => {
-                            self.set_replying_to(Some(replied_to_info));
-                        }
-                        Err(e) => error!("{e}"),
-                    }
+                    populate_preview_of_timeline_item(
+                        &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
+                        message_to_reply.content(),
+                        &replying_preview_username,
+                    );
 
+                    self.set_replying_to(message_to_reply.replied_to_info().ok());
                     self.redraw(cx);
                 }
 
@@ -923,7 +920,7 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the reply cancelation button being clicked.
+            // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(&actions) {
                 self.set_replying_to(None);
                 self.redraw(cx);
@@ -948,7 +945,7 @@ impl Widget for RoomScreen {
                         room_id,
                         message,
                         replied_to: self.replying_to.clone(),
-                        // TODO: support attaching mentions, rich text (html), etc.
+                        // TODO: support attaching mentions, etc.
                     });
 
                     self.set_replying_to(None);
@@ -1439,9 +1436,11 @@ impl Widget for Timeline {
                         //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
                         //       any index that comes before (is less than) the above `orig_first_id`.
 
-
-                        
-                        if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
+                        if orig_first_id > items.len() {
+                            log!("Timeline::handle_event(): orig_first_id {} is out of bounds for new items list of length {}", orig_first_id, items.len());
+                            portal_list.set_first_id_and_scroll(items.len().saturating_sub(1), 0.0);
+                        }
+                        else if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
                             for (idx, item) in items.iter().enumerate() {
                                 let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
                                     continue
@@ -1459,7 +1458,8 @@ impl Widget for Timeline {
                                     break;
                                 }
                             }
-                        } else {
+                        }
+                        else {
                             warning!("Couldn't get unique event ID for event at the top of room {:?}", tl.room_id);
                         }
 
@@ -1743,19 +1743,17 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let msg_body_field = item.html_or_plaintext(id!(content.message));
-                // Draw the message body, either as rich HTML or as plaintext.
-                if let Some(formatted_body) = text.formatted.as_ref()
-                    .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
-                {
-                    msg_body_field.show_html(utils::linkify(formatted_body.as_ref()));
-                } else {
-                    match utils::linkify(&text.body) {
-                        Cow::Owned(linkified_html) => msg_body_field.show_html(&linkified_html),
-                        Cow::Borrowed(plaintext)   => msg_body_field.show_plaintext(plaintext),
-                    }
-                }
-                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message, event_tl_item.event_id());
+                populate_text_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    text,
+                );
+                let is_reply_fully_drawn = draw_replied_to_message(
+                    cx,
+                    &item.view(id!(replied_to_message)),
+                    room_id,
+                    message,
+                    event_tl_item.event_id(),
+                );
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
                 // We're done drawing the message content, so mark it as fully drawn
                 // *if and only if* the reply preview was also fully drawn.
@@ -1773,61 +1771,24 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                // We don't use thumbnails, as their resolution is too low to be visually useful.
-                // We also don't trust the provided mimetype, as it can be incorrect.
-                let (_mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
-                    (
-                        info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
-                        info.width,
-                        info.height,
-                    )
-                } else {
-                    (None, None, None)
-                };
-                let text_or_image_ref = item.text_or_image(id!(content.message));
-
-                // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message, event_tl_item.event_id());
+                  // Draw the ReplyPreview and reactions, if any are present.
+                  let is_reply_fully_drawn = draw_replied_to_message(
+                    cx,
+                    &item.view(id!(replied_to_message)),
+                    room_id,
+                    message,
+                    event_tl_item.event_id(),
+                );
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
-
-                match &image.source {
-                    MediaSource::Plain(mxc_uri) => {
-                        // now that we've obtained the image URI and its metadata, try to fetch the image.
-                        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
-                            MediaCacheEntry::Loaded(data) => {
-                                let show_image_result = text_or_image_ref.show_image(|img|
-                                    utils::load_png_or_jpg(&img, cx, &data)
-                                        .map(|()| img.size_in_pixels(cx).unwrap())
-                                );
-                                if let Err(e) = show_image_result {
-                                    let err_str = format!("Failed to display image: {e:?}");
-                                    error!("{err_str}");
-                                    text_or_image_ref.set_text(&err_str);
-                                }
-
-                                // We're done drawing the image message content, so mark it as fully drawn
-                                // *if and only if* the reply preview was also fully drawn.
-                                new_drawn_status.content_drawn = is_reply_fully_drawn;
-                            }
-                            MediaCacheEntry::Requested => {
-                                text_or_image_ref.set_text(&format!("Fetching image from {:?}", mxc_uri));
-                                // Do not consider this image as being fully drawn, as we're still fetching it.
-                            }
-                            MediaCacheEntry::Failed => {
-                                text_or_image_ref.set_text(&format!("Failed to fetch image from {:?}", mxc_uri));
-                                // For now, we consider this as being "complete". In the future, we could support
-                                // retrying to fetch the image on a user click/tap.
-                                new_drawn_status.content_drawn = is_reply_fully_drawn;
-                            }
-                        }
-                    }
-                    MediaSource::Encrypted(encrypted) => {
-                        text_or_image_ref.set_text(&format!("[TODO] fetch encrypted image at {:?}", encrypted.url));
-                        // We consider this as "fully drawn" since we don't yet support encryption,
-                        // but *only if* the reply preview was also fully drawn.
-                        new_drawn_status.content_drawn = is_reply_fully_drawn;
-                    }
-                };
+                let is_image_fully_drawn = populate_image_message_content(
+                    cx,
+                    &item.text_or_image(id!(content.message)),
+                    image,
+                    media_cache,
+                );
+                // Mark the content as fully drawn if *both* the image content
+                // *and* the reply preview were fully drawn.
+                new_drawn_status.content_drawn = is_image_fully_drawn && is_reply_fully_drawn;
                 (item, false)
             }
         }
@@ -1839,7 +1800,13 @@ fn populate_message_view(
                 let kind = other.msgtype();
                 item.label(id!(content.message)).set_text(&format!("[TODO {kind:?}] {}", other.body()));
                 // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(cx, &item, room_id, message, event_tl_item.event_id());
+                let is_reply_fully_drawn = draw_replied_to_message(
+                    cx,
+                    &item.view(id!(replied_to_message)),
+                    room_id,
+                    message,
+                    event_tl_item.event_id(),
+                );
                 draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
@@ -1892,6 +1859,85 @@ fn populate_message_view(
 }
 
 
+/// Draws the Html or plaintext body of the given message `text` into the `message_content_widget`.
+fn populate_text_message_content(
+    message_content_widget: &HtmlOrPlaintextRef,
+    text_content: &TextMessageEventContent,
+) {
+    if let Some(formatted_body) = text_content.formatted.as_ref()
+        .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
+    {
+        message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
+    } else {
+        match utils::linkify(&text_content.body) {
+            Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
+            Cow::Borrowed(plaintext)   => message_content_widget.show_plaintext(plaintext),
+        }
+    }
+}
+
+/// Draws the given image message's content into the `message_content_widget`.
+///
+/// Returns whether the image message content was fully drawn.
+fn populate_image_message_content(
+    cx: &mut Cx2d,
+    text_or_image_ref: &TextOrImageRef,
+    image: &ImageMessageEventContent,
+    media_cache: &mut MediaCache,
+) -> bool {
+    // We don't use thumbnails, as their resolution is too low to be visually useful.
+    // We also don't trust the provided mimetype, as it can be incorrect.
+    let (_mimetype, _width, _height) = if let Some(info) = image.info.as_ref() {
+        (
+            info.mimetype.as_deref().and_then(utils::ImageFormat::from_mimetype),
+            info.width,
+            info.height,
+        )
+    } else {
+        (None, None, None)
+    };
+
+    match &image.source {
+        MediaSource::Plain(mxc_uri) => {
+            // now that we've obtained the image URI and its metadata, try to fetch the image.
+            match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+                MediaCacheEntry::Loaded(data) => {
+                    let show_image_result = text_or_image_ref.show_image(|img|
+                        utils::load_png_or_jpg(&img, cx, &data)
+                            .map(|()| img.size_in_pixels(cx).unwrap())
+                    );
+                    if let Err(e) = show_image_result {
+                        let err_str = format!("Failed to display image: {e:?}");
+                        error!("{err_str}");
+                        text_or_image_ref.set_text(&err_str);
+                    }
+
+                    // We're done drawing the image message content, so mark it as fully drawn.
+                    true
+                }
+                MediaCacheEntry::Requested => {
+                    text_or_image_ref.set_text(&format!("Fetching image from {:?}", mxc_uri));
+                    // Do not consider this image as being fully drawn, as we're still fetching it.
+                    false
+                }
+                MediaCacheEntry::Failed => {
+                    text_or_image_ref.set_text(&format!("Failed to fetch image from {:?}", mxc_uri));
+                    // For now, we consider this as being "complete". In the future, we could support
+                    // retrying to fetch the image on a user click/tap.
+                    true
+                }
+            }
+        }
+        MediaSource::Encrypted(encrypted) => {
+            text_or_image_ref.set_text(&format!("[TODO] fetch encrypted image at {:?}", encrypted.url));
+            // We consider this as "fully drawn" since we don't yet support encryption,
+            // but *only if* the reply preview was also fully drawn.
+            true
+        }
+    }
+}
+
+
 /// Draws a ReplyPreview above the given `message` if it was in-reply to another message.
 ///
 /// If the given `message` was *not* in-reply to another message,
@@ -1901,30 +1947,21 @@ fn populate_message_view(
 /// i.e., whether it can be considered as cached and not needing to be redrawn later.
 fn draw_replied_to_message(
     cx: &mut Cx2d,
-    item: &WidgetRef,
+    replied_to_message_view: &ViewRef,
     room_id: &RoomId,
     message: &timeline::Message,
     message_event_id: Option<&EventId>,
 ) -> bool {
     let fully_drawn: bool;
     let show_reply: bool;
-    let replied_to_message = item.view(id!(replied_to_message));
 
     if let Some(in_reply_to_details) = message.in_reply_to() {
         show_reply = true;
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let in_reply_to_body: Cow<str> = match replied_to_event.as_ref().content() {
-                    // TODO: use existing message display logic for this reply preview
-                    TimelineItemContent::Message(m) => m.body().into(),
-                    TimelineItemContent::RedactedMessage => "[Message Redacted]".into(),
-                    TimelineItemContent::Sticker(sticker) => sticker.content().body.clone().into(),
-                    _other => format!("TODO: support reply previews for {:?}", _other).into(),
-                };
-
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
-                    replied_to_message.avatar(id!(replied_to_message_content.reply_preview_avatar)),
+                    replied_to_message_view.avatar(id!(replied_to_message_content.reply_preview_avatar)),
                     room_id,
                     replied_to_event.sender(),
                     replied_to_event.sender_profile(),
@@ -1933,35 +1970,38 @@ fn draw_replied_to_message(
 
                 fully_drawn = is_avatar_fully_drawn;
 
-                replied_to_message
+                replied_to_message_view
                     .label(id!(replied_to_message_content.reply_preview_username))
                     .set_text(in_reply_to_username.as_str());
-                replied_to_message
-                    .html_or_plaintext(id!(reply_preview_body))
-                    .show_plaintext(in_reply_to_body);
+                let msg_body = replied_to_message_view.html_or_plaintext(id!(reply_preview_body));
+                populate_preview_of_timeline_item(
+                    &msg_body,
+                    replied_to_event.content(),
+                    &in_reply_to_username,
+                );
             }
             TimelineDetails::Error(_e) => {
                 fully_drawn = true;
-                replied_to_message
+                replied_to_message_view
                     .label(id!(replied_to_message_content.reply_preview_username))
                     .set_text("[Error fetching username]");
-                replied_to_message
+                replied_to_message_view
                     .avatar(id!(replied_to_message_content.reply_preview_avatar))
                     .show_text(None, "?");
-                replied_to_message
+                replied_to_message_view
                     .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
                     .show_plaintext("[Error fetching replied-to event]");
             }
             status @ TimelineDetails::Pending | status @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
-                replied_to_message
+                replied_to_message_view
                     .label(id!(replied_to_message_content.reply_preview_username))
                     .set_text("[Loading username...]");
-                replied_to_message
+                replied_to_message_view
                     .avatar(id!(replied_to_message_content.reply_preview_avatar))
                     .show_text(None, "?");
-                replied_to_message
+                replied_to_message_view
                     .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
                     .show_plaintext("[Loading replied-to message...]");
 
@@ -1983,10 +2023,98 @@ fn draw_replied_to_message(
         fully_drawn = true;
     }
 
-    replied_to_message.set_visible(show_reply);
+    replied_to_message_view.set_visible(show_reply);
     fully_drawn
 }
 
+
+fn populate_preview_of_timeline_item(
+    widget_out: &HtmlOrPlaintextRef,
+    timeline_item_content: &TimelineItemContent,
+    sender_username: &str,
+) {
+    match timeline_item_content {
+        TimelineItemContent::Message(m) => match m.msgtype() {
+            MessageType::Audio(audio) => widget_out.show_html(
+                format!("<i>[Audio]: {}</i>",
+                    if let Some(formatted_body) = audio.formatted.as_ref() {
+                        &formatted_body.body
+                    } else {
+                        &audio.body
+                    }
+                )
+            ),
+            MessageType::Emote(emote) => widget_out.show_html(
+                format!("<i>{sender_username} {}</i>",
+                    if let Some(formatted_body) = emote.formatted.as_ref() {
+                        &formatted_body.body
+                    } else {
+                        &emote.body
+                    }
+                )
+            ),
+            MessageType::File(file) => widget_out.show_html(
+                format!("<i>[File]: {}</i>",
+                    if let Some(formatted_body) = file.formatted.as_ref() {
+                        &formatted_body.body
+                    } else {
+                        &file.body
+                    }
+                )
+            ),
+            MessageType::Image(image) => widget_out.show_html(
+                format!("<i>[Image]: {}</i>",
+                    if let Some(formatted_body) = image.formatted.as_ref() {
+                        &formatted_body.body
+                    } else {
+                        &image.body
+                    }
+                )
+            ),
+            MessageType::Location(location) => widget_out.show_html(
+                format!("<i>[Location]: {}</i>", location.body)
+            ),
+            MessageType::Notice(notice) => widget_out.show_html(
+                format!("<i>[Notice]: {}</i>",
+                    if let Some(formatted_body) = notice.formatted.as_ref() {
+                        &formatted_body.body
+                    } else {
+                        &notice.body
+                    }
+                )
+            ),
+            MessageType::ServerNotice(notice) => widget_out.show_html(
+                format!("<i>[Server Notice]: {} -- {}</i>", notice.server_notice_type.as_str(), notice.body)
+            ),
+            MessageType::Text(text) => populate_text_message_content(&widget_out, text),
+            MessageType::VerificationRequest(verification) => widget_out.show_html(
+                format!("<i>[Verification Request] from device {} to user {}</i>",
+                    verification.from_device,
+                    verification.to,
+                )
+            ),
+            MessageType::Video(video) => widget_out.show_html(
+                format!("<i>[Video]: {}</i>",
+                    if let Some(formatted_body) = video.formatted.as_ref() {
+                        &formatted_body.body
+                    } else {
+                        &video.body
+                    }
+                )
+            ),
+            _ => { }
+        }
+        TimelineItemContent::RedactedMessage => widget_out.show_html(
+            format!("<i>[Message Redacted]</i>")
+        ),
+        TimelineItemContent::Sticker(sticker) => widget_out.show_html(
+            format!("<i>[Sticker]: {}</i>", sticker.content().body)
+        ),
+        _other => widget_out.show_html(
+            format!("<i>[TODO: preview of other message type]</i>")
+        ),
+    };
+}
 
 /// Draws the reactions beneath the given `message_item`.
 fn draw_reactions(
@@ -2434,8 +2562,8 @@ fn set_avatar_and_get_username(
         TimelineDetails::Ready(profile) => {
             (profile.display_name.clone(), AvatarState::Known(profile.avatar_url.clone()))
         }
-        _not_ready => {
-            if matches!(_not_ready, TimelineDetails::Unavailable) {
+        not_ready => {
+            if matches!(not_ready, TimelineDetails::Unavailable) {
                 if let Some(event_id) = event_id {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
                         room_id: room_id.to_owned(),
@@ -2443,7 +2571,7 @@ fn set_avatar_and_get_username(
                     });
                 }
             }
-            // log!("populate_message_view(): sender profile not ready yet for event {_not_ready:?}");
+            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
             user_profile_cache::with_user_profile(cx, sender_user_id, |profile, room_members| {
                 room_members.get(room_id)
                     .map(|rm| (
