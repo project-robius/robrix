@@ -1,5 +1,6 @@
 use makepad_widgets::Cx;
 
+pub mod adaptive_layout_view;
 pub mod avatar;
 pub mod clickable_view;
 pub mod dropdown_menu;
@@ -25,4 +26,5 @@ pub fn live_design(cx: &mut Cx) {
     html_or_plaintext::live_design(cx);
     portal::live_design(cx);
     modal::live_design(cx);
+    adaptive_layout_view::live_design(cx);
 }

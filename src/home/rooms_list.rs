@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
+use crate::shared::adaptive_layout_view::AdaptiveLayoutViewAction;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
 use crate::utils::{unix_time_millis_to_datetime, self};
@@ -331,6 +332,11 @@ impl Widget for RoomsList {
                         }
                     );
 
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        AdaptiveLayoutViewAction::NavigateTo(live_id!(main_content))
+                    );
                 }
             }
         }

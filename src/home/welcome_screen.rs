@@ -14,7 +14,7 @@ live_design! {
         align: {x: 0.0, y: 0.5}
         welcome_message = <RoundedView> {
             padding: 40.
-            width: Fit, height: Fit
+            width: Fill, height: Fit
             flow: Down, spacing: 20
 
             title = <Label> {

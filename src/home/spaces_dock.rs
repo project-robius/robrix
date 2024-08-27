@@ -7,23 +7,48 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
+    import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
-    SpacesDock = <View> {
-        padding: {top: 40.}
-        width: 68.
-        flow: Down, spacing: 20
-        align: {x: 0.5}
+    SpacesDock = <AdaptiveLayoutView> {
+        always_visible: true
+
         show_bg: true
         draw_bg: {
             color: (COLOR_SECONDARY)
         }
+
+        composition: {
+            desktop: {
+                layout: {
+                    flow: Down, spacing: 15
+                    align: {x: 0.5}
+                    padding: {top: 40., bottom: 20.}
+                }
+                walk: {
+                    width: 68.
+                    height: Fill
+                }
+            },
+            mobile: {
+                layout: {
+                    flow: Right
+                    align: {x: 0.5, y: 0.5}
+                    padding: {top: 10, right: 100, bottom: 10, left: 100}
+                }
+                walk: {
+                    width: Fill
+                    height: Fit
+                }
+            }
+            // @media (width <= 1250px) {
+        }
         
         profile = <View> {
-            width: Fill, height: Fit
-            align: { x: 0.5, y: 0.5 }
+            width: Fit, height: Fit
+            align: { x: 0.5, y: 0.5 }            
 
             text_view = <View> {
                 width: 45., height: 45.,
@@ -53,10 +78,40 @@ live_design! {
             }
         }
 
-        <LineH> {
-            margin: {left: 15, right: 15}
+        <AdaptiveLayoutView> {
+            composition: {
+                mobile: {
+                    walk: {
+                        width: 0, height: 0 // TODO, make this invisble instead by adding visibility to composition
+                    }
+                }
+                desktop: {
+                    walk: {
+                        width: Fill, height: Fit
+                    }
+                }
+            }
+            <LineH> {
+                margin: {left: 15, right: 15}
+            }
         }
 
+        // A mobile-only filler
+        <AdaptiveLayoutView> {
+            composition: {
+                desktop: {
+                    walk: {
+                        height: 0, width: 0
+                    }
+                }
+                mobile: {
+                    walk: {
+                        height: Fill, width: Fill // TODO, make this invisble instead by adding visibility to composition
+                    }
+                }
+            }
+        }
+        
         home = <RoundedView> {
             width: Fit, height: Fit
             // FIXME: the extra padding on the right is becase the icon is not correctly centered
@@ -77,7 +132,7 @@ live_design! {
                         return #1C274C;
                     }
                 }
-                icon_walk: {width: 20, height: Fit}
+                icon_walk: {width: 25, height: Fit}
             }
         }
 
@@ -90,7 +145,7 @@ live_design! {
             width: Fit, height: Fit
             // FIXME: the extra padding on the right is becase the icon is not correctly centered
             // within its parent
-            padding: {top: 8, left: 8, right: 12, bottom: 15}
+            padding: {top: 8, left: 8, right: 12, bottom: 8}
             align: {x: 0.5, y: 0.5}
             <Icon> {
                 draw_icon: {
@@ -99,7 +154,7 @@ live_design! {
                         return #1C274C;
                     }
                 }
-                icon_walk: {width: 20, height: Fit}
+                icon_walk: {width: 25, height: Fit}
             }
         }
     }

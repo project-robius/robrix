@@ -7,6 +7,8 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
+    import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
+
     import crate::home::rooms_list::RoomsList;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
@@ -86,10 +88,29 @@ live_design! {
         }
     }
 
-    RoomsSideBar = <View> {
-        padding: {top: 20., left: 20., right: 20.}
-        width: 400, height: Fill
-        flow: Down, spacing: 10
+    RoomsSideBar = <AdaptiveLayoutView> {
+        always_visible: true
+        composition: {
+            desktop: {
+                layout: {
+                    padding: {top: 20., left: 20., right: 20.}
+                    flow: Down, spacing: 10
+                },
+                walk: {
+                    width: 400, height: Fill
+                }
+            },
+            mobile: {
+                layout: {
+                    padding: {top: 17., left: 17., right: 17.}
+                    flow: Down, spacing: 7
+                }
+                walk: {
+                    width: Fill, height: Fill
+                }
+            }
+        }
+
         show_bg: true,
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
