@@ -180,16 +180,15 @@ live_design! {
         reply_preview_body = <HtmlOrPlaintext> {
             html_view = { html = {
                 font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
-                    draw_normal:      { wrap: Ellipsis, text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_italic:      { wrap: Ellipsis, text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_bold:        { wrap: Ellipsis, text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_bold_italic: { wrap: Ellipsis, text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    draw_fixed:       { wrap: Ellipsis, text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    a = { draw_text: { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } } },
+                    draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
+                    draw_italic:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
+                    draw_bold:        { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
+                    draw_bold_italic: { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
+                    draw_fixed:       { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
+                    a = { draw_text:  { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } } },
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
-                    wrap: Ellipsis,
                     text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) },
                 }
             } }
@@ -2053,13 +2052,12 @@ fn populate_preview_of_timeline_item(
 ) {
     if let TimelineItemContent::Message(m) = timeline_item_content {
         if let MessageType::Text(text) = m.msgtype() {
-            return populate_text_message_content(&widget_out, text);
+            return populate_text_message_content(widget_out, text);
         }
     }
-    widget_out.show_html(
-        text_preview_of_timeline_item(timeline_item_content, sender_username)
-            .format_with(sender_username)
-    );
+    let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
+        .format_with(sender_username);
+    widget_out.show_html(html);
 }
 
 /// Draws the reactions beneath the given `message_item`.
