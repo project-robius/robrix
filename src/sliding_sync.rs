@@ -219,7 +219,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for pagination request {room_id}");
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
 

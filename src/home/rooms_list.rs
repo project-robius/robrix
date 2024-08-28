@@ -43,16 +43,15 @@ live_design! {
             latest_message = <HtmlOrPlaintext> {
                 html_view = { html = {
                     font_size: 10.5,
-                    draw_normal:      { wrap: Ellipsis, text_style: { font_size: 10.5 } },
-                    draw_italic:      { wrap: Ellipsis, text_style: { font_size: 10.5 } },
-                    draw_bold:        { wrap: Ellipsis, text_style: { font_size: 10.5 } },
-                    draw_bold_italic: { wrap: Ellipsis, text_style: { font_size: 10.5 } },
-                    draw_fixed:       { wrap: Ellipsis, text_style: { font_size: 10.5 } },
-                    a = { draw_text: { text_style: { font_size: 10.5 } } },
+                    draw_normal:      { text_style: { font_size: 10.5 } },
+                    draw_italic:      { text_style: { font_size: 10.5 } },
+                    draw_bold:        { text_style: { font_size: 10.5 } },
+                    draw_bold_italic: { text_style: { font_size: 10.5 } },
+                    draw_fixed:       { text_style: { font_size: 10.5 } },
+                    a = { draw_text:  { text_style: { font_size: 10.5 } } },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
-                        wrap: Ellipsis,
                         text_style: { font_size: 10.5 },
                     }
                     text: "[Latest message unknown]"
