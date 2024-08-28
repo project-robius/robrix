@@ -12,6 +12,20 @@ live_design! {
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
+    MobileOnlyFiller = <AdaptiveLayoutView> {
+        composition: {
+            desktop: {
+                view_presence: Hidden
+            }
+            mobile: {
+                walk: {
+                    height: Fill, width: Fill
+                }
+                view_presence: Visible
+            }
+        }
+    }
+
     SpacesDock = <AdaptiveLayoutView> {
         show_bg: true
         draw_bg: {
@@ -35,7 +49,7 @@ live_design! {
                 layout: {
                     flow: Right
                     align: {x: 0.5, y: 0.5}
-                    padding: {top: 10, right: 100, bottom: 10, left: 100}
+                    padding: {top: 10, right: 10, bottom: 10, left: 10}
                 }
                 walk: {
                     width: Fill
@@ -45,6 +59,8 @@ live_design! {
             }
             // @media (width <= 1250px) {
         }
+
+        <MobileOnlyFiller> {}
         
         profile = <View> {
             width: Fit, height: Fit
@@ -93,20 +109,7 @@ live_design! {
             }
         }
 
-        // A mobile-only filler
-        <AdaptiveLayoutView> {
-            composition: {
-                desktop: {
-                    view_presence: Hidden
-                }
-                mobile: {
-                    walk: {
-                        height: Fill, width: Fill
-                    }
-                    view_presence: Visible
-                }
-            }
-        }
+        <MobileOnlyFiller> {}
         
         home = <RoundedView> {
             width: Fit, height: Fit
@@ -153,5 +156,7 @@ live_design! {
                 icon_walk: {width: 25, height: Fit}
             }
         }
+
+        <MobileOnlyFiller> {}
     }
 }
