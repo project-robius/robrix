@@ -31,15 +31,15 @@ live_design! {
                 },
                 navigation: {
                     mode: Stack,
-                    items: [rooms, main_content]
+                    items: [rooms_sidebar, main_content]
                 }
-                child_order: [rooms, spaces]
+                child_order: [rooms_sidebar, spaces]
             }
             // @media (width <= 1250px) {
         }
 
         spaces = <SpacesDock> {}
-        rooms = <RoomsSideBar> {}
+        rooms_sidebar = <RoomsSideBar> {}
         main_content = <AdaptiveLayoutView> {
             composition: {
                 desktop: {

@@ -201,7 +201,7 @@ pub struct AdaptiveLayoutView {
     #[rust] 
     current_layout_mode: LayoutMode,
 
-    #[rust(1200)] 
+    #[rust] 
     screen_width: f64,
 
     #[rust]
@@ -278,6 +278,8 @@ impl LiveHook for AdaptiveLayoutView {
                     Some(Box::new(ScrollBars::new_from_ptr(cx, self.scroll_bars)));
             }
         }
+
+        self.apply_current_values_from_adaptive();   
     }
 
     /// Applies the instance fields, e.g. instance_field = <SomeWidget>{}
@@ -761,7 +763,8 @@ impl Widget for AdaptiveLayoutView {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // Begin a draw state
         if self.draw_state.begin(cx, DrawState::Drawing(0, false)) {
-            if !self.visible {
+            // Do not attempt to draw it the view is invisible or if screen width isn't yet available.
+            if !self.visible || self.screen_width == 0.0 {
                 self.draw_state.end();
                 return DrawStep::done();
             }
@@ -928,10 +931,10 @@ impl WidgetMatchEvent for AdaptiveLayoutView {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for action in actions {
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
-                self.screen_width = ce.new_geom.inner_size.x;
-                if ce.old_geom != ce.new_geom {
+                if self.screen_width != ce.new_geom.inner_size.x {
+                    self.screen_width = ce.new_geom.inner_size.x;
                     self.apply_current_values_from_adaptive();
-                    self.redraw(cx);
+                    cx.redraw_all();    
                 }
             }
 

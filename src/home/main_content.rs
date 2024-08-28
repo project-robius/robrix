@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::home::room_screen::RoomScreenWidgetExt;
+use crate::{home::room_screen::RoomScreenWidgetExt, shared::adaptive_layout_view::AdaptiveLayoutViewAction};
 
 use super::rooms_list::RoomListAction;
 
@@ -10,9 +10,13 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
+    import crate::shared::search_bar::SearchBar;
+    import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
+
     import crate::home::room_screen::RoomScreen;
     import crate::home::welcome_screen::WelcomeScreen;
-    import crate::shared::search_bar::SearchBar;
+
+    ICON_NAV_BACK = dep("crate://self/resources/icons/navigate_back.svg")
 
     MainContent = {{MainContent}} {
         width: Fill, height: Fill
@@ -21,7 +25,41 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER)
         }
-        align: {x: 0.5, y: 0.5}
+        align: {x: 0.0, y: 0.5}
+
+        <AdaptiveLayoutView> {
+            composition: {
+                desktop: {
+                    view_presence: Hidden
+                }
+                mobile: {
+                    view_presence: Visible
+                    walk: {
+                        width: Fit, height: 30
+                    }
+                    layout: {
+                        align: {x: 0., y: 0.5}
+                        padding: {left: 2, bottom: 7}
+                    }
+                }
+            }
+
+            navigate_back = <Button> {
+                draw_bg: {
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        return sdf.result
+                    }
+                }
+                draw_icon: {
+                    svg_file: (ICON_NAV_BACK),
+                    fn get_color(self) -> vec4 {
+                        return #a2;
+                    }
+                }
+                icon_walk: {width: 17, height: 17}
+            }
+        }
 
         <SearchBar> {}
 
@@ -90,6 +128,15 @@ impl MatchEvent for MainContent {
                     self.redraw(cx);
                 }
                 _ => (),
+            }
+
+            // TODO: Once we introduce navigation history, make this navigate back instead and slide out
+            if self.view.button(id!(navigate_back)).clicked(&actions) {
+                cx.widget_action(
+                    self.widget_uid(),
+                    &Scope::default().path,
+                    AdaptiveLayoutViewAction::NavigateTo(live_id!(rooms_sidebar))
+                );
             }
         }
     }
