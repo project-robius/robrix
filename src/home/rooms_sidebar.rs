@@ -89,7 +89,6 @@ live_design! {
     }
 
     RoomsSideBar = <AdaptiveLayoutView> {
-        always_visible: true
         composition: {
             desktop: {
                 layout: {
@@ -99,6 +98,7 @@ live_design! {
                 walk: {
                     width: 400, height: Fill
                 }
+                view_presence: Visible
             },
             mobile: {
                 layout: {
@@ -108,6 +108,7 @@ live_design! {
                 walk: {
                     width: Fill, height: Fill
                 }
+                view_presence: Visible
             }
         }
 

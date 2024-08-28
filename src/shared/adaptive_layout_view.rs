@@ -8,17 +8,6 @@ live_design! {
 
     AdaptiveLayoutView = {{AdaptiveLayoutView}} {
         width: Fill, height: Fill
-        
-        composition: {
-            desktop: { // AdaptiveLayout
-                // flow: Right
-                // walk: ...
-            },
-            mobile: {
-                // flow: Stacked
-                // walk ..
-            }
-        }
     }
 }
 
@@ -141,10 +130,16 @@ pub struct AdaptiveLayoutView {
 
     // #[layout]
     #[live]
-    pub current_layout: AdaptiveLayout,
+    pub current_layout: Layout,
 
     #[walk]
     pub current_walk: Walk,
+
+    #[live]
+    pub current_navigation_config: Option<NavigationConfig>,
+
+    #[live]
+    pub current_child_order: Vec<LiveId>,
 
     #[live]
     composition: AdaptiveComposition,
@@ -209,52 +204,32 @@ pub struct AdaptiveLayoutView {
     #[rust(1200)] 
     screen_width: f64,
 
-    // STACKING
-    #[rust]
-    active_view: Option<LiveId>,
-
     #[rust]
     active_view_takeover: bool,
 
-    #[live(false)]
-    always_visible: bool, // TODO: Rename this. Perhaps the Stacked conecept changes into Custom.
+    #[rust]
+    navigation_state: NavigationState
 }
 
-#[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister)]
+// type AdaptiveChild = Vec<(LiveId, WidgetRef)>;
+
+#[derive(Clone, Debug, Live, LiveHook, LiveRegister)]
 #[live_ignore]
 pub struct AdaptiveComposition {
     #[live] pub desktop: AdaptiveProps,
     #[live] pub mobile: AdaptiveProps
 }
 
-#[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister)]
+/// The configuration of this view and its children, that is resolution-specific.
+#[derive(Clone, Debug, Live, LiveHook, LiveRegister)]
 #[live_ignore]
 pub struct AdaptiveProps {
     #[live] pub walk: Walk,
-    #[live] pub layout: AdaptiveLayout,
-}
-
-#[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister)]
-#[live_ignore]
-pub struct AdaptiveLayout {
-    #[live] pub scroll: DVec2,
-    #[live(true)] pub clip_x: bool,
-    #[live(true)] pub clip_y: bool,
-    #[live] pub padding: Padding,
-    #[live] pub align: Align,
-    #[live] pub flow: AdaptiveFlow,
-    #[live] pub spacing: f64,
-    #[live] pub line_spacing: f64
-}
-
-#[derive(Copy, Clone, Debug, Live, LiveHook, PartialEq)]
-#[live_ignore]
-pub enum AdaptiveFlow {
-    #[pick] Right,
-    Down,
-    Overlay, 
-    RightWrap,
-    Stacked
+    #[live] pub layout: Layout,
+    // Ideally child_order should be a part of layout.
+    #[live] pub child_order: Vec<LiveId>,
+    #[live] pub view_presence: ViewPresence,
+    #[live] pub navigation: Option<NavigationConfig>
 }
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
@@ -500,9 +475,9 @@ impl AdaptiveLayoutViewRef {
         }
     }
 
-    pub fn is_always_visible(&mut self) -> bool {
-        if let Some(adaptive_section) = self.borrow_mut() {
-            return adaptive_section.always_visible;
+    pub fn is_visible(&self) -> bool {
+        if let Some(adaptive_layout_view) = self.borrow_mut() {
+            return adaptive_layout_view.is_visible()
         }
         false
     }
@@ -770,7 +745,17 @@ impl Widget for AdaptiveLayoutView {
     }
 
     fn is_visible(&self) -> bool {
-        self.visible
+        // self.visible
+        match self.current_layout_mode {
+            LayoutMode::Desktop => {
+                // log!("{:?}, visible {:?}", self.widget_uid(), self.composition.desktop.view_presence);
+                self.composition.desktop.view_presence == ViewPresence::Visible
+            },
+            LayoutMode::Mobile => {
+                self.composition.mobile.view_presence == ViewPresence::Visible //||
+                // self.composition.mobile.view_presence == ViewPresence::NavigationItem
+            },
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -871,67 +856,28 @@ impl Widget for AdaptiveLayoutView {
                 self.current_layout.scroll
             };
 
-            self.apply_layout();
+            self.apply_current_values_from_adaptive();
 
-            let simple_layout = self.compute_simple_layout();
+            // Begin the main turtle
+            if self.show_bg {
+                // Begin a turtle through begining the background draw
+                self.draw_bg
+                    .begin(cx, walk, self.current_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
+            } else {
+                // Otherwise ignore background and start a turtle directly
+                cx.begin_turtle(walk, self.current_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
+            }
 
-            match self.current_layout.flow {
-                // If the flow is stacked, we only draw the children marked as always_visible, 
-                // or the main active view that is taking over
-                AdaptiveFlow::Stacked => {
-                    // let walk = walk.with_abs_pos(DVec2 {
-                    //     x: 0.,
-                    //     y: 0.,
-                    // });
-    
-                    // Begin the main turtle
-                    if self.show_bg {
-                        // Begin a turtle through begining the background draw
-                        self.draw_bg
-                            .begin(cx, walk, simple_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
-                    } else {
-                        // Otherwise ignore background and start a turtle directly
-                        cx.begin_turtle(walk, simple_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
-                    }
-
-                    let mut children_to_draw = Vec::new();
-
-                    if self.active_view.is_some() && self.active_view_takeover {
-                        // Only push the active view
-                        let active_child = self.children.iter().find(|child| child.0.eq(&self.active_view.unwrap()));
-                        if let Some(child) = active_child {
-                            children_to_draw.push(child.clone());
-                        } else {
-                            error!("Tried to navigate to a children that cannot be found");
-                        }
-                    } else {
-                        // Figure out which chilren should be drawn
-                        for child in self.children.iter() {
-                            if child.1.as_adaptive_layout_view().is_always_visible() {
-                                log!("Child {:?} is always visible", child.0);
-                                children_to_draw.push(child.clone());
-                            }
-                        }
-                    }
-
-                    children_to_draw.reverse(); // TODO: Remove this, just a test for children ordering
-                    let _draw_children_result = self.draw_children(cx, scope, Some(&mut children_to_draw));
+            // TODO: error handling
+            match &self.current_navigation_config {
+                Some(nav_config) => { // TODO: this doesn't have to be mobile //if self.current_layout_mode == LayoutMode::Mobile
+                    // Handle navigation-based drawing for mobile
+                    let _ = self.draw_navigable_children(cx, scope, nav_config.clone());
                 },
-
-                // Simple layout: draw children as we do in an normal View
                 _ => {
-
-                    // Begin the main turtle
-                    if self.show_bg {
-                        // Begin a turtle through begining the background draw
-                        self.draw_bg
-                            .begin(cx, walk, simple_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
-                    } else {
-                        // Otherwise ignore background and start a turtle directly
-                        cx.begin_turtle(walk, simple_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
-                    }
-
-                    let _draw_children_result = self.draw_children(cx, scope, None);
+                    // Normal drawing for desktop or non-navigable mobile layouts
+                    let mut visible_children = self.get_visible_children();
+                    let _ =  self.draw_children(cx, scope, Some(&mut visible_children));
                 }
             }
         }
@@ -984,16 +930,15 @@ impl WidgetMatchEvent for AdaptiveLayoutView {
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
                 self.screen_width = ce.new_geom.inner_size.x;
                 if ce.old_geom != ce.new_geom {
+                    self.apply_current_values_from_adaptive();
                     self.redraw(cx);
                 }
             }
 
+            // TODO: only handle this if the there's current navigation, and if the child and action correspond to this specific parent view
             if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
-                // self.adaptive_layout_view(&[view_id]).set_visible(true);
-                // self.view(&[view_id]).set_visible(true);
-                // TODO: how do we do this if the children can be whatever? unless...
                 self.active_view_takeover = true;
-                self.active_view = Some(view_id);
+                self.navigation_state.active_item_id = Some(view_id);
             }
         }
     }
@@ -1009,48 +954,65 @@ impl AdaptiveLayoutView {
 
     /// Determines the current layout based on the current screen width and user-provided values for the different 
     /// screen sizes.
-    fn apply_layout(&mut self) {       
+    fn apply_current_values_from_adaptive(&mut self) {       
        // TODO allow overriding these values or setting custom alternatives to Mobile and Desktop
         if self.screen_width <= 860.0 { 
             self.current_layout_mode = LayoutMode::Mobile;
             self.current_layout = self.composition.mobile.layout;
             self.current_walk = self.composition.mobile.walk;
+            self.current_navigation_config = self.composition.mobile.navigation.clone();
+            self.current_child_order = self.composition.mobile.child_order.clone();
         } else {
             self.current_layout_mode = LayoutMode::Desktop;
             self.current_layout = self.composition.desktop.layout;
             self.current_walk = self.composition.desktop.walk;
+            self.current_navigation_config = self.composition.desktop.navigation.clone();
+            self.current_child_order = self.composition.desktop.child_order.clone();
         }
     }
 
-    /// Calculates a simplified [Layout] based on the current [ActiveLayout]
-    fn compute_simple_layout(&mut self) -> Layout {
-        let mut simple_layout = Layout::default();
-        
-        simple_layout.flow = match self.current_layout.flow {
-            AdaptiveFlow::Right => Flow::Right,
-            AdaptiveFlow::Down => Flow::Down,
-            AdaptiveFlow::Overlay => Flow::Overlay,
-            AdaptiveFlow::RightWrap => Flow::RightWrap,
-            AdaptiveFlow::Stacked => Flow::Down, // TODO: Make this configurable on the DSL for always visible items
-        };
-        
-        simple_layout.spacing = self.current_layout.spacing;
-        simple_layout.align = self.current_layout.align;
-        simple_layout.padding = self.current_layout.padding;
-
-        simple_layout
+    /// Returns a list of the visible children based on their presence configuration for the current layout mode.
+    fn get_visible_children(&self) -> Vec<(LiveId, WidgetRef)> {
+        let mut visible_children = Vec::new();
+        for child in self.children.iter() {
+            if child.1.is_visible() {
+                visible_children.push(child.clone())
+            }
+        }
+        visible_children
     }
 
     /// Draws the children of this view. If a subset is provided only those children will be drawn
     /// otherwise all visible children are drawn in the same fashion as [View].
+    /// Children are sorted by the order in [current_child_order] if provided.
     fn draw_children(&mut self, cx: &mut Cx2d, scope: &mut Scope, children_subset: Option<&mut Vec<(LiveId, WidgetRef)>>) -> DrawStep {
         let children = children_subset.unwrap_or(&mut self.children);
+
+        // If there is a user-specified order in which to draw the children, sort them.
+        // Note that the user might have provided only a subset of the total chidren
+        if !self.current_child_order.is_empty() {
+            // Create a map from LiveId to its position in the draw_order
+            let draw_order_map: HashMap<LiveId, usize> = self.current_child_order.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+
+            // Sort the children based on the draw_order, with non-matching ones at the end
+            children.sort_by(|a, b| {
+                let a_order = draw_order_map.get(&a.0);
+                let b_order = draw_order_map.get(&b.0);
+                match (a_order, b_order) {
+                    (Some(a_index), Some(b_index)) => a_index.cmp(b_index),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => std::cmp::Ordering::Equal,
+                }
+            });
+        }
+        
         // Iterate over the children, advancing by updating the draw state with each children as a step
         while let Some(DrawState::Drawing(step, resume)) = self.draw_state.get() {
             if step < children.len() {
                 //let id = self.draw_order[step];
                 if let Some((id,child)) = children.get_mut(step) {
-                    if child.is_visible() {
+                    // if child.is_visible() {
                         let walk = child.walk(cx);
                         if resume {
                             // Draw child with its id on the scope
@@ -1063,7 +1025,7 @@ impl AdaptiveLayoutView {
                             self.draw_state.set(DrawState::Drawing(step, true));
                             scope.with_id(*id, |scope| child.draw_walk(cx, scope, walk))?;
                         }
-                    }
+                    // }
                 }
                 self.draw_state.set(DrawState::Drawing(step + 1, false));
             } else {
@@ -1144,6 +1106,33 @@ impl AdaptiveLayoutView {
         DrawStep::done()
     }
 
+    fn draw_navigable_children(&mut self, cx: &mut Cx2d, scope: &mut Scope, navigation_config: NavigationConfig) -> DrawStep {
+       let visible_children = self.get_visible_children();
+        match navigation_config.mode {
+            NavigationMode::Stack => {
+                // Draw only the active navigation item or all present items for the given layout mode
+                let mut children_to_draw = Vec::new();
+
+                // If there is an active navigation item, simply draw the active child and skip the rest. 
+                if let Some(child_id) = self.navigation_state.active_item_id {
+                    if let Some(child) = self.children.iter().find(|c| c.0.eq(&child_id)) {
+                        children_to_draw.push(child.clone());
+                    } else {
+                        error!("Attempted to navigate to a child that is not present in the navigation list of its parent.")
+                    }
+                } else {
+                    // There is no active item in the navigation, draw all visible items for the given layout mode.
+                    children_to_draw = visible_children;
+                }
+
+                 let _ = self.draw_children(cx, scope, Some(&mut children_to_draw)); // TODO error handling
+            },
+            NavigationMode::Tabs => todo!(),
+            NavigationMode::Drawer => todo!(),
+        }
+        DrawStep::done()
+    }
+
     pub fn set_scroll_pos(&mut self, cx: &mut Cx, v: DVec2) {
         if let Some(scroll_bars) = &mut self.scroll_bars_obj {
             scroll_bars.set_scroll_pos(cx, v);
@@ -1190,4 +1179,33 @@ impl AdaptiveLayoutView {
 pub enum AdaptiveLayoutViewAction {
     None,
     NavigateTo(LiveId)   
+}
+
+#[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
+#[live_ignore]
+pub enum ViewPresence {
+    #[pick]
+    Visible,
+    Hidden,
+    NavigationItem,
+}
+
+#[derive(Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
+#[live_ignore]
+pub struct NavigationConfig {
+    #[live] mode: NavigationMode,
+    #[live] items: Vec<LiveId>
+}
+
+#[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
+#[live_ignore]
+pub enum NavigationMode {
+    #[pick] #[live] Stack,
+    #[live] Tabs,
+    #[live] Drawer
+}
+
+#[derive(Default)]
+struct NavigationState {
+    active_item_id: Option<LiveId>
 }

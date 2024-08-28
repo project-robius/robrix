@@ -13,8 +13,6 @@ live_design! {
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
 
     SpacesDock = <AdaptiveLayoutView> {
-        always_visible: true
-
         show_bg: true
         draw_bg: {
             color: (COLOR_SECONDARY)
@@ -31,6 +29,7 @@ live_design! {
                     width: 68.
                     height: Fill
                 }
+                view_presence: Visible
             },
             mobile: {
                 layout: {
@@ -42,6 +41,7 @@ live_design! {
                     width: Fill
                     height: Fit
                 }
+                view_presence: Visible
             }
             // @media (width <= 1250px) {
         }
@@ -81,14 +81,11 @@ live_design! {
         <AdaptiveLayoutView> {
             composition: {
                 mobile: {
-                    walk: {
-                        width: 0, height: 0 // TODO, make this invisble instead by adding visibility to composition
-                    }
+                    view_presence: Hidden
                 }
                 desktop: {
-                    walk: {
-                        width: Fill, height: Fit
-                    }
+                    view_presence: Visible
+                    walk: {height: Fit}
                 }
             }
             <LineH> {
@@ -100,14 +97,13 @@ live_design! {
         <AdaptiveLayoutView> {
             composition: {
                 desktop: {
-                    walk: {
-                        height: 0, width: 0
-                    }
+                    view_presence: Hidden
                 }
                 mobile: {
                     walk: {
-                        height: Fill, width: Fill // TODO, make this invisble instead by adding visibility to composition
+                        height: Fill, width: Fill
                     }
+                    view_presence: Visible
                 }
             }
         }

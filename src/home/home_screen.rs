@@ -16,18 +16,24 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY)
         }
-        // flow: Right
         composition: {
-            desktop: { // AdaptiveProps. 
-                layout: { // AdaptiveLayout TODO: Flatten
+            desktop: {
+                layout: {
                     flow: Right
-                }
+                },
+                // walk: {}
+                // navigation: None -> TODO: this does not work, user must not use None, we might instead remove the wrapping Option
             },
             mobile: {
                 layout: {
-                    flow: Stacked
+                    flow: Down
                     padding: {top: 40.}
+                },
+                navigation: {
+                    mode: Stack,
+                    items: [rooms, main_content]
                 }
+                child_order: [rooms, spaces]
             }
             // @media (width <= 1250px) {
         }
@@ -35,13 +41,15 @@ live_design! {
         spaces = <SpacesDock> {}
         rooms = <RoomsSideBar> {}
         main_content = <AdaptiveLayoutView> {
+            composition: {
+                desktop: {
+                    view_presence: Visible
+                },
+                mobile: {
+                    view_presence: NavigationItem
+                }
+            }
             <MainContent> {}
         }
-
-        // Section { // StackableSection
-        //     flow: Right
-        //     <A> {}
-        //     <B> {}
-        // }
     }
 }
