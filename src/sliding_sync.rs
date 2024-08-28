@@ -18,7 +18,15 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
-use crate::{avatar_cache::AvatarUpdate, home::{room_screen::{preview_text_of_timeline_item, TimelineUpdate}, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
+use crate::{
+    avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+        room_screen::TimelineUpdate,
+        rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate},
+    }, media_cache::MediaCacheEntry, profile::{
+        user_profile::{AvatarState, UserProfile},
+        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
+    }, utils::MEDIA_THUMBNAIL_FORMAT
+};
 
 
 #[derive(Parser, Debug)]
@@ -883,10 +891,10 @@ async fn async_main_loop() -> Result<()> {
 
                         latest_event_changed = Some((
                             timestamp,
-                            preview_text_of_timeline_item(
+                            text_preview_of_timeline_item(
                                 event_tl_item.content(),
                                 latest_event_sender_username,
-                            ),
+                            ).format_with(latest_event_sender_username),
                         ));
 
                         match event_tl_item.content() {
@@ -946,10 +954,8 @@ async fn async_main_loop() -> Result<()> {
                         }.unwrap_or_else(|| ev.sender().as_str());
                         (
                             ev.timestamp(),
-                            format!("<b>{}</b>: {}",
-                                sender_username,
-                                preview_text_of_timeline_item(ev.content(), sender_username),
-                            )
+                            text_preview_of_timeline_item(ev.content(), sender_username)
+                                .format_with(sender_username),
                         )
                     }),
                     avatar: avatar_from_room_name(room_name_str.as_deref().unwrap_or_default()),

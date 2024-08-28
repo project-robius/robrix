@@ -134,6 +134,7 @@ pub enum RoomsListUpdate {
     UpdateLatestEvent {
         room_id: OwnedRoomId,
         timestamp: MilliSecondsSinceUnixEpoch,
+        /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
     /// Update the displayable name for the given room.
