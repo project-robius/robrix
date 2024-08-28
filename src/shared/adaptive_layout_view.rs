@@ -116,8 +116,8 @@ impl ViewOptimize {
 
 
 // TODO: 
-// - add a convinient way to navigate back
-// - add regular walk and layout so that they can be used like in normal views, but are overriden through composition
+// - add regular walk, layout and visibility so that they can be used like in normal views, but are overriden through composition
+// - navigation: add history, navigate back, and animations.
 
 #[derive(Live, LiveRegisterWidget, WidgetRef, WidgetSet)]
 pub struct AdaptiveLayoutView {
@@ -938,10 +938,11 @@ impl WidgetMatchEvent for AdaptiveLayoutView {
                 }
             }
 
-            // TODO: only handle this if the there's current navigation, and if the child and action correspond to this specific parent view
-            if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
-                self.active_view_takeover = true;
-                self.navigation_state.active_item_id = Some(view_id);
+            if self.current_navigation_config.is_some() {
+                if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
+                    self.active_view_takeover = true;
+                    self.navigation_state.active_item_id = Some(view_id);
+                }
             }
         }
     }
