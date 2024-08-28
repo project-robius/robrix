@@ -969,6 +969,28 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Handle the jump to bottom button: update its visibility, and handle clicks.
+            {
+                let mut portal_list = self.portal_list(id!(timeline.list));
+                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+                if portal_list.scrolled(&actions) {
+                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
+                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
+                }
+
+                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
+                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
+                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
+                    portal_list.smooth_scroll_to_end(
+                        cx,
+                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
+                        SCROLL_TO_BOTTOM_SPEED,
+                    );
+                    jump_to_bottom_view.set_visible(false);
+                    self.redraw(cx);
+                }
+            }
+
             // Handle a typing action on the message input box.
             if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
