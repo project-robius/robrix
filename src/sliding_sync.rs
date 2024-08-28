@@ -19,7 +19,6 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::
 use url::Url;
 
 use crate::{avatar_cache::AvatarUpdate, home::{room_screen::{preview_text_of_timeline_item, TimelineUpdate}, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
-use crate::message_display::DisplayerExt;
 
 
 #[derive(Parser, Debug)]
@@ -867,7 +866,28 @@ async fn async_main_loop() -> Result<()> {
                     let timestamp = event_tl_item.timestamp();
                     if timestamp > existing.latest_event_timestamp {
                         existing.latest_event_timestamp = timestamp;
-                        latest_event_changed = Some((timestamp, event_tl_item.text_preview().to_string()));
+                        let latest_event_sender_username = match event_tl_item.sender_profile() {
+                            TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+                            TimelineDetails::Unavailable => {
+                                if let Some(event_id) = event_tl_item.event_id() {
+                                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                                        room_id: room_id.to_owned(),
+                                        event_id: event_id.to_owned(),
+                                    });
+                                }
+                                None
+                            }
+                            _ => None,
+                        }
+                        .unwrap_or_else(|| event_tl_item.sender().as_str());
+
+                        latest_event_changed = Some((
+                            timestamp,
+                            preview_text_of_timeline_item(
+                                event_tl_item.content(),
+                                latest_event_sender_username,
+                            ),
+                        ));
 
                         match event_tl_item.content() {
                             TimelineItemContent::OtherState(other) => match other.content() {
