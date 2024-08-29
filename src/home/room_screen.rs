@@ -541,11 +541,22 @@ live_design! {
 
     // The top space is used to display a loading animation while the room is being paginated.
     TopSpace = <View> {
+        visible: false,
         width: Fill,
-        height: 0.0,
+        height: Fit,
+        align: {x: 0.5, y: 0.5}
+        show_bg: true,
+        draw_bg: {
+            color: #ebfcf2,
+        }
 
         label = <Label> {
-            text: "Loading..."
+            padding: { top: 10.0, bottom: 8.0, left: 0.0, right: 0.0 }
+            draw_text: {
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 10 },
+                color: (TIMESTAMP_TEXT_COLOR)
+            }
+            text: "Loading more messages..."
         }
     }
 
@@ -562,7 +573,6 @@ live_design! {
             flow: Down
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
-            TopSpace = <TopSpace> {}
             Message = <Message> {}
             CondensedMessage = <CondensedMessage> {}
             ImageMessage = <ImageMessage> {}
@@ -620,6 +630,8 @@ live_design! {
             <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
+
+                top_space = <TopSpace> { }
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
@@ -1368,7 +1380,7 @@ impl Widget for Timeline {
                         let Some(tl) = self.tl_state.as_mut() else {
                             return;
                         };
-                        let tl_idx = (item_id - 1) as usize;
+                        let tl_idx = item_id as usize;
                         if let Some(tl_item) = tl.items.get(tl_idx) {
                             if let Some(tl_event_item) = tl_item.as_event() {
                                 // TODO: this is ugly, but i couldnt find a clean way of making the Message
@@ -1386,7 +1398,7 @@ impl Widget for Timeline {
                         let Some(tl) = self.tl_state.as_mut() else {
                             return;
                         };
-                        let tl_idx = (item_id - 1) as usize;
+                        let tl_idx = item_id as usize;
 
                         if let Some(tl_item) = tl.items.get(tl_idx) {
                             if let Some(tl_event_item) = tl_item.as_event() {
@@ -1543,6 +1555,7 @@ impl Widget for Timeline {
 
             if done_loading {
                 log!("TODO: hide topspace loading animation for room {}", tl.room_id);
+
                 // TODO FIXME: hide TopSpace loading animation, set it to invisible.
             }
 
@@ -1562,7 +1575,6 @@ impl Widget for Timeline {
 
         // Determine length of the portal list based on the number of timeline items.
         let last_item_id = tl_items.len();
-        let last_item_id = last_item_id + 1; // Add 1 for the TopSpace.
 
         // Start the actual drawing procedure.
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -1576,11 +1588,8 @@ impl Widget for Timeline {
             let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
 
             while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
-                // log!("Drawing item {} at scroll: {}", item_id, scroll_offset);
-                let item = if item_id == 0 {
-                    list.item(cx, item_id, live_id!(TopSpace)).unwrap()
-                } else {
-                    let tl_idx = (item_id - 1) as usize;
+                let item = {
+                    let tl_idx = item_id as usize;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
