@@ -91,27 +91,18 @@ live_design! {
     RoomsSideBar = <AdaptiveLayoutView> {
         composition: {
             desktop: {
-                layout: {
-                    padding: {top: 20., left: 20., right: 20.}
-                    flow: Down, spacing: 10
-                },
-                walk: {
-                    width: 400, height: Fill
-                }
+                padding: {top: 20., left: 20., right: 20.}
+                flow: Down, spacing: 10
+                width: 400, height: Fill
                 view_presence: Visible
             },
             mobile: {
-                layout: {
-                    padding: {top: 17., left: 17., right: 17.}
-                    flow: Down, spacing: 7
-                }
-                walk: {
-                    width: Fill, height: Fill
-                }
+                padding: {top: 17., left: 17., right: 17.}
+                flow: Down, spacing: 7
+                width: Fill, height: Fill
                 view_presence: Visible
             }
         }
-
         show_bg: true,
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)

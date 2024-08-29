@@ -18,17 +18,12 @@ live_design! {
         }
         composition: {
             desktop: {
-                layout: {
-                    flow: Right
-                },
-                // walk: {}
+                flow: Right
                 // navigation: None -> TODO: this does not work, user must not use None, we might instead remove the wrapping Option
             },
             mobile: {
-                layout: {
-                    flow: Down
-                    padding: {top: 40.}
-                },
+                flow: Down
+                padding: {top: 40.}
                 navigation: {
                     mode: Stack,
                     items: [rooms_sidebar, main_content]

@@ -18,9 +18,7 @@ live_design! {
                 view_presence: Hidden
             }
             mobile: {
-                walk: {
-                    height: Fill, width: Fill
-                }
+                height: Fill, width: Fill
                 view_presence: Visible
             }
         }
@@ -34,27 +32,17 @@ live_design! {
 
         composition: {
             desktop: {
-                layout: {
-                    flow: Down, spacing: 15
-                    align: {x: 0.5}
-                    padding: {top: 40., bottom: 20.}
-                }
-                walk: {
-                    width: 68.
-                    height: Fill
-                }
+                flow: Down, spacing: 15
+                align: {x: 0.5}
+                padding: {top: 40., bottom: 20.}
+                width: 68., height: Fill
                 view_presence: Visible
             },
             mobile: {
-                layout: {
                     flow: Right
                     align: {x: 0.5, y: 0.5}
                     padding: {top: 10, right: 10, bottom: 10, left: 10}
-                }
-                walk: {
-                    width: Fill
-                    height: Fit
-                }
+                    width: Fill, height: Fit
                 view_presence: Visible
             }
             // @media (width <= 1250px) {
@@ -101,7 +89,7 @@ live_design! {
                 }
                 desktop: {
                     view_presence: Visible
-                    walk: {height: Fit}
+                    height: Fit
                 }
             }
             <LineH> {

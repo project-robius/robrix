@@ -34,13 +34,9 @@ live_design! {
                 }
                 mobile: {
                     view_presence: Visible
-                    walk: {
-                        width: Fit, height: 30
-                    }
-                    layout: {
-                        align: {x: 0., y: 0.5}
-                        padding: {left: 2, bottom: 7}
-                    }
+                    width: Fit, height: 30
+                    align: {x: 0., y: 0.5}
+                    padding: {left: 2, bottom: 7}
                 }
             }
 

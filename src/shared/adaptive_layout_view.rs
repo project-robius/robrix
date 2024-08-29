@@ -6,9 +6,7 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
 
-    AdaptiveLayoutView = {{AdaptiveLayoutView}} {
-        width: Fill, height: Fill
-    }
+    AdaptiveLayoutView = {{AdaptiveLayoutView}} {}
 }
 
 #[derive(Live, LiveHook)]
@@ -132,7 +130,8 @@ pub struct AdaptiveLayoutView {
     #[live]
     pub current_layout: Layout,
 
-    #[walk]
+    // #[walk]
+    #[live]
     pub current_walk: Walk,
 
     #[live]
@@ -224,8 +223,8 @@ pub struct AdaptiveComposition {
 #[derive(Clone, Debug, Live, LiveHook, LiveRegister)]
 #[live_ignore]
 pub struct AdaptiveProps {
-    #[live] pub walk: Walk,
-    #[live] pub layout: Layout,
+    #[walk] pub walk: Walk,
+    #[layout] pub layout: Layout,
     // Ideally child_order should be a part of layout.
     #[live] pub child_order: Vec<LiveId>,
     #[live] pub view_presence: ViewPresence,
