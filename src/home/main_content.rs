@@ -30,10 +30,10 @@ live_design! {
         <AdaptiveLayoutView> {
             composition: {
                 desktop: {
-                    view_presence: Hidden
+                    visibility: Hidden
                 }
                 mobile: {
-                    view_presence: Visible
+                    visibility: Visible
                     width: Fit, height: 30
                     align: {x: 0., y: 0.5}
                     padding: {left: 2, bottom: 7}

@@ -227,7 +227,7 @@ pub struct AdaptiveProps {
     #[layout] pub layout: Layout,
     // Ideally child_order should be a part of layout.
     #[live] pub child_order: Vec<LiveId>,
-    #[live] pub view_presence: ViewPresence,
+    #[live] pub visibility: Visibility,
     #[live] pub navigation: Option<NavigationConfig>
 }
 
@@ -749,12 +749,12 @@ impl Widget for AdaptiveLayoutView {
         // self.visible
         match self.current_layout_mode {
             LayoutMode::Desktop => {
-                // log!("{:?}, visible {:?}", self.widget_uid(), self.composition.desktop.view_presence);
-                self.composition.desktop.view_presence == ViewPresence::Visible
+                // log!("{:?}, visible {:?}", self.widget_uid(), self.composition.desktop.visibility);
+                self.composition.desktop.visibility == Visibility::Visible
             },
             LayoutMode::Mobile => {
-                self.composition.mobile.view_presence == ViewPresence::Visible //||
-                // self.composition.mobile.view_presence == ViewPresence::NavigationItem
+                self.composition.mobile.visibility == Visibility::Visible //||
+                // self.composition.mobile.visibility == Visibility::NavigationItem
             },
         }
     }
@@ -1186,7 +1186,7 @@ pub enum AdaptiveLayoutViewAction {
 
 #[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
-pub enum ViewPresence {
+pub enum Visibility {
     #[pick]
     Visible,
     Hidden,

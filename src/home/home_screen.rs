@@ -38,10 +38,10 @@ live_design! {
         main_content = <AdaptiveLayoutView> {
             composition: {
                 desktop: {
-                    view_presence: Visible
+                    visibility: Visible
                 },
                 mobile: {
-                    view_presence: NavigationItem
+                    visibility: NavigationItem
                 }
             }
             <MainContent> {}

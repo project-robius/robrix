@@ -15,11 +15,11 @@ live_design! {
     MobileOnlyFiller = <AdaptiveLayoutView> {
         composition: {
             desktop: {
-                view_presence: Hidden
+                visibility: Hidden
             }
             mobile: {
                 height: Fill, width: Fill
-                view_presence: Visible
+                visibility: Visible
             }
         }
     }
@@ -36,14 +36,14 @@ live_design! {
                 align: {x: 0.5}
                 padding: {top: 40., bottom: 20.}
                 width: 68., height: Fill
-                view_presence: Visible
+                visibility: Visible
             },
             mobile: {
                     flow: Right
                     align: {x: 0.5, y: 0.5}
                     padding: {top: 10, right: 10, bottom: 10, left: 10}
                     width: Fill, height: Fit
-                view_presence: Visible
+                visibility: Visible
             }
             // @media (width <= 1250px) {
         }
@@ -85,10 +85,10 @@ live_design! {
         <AdaptiveLayoutView> {
             composition: {
                 mobile: {
-                    view_presence: Hidden
+                    visibility: Hidden
                 }
                 desktop: {
-                    view_presence: Visible
+                    visibility: Visible
                     height: Fit
                 }
             }

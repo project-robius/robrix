@@ -94,13 +94,13 @@ live_design! {
                 padding: {top: 20., left: 20., right: 20.}
                 flow: Down, spacing: 10
                 width: 400, height: Fill
-                view_presence: Visible
+                visibility: Visible
             },
             mobile: {
                 padding: {top: 17., left: 17., right: 17.}
                 flow: Down, spacing: 7
                 width: Fill, height: Fill
-                view_presence: Visible
+                visibility: Visible
             }
         }
         show_bg: true,
