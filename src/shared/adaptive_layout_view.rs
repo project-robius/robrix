@@ -191,6 +191,8 @@ pub struct AdaptiveLayoutView {
     draw_state: DrawStateWrap<DrawState>,
     #[rust]
     children: Vec<(LiveId, WidgetRef)>,
+    #[rust]
+    children_map: HashMap<LiveId, usize>,
     //#[rust]
     //draw_order: Vec<LiveId>,
 
@@ -308,6 +310,7 @@ impl LiveHook for AdaptiveLayoutView {
                     }
                     else{
                         self.children.push((id,WidgetRef::new(cx)));
+                        self.children_map.insert(id, self.children.len()-1);
                         self.children.last_mut().unwrap().1.apply(cx, apply, index, nodes)
                     }
                 } else {
@@ -937,8 +940,8 @@ impl WidgetMatchEvent for AdaptiveLayoutView {
                 }
             }
 
-            if self.current_navigation_config.is_some() {
-                if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
+            if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
+                if self.children_map.contains_key(&view_id) {
                     self.active_view_takeover = true;
                     self.navigation_state.active_item_id = Some(view_id);
                 }
@@ -1121,7 +1124,7 @@ impl AdaptiveLayoutView {
                     if let Some(child) = self.children.iter().find(|c| c.0.eq(&child_id)) {
                         children_to_draw.push(child.clone());
                     } else {
-                        error!("Attempted to navigate to a child that is not present in the navigation list of its parent.")
+                        error!("Attempted to navigate to a child that is not present in the navigation list of its parent.");
                     }
                 } else {
                     // There is no active item in the navigation, draw all visible items for the given layout mode.
