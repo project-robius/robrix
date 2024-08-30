@@ -1,5 +1,6 @@
 use crate::home::rooms_list::RoomListAction;
 use crate::home::room_screen::*;
+use crate::scheduler;
 use makepad_widgets::*;
 
 live_design! {
@@ -288,6 +289,7 @@ impl MatchEvent for App {
     fn handle_startup(&mut self, _cx: &mut Cx) {
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
+        crate::scheduler::init();
     }
     /*
     fn handle_shutdown(&mut self, _cx: &mut Cx) {
@@ -356,6 +358,19 @@ impl MatchEvent for App {
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
+        match event{
+            Event::MouseDown(_)=>{
+                *scheduler::APP_FOCUS.lock().unwrap() = true;
+            }
+            Event::AppGotFocus=>{
+                // Not working
+                *scheduler::APP_FOCUS.lock().unwrap() = true;
+            },
+            Event::AppLostFocus=>{
+                *scheduler::APP_FOCUS.lock().unwrap() = false;
+            }
+            _=>{}
+        }
         self.match_event(cx, event);
         self.ui.handle_event(cx, event, &mut Scope::empty());
     }

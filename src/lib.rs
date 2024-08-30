@@ -5,7 +5,7 @@ mod discover;
 pub mod home;
 mod profile;
 pub mod shared;
-
+pub mod scheduler;
 // Matrix stuff
 pub mod sliding_sync;
 pub mod avatar_cache;

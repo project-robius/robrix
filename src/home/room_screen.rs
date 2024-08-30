@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{Deref, DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::BTreeMap, f64::consts::E, ops::{Deref, DerefMut, Range}, sync::{Arc, Mutex}, time::Duration};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -930,7 +930,7 @@ impl Widget for RoomScreen {
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
+                    let message: RoomMessageEventContent = if let Some(html_text) = entered_text.strip_prefix("/html") {
                         RoomMessageEventContent::text_html(html_text, html_text)
                     } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
                         RoomMessageEventContent::text_plain(plain_text)
@@ -1045,8 +1045,11 @@ pub struct Timeline {
     #[rust] room_id: Option<OwnedRoomId>,
     /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// The timestamp when App becomes in the background
+    /// The last read event with its timestamp
     #[rust] last_read_event:Option<(OwnedEventId,MilliSecondsSinceUnixEpoch)>,
+    /// The last event with its index in the scroll
+    #[rust] last_max_fully_read_index:Option<(OwnedEventId,MilliSecondsSinceUnixEpoch)>,
+    #[rust] events_to_be_fully_queue:Vec<(String,OwnedEventId,MilliSecondsSinceUnixEpoch)>
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -1303,25 +1306,29 @@ impl TimelineRef {
 impl Widget for Timeline {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Implements bottom-half screen click area to register fully read receipt
-        if let (Event::MouseDown(mouse),Some(room_id)) = (event,self.room_id.clone()){
-            let height = self.view.area().rect(cx).size.y;
-            if self.view.area().rect(cx).translate(DVec2{
-                x:0.0,
-                y:height/2.0
-            }).contains(mouse.abs){
-                if let Some(tl_state) = &self.tl_state{      
-                    let len = tl_state.items.len();
-                    if let Some(last_drawn) = tl_state.content_drawn_since_last_update.last().and_then(|f| Some(f.end)){
-                        if last_drawn <=len {
-                            if let Some(last_drawn_event_id) = tl_state.items.get(last_drawn-1).and_then(|f|f.as_event().and_then(|f|f.event_id())){
-                                submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_drawn_event_id.to_owned() });
-                            }
-                        }
-                    }
+        // if let (Event::MouseDown(mouse),Some(room_id)) = (event,self.room_id.clone()){
+        //     let height = self.view.area().rect(cx).size.y;
+        //     if self.view.area().rect(cx).translate(DVec2{
+        //         x:0.0,
+        //         y:height/2.0
+        //     }).contains(mouse.abs){
+        //         if let Some(tl_state) = &self.tl_state{      
+        //             let len = tl_state.items.len();
+        //             if let Some(last_drawn) = tl_state.content_drawn_since_last_update.last().and_then(|f| Some(f.end)){
+        //                 if last_drawn <=len {
+        //                     if let Some(last_drawn_event_id) = tl_state.items.get(last_drawn-1).and_then(|f|f.as_event().and_then(|f|f.event_id())){
+        //                         let room_id = room_id.clone();
+        //                         let last_drawn_event_id = last_drawn_event_id.to_owned();
+        //                         crate::scheduler::add_job(format!("{} fullyread",room_id.clone()), Duration::from_secs(5), Box::new(move ||{
+        //                             submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_drawn_event_id.clone() });
+        //                         }));
+        //                     }
+        //                 }
+        //             }
                    
-                }
-            }
-        }
+        //         }
+        //     }
+        // }
         
         let widget_uid = self.widget_uid();
 
@@ -1361,7 +1368,6 @@ impl Widget for Timeline {
                             ))
                             }){
                             let item_event_id: &OwnedEventId = &event_id.to_owned();
-        
                             if let Some((ref mut last_event_id,ref mut last_timestamp)) = self.last_read_event{
                                 if timestamp.as_secs() > last_timestamp.as_secs(){
                                     *last_event_id = item_event_id.clone();
@@ -1376,8 +1382,47 @@ impl Widget for Timeline {
                         if let Some(read_event_id) = read_event_id{
                             submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(),event_id:read_event_id.clone() });
                         }
+                        
+                        // Handles Fully Read Request when message is scrolled out of being the first message
+                        if let Some(first) = tl_state.first_three_events.index_and_scroll.first(){                            
+                            if let Some((ref mut last_event_id,ref mut last_timestamp)) = self.last_max_fully_read_index.clone(){
+                                if let Some((event_id,timestamp,msg)) = tl_state.items.get(first.index).and_then(|f|f.as_event()).and_then(|f|
+                                    if let (Some(event_id),Some(msg)) = (f.event_id(),f.content().as_message()){
+                                        Some((event_id,f.timestamp(),msg.body().to_owned()))
+                                    }else{None}){
+                                        if timestamp.as_secs()>last_timestamp.as_secs(){
+                                            let room_id: OwnedRoomId = room_id.clone();
+                                            let last_drawn_event_id = last_event_id.clone();
+                                            // crate::scheduler::add_job(format!("{} fullyread",room_id.clone()),msg, Duration::from_secs(5), Box::new(move ||{
+                                            //     submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_drawn_event_id.clone() });
+                                            // }));
+                                            self.events_to_be_fully_queue.push((msg,last_drawn_event_id,timestamp));
+                                            *last_timestamp = timestamp;
+                                            *last_event_id = event_id.to_owned();
+                                        }
+                                    }
+                                
+                            }else{
+                                if let Some((event_id,timestamp)) = tl_state.items.get(first.index).and_then(|f|f.as_event()).and_then(|f|
+                                    if let Some(event_id) = f.event_id(){
+                                        Some((event_id,f.timestamp()))
+                                    }else{None}){
+                                    self.last_max_fully_read_index = Some((event_id.to_owned(),timestamp));                                                                    
+                                }
+                            }
+                        }
                     }
                     
+                }else{
+                    // Send Fully Read Receipt for the last event that moved out of the first row after 5 seconds
+                    if let (Some((msg,event_id,_)),Some(room_id)) = (self.events_to_be_fully_queue.last(),self.room_id.clone()){
+                        let room_id = room_id.clone();
+                        let event_id = event_id.to_owned().clone();
+                        crate::scheduler::add_job(format!("{} fullyread",room_id.clone()),msg.clone(), Duration::from_secs(5), Box::new(move ||{
+                            submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone() });
+                        }));
+                        self.events_to_be_fully_queue = vec![];
+                    }
                 }
                 // Handle the timeline being hidden or shown.
                 match action.as_widget_action().cast() {

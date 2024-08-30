@@ -527,9 +527,9 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                    
                     room_info.timeline.clone()
                 };
-                let _send_message_task = Handle::current().spawn(async move {                    
+                let _send_message_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Main, event_id.clone()).await {
-                        Ok(_send_handle) => log!("Sent message to room  {room_id}.fully_read_marker {event_id}"),
+                        Ok(_send_handle) => log!("Sent message to room  {room_id}.read_marker {event_id}"),
                         Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
                     }
                     SignalToUI::set_ui_signal();
