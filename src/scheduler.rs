@@ -1,50 +1,37 @@
 use lazy_static::lazy_static;
 use std::sync::{Arc,Mutex};
 use std::collections::HashMap;
-use std::time::{Instant,Duration};
+use std::time::Duration;
 use std::thread;
-
-pub struct Schedule{
-    job:  Box<dyn Fn() +Send + Sync>,
-    start_time:Instant,
-    wait_time:Duration,
-    body:String,
-}
+use matrix_sdk::ruma::{
+    MilliSecondsSinceUnixEpoch, OwnedEventId,OwnedRoomId
+};
+const FULLY_READ_FRAME_DURATION: u64 = 5;
 lazy_static!{
-    static ref SCHEDULER: Arc<Mutex<HashMap<String,Schedule>>> = Arc::new(Mutex::new(HashMap::new()));
+    // To-do: Use App_Focus to eliminate fully read events when App loses focus during 5 seconds time frame
     pub static ref APP_FOCUS:Mutex<bool> = Mutex::new(true);
+    pub static ref READ_EVENT_HASHMAP : Arc<Mutex<HashMap<String,(OwnedRoomId,OwnedEventId,MilliSecondsSinceUnixEpoch,std::time::Instant)>>> = Arc::new(Mutex::new(HashMap::new()));
+    pub static ref MARKED_FULLY_READ_QUEUE:Arc<Mutex<HashMap<String,(OwnedRoomId,OwnedEventId,MilliSecondsSinceUnixEpoch)>>> = Arc::new(Mutex::new(HashMap::new()));
 }
-pub fn add_job(id:String,body:String,wait_time:Duration,job:Box<dyn Fn() +Send + Sync>){
-    let schedule = Schedule{
-        job,
-        start_time:Instant::now(),
-        wait_time,
-        body
-    };
-    SCHEDULER.lock().unwrap().insert(id, schedule);
-}
+
+// spawn a background thread to handle fully_read event when the message is displayed on the screen for at least 5 seconds
 pub fn init(){
-    let schedule_c = SCHEDULER.clone();
+    let read_event_hashmap_c = READ_EVENT_HASHMAP.clone();
+    let marked_fully_read_queue_c = MARKED_FULLY_READ_QUEUE.clone();
     thread::spawn(move ||{
         loop{
-            let mut schedulers = schedule_c.lock().unwrap();
-            let mut to_remove: Vec<String> = vec![];
-            let app_focus: bool =  *APP_FOCUS.lock().unwrap();
-            for (id,sch) in schedulers.iter_mut(){
-                if app_focus{
-                    if sch.start_time.elapsed() >= sch.wait_time {
-                        let t = &sch.job;
-                        t();
-                        to_remove.push(id.clone());
-                    }
-                }else{
-                    // when app loses focus, the schedule's start time is reset to current time
-                    sch.start_time = Instant::now();
+            let mut to_remove = vec![];
+            let mut read_event_hashmap = read_event_hashmap_c.lock().unwrap();
+            for (key,(room_id,event_id,timestamp,timing)) in read_event_hashmap.iter(){
+                if timing.elapsed() > Duration::from_secs(FULLY_READ_FRAME_DURATION){
+                    marked_fully_read_queue_c.lock().unwrap().insert(event_id.to_string(),(room_id.clone(),event_id.clone(),timestamp.clone()));
+                    to_remove.push(key.clone());
                 }
             }
-            for id in to_remove{
-                schedulers.remove(&id);
+            for to_remove in to_remove{
+                read_event_hashmap.remove(&to_remove);
             }
+            drop(read_event_hashmap);
             thread::sleep(Duration::new(2,0));
         }
     });
