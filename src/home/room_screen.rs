@@ -1446,6 +1446,9 @@ impl Widget for Timeline {
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
+                        let res = find_new_item_matching_current_item(&portal_list, orig_first_id, &tl.items, &items);
+                        log!("TEST: find_new_item_matching_current_item() returned {:?}", res);
+
                         // Determine which item is currently visible the top of the screen (the first event)
                         // so that we can jump back to that position instantly after applying this update.
                         let current_first_event_id_opt = tl.items
@@ -1722,6 +1725,53 @@ impl Widget for Timeline {
 
         DrawStep::done()
     }
+}
+
+
+/// Returns the index in the given list of `new_items` that matches the event ID
+/// of a visible item in the given `curr_items` list.
+fn find_new_item_matching_current_item(
+    portal_list: &PortalListRef,
+    starting_at_curr_idx: usize,
+    curr_items: &Vector<Arc<TimelineItem>>,
+    new_items: &Vector<Arc<TimelineItem>>,
+) -> Option<(usize, OwnedEventId)> {
+    let mut curr_item_focus = curr_items.focus();
+    let mut idx_curr = starting_at_curr_idx;
+    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> = Vec::with_capacity(
+        portal_list.visible_items()
+    );
+
+    // Find all items with real event IDs that are currently visible in the portal list.
+    // TODO: if this is slow, we could limit it to 3-5 events at the most.
+    if curr_items_with_ids.len() <= portal_list.visible_items() {
+        while let Some(curr_item) = curr_item_focus.get(idx_curr) {
+            if let Some(event_id) = curr_item.as_event().and_then(|ev| ev.event_id()) {
+                curr_items_with_ids.push((idx_curr, event_id.to_owned()));
+            }
+            if curr_items_with_ids.len() >= portal_list.visible_items() {
+                break;
+            }
+            idx_curr += 1;
+        }
+    }
+
+    // Find a new item that has the same real event ID as any of the current items.
+    for (idx_new, new_item) in new_items.iter().enumerate() {
+        let Some(event_id) = new_item.as_event().and_then(|ev| ev.event_id()) else {
+            continue;
+        };
+        if let Some((idx_curr, _)) = curr_items_with_ids.iter()
+            .find(|(_, ev_id)| ev_id == &event_id)
+        {
+            // TODO: find the positional offset of the curr item at `idx_curr`
+            log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to index {idx_curr} in current items list.");
+            
+            return Some((idx_new, event_id.to_owned()));
+        }
+    }
+
+    None
 }
 
 
@@ -2098,7 +2148,7 @@ fn draw_reactions(
     reactions: &ReactionsByKeyBySender,
     id: usize,
 ) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
+    const DRAW_ITEM_ID_REACTION: bool = true;
     if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
         return;
     }
