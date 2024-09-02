@@ -19,7 +19,6 @@ live_design! {
         composition: {
             desktop: {
                 flow: Right
-                // navigation: None -> TODO: this does not work, user must not use None, we might instead remove the wrapping Option
             },
             mobile: {
                 flow: Down
@@ -30,7 +29,6 @@ live_design! {
                 }
                 child_order: [rooms_sidebar, spaces]
             }
-            // @media (width <= 1250px) {
         }
 
         spaces = <SpacesDock> {}

@@ -2,6 +2,8 @@ use std::{cell::RefCell, collections::HashMap};
 
 use makepad_widgets::*;
 
+const MIN_DESKTOP_WIDTH: f64 = 860.0;
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -114,8 +116,10 @@ impl ViewOptimize {
 
 
 // TODO: 
-// - add regular walk, layout and visibility so that they can be used like in normal views, but are overriden through composition
-// - navigation: add history, navigate back, and animations.
+// - Add support for user-defined breakpoints with aliases (e.g. desktop, table, mobile) 
+//   with custom conditions (MinWidth, MaxWidth, Between, Orientation, etc.). This requires support for HashMaps in the DSL and custom expressions.
+// - Add support for default AdaptiveProps that are shared across different layouts.
+// - Navigation: Add support for history, navigate back, and animations.
 
 #[derive(Live, LiveRegisterWidget, WidgetRef, WidgetSet)]
 pub struct AdaptiveLayoutView {
@@ -139,6 +143,9 @@ pub struct AdaptiveLayoutView {
 
     #[live]
     pub current_child_order: Vec<LiveId>,
+
+    #[live]
+    pub current_visibility: Visibility,
 
     #[live]
     composition: AdaptiveComposition,
@@ -193,14 +200,9 @@ pub struct AdaptiveLayoutView {
     children: Vec<(LiveId, WidgetRef)>,
     #[rust]
     children_map: HashMap<LiveId, usize>,
-    //#[rust]
-    //draw_order: Vec<LiveId>,
 
     #[animator]
     animator: Animator,
-
-    #[rust] 
-    current_layout_mode: LayoutMode,
 
     #[rust] 
     screen_width: f64,
@@ -231,13 +233,6 @@ pub struct AdaptiveProps {
     #[live] pub child_order: Vec<LiveId>,
     #[live] pub visibility: Visibility,
     #[live] pub navigation: Option<NavigationConfig>
-}
-
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
-enum LayoutMode {
-    #[default]
-    Desktop,
-    Mobile,
 }
 
 struct ViewTextureCache {
@@ -749,17 +744,7 @@ impl Widget for AdaptiveLayoutView {
     }
 
     fn is_visible(&self) -> bool {
-        // self.visible
-        match self.current_layout_mode {
-            LayoutMode::Desktop => {
-                // log!("{:?}, visible {:?}", self.widget_uid(), self.composition.desktop.visibility);
-                self.composition.desktop.visibility == Visibility::Visible
-            },
-            LayoutMode::Mobile => {
-                self.composition.mobile.visibility == Visibility::Visible //||
-                // self.composition.mobile.visibility == Visibility::NavigationItem
-            },
-        }
+        matches!(self.current_visibility, Visibility::Visible)
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -960,19 +945,18 @@ impl AdaptiveLayoutView {
     /// Determines the current layout based on the current screen width and user-provided values for the different 
     /// screen sizes.
     fn apply_current_values_from_adaptive(&mut self) {       
-       // TODO allow overriding these values or setting custom alternatives to Mobile and Desktop
-        if self.screen_width <= 860.0 { 
-            self.current_layout_mode = LayoutMode::Mobile;
+        if self.screen_width <= MIN_DESKTOP_WIDTH { 
             self.current_layout = self.composition.mobile.layout;
             self.current_walk = self.composition.mobile.walk;
             self.current_navigation_config = self.composition.mobile.navigation.clone();
             self.current_child_order = self.composition.mobile.child_order.clone();
+            self.current_visibility = self.composition.mobile.visibility;
         } else {
-            self.current_layout_mode = LayoutMode::Desktop;
             self.current_layout = self.composition.desktop.layout;
             self.current_walk = self.composition.desktop.walk;
             self.current_navigation_config = self.composition.desktop.navigation.clone();
             self.current_child_order = self.composition.desktop.child_order.clone();
+            self.current_visibility = self.composition.desktop.visibility;
         }
     }
 
