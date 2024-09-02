@@ -7,6 +7,8 @@ use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
 use crate::utils::{unix_time_millis_to_datetime, self};
 
+const MIN_DESKTOP_WIDTH: f64 = 860.0;
+
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::view::*;
@@ -256,7 +258,9 @@ pub struct RoomsList {
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
     /// The index of the currently selected room
-    #[rust] current_active_room_index: Option<usize>
+    #[rust] current_active_room_index: Option<usize>,
+    /// The current width of the inner screen
+    #[rust] screen_width: f64,
 }
 
 impl Widget for RoomsList {
@@ -340,6 +344,8 @@ impl Widget for RoomsList {
                 }
             }
         }
+
+        self.match_event(cx, event);
     }
 
 
@@ -383,7 +389,9 @@ impl Widget for RoomsList {
                 }
                 // Draw actual room preview entries.
                 else {
-                    let item_template = if self.current_active_room_index == Some(item_id) {
+                    // Workaround for programatically showing the room preview as selected.
+                    // TODO: We should support overriding the draw_bg implementation on AdaptiveLayoutView instead and replace the RoomPreview ClickableView with it.
+                    let item_template = if self.current_active_room_index == Some(item_id) && self.screen_width > MIN_DESKTOP_WIDTH {
                         live_id!(room_preview_selected)
                     } else {
                         live_id!(room_preview)
@@ -426,4 +434,19 @@ impl Widget for RoomsList {
         DrawStep::done()
     }
 
+}
+
+// This is a workaround for detecting if we should show the room previews as selected, which we don't want to do for mobile.
+// TODO: find a centralized way to fetch the current screen width or layout mode.
+impl MatchEvent for RoomsList {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
+        for action in actions {
+            if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
+                if self.screen_width != ce.new_geom.inner_size.x {
+                    self.screen_width = ce.new_geom.inner_size.x;
+                    cx.redraw_all();    
+                }
+            }
+        }
+    }
 }
