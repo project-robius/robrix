@@ -39,10 +39,10 @@ live_design! {
                 visibility: Visible
             },
             mobile: {
-                    flow: Right
-                    align: {x: 0.5, y: 0.5}
-                    padding: {top: 10, right: 10, bottom: 10, left: 10}
-                    width: Fill, height: Fit
+                flow: Right
+                align: {x: 0.5, y: 0.5}
+                padding: {top: 10, right: 10, bottom: 10, left: 10}
+                width: Fill, height: Fit
                 visibility: Visible
             }
             // @media (width <= 1250px) {

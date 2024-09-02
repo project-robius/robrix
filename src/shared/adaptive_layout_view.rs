@@ -873,16 +873,15 @@ impl Widget for AdaptiveLayoutView {
                 cx.begin_turtle(walk, self.current_layout.with_scroll(scroll)); //.with_scale(2.0 / self.dpi_factor.unwrap_or(2.0)));
             }
 
-            // TODO: error handling
             match &self.current_navigation_config {
-                Some(nav_config) => { // TODO: this doesn't have to be mobile //if self.current_layout_mode == LayoutMode::Mobile
-                    // Handle navigation-based drawing for mobile
-                    let _ = self.draw_navigable_children(cx, scope, nav_config.clone());
+                Some(nav_config) => {
+                    // Handle navigation-based drawing
+                    self.draw_navigable_children(cx, scope, nav_config.clone())?;
                 },
                 _ => {
                     // Normal drawing for desktop or non-navigable mobile layouts
                     let mut visible_children = self.get_visible_children();
-                    let _ =  self.draw_children(cx, scope, Some(&mut visible_children));
+                    self.draw_children(cx, scope, Some(&mut visible_children))?;
                 }
             }
         }
@@ -1131,7 +1130,7 @@ impl AdaptiveLayoutView {
                     children_to_draw = visible_children;
                 }
 
-                 let _ = self.draw_children(cx, scope, Some(&mut children_to_draw)); // TODO error handling
+                 self.draw_children(cx, scope, Some(&mut children_to_draw))?;
             },
             NavigationMode::Tabs => todo!(),
             NavigationMode::Drawer => todo!(),
