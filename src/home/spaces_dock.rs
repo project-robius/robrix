@@ -45,7 +45,6 @@ live_design! {
                 width: Fill, height: Fit
                 visibility: Visible
             }
-            // @media (width <= 1250px) {
         }
 
         <MobileOnlyFiller> {}
