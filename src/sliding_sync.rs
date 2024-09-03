@@ -9,7 +9,7 @@ use matrix_sdk::{
         api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
 };
-use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineItem, TimelineItemContent}, Timeline};
+use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
@@ -18,8 +18,15 @@ use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
-use crate::{avatar_cache::AvatarUpdate, home::{room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}}, media_cache::MediaCacheEntry, profile::{user_profile::{AvatarState, UserProfile}, user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate}}, utils::MEDIA_THUMBNAIL_FORMAT};
-use crate::message_display::DisplayerExt;
+use crate::{
+    avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+        room_screen::TimelineUpdate,
+        rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate},
+    }, media_cache::MediaCacheEntry, profile::{
+        user_profile::{AvatarState, UserProfile},
+        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
+    }, utils::MEDIA_THUMBNAIL_FORMAT
+};
 
 
 #[derive(Parser, Debug)]
@@ -212,7 +219,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for pagination request {room_id}");
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
 
@@ -867,7 +874,28 @@ async fn async_main_loop() -> Result<()> {
                     let timestamp = event_tl_item.timestamp();
                     if timestamp > existing.latest_event_timestamp {
                         existing.latest_event_timestamp = timestamp;
-                        latest_event_changed = Some((timestamp, event_tl_item.text_preview().to_string()));
+                        let latest_event_sender_username = match event_tl_item.sender_profile() {
+                            TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+                            TimelineDetails::Unavailable => {
+                                if let Some(event_id) = event_tl_item.event_id() {
+                                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                                        room_id: room_id.to_owned(),
+                                        event_id: event_id.to_owned(),
+                                    });
+                                }
+                                None
+                            }
+                            _ => None,
+                        }
+                        .unwrap_or_else(|| event_tl_item.sender().as_str());
+
+                        latest_event_changed = Some((
+                            timestamp,
+                            text_preview_of_timeline_item(
+                                event_tl_item.content(),
+                                latest_event_sender_username,
+                            ).format_with(latest_event_sender_username),
+                        ));
 
                         match event_tl_item.content() {
                             TimelineItemContent::OtherState(other) => match other.content() {
@@ -919,7 +947,17 @@ async fn async_main_loop() -> Result<()> {
                 ));
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
                     room_id: Some(room_id.clone()),
-                    latest: latest_tl.as_ref().map(|ev| (ev.timestamp(), ev.text_preview().to_string())),
+                    latest: latest_tl.as_ref().map(|ev| {
+                        let sender_username = match ev.sender_profile() {
+                            TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+                            _ => None,
+                        }.unwrap_or_else(|| ev.sender().as_str());
+                        (
+                            ev.timestamp(),
+                            text_preview_of_timeline_item(ev.content(), sender_username)
+                                .format_with(sender_username),
+                        )
+                    }),
                     avatar: avatar_from_room_name(room_name_str.as_deref().unwrap_or_default()),
                     room_name: room_name_str.clone(),
                 }));
@@ -989,22 +1027,28 @@ fn handle_ignore_user_list_subscriber(client: Client) {
     Handle::current().spawn(async move {
         while let Some(ignore_list) = subscriber.next().await {
             log!("Received an updated ignored-user list: {ignore_list:?}");
-            let ignored_users_set = ignore_list
+            let ignored_users_new = ignore_list
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
                 .collect::<BTreeSet<_>>();
-            *IGNORED_USERS.lock().unwrap() = ignored_users_set;
+            
+            // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
+            let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
+            let has_changed = *ignored_users_old != ignored_users_new;
+            *ignored_users_old = ignored_users_new;
 
-            // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
-            // Therefore, we need to re-fetch all timelines for all rooms,
-            // and currently the only way to actually accomplish this is via pagination.
-            // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
-            for joined_room in client.joined_rooms() {
-                submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                    room_id: joined_room.room_id().to_owned(),
-                    num_events: 50,
-                    forwards: false,
-                });
+            if has_changed {
+                // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
+                // Therefore, we need to re-fetch all timelines for all rooms,
+                // and currently the only way to actually accomplish this is via pagination.
+                // See: <https://github.com/matrix-org/matrix-rust-sdk/issues/1703#issuecomment-2250297923>
+                for joined_room in client.joined_rooms() {
+                    submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                        room_id: joined_room.room_id().to_owned(),
+                        num_events: 50,
+                        forwards: false,
+                    });
+                }
             }
         }
     });

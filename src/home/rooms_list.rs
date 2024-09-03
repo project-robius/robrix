@@ -5,6 +5,7 @@ use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
 use crate::shared::adaptive_layout_view::AdaptiveLayoutViewAction;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
+use crate::shared::html_or_plaintext::HtmlOrPlaintextWidgetRefExt;
 use crate::utils::{unix_time_millis_to_datetime, self};
 
 const MIN_DESKTOP_WIDTH: f64 = 860.0;
@@ -20,6 +21,7 @@ live_design! {
     import crate::shared::helpers::*;
     import crate::shared::clickable_view::ClickableView;
     import crate::shared::avatar::Avatar;
+    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
 
     // This will become a custom widget to add hovering and other animations.
     RoomPreview = <ClickableView> {
@@ -73,16 +75,22 @@ live_design! {
                 text: "[Room name unknown]"
             }
 
-            latest_message = <Label> {
-                width: Fill, height: Fit
-                draw_text:{
-                    wrap: Ellipsis,
-                    text_style: <MESSAGE_TEXT_STYLE>{
-                        font_size: 10.5
-                    },
-                    color: (MESSAGE_TEXT_COLOR),
-                }
-                text: "[Latest message unknown]"
+            latest_message = <HtmlOrPlaintext> {
+                html_view = { html = {
+                    font_size: 10.5,
+                    draw_normal:      { text_style: { font_size: 10.5 } },
+                    draw_italic:      { text_style: { font_size: 10.5 } },
+                    draw_bold:        { text_style: { font_size: 10.5 } },
+                    draw_bold_italic: { text_style: { font_size: 10.5 } },
+                    draw_fixed:       { text_style: { font_size: 10.5 } },
+                    a = { draw_text:  { text_style: { font_size: 10.5 } } },
+                } }
+                plaintext_view = { pt_label = {
+                    draw_text: {
+                        text_style: { font_size: 10.5 },
+                    }
+                    text: "[Latest message unknown]"
+                } }
             }
         }
 
@@ -178,6 +186,7 @@ pub enum RoomsListUpdate {
     UpdateLatestEvent {
         room_id: OwnedRoomId,
         timestamp: MilliSecondsSinceUnixEpoch,
+        /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
     /// Update the displayable name for the given room.
@@ -228,7 +237,7 @@ pub struct RoomPreviewEntry {
     pub room_id: Option<OwnedRoomId>,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
-    /// The timestamp and text content of the latest message in this room.
+    /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
@@ -410,7 +419,7 @@ impl Widget for RoomsList {
                             let text = format!("{} {}", dt.date_naive(), dt.time().format("%l:%M %P"));
                             item.label(id!(timestamp)).set_text(&text);
                         }
-                        item.label(id!(preview.latest_message)).set_text(msg);
+                        item.html_or_plaintext(id!(preview.latest_message)).show_html(msg);
                     }
                     match room_info.avatar {
                         RoomPreviewAvatar::Text(ref text) => {
