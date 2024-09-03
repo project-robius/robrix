@@ -70,7 +70,7 @@ live_design! {
                 draw_text:{
                     color: #000,
                     wrap: Ellipsis,
-                    text_style: <REGULAR_TEXT>{}
+                    text_style: <REGULAR_TEXT>{ font_size: 12.0 }
                 }
                 text: "[Room name unknown]"
             }
@@ -119,9 +119,19 @@ live_design! {
             }
 
             latest_message = {
-                draw_text: {
-                    color: (COLOR_PRIMARY)
-                }
+                html_view = { html = {
+                    draw_normal:      { color: (COLOR_PRIMARY) },
+                    draw_italic:      { color: (COLOR_PRIMARY) },
+                    draw_bold:        { color: (COLOR_PRIMARY) },
+                    draw_bold_italic: { color: (COLOR_PRIMARY) },
+                    draw_fixed:       { color: (COLOR_PRIMARY) },
+                    a = { draw_text:  { color: (COLOR_PRIMARY) }, },
+                } }
+                plaintext_view = { pt_label = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY)
+                    }
+                } }
             }
         }
 
