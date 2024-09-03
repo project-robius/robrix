@@ -117,40 +117,205 @@ impl ViewOptimize {
 
 // TODO: 
 // - Add support for user-defined breakpoints with aliases (e.g. desktop, table, mobile) 
-//   with custom conditions (MinWidth, MaxWidth, Between, Orientation, etc.). This requires support for HashMaps in the DSL and custom expressions.
+//   including custom conditions (MinWidth, MaxWidth, Between, Orientation, etc.). This requires support for HashMaps in the DSL and custom expressions.
 // - Add support for default AdaptiveProps that are shared across different layouts.
 // - Navigation: Add support for history, navigate back, and animations.
 
+/// A flexible View widget that adapts its layout and behavior based on the screen width.
+///
+/// `AdaptiveLayoutView` allows you to define different layouts, visibility, and navigation behaviors
+/// for desktop and mobile views within a single component. It automatically switches between these
+/// configurations based on the current screen width.
+///
+/// # Features
+///
+/// - Separate layout configurations for desktop and mobile views
+/// - Automatic switching between layouts based on screen width
+/// - Configurable visibility for child widgets in different layout modes
+/// - Support for navigation (currently Stack only)
+/// - Customizable drawing order for child widgets
+///
+/// # Examples
+///
+/// Basic usage with different desktop and mobile layouts:
+///
+/// ```
+/// MyAdaptiveView = <AdaptiveLayoutView> {
+///     composition: {
+///         desktop: {
+///             flow: Right,
+///             spacing: 10.0,
+///             width: Fill, height: Fill,
+///         },
+///
+///         mobile: {
+///             flow: Down,
+///             spacing: 5.0,
+///             width: Fill, height: Fill,
+///             navigation: {
+///                 mode: Stack,
+///                 items: [content_a, content_b]
+///             }
+///         }
+///     }
+///
+///     sidebar = <View> {
+///         width: 200, height: Fill,
+///     }
+///
+///     content_a = <View> {
+///         composition: {
+///             desktop: { visibility: Visible },
+///             mobile: { visibility: NavigationItem }
+///         }
+///     }
+///
+///     content_b = <View> {
+///         composition: {
+///             desktop: { visibility: Visible },
+///             mobile: { visibility: NavigationItem }
+///         }
+///     }
+/// }
+/// ```
+///
+
+/// Using custom visibility and drawing order:
+///
+/// ```
+/// MyComplexView = <AdaptiveLayoutView> {
+///     composition: {
+///         desktop: {
+///             flow: Right,
+///             child_order: [main_content, sidebar]
+///         },
+///         mobile: {
+///             flow: Down,
+///             child_order: [header, main_content],
+///             navigation: {
+///                 mode: Stack,
+///                 items: [main_content, settings]
+///             }
+///         }
+///     }
+///
+///     header = <View> {
+///         composition: {
+///             desktop: { visibility: Hidden },
+///             mobile: { visibility: Visible }
+///         }
+///     }
+///
+///     sidebar = <View> {
+///         composition: {
+///             desktop: { visibility: Visible },
+///             mobile: { visibility: Hidden }
+///         }
+///     }
+///
+///     main_content = <View> {
+///         composition: {
+///             desktop: { visibility: Visible },
+///             mobile: { visibility: NavigationItem }
+///         }
+///     }
+///
+///     settings = <View> {
+///         composition: {
+///             desktop: { visibility: Visible },
+///             mobile: { visibility: NavigationItem }
+///         }
+///     }
+/// }
+/// ```
+///
+
+/// # Composition Structure
+///
+/// The `composition` field defines the layout properties for both desktop and mobile modes:
+///
+/// ```
+/// composition: {
+///     desktop: { /* desktop-specific properties */ },
+///     mobile: { /* mobile-specific properties */ }
+/// }
+/// ```
+///
+
+/// Each mode can have the following properties:
+/// - `walk`: Walk configuration for the view
+/// - `layout`: Layout configuration for the view
+/// - `visibility`: Visibility of the view (Visible, Hidden, or NavigationItem)
+/// - `navigation`: Navigation configuration for mobile view
+/// - `child_order`: Custom drawing order for child widgets
+///
+
+/// # Navigation
+///
+/// You can define a navigation configuration:
+///
+/// ```
+/// navigation: {
+///     mode: Stack, // or Tabs, or Drawer (work in progress)
+///     items: [id_of_item1, id_of_item2]
+/// }
+/// ```
+///
+/// This allows for easy switching between different views, these views must have `visibility` set to `NavigationItem`
+/// whenever they should be navigable isntead of displayed by defualt.
+///
+
+/// # Child Widgets
+///
+/// When using `AdaptiveLayoutView` as a child of another `AdaptiveLayoutView`
+/// the child can have its own `composition` field to define mode-specific properties:
+///
+/// ```
+/// my_child = <AdaptiveLayoutView> {
+///     composition: {
+///         desktop: { visibility: Visible },
+///         mobile: { visibility: NavigationItem }
+///     }
+/// }
+/// ```
+///
+/// This allows for fine-grained control over how each child widget behaves in different layout modes.
+
 #[derive(Live, LiveRegisterWidget, WidgetRef, WidgetSet)]
 pub struct AdaptiveLayoutView {
-    // draw info per UI element
+    /// Drawer for each view's background
     #[live]
     pub draw_bg: DrawColor,
 
+    /// Whether to draw the background (`draw_bg: {...}`)
     #[live(false)]
     pub show_bg: bool,
 
-    // #[layout]
+    /// The current layout configuration after applying adaptive properties.
     #[live]
     pub current_layout: Layout,
 
-    // #[walk]
+    /// The current walk configuration after applying adaptive properties.
     #[live]
     pub current_walk: Walk,
 
+    /// The current navigation configuration after applying adaptive properties.
     #[live]
     pub current_navigation_config: Option<NavigationConfig>,
 
+    /// The current child order after applying adaptive properties.
     #[live]
     pub current_child_order: Vec<LiveId>,
 
+    /// The current visibility after applying adaptive properties.
     #[live]
     pub current_visibility: Visibility,
 
+    /// The set of adaptive properties for this view for each layout mode.
     #[live]
     composition: AdaptiveComposition,
 
-    //#[live] use_cache: bool,
+    // Commmon view properties
     #[live]
     dpi_factor: Option<f64>,
 
@@ -204,17 +369,14 @@ pub struct AdaptiveLayoutView {
     #[animator]
     animator: Animator,
 
+    /// The current screen width, updated through `WindowEvent::WindowGeomChange` events.
     #[rust] 
     screen_width: f64,
 
-    #[rust]
-    active_view_takeover: bool,
-
+    /// The current state of navigation.
     #[rust]
     navigation_state: NavigationState
 }
-
-// type AdaptiveChild = Vec<(LiveId, WidgetRef)>;
 
 #[derive(Clone, Debug, Live, LiveHook, LiveRegister)]
 #[live_ignore]
@@ -229,7 +391,6 @@ pub struct AdaptiveComposition {
 pub struct AdaptiveProps {
     #[walk] pub walk: Walk,
     #[layout] pub layout: Layout,
-    // Ideally child_order should be a part of layout.
     #[live] pub child_order: Vec<LiveId>,
     #[live] pub visibility: Visibility,
     #[live] pub navigation: Option<NavigationConfig>
@@ -912,10 +1073,10 @@ impl Widget for AdaptiveLayoutView {
     }
 }
 
-
 impl WidgetMatchEvent for AdaptiveLayoutView {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for action in actions {
+            // Handle window geom change events to update the screen width, this is triggered at startup and on window resize
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
                 if self.screen_width != ce.new_geom.inner_size.x {
                     self.screen_width = ce.new_geom.inner_size.x;
@@ -924,9 +1085,9 @@ impl WidgetMatchEvent for AdaptiveLayoutView {
                 }
             }
 
+            // Handle navigation actions, later to be constrained to Stack mode and support navigation history
             if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
                 if self.children_map.contains_key(&view_id) {
-                    self.active_view_takeover = true;
                     self.navigation_state.active_item_id = Some(view_id);
                 }
             }
@@ -999,7 +1160,6 @@ impl AdaptiveLayoutView {
         // Iterate over the children, advancing by updating the draw state with each children as a step
         while let Some(DrawState::Drawing(step, resume)) = self.draw_state.get() {
             if step < children.len() {
-                //let id = self.draw_order[step];
                 if let Some((id,child)) = children.get_mut(step) {
                     // if child.is_visible() {
                         let walk = child.walk(cx);
@@ -1095,6 +1255,7 @@ impl AdaptiveLayoutView {
         DrawStep::done()
     }
 
+    /// Draws the children of this view based on the navigation configuration.
     fn draw_navigable_children(&mut self, cx: &mut Cx2d, scope: &mut Scope, navigation_config: NavigationConfig) -> DrawStep {
        let visible_children = self.get_visible_children();
         match navigation_config.mode {
@@ -1164,12 +1325,18 @@ impl AdaptiveLayoutView {
     }
 }
 
+/// Actions that can be performed on an [AdaptiveLayoutView].
 #[derive(Clone, Debug, DefaultNone)]
 pub enum AdaptiveLayoutViewAction {
     None,
+    /// Navigates to the child with the given LiveId.
     NavigateTo(LiveId)   
 }
 
+/// The visibility of a view, which determines whether it is drawn or not.
+/// - [Visible] views are always drawn, unless there's an active navigation setup, and they are not the active navigation item.
+/// - [Hidden] views are never drawn 
+/// - [NavigationItem] views are drawn only if they are the active navigation item.
 #[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
 pub enum Visibility {
@@ -1179,6 +1346,7 @@ pub enum Visibility {
     NavigationItem,
 }
 
+/// The navigation configuration for a view, which determines how the view is navigated.
 #[derive(Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
 pub struct NavigationConfig {
@@ -1186,6 +1354,8 @@ pub struct NavigationConfig {
     #[live] items: Vec<LiveId>
 }
 
+/// Determines how the navigation and visibility is handled for the children of a view.
+/// On [Stack] mode, only the active navigation item is drawn.
 #[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
 pub enum NavigationMode {
@@ -1194,6 +1364,7 @@ pub enum NavigationMode {
     #[live] Drawer
 }
 
+/// The current state of navigation.
 #[derive(Default)]
 struct NavigationState {
     active_item_id: Option<LiveId>
