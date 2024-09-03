@@ -1,7 +1,5 @@
 pub use makepad_widgets;
 pub mod app;
-mod contacts;
-mod discover;
 
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
