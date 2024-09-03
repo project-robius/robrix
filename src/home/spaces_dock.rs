@@ -49,10 +49,10 @@ live_design! {
         }
 
         <MobileOnlyFiller> {}
-        
+
         profile = <View> {
             width: Fit, height: Fit
-            align: { x: 0.5, y: 0.5 }            
+            align: { x: 0.5, y: 0.5 }
 
             text_view = <View> {
                 width: 45., height: 45.,
@@ -98,7 +98,7 @@ live_design! {
         }
 
         <MobileOnlyFiller> {}
-        
+
         home = <RoundedView> {
             width: Fit, height: Fit
             // FIXME: the extra padding on the right is becase the icon is not correctly centered

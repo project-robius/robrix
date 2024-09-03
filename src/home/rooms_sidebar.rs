@@ -34,7 +34,7 @@ live_design! {
                         self.draw_clip.zw
                     )
                     self.pos = (clipped - rect_pos) / rect_size
-    
+
                     // Calculate the texture coordinates based on the rotation angle
                     let angle_rad = self.rotation_angle * 3.14159265359 / 180.0;
                     let cos_angle = cos(angle_rad);
@@ -48,7 +48,7 @@ live_design! {
                         self.icon_t2.xy,
                         (rot_matrix * (self.pos.xy - vec2(0.5))) + vec2(0.5)
                     );
-    
+
                     return self.camera_projection * (self.camera_view * (self.view_transform * vec4(
                         clipped.x,
                         clipped.y,
@@ -129,12 +129,12 @@ live_design! {
             flow: Down, spacing: 20
             padding: {top: 20}
             width: Fill, height: Fit
-            <CollapsableTitle> { 
+            <CollapsableTitle> {
                 title = {
                     text: "People"
                 }
             }
-            <CollapsableTitle> { 
+            <CollapsableTitle> {
                 title = {
                     text: "Channels"
                 }

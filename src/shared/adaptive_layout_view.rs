@@ -114,9 +114,8 @@ impl ViewOptimize {
     }
 }
 
-
-// TODO: 
-// - Add support for user-defined breakpoints with aliases (e.g. desktop, table, mobile) 
+// TODO:
+// - Add support for user-defined breakpoints with aliases (e.g. desktop, table, mobile)
 //   including custom conditions (MinWidth, MaxWidth, Between, Orientation, etc.). This requires support for HashMaps in the DSL and custom expressions.
 // - Add support for default AdaptiveProps that are shared across different layouts.
 // - Navigation: Add support for history, navigate back, and animations.
@@ -370,30 +369,37 @@ pub struct AdaptiveLayoutView {
     animator: Animator,
 
     /// The current screen width, updated through `WindowEvent::WindowGeomChange` events.
-    #[rust] 
+    #[rust]
     screen_width: f64,
 
     /// The current state of navigation.
     #[rust]
-    navigation_state: NavigationState
+    navigation_state: NavigationState,
 }
 
 #[derive(Clone, Debug, Live, LiveHook, LiveRegister)]
 #[live_ignore]
 pub struct AdaptiveComposition {
-    #[live] pub desktop: AdaptiveProps,
-    #[live] pub mobile: AdaptiveProps
+    #[live]
+    pub desktop: AdaptiveProps,
+    #[live]
+    pub mobile: AdaptiveProps,
 }
 
 /// The configuration of this view and its children, that is resolution-specific.
 #[derive(Clone, Debug, Live, LiveHook, LiveRegister)]
 #[live_ignore]
 pub struct AdaptiveProps {
-    #[walk] pub walk: Walk,
-    #[layout] pub layout: Layout,
-    #[live] pub child_order: Vec<LiveId>,
-    #[live] pub visibility: Visibility,
-    #[live] pub navigation: Option<NavigationConfig>
+    #[walk]
+    pub walk: Walk,
+    #[layout]
+    pub layout: Layout,
+    #[live]
+    pub child_order: Vec<LiveId>,
+    #[live]
+    pub visibility: Visibility,
+    #[live]
+    pub navigation: Option<NavigationConfig>,
 }
 
 struct ViewTextureCache {
@@ -417,7 +423,6 @@ impl LiveHook for AdaptiveLayoutView {
         }
     }
 
-
     fn after_apply(
         &mut self,
         cx: &mut Cx,
@@ -436,7 +441,7 @@ impl LiveHook for AdaptiveLayoutView {
             }
         }
 
-        self.apply_current_values_from_adaptive();   
+        self.apply_current_values_from_adaptive();
     }
 
     /// Applies the instance fields, e.g. instance_field = <SomeWidget>{}
@@ -446,13 +451,14 @@ impl LiveHook for AdaptiveLayoutView {
         apply: &mut Apply,
         index: usize,
         nodes: &[LiveNode],
-    ) -> usize { 
-
+    ) -> usize {
         let id = nodes[index].id;
         match apply.from {
             ApplyFrom::Animate | ApplyFrom::Over => {
                 let node_id = nodes[index].id;
-                if let Some((_,component)) = self.children.iter_mut().find(|(id,_)| *id == node_id) {
+                if let Some((_, component)) =
+                    self.children.iter_mut().find(|(id, _)| *id == node_id)
+                {
                     component.apply(cx, apply, index, nodes)
                 } else {
                     nodes.skip_node(index)
@@ -461,13 +467,16 @@ impl LiveHook for AdaptiveLayoutView {
             ApplyFrom::NewFromDoc { .. } | ApplyFrom::UpdateFromDoc { .. } => {
                 if nodes[index].is_instance_prop() {
                     //self.draw_order.push(id);
-                    if let Some((_,node)) = self.children.iter_mut().find(|(id2,_)| *id2 == id){
+                    if let Some((_, node)) = self.children.iter_mut().find(|(id2, _)| *id2 == id) {
                         node.apply(cx, apply, index, nodes)
-                    }
-                    else{
-                        self.children.push((id,WidgetRef::new(cx)));
-                        self.children_map.insert(id, self.children.len()-1);
-                        self.children.last_mut().unwrap().1.apply(cx, apply, index, nodes)
+                    } else {
+                        self.children.push((id, WidgetRef::new(cx)));
+                        self.children_map.insert(id, self.children.len() - 1);
+                        self.children
+                            .last_mut()
+                            .unwrap()
+                            .1
+                            .apply(cx, apply, index, nodes)
                     }
                 } else {
                     cx.apply_error_no_matching_field(live_error_origin!(), index, nodes);
@@ -637,7 +646,7 @@ impl AdaptiveLayoutViewRef {
 
     pub fn is_visible(&self) -> bool {
         if let Some(adaptive_layout_view) = self.borrow_mut() {
-            return adaptive_layout_view.is_visible()
+            return adaptive_layout_view.is_visible();
         }
         false
     }
@@ -747,11 +756,11 @@ impl WidgetNode for AdaptiveLayoutView {
     fn redraw(&mut self, cx: &mut Cx) {
         self.area.redraw(cx);
         // Redraw all children
-        for (_,child) in &mut self.children {
+        for (_, child) in &mut self.children {
             child.redraw(cx);
         }
     }
-    
+
     // fn uid_to_widget(&self, uid:WidgetUid)->WidgetRef{
     //     for (_,child) in &self.children {
     //         let x = child.uid_to_widget(uid);
@@ -777,14 +786,14 @@ impl WidgetNode for AdaptiveLayoutView {
                     return;
                 }
                 let mut local_results = WidgetSet::empty();
-                if let Some((_,child)) = self.children.iter().find(|(id,_)| *id == path[0]) {
+                if let Some((_, child)) = self.children.iter().find(|(id, _)| *id == path[0]) {
                     if path.len() > 1 {
                         child.find_widgets(&path[1..], WidgetCache::No, &mut local_results);
                     } else {
                         local_results.push(child.clone());
                     }
                 }
-                for (_,child) in &self.children {
+                for (_, child) in &self.children {
                     child.find_widgets(path, WidgetCache::No, &mut local_results);
                 }
                 if !local_results.is_empty() {
@@ -793,14 +802,14 @@ impl WidgetNode for AdaptiveLayoutView {
                 self.find_cache.borrow_mut().insert(hash, local_results);
             }
             WidgetCache::No => {
-                 if let Some((_,child)) = self.children.iter().find(|(id,_)| *id == path[0]) {
+                if let Some((_, child)) = self.children.iter().find(|(id, _)| *id == path[0]) {
                     if path.len() > 1 {
                         child.find_widgets(&path[1..], WidgetCache::No, results);
                     } else {
                         results.push(child.clone());
                     }
                 }
-                for (_,child) in &self.children {
+                for (_, child) in &self.children {
                     child.find_widgets(path, WidgetCache::No, results);
                 }
             }
@@ -822,7 +831,7 @@ impl Widget for AdaptiveLayoutView {
                 return;
             }
         }
-        
+
         // Handle scroll_bars actions, if any, redraw everything
         if let Some(scroll_bars) = &mut self.scroll_bars_obj {
             let mut actions = Vec::new();
@@ -850,7 +859,7 @@ impl Widget for AdaptiveLayoutView {
             }
             EventOrder::List(list) => {
                 for id in list {
-                    if let Some((_,child)) = self.children.iter_mut().find(|(id2,_)| id2 == id) {
+                    if let Some((_, child)) = self.children.iter_mut().find(|(id2, _)| id2 == id) {
                         scope.with_id(*id, |scope| {
                             child.handle_event(cx, event, scope);
                         })
@@ -947,10 +956,7 @@ impl Widget for AdaptiveLayoutView {
                                     2.0 / self.dpi_factor.unwrap_or(1.0),
                                 );
                             } else {*/
-                                cx.set_pass_area(
-                                    &texture_cache.pass,
-                                    self.area,
-                                );
+                            cx.set_pass_area(&texture_cache.pass, self.area);
                             //}
                         }
                         return DrawStep::done();
@@ -981,7 +987,7 @@ impl Widget for AdaptiveLayoutView {
                     cx.begin_pass(&texture_cache.pass, self.dpi_factor);
                     self.draw_list.as_mut().unwrap().begin_always(cx)
                 }
-                
+
                 // If using drawlist, if the view didn't didnt change it will not be regenerated by draw
                 ViewOptimize::DrawList => {
                     let walk = self.walk_from_previous_size(walk);
@@ -1023,7 +1029,7 @@ impl Widget for AdaptiveLayoutView {
                 Some(nav_config) => {
                     // Handle navigation-based drawing
                     self.draw_navigable_children(cx, scope, nav_config.clone())?;
-                },
+                }
                 _ => {
                     // Normal drawing for desktop or non-navigable mobile layouts
                     let mut visible_children = self.get_visible_children();
@@ -1031,7 +1037,7 @@ impl Widget for AdaptiveLayoutView {
                 }
             }
         }
-        
+
         // Debugging
         match &self.debug {
             ViewDebug::None => {}
@@ -1049,22 +1055,40 @@ impl Widget for AdaptiveLayoutView {
             }
             ViewDebug::M | ViewDebug::Margin => {
                 let tl = dvec2(self.current_walk.margin.left, self.current_walk.margin.top);
-                let br = dvec2(self.current_walk.margin.right, self.current_walk.margin.bottom);
+                let br = dvec2(
+                    self.current_walk.margin.right,
+                    self.current_walk.margin.bottom,
+                );
                 cx.debug.area_offset(self.area, tl, br, Vec4::B);
                 cx.debug.area(self.area, Vec4::R);
             }
             ViewDebug::P | ViewDebug::Padding => {
-                let tl = dvec2(-self.current_layout.padding.left, -self.current_walk.margin.top);
-                let br = dvec2(-self.current_layout.padding.right, -self.current_layout.padding.bottom);
+                let tl = dvec2(
+                    -self.current_layout.padding.left,
+                    -self.current_walk.margin.top,
+                );
+                let br = dvec2(
+                    -self.current_layout.padding.right,
+                    -self.current_layout.padding.bottom,
+                );
                 cx.debug.area_offset(self.area, tl, br, Vec4::G);
                 cx.debug.area(self.area, Vec4::R);
             }
             ViewDebug::All | ViewDebug::A => {
                 let tl = dvec2(self.current_walk.margin.left, self.current_walk.margin.top);
-                let br = dvec2(self.current_walk.margin.right, self.current_walk.margin.bottom);
+                let br = dvec2(
+                    self.current_walk.margin.right,
+                    self.current_walk.margin.bottom,
+                );
                 cx.debug.area_offset(self.area, tl, br, Vec4::B);
-                let tl = dvec2(-self.current_layout.padding.left, -self.current_walk.margin.top);
-                let br = dvec2(-self.current_layout.padding.right, -self.current_layout.padding.bottom);
+                let tl = dvec2(
+                    -self.current_layout.padding.left,
+                    -self.current_walk.margin.top,
+                );
+                let br = dvec2(
+                    -self.current_layout.padding.right,
+                    -self.current_layout.padding.bottom,
+                );
                 cx.debug.area_offset(self.area, tl, br, Vec4::G);
                 cx.debug.area(self.area, Vec4::R);
             }
@@ -1081,12 +1105,13 @@ impl WidgetMatchEvent for AdaptiveLayoutView {
                 if self.screen_width != ce.new_geom.inner_size.x {
                     self.screen_width = ce.new_geom.inner_size.x;
                     self.apply_current_values_from_adaptive();
-                    cx.redraw_all();    
+                    cx.redraw_all();
                 }
             }
 
             // Handle navigation actions, later to be constrained to Stack mode and support navigation history
-            if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast() {
+            if let AdaptiveLayoutViewAction::NavigateTo(view_id) = action.as_widget_action().cast()
+            {
                 if self.children_map.contains_key(&view_id) {
                     self.navigation_state.active_item_id = Some(view_id);
                 }
@@ -1102,11 +1127,10 @@ enum DrawState {
 }
 
 impl AdaptiveLayoutView {
-
-    /// Determines the current layout based on the current screen width and user-provided values for the different 
+    /// Determines the current layout based on the current screen width and user-provided values for the different
     /// screen sizes.
-    fn apply_current_values_from_adaptive(&mut self) {       
-        if self.screen_width <= MIN_DESKTOP_WIDTH { 
+    fn apply_current_values_from_adaptive(&mut self) {
+        if self.screen_width <= MIN_DESKTOP_WIDTH {
             self.current_layout = self.composition.mobile.layout;
             self.current_walk = self.composition.mobile.walk;
             self.current_navigation_config = self.composition.mobile.navigation.clone();
@@ -1135,14 +1159,24 @@ impl AdaptiveLayoutView {
     /// Draws the children of this view. If a subset is provided only those children will be drawn
     /// otherwise all visible children are drawn in the same fashion as [View].
     /// Children are sorted by the order in [current_child_order] if provided.
-    fn draw_children(&mut self, cx: &mut Cx2d, scope: &mut Scope, children_subset: Option<&mut Vec<(LiveId, WidgetRef)>>) -> DrawStep {
+    fn draw_children(
+        &mut self,
+        cx: &mut Cx2d,
+        scope: &mut Scope,
+        children_subset: Option<&mut Vec<(LiveId, WidgetRef)>>,
+    ) -> DrawStep {
         let children = children_subset.unwrap_or(&mut self.children);
 
         // If there is a user-specified order in which to draw the children, sort them.
         // Note that the user might have provided only a subset of the total chidren
         if !self.current_child_order.is_empty() {
             // Create a map from LiveId to its position in the draw_order
-            let draw_order_map: HashMap<LiveId, usize> = self.current_child_order.iter().enumerate().map(|(i, &id)| (id, i)).collect();
+            let draw_order_map: HashMap<LiveId, usize> = self
+                .current_child_order
+                .iter()
+                .enumerate()
+                .map(|(i, &id)| (id, i))
+                .collect();
 
             // Sort the children based on the draw_order, with non-matching ones at the end
             children.sort_by(|a, b| {
@@ -1156,24 +1190,24 @@ impl AdaptiveLayoutView {
                 }
             });
         }
-        
+
         // Iterate over the children, advancing by updating the draw state with each children as a step
         while let Some(DrawState::Drawing(step, resume)) = self.draw_state.get() {
             if step < children.len() {
-                if let Some((id,child)) = children.get_mut(step) {
+                if let Some((id, child)) = children.get_mut(step) {
                     // if child.is_visible() {
-                        let walk = child.walk(cx);
-                        if resume {
-                            // Draw child with its id on the scope
-                            scope.with_id(*id, |scope| child.draw_walk(cx, scope, walk))?;
-                        } else if let Some(fw) = cx.defer_walk(walk) {
-                            // If there's a deferred walk push into the vec for later drawing
-                            self.defer_walks.push((*id, fw));
-                        } else {
-                            // Draw child with its id on the scope
-                            self.draw_state.set(DrawState::Drawing(step, true));
-                            scope.with_id(*id, |scope| child.draw_walk(cx, scope, walk))?;
-                        }
+                    let walk = child.walk(cx);
+                    if resume {
+                        // Draw child with its id on the scope
+                        scope.with_id(*id, |scope| child.draw_walk(cx, scope, walk))?;
+                    } else if let Some(fw) = cx.defer_walk(walk) {
+                        // If there's a deferred walk push into the vec for later drawing
+                        self.defer_walks.push((*id, fw));
+                    } else {
+                        // Draw child with its id on the scope
+                        self.draw_state.set(DrawState::Drawing(step, true));
+                        scope.with_id(*id, |scope| child.draw_walk(cx, scope, walk))?;
+                    }
                     // }
                 }
                 self.draw_state.set(DrawState::Drawing(step + 1, false));
@@ -1186,7 +1220,7 @@ impl AdaptiveLayoutView {
         while let Some(DrawState::DeferWalk(step)) = self.draw_state.get() {
             if step < self.defer_walks.len() {
                 let (id, dw) = &mut self.defer_walks[step];
-                if let Some((id, child)) = children.iter_mut().find(|(id2,_)|id2 == id) {
+                if let Some((id, child)) = children.iter_mut().find(|(id2, _)| id2 == id) {
                     let walk = dw.resolve(cx);
                     scope.with_id(*id, |scope| child.draw_walk(cx, scope, walk))?;
                 }
@@ -1242,10 +1276,7 @@ impl AdaptiveLayoutView {
                                 2.0 / self.dpi_factor.unwrap_or(1.0),
                             );
                         } else {*/
-                            cx.set_pass_area(
-                                &texture_cache.pass,
-                                area,
-                            );
+                        cx.set_pass_area(&texture_cache.pass, area);
                         //}
                     }
                 }
@@ -1256,14 +1287,19 @@ impl AdaptiveLayoutView {
     }
 
     /// Draws the children of this view based on the navigation configuration.
-    fn draw_navigable_children(&mut self, cx: &mut Cx2d, scope: &mut Scope, navigation_config: NavigationConfig) -> DrawStep {
-       let visible_children = self.get_visible_children();
+    fn draw_navigable_children(
+        &mut self,
+        cx: &mut Cx2d,
+        scope: &mut Scope,
+        navigation_config: NavigationConfig,
+    ) -> DrawStep {
+        let visible_children = self.get_visible_children();
         match navigation_config.mode {
             NavigationMode::Stack => {
                 // Draw only the active navigation item or all present items for the given layout mode
                 let mut children_to_draw = Vec::new();
 
-                // If there is an active navigation item, simply draw the active child and skip the rest. 
+                // If there is an active navigation item, simply draw the active child and skip the rest.
                 if let Some(child_id) = self.navigation_state.active_item_id {
                     if let Some(child) = self.children.iter().find(|c| c.0.eq(&child_id)) {
                         children_to_draw.push(child.clone());
@@ -1275,8 +1311,8 @@ impl AdaptiveLayoutView {
                     children_to_draw = visible_children;
                 }
 
-                 self.draw_children(cx, scope, Some(&mut children_to_draw))?;
-            },
+                self.draw_children(cx, scope, Some(&mut children_to_draw))?;
+            }
             NavigationMode::Tabs => todo!(),
             NavigationMode::Drawer => todo!(),
         }
@@ -1316,11 +1352,11 @@ impl AdaptiveLayoutView {
     pub fn child_count(&self) -> usize {
         self.children.len()
     }
-    
-    pub fn debug_print_children(&self){
+
+    pub fn debug_print_children(&self) {
         log!("Debug print view children {:?}", self.children.len());
-        for i in 0..self.children.len(){
-            log!("Child: {}",self.children[i].0)
+        for i in 0..self.children.len() {
+            log!("Child: {}", self.children[i].0)
         }
     }
 }
@@ -1330,12 +1366,12 @@ impl AdaptiveLayoutView {
 pub enum AdaptiveLayoutViewAction {
     None,
     /// Navigates to the child with the given LiveId.
-    NavigateTo(LiveId)   
+    NavigateTo(LiveId),
 }
 
 /// The visibility of a view, which determines whether it is drawn or not.
 /// - [Visible] views are always drawn, unless there's an active navigation setup, and they are not the active navigation item.
-/// - [Hidden] views are never drawn 
+/// - [Hidden] views are never drawn
 /// - [NavigationItem] views are drawn only if they are the active navigation item.
 #[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
@@ -1350,8 +1386,10 @@ pub enum Visibility {
 #[derive(Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
 pub struct NavigationConfig {
-    #[live] mode: NavigationMode,
-    #[live] items: Vec<LiveId>
+    #[live]
+    mode: NavigationMode,
+    #[live]
+    items: Vec<LiveId>,
 }
 
 /// Determines how the navigation and visibility is handled for the children of a view.
@@ -1359,13 +1397,17 @@ pub struct NavigationConfig {
 #[derive(Copy, Clone, Debug, Live, LiveHook, LiveRegister, PartialEq)]
 #[live_ignore]
 pub enum NavigationMode {
-    #[pick] #[live] Stack,
-    #[live] Tabs,
-    #[live] Drawer
+    #[pick]
+    #[live]
+    Stack,
+    #[live]
+    Tabs,
+    #[live]
+    Drawer,
 }
 
 /// The current state of navigation.
 #[derive(Default)]
 struct NavigationState {
-    active_item_id: Option<LiveId>
+    active_item_id: Option<LiveId>,
 }

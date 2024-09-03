@@ -1,6 +1,8 @@
 use makepad_widgets::*;
 
-use crate::{home::room_screen::RoomScreenWidgetExt, shared::adaptive_layout_view::AdaptiveLayoutViewAction};
+use crate::{
+    home::room_screen::RoomScreenWidgetExt, shared::adaptive_layout_view::AdaptiveLayoutViewAction,
+};
 
 use super::rooms_list::RoomListAction;
 
@@ -131,7 +133,7 @@ impl MatchEvent for MainContent {
                 cx.widget_action(
                     self.widget_uid(),
                     &Scope::default().path,
-                    AdaptiveLayoutViewAction::NavigateTo(live_id!(rooms_sidebar))
+                    AdaptiveLayoutViewAction::NavigateTo(live_id!(rooms_sidebar)),
                 );
             }
         }
