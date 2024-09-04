@@ -45,7 +45,7 @@ live_design! {
 
             empty_message: "Search"
 
-            draw_text: {
+            draw_label: {
                 text_style: { font_size: 10 },
                 fn get_color(self) -> vec4 {
                     return (COLOR_TEXT_INPUT_IDLE);
@@ -71,7 +71,7 @@ live_design! {
             }
     
             // TODO find a way to override colors
-            draw_select: {
+            draw_selection: {
                 instance hover: 0.0
                 instance focus: 0.0
                 uniform border_radius: 2.0

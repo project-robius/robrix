@@ -749,7 +749,7 @@ live_design! {
                                 return sdf.result;
                             }
                         }
-                        draw_text: {
+                        draw_label: {
                             color: (MESSAGE_TEXT_COLOR),
                             text_style: <MESSAGE_TEXT_STYLE>{},
 
@@ -789,7 +789,7 @@ live_design! {
                         }
 
                         // TODO find a way to override colors
-                        draw_select: {
+                        draw_selection: {
                             instance hover: 0.0
                             instance focus: 0.0
                             uniform border_radius: 2.0
@@ -1625,9 +1625,7 @@ impl Widget for Timeline {
 
             list.set_item_range(cx, 0, last_item_id);
 
-            let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
-
-            while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
+            while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id as usize;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -1636,14 +1634,6 @@ impl Widget for Timeline {
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
                         continue;
                     };
-
-                    if let Some(index_and_scroll) = item_index_and_scroll_iter.next() {
-                        // log!("########### Saving item ID {} and scroll {} for room {}, at_end? {}",
-                        //     item_id, scroll, room_id,
-                        //     if list.is_at_end() { "Y" } else { "N" },
-                        // );
-                        *index_and_scroll = ItemIndexScroll { index: item_id, scroll };
-                    }
 
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
