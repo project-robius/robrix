@@ -620,13 +620,37 @@ live_design! {
         width: Fill, height: Fill,
         show_bg: true,
         draw_bg: {
-            color: #fff
+            color: (COLOR_SECONDARY)
+        }
+        flow: Down, spacing: 0.0
+        
+        tab_title = <View> {
+            width: Fit, height: Fit,
+            align: {x: 0.0, y: 0.5},
+            margin: {top: 10.0}
+            padding: 10.
+            show_bg: true
+            draw_bg: {
+                color: (COLOR_PRIMARY)
+            }
+            room_name = <Label> {
+                draw_text: {
+                    color: #4
+                    text_style: {
+                        font_size: 10.
+                    }
+                }
+            }
         }
 
         <View> {
             width: Fill, height: Fill,
             flow: Overlay,
-
+            show_bg: true
+            draw_bg: {
+                color: (COLOR_PRIMARY_DARKER)
+            }
+            
             <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -687,7 +711,7 @@ live_design! {
                     flow: Right, align: {y: 1.0}, padding: 10.
                     show_bg: true,
                     draw_bg: {
-                        color: #fff
+                        color: (COLOR_PRIMARY)
                     }
 
                     message_input = <TextInput> {
@@ -695,9 +719,37 @@ live_design! {
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
                         draw_bg: {
-                            color: #F9F9F9
+                            color: #fff
+                            instance radius: 2.0
+                            instance border_width: 0.8
+                            instance border_color: #D0D5DD
+                            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+                
+                            fn get_color(self) -> vec4 {
+                                return self.color
+                            }
+                
+                            fn get_border_color(self) -> vec4 {
+                                return self.border_color
+                            }
+                
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                                sdf.box(
+                                    self.inset.x + self.border_width,
+                                    self.inset.y + self.border_width,
+                                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
+                                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
+                                    max(1.0, self.radius)
+                                )
+                                sdf.fill_keep(self.get_color())
+                                if self.border_width > 0.0 {
+                                    sdf.stroke(self.get_border_color(), self.border_width)
+                                }
+                                return sdf.result;
+                            }
                         }
-                        draw_text: {
+                        draw_label: {
                             color: (MESSAGE_TEXT_COLOR),
                             text_style: <MESSAGE_TEXT_STYLE>{},
 
@@ -737,7 +789,7 @@ live_design! {
                         }
 
                         // TODO find a way to override colors
-                        draw_select: {
+                        draw_selection: {
                             instance hover: 0.0
                             instance focus: 0.0
                             uniform border_radius: 2.0
@@ -750,7 +802,7 @@ live_design! {
                                     self.rect_size.y,
                                     self.border_radius
                                 )
-                                sdf.fill(mix(#0e0, #0d0, self.focus)); // Pad color
+                                sdf.fill(mix(#dfffd6, #bfffb0, self.focus));
                                 return sdf.result
                             }
                         }
@@ -768,7 +820,7 @@ live_design! {
 
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
-                        icon_walk: {width: 15.0, height: Fit},
+                        icon_walk: {width: 18.0, height: Fit},
                     }
                 }
             }
@@ -1044,6 +1096,7 @@ impl RoomScreenRef {
         room_screen.room_name = room_name;
         room_screen.room_id = Some(room_id.clone());
         room_screen.timeline(id!(timeline)).set_room(room_id);
+        room_screen.label(id!(room_name)).set_text(&room_screen.room_name);
         room_screen.reset_state();
     }
 }
@@ -1335,7 +1388,9 @@ impl TimelineRef {
     /// Sets this timeline widget to display the timeline for the given room.
     fn set_room(&self, room_id: OwnedRoomId) {
         let Some(mut timeline) = self.borrow_mut() else { return };
+        timeline.hide_timeline(); // TODO: re-organize these methods
         timeline.room_id = Some(room_id);
+        timeline.show_timeline();
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
@@ -1359,21 +1414,6 @@ impl Widget for Timeline {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                // Handle the timeline being hidden or shown.
-                match action.as_widget_action().cast() {
-                    StackNavigationTransitionAction::HideBegin => {
-                        self.hide_timeline();
-                        continue;
-                    }
-                    StackNavigationTransitionAction::ShowBegin => {
-                        self.show_timeline();
-                        self.redraw(cx);
-                        continue;
-                    }
-                    StackNavigationTransitionAction::HideEnd
-                    | StackNavigationTransitionAction::ShowDone
-                    | StackNavigationTransitionAction::None => {}
-                }
 
                 match action.as_widget_action().cast() {
                     MessageAction::MessageReply(item_id) => {
@@ -1588,9 +1628,7 @@ impl Widget for Timeline {
 
             list.set_item_range(cx, 0, last_item_id);
 
-            let mut item_index_and_scroll_iter = tl_state.first_three_events.index_and_scroll.iter_mut();
-
-            while let Some((item_id, scroll)) = list.next_visible_item_with_scroll(cx) {
+            while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id as usize;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -1599,14 +1637,6 @@ impl Widget for Timeline {
                         list.item(cx, item_id, live_id!(Empty)).unwrap();
                         continue;
                     };
-
-                    if let Some(index_and_scroll) = item_index_and_scroll_iter.next() {
-                        // log!("########### Saving item ID {} and scroll {} for room {}, at_end? {}",
-                        //     item_id, scroll, room_id,
-                        //     if list.is_at_end() { "Y" } else { "N" },
-                        // );
-                        *index_and_scroll = ItemIndexScroll { index: item_id, scroll };
-                    }
 
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
