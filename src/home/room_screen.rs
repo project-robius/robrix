@@ -719,7 +719,7 @@ live_design! {
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
                         draw_bg: {
-                            color: #fff
+                            color: (COLOR_PRIMARY)
                             instance radius: 2.0
                             instance border_width: 0.8
                             instance border_color: #D0D5DD
@@ -755,16 +755,8 @@ live_design! {
 
                             fn get_color(self) -> vec4 {
                                 return mix(
-                                    mix(
-                                        mix(
-                                            #xFFFFFF55,
-                                            #xFFFFFF88,
-                                            self.hover
-                                        ),
-                                        self.color,
-                                        self.focus
-                                    ),
-                                    #BBBBBB,
+                                    self.color,
+                                    #B,
                                     self.is_empty
                                 )
                             }
