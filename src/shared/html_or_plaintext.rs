@@ -46,10 +46,9 @@ live_design! {
         draw_block: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
+            code_color: (#EDEDED)
             quote_bg_color: (#EDEDED)
             quote_fg_color: (MESSAGE_TEXT_COLOR)
-            block_color: (#EDEDED)
-            code_color: (#EDEDED)
         }
         list_item_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
         code_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 4.0, bottom: 4.0}, }

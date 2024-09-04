@@ -7,7 +7,6 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::clickable_view::ClickableView
-    import crate::shared::portal::*;
     import crate::home::home_screen::HomeScreen
     import crate::home::room_screen::RoomScreen
     import crate::profile::my_profile_screen::MyProfileScreen

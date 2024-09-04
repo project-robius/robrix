@@ -761,13 +761,15 @@ impl WidgetNode for AdaptiveLayoutView {
         }
     }
 
-    // fn uid_to_widget(&self, uid:WidgetUid)->WidgetRef{
-    //     for (_,child) in &self.children {
-    //         let x = child.uid_to_widget(uid);
-    //         if !x.is_empty(){return x}
-    //     }
-    //     WidgetRef::empty()
-    // }
+    fn uid_to_widget(&self, uid: WidgetUid) -> WidgetRef {
+        for (_,child) in &self.children {
+            let x = child.uid_to_widget(uid);
+            if !x.is_empty() {
+                return x;
+            }
+        }
+        WidgetRef::empty()
+    }
 
     /// Searches for a child widget with the given path and pushes it into the results set if found.
     /// Overrides the default version with added caching.
