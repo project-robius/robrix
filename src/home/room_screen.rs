@@ -130,7 +130,8 @@ live_design! {
     }
 
     Timestamp = <Label> {
-        padding: { top: 10.0, bottom: 0.0, left: 0.0, right: 0.0 }
+        width: Fit, height: Fit
+        padding: { bottom: 0.0, left: 0.0, right: 0.0 }
         draw_text: {
             text_style: <TIMESTAMP_TEXT_STYLE> {},
             color: (TIMESTAMP_TEXT_COLOR)
@@ -441,6 +442,7 @@ live_design! {
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
+        margin: {top: 5.0, bottom: 5.0}
 
         body = <View> {
             width: Fill,
@@ -448,15 +450,14 @@ live_design! {
             flow: Right,
             padding: { top: 2.0, bottom: 2.0 }
             spacing: 5.0
+            align: {y: 0.5}
 
             left_container = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                align: {x: 0.5, y: 0.5}
                 width: 70.0,
                 height: Fit
-                flow: Right,
 
                 timestamp = <Timestamp> {
-                    padding: {top: 5.0}
                     draw_text: {
                         text_style: <TIMESTAMP_TEXT_STYLE> {},
                         color: (TIMESTAMP_TEXT_COLOR)
@@ -476,7 +477,7 @@ live_design! {
             content = <Label> {
                 width: Fill,
                 height: Fit
-                padding: {top: 5.0},
+                padding: { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
                 draw_text: {
                     wrap: Word,
                     text_style: <SMALL_STATE_TEXT_STYLE> {},
