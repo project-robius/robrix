@@ -2538,7 +2538,7 @@ impl Widget for Message {
         // TODO: need vecs for apply_over(), maybe use an animator so we just set the state here
         // and the animator handles the color changes from inside the dsl.
         let default_color = vec3(1.0, 1.0, 1.0); // #ffffff
-        let hover_color = vec3(0.95, 0.95, 0.95); // #f3f3f3  (very light gray)
+        let hover_color = vec3(0.98, 0.98, 0.98); // #fafafa  (very light gray)
 
         let bg_color = if self.hovered {
             hover_color
