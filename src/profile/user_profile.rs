@@ -218,7 +218,8 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0},
-        spacing: 15,
+        padding: {left: 15., right: 15., top: 15.}
+        spacing: 20,
         flow: Down,
 
         show_bg: true,
@@ -227,44 +228,50 @@ live_design! {
             // 241, 244, 251
         }
 
-        avatar = <Avatar> {
-            width: 150,
-            height: 150,
-            margin: 10.0,
-        }
-
-        user_name = <Label> {
+        personal_info = <View> {
             width: Fill, height: Fit
-            draw_text: {
-                wrap: Line,
-                color: #000,
-                text_style: <USERNAME_TEXT_STYLE>{ },
+            align: {x: 0.5, y: 0.0}
+            padding: {left: 10, right: 10}
+            flow: Down
+            avatar = <Avatar> {
+                width: 150,
+                height: 150,
+                margin: 10.0,
             }
-            text: "User Name"
-        }
 
-        user_id = <Label> {
-            width: Fill, height: Fit
-            draw_text: {
-                wrap: Line,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+            user_name = <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    wrap: Line,
+                    color: #000,
+                    text_style: <USERNAME_TEXT_STYLE>{ },
+                }
+                text: "User Name"
             }
-            text: "User ID"
+
+            user_id = <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    wrap: Line,
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+                }
+                text: "User ID"
+            }
         }
 
         <LineH> { padding: 15 }
 
-        <View> {
+        membership = <View> {
             width: Fill,
             height: Fit,
             flow: Down,
-            spacing: 15,
+            spacing: 8,
             align: {x: 0.0, y: 0.0}
+            padding: {left: 10, right: 10}
 
             membership_title_label = <Label> {
                 width: Fill, height: Fit
-                padding: {left: 15}
                 draw_text: {
                     wrap: Word,
                     text_style: <USERNAME_TEXT_STYLE>{},
@@ -275,31 +282,35 @@ live_design! {
 
             membership_status_label = <Label> {
                 width: Fill, height: Fit
-                padding: {left: 30}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.},
                 }
                 text: "Unknown"
             }
 
             role_info_label = <Label> {
                 width: Fill, height: Fit
-                padding: {left: 30}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.},
                 }
                 text: "Unknown"
             }
+        }
 
-            <LineH> { padding: 15 }
+        <LineH> { padding: 15 }
+
+        actions = <View> {
+            width: Fill, height: Fit
+            flow: Down,
+            spacing: 10
+            padding: {left: 10, right: 10, bottom: 50}
 
             <Label> {
                 width: Fill, height: Fit
-                padding: {left: 15}
                 draw_text: {
                     wrap: Line,
                     text_style: <USERNAME_TEXT_STYLE>{},
@@ -307,14 +318,6 @@ live_design! {
                 }
                 text: "Actions"
             }
-        }
-
-        actions = <View> {
-            width: Fill, height: Fit
-            flow: Down,
-            spacing: 10
-            padding: {left: 25, bottom: 50 }
-
 
             direct_message_button = <UserProfileActionButton> {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
