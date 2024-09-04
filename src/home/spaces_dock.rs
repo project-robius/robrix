@@ -144,7 +144,7 @@ live_design! {
                 draw_icon: {
                     svg_file: (ICON_SETTINGS),
                     fn get_color(self) -> vec4 {
-                        return #1C274C;
+                        return #x566287; // grayed-out #1C274C until enabled
                     }
                 }
                 icon_walk: {width: 25, height: Fit}
