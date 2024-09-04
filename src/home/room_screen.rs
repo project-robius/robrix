@@ -1446,7 +1446,7 @@ impl Widget for Timeline {
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        let res = find_new_item_matching_current_item(&portal_list, orig_first_id, &tl.items, &items);
+                        let res = find_new_item_matching_current_item(cx, &portal_list, orig_first_id, &tl.items, &items);
                         log!("TEST: find_new_item_matching_current_item() returned {:?}", res);
 
                         // Determine which item is currently visible the top of the screen (the first event)
@@ -1728,14 +1728,20 @@ impl Widget for Timeline {
 }
 
 
-/// Returns the index in the given list of `new_items` that matches the event ID
+/// Returns info about the item in the list of `new_items` that matches the event ID
 /// of a visible item in the given `curr_items` list.
+///
+/// This info includes a tuple of:
+/// 1. the item's index in the `new_items` list,
+/// 2. the positional "scroll" offset of the corresponding current item in the portal list,
+/// 3. the unique event ID of the item.
 fn find_new_item_matching_current_item(
+    cx: &mut Cx2d,
     portal_list: &PortalListRef,
     starting_at_curr_idx: usize,
     curr_items: &Vector<Arc<TimelineItem>>,
     new_items: &Vector<Arc<TimelineItem>>,
-) -> Option<(usize, OwnedEventId)> {
+) -> Option<(usize, f64, OwnedEventId)> {
     let mut curr_item_focus = curr_items.focus();
     let mut idx_curr = starting_at_curr_idx;
     let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> = Vec::with_capacity(
@@ -1764,10 +1770,10 @@ fn find_new_item_matching_current_item(
         if let Some((idx_curr, _)) = curr_items_with_ids.iter()
             .find(|(_, ev_id)| ev_id == &event_id)
         {
-            // TODO: find the positional offset of the curr item at `idx_curr`
-            log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to index {idx_curr} in current items list.");
-            
-            return Some((idx_new, event_id.to_owned()));
+            if let Some(pos_offset) = portal_list.position_of_item(cx, entry_id) {
+                log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");  
+                return Some((idx_new, pos_offset, event_id.to_owned()));
+            }
         }
     }
 
