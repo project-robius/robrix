@@ -280,7 +280,7 @@ live_design! {
         html_content = <RobrixHtml> {
             width: Fill,
             height: Fit,
-            padding: {top: 7.5, bottom: 5.0 },
+            padding: { bottom: 5.0, top: 0.0 },
             font_size: 10.5,
             draw_normal:      { color: (REACTION_TEXT_COLOR) },
             draw_italic:      { color: (REACTION_TEXT_COLOR) },
@@ -323,7 +323,7 @@ live_design! {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 65.0,
                 height: Fit,
-                margin: {top: 7.5, right: 10}
+                margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
                     width: 50.,
@@ -352,7 +352,7 @@ live_design! {
 
                 username = <Label> {
                     width: Fill,
-                    margin: {bottom: 10.0, top: 10.0, right: 10.0,}
+                    margin: {bottom: 10.0, top: 7.5, right: 10.0,}
                     draw_text: {
                         text_style: <USERNAME_TEXT_STYLE> {},
                         color: (USERNAME_TEXT_COLOR)
@@ -384,13 +384,13 @@ live_design! {
     CondensedMessage = <Message> {
         padding: { top: 2.0, bottom: 2.0 }
         body = {
-            padding: { top: 5.0, bottom: 5.0, left: 10.0, right: 10.0 },
+            padding: { top: 2.5, bottom: 2.5, left: 10.0, right: 10.0 },
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 65.0,
                 height: Fit,
                 flow: Down,
-                timestamp = <Timestamp> { padding: {top: 3.0} }
+                timestamp = <Timestamp> { }
             }
             content = <View> {
                 width: Fill,
@@ -668,11 +668,12 @@ live_design! {
                     width: Fill
                     height: Fit
                     flow: Down
-                    padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
+                    padding: 0.0
             
                     // Displays a "Replying to" label and a cancel button
                     // above the preview of the message being replied to.
                     <View> {
+                        padding: {right: 12.0, left: 12.0}
                         width: Fill
                         height: Fit
                         flow: Right
