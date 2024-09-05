@@ -16,7 +16,8 @@ version = "0.0.1-pre-alpha"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "position_of_item_returns_none_for_zeroed_area_items" }
 robius-open = "0.1.0"
 
 anyhow = "1.0"
