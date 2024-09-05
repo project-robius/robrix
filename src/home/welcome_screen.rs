@@ -28,7 +28,10 @@ live_design! {
             }
 
             subtitle = <Label> {
-                text: "Our Matrix client is under heavy development.\nFor now, you can access the rooms you've joined in other clients.\nBut don't worry, we're working on expanding its features.",
+                text: "
+                    Our Matrix client is under heavy development.\nFor now, you can access the rooms you've joined in other clients.\nBut don't worry, we're working on expanding its features.\n
+                    Tip: to load older messages, click on a selected room (repeatedly).
+                    ",
                 draw_text: {
                     color: (WELCOME_TEXT_COLOR),
                     text_style: {
