@@ -2177,7 +2177,7 @@ fn draw_reactions(
     reactions: &ReactionsByKeyBySender,
     id: usize,
 ) {
-    const DRAW_ITEM_ID_REACTION: bool = true;
+    const DRAW_ITEM_ID_REACTION: bool = false;
     if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
         return;
     }
