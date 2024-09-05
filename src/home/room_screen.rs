@@ -149,7 +149,7 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
-        padding: {left: 5.0, bottom: 5.0, top: 5.0}
+        padding: {left: 10.0, bottom: 5.0, top: 5.0}
 
         <View> {
             width: Fill
@@ -162,7 +162,7 @@ live_design! {
                 width: 19.,
                 height: 19.,
                 text_view = { text = { draw_text: {
-                    text_style: { font_size: 7.0 }
+                    text_style: { font_size: 6.0 }
                 }}}
             }
 
@@ -307,9 +307,9 @@ live_design! {
         replied_to_message = <RepliedToMessage> {
             flow: Right
             cursor: Hand
-            margin: { bottom: 10 }
+            margin: { bottom: 5.0, top: 10.0 }
             replied_to_message_content = {
-                margin: { left: 10 }
+                margin: { left: 29 }
             }
         }
 
@@ -339,9 +339,11 @@ live_design! {
                     //     }
                     // }
                 }
-                timestamp = <Timestamp> { }
+                timestamp = <Timestamp> {
+                    padding: { top: 3.0 }
+                }
                 datestamp = <Timestamp> {
-                    padding: { top: 5.0 }
+                    padding: { top: 3.0 }
                 }
             }
             content = <View> {
@@ -352,7 +354,7 @@ live_design! {
 
                 username = <Label> {
                     width: Fill,
-                    margin: {bottom: 10.0, top: 7.5, right: 10.0,}
+                    margin: {bottom: 9.0, top: 11.0, right: 10.0,}
                     draw_text: {
                         text_style: <USERNAME_TEXT_STYLE> {},
                         color: (USERNAME_TEXT_COLOR)
@@ -374,7 +376,7 @@ live_design! {
             // once the message menu is done with overlays this wont be necessary.
             <View> {
                 width: 1,
-                height: 30
+                height: 1
             }
         }
     }
@@ -383,19 +385,27 @@ live_design! {
     // from the same sender, and thus doesn't need to display the sender's profile again.
     CondensedMessage = <Message> {
         padding: { top: 2.0, bottom: 2.0 }
+        replied_to_message = <RepliedToMessage> {
+            replied_to_message_content = {
+                margin: { left: 74, bottom: 5.0 }
+            }
+        }
         body = {
-            padding: { top: 2.5, bottom: 2.5, left: 10.0, right: 10.0 },
+            padding: { top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 65.0,
                 height: Fit,
                 flow: Down,
-                timestamp = <Timestamp> { }
+                timestamp = <Timestamp> {
+                    margin: {top: 1.5}
+                }
             }
             content = <View> {
                 width: Fill,
                 height: Fit,
                 flow: Down,
+                padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
                 message_annotations = <MessageAnnotations> {}
@@ -408,6 +418,7 @@ live_design! {
     ImageMessage = <Message> {
         body = {
             content = {
+                padding: { left: 10.0 }
                 message = <TextOrImage> {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
@@ -442,13 +453,13 @@ live_design! {
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
-        margin: {top: 5.0, bottom: 5.0}
+        margin: { left: 2.5, top: 4.0, bottom: 4.0}
 
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: { top: 2.0, bottom: 2.0 }
+            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
             spacing: 5.0
             align: {y: 0.5}
 

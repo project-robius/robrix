@@ -226,19 +226,23 @@ live_design! {
             width: Fill, height: Fit
             align: {x: 0.5, y: 0.0}
             padding: {left: 10, right: 10}
+            spacing: 10
             flow: Down
             avatar = <Avatar> {
                 width: 150,
                 height: 150,
                 margin: 10.0,
+                text_view = { text = { draw_text: {
+                    text_style: { font_size: 40.0 }
+                }}}
             }
 
             user_name = <Label> {
                 width: Fit, height: Fit
                 draw_text: {
-                    wrap: Line,
+                    wrap: Word,
                     color: #000,
-                    text_style: <USERNAME_TEXT_STYLE>{ },
+                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 12 },
                 }
                 text: "User Name"
             }
@@ -248,7 +252,7 @@ live_design! {
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
                 text: "User ID"
             }
@@ -260,7 +264,7 @@ live_design! {
             width: Fill,
             height: Fit,
             flow: Down,
-            spacing: 8,
+            spacing: 10,
             align: {x: 0.0, y: 0.0}
             padding: {left: 10, right: 10}
 
@@ -268,28 +272,30 @@ live_design! {
                 width: Fill, height: Fit
                 draw_text: {
                     wrap: Word,
-                    text_style: <USERNAME_TEXT_STYLE>{},
+                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
                     color: #000
                 }
                 text: "Membership in this room"
             }
 
             membership_status_label = <Label> {
+                margin: { left: 7 }
                 width: Fill, height: Fit
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.},
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
                 text: "Unknown"
             }
 
             role_info_label = <Label> {
+                margin: { left: 7 }
                 width: Fill, height: Fit
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.},
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
                 text: "Unknown"
             }
@@ -300,13 +306,13 @@ live_design! {
         actions = <View> {
             width: Fill, height: Fit
             flow: Down,
-            spacing: 10
+            spacing: 7
             padding: {left: 10., right: 10, bottom: 50}
             <Label> {
                 width: Fill, height: Fit
                 draw_text: {
                     wrap: Line,
-                    text_style: <USERNAME_TEXT_STYLE>{},
+                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
                     color: #000
                 }
                 text: "Actions"

@@ -17,7 +17,7 @@ live_design! {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
-    USERNAME_FONT_SIZE = 10.5
+    USERNAME_FONT_SIZE = 11
     USERNAME_TEXT_COLOR = #x2
     USERNAME_TEXT_STYLE = {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Bold.ttf")}
@@ -26,8 +26,8 @@ live_design! {
     }
 
 
-    MESSAGE_FONT_SIZE = 10.0
-    MESSAGE_TEXT_COLOR = #x555
+    MESSAGE_FONT_SIZE = 11
+    MESSAGE_TEXT_COLOR = #x444
     MESSAGE_TEXT_LINE_SPACING = 1.35
     MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
     // This font should only be used for plaintext labels. Don't use this for Html content,
@@ -39,10 +39,10 @@ live_design! {
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
     }
 
-    MESSAGE_REPLY_PREVIEW_FONT_SIZE = 9.0
+    MESSAGE_REPLY_PREVIEW_FONT_SIZE = 9.5
 
     SMALL_STATE_FONT_SIZE = 9.0
-    SMALL_STATE_TEXT_COLOR = #x999
+    SMALL_STATE_TEXT_COLOR = #x888
     SMALL_STATE_TEXT_STYLE = {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
         font_size: (SMALL_STATE_FONT_SIZE),
