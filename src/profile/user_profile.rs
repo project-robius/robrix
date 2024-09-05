@@ -120,22 +120,17 @@ live_design! {
         width: Fit,
         height: Fit,
         spacing: 10,
-        padding: {top: 10, bottom: 10, left: 15, right: 15}
+        padding: {top: 10, bottom: 10, left: 8, right: 15}
 
         draw_bg: {
-            instance color: #EDFCF2
-            instance color_hover: #fff
-            instance border_width: 1.2
+            instance color: (COLOR_PRIMARY)
+            instance color_hover: #A
+            instance border_width: 0.0
             instance border_color: #D0D5DD
-            instance border_color_hover: #fff
             instance radius: 3.0
 
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
-
-            fn get_border_color(self) -> vec4 {
-                return mix(self.border_color, mix(self.border_color, self.border_color_hover, 0.2), self.hover)
             }
 
             fn pixel(self) -> vec4 {
@@ -149,7 +144,7 @@ live_design! {
                 )
                 sdf.fill_keep(self.get_color())
                 if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
+                    sdf.stroke(self.border_color, self.border_width)
                 }
                 return sdf.result;
             }
@@ -218,103 +213,110 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0},
-        spacing: 15,
+        padding: {left: 15., right: 15., top: 15.}
+        spacing: 20,
         flow: Down,
 
         show_bg: true,
         draw_bg: {
-            color: #f3f3fa
-            // 241, 244, 251
+            color: (COLOR_PRIMARY)
         }
 
-        avatar = <Avatar> {
-            width: 150,
-            height: 150,
-            margin: 10.0,
-        }
-
-        user_name = <Label> {
+        personal_info = <View> {
             width: Fill, height: Fit
-            draw_text: {
-                wrap: Line,
-                color: #000,
-                text_style: <USERNAME_TEXT_STYLE>{ },
+            align: {x: 0.5, y: 0.0}
+            padding: {left: 10, right: 10}
+            spacing: 10
+            flow: Down
+            avatar = <Avatar> {
+                width: 150,
+                height: 150,
+                margin: 10.0,
+                text_view = { text = { draw_text: {
+                    text_style: { font_size: 40.0 }
+                }}}
             }
-            text: "User Name"
-        }
 
-        user_id = <Label> {
-            width: Fill, height: Fit
-            draw_text: {
-                wrap: Line,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+            user_name = <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    wrap: Word,
+                    color: #000,
+                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 12 },
+                }
+                text: "User Name"
             }
-            text: "User ID"
+
+            user_id = <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    wrap: Line,
+                    color: (MESSAGE_TEXT_COLOR),
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
+                }
+                text: "User ID"
+            }
         }
 
         <LineH> { padding: 15 }
 
-        <View> {
+        membership = <View> {
             width: Fill,
             height: Fit,
             flow: Down,
-            spacing: 15,
+            spacing: 10,
             align: {x: 0.0, y: 0.0}
+            padding: {left: 10, right: 10}
 
             membership_title_label = <Label> {
                 width: Fill, height: Fit
-                padding: {left: 15}
                 draw_text: {
                     wrap: Word,
-                    text_style: <USERNAME_TEXT_STYLE>{},
+                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
                     color: #000
                 }
                 text: "Membership in this room"
             }
 
             membership_status_label = <Label> {
+                margin: { left: 7 }
                 width: Fill, height: Fit
-                padding: {left: 30}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
                 text: "Unknown"
             }
 
             role_info_label = <Label> {
+                margin: { left: 7 }
                 width: Fill, height: Fit
-                padding: {left: 30}
                 draw_text: {
                     wrap: Line,
                     color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11.5},
+                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 11 },
                 }
                 text: "Unknown"
             }
-
-            <LineH> { padding: 15 }
-
-            <Label> {
-                width: Fill, height: Fit
-                padding: {left: 15}
-                draw_text: {
-                    wrap: Line,
-                    text_style: <USERNAME_TEXT_STYLE>{},
-                    color: #000
-                }
-                text: "Actions"
-            }
         }
+
+        <LineH> { padding: 15 }
 
         actions = <View> {
             width: Fill, height: Fit
             flow: Down,
-            spacing: 10
-            padding: {left: 25, bottom: 50 }
-
+            spacing: 7
+            padding: {left: 10., right: 10, bottom: 50}
+            <Label> {
+                width: Fill, height: Fit
+                draw_text: {
+                    wrap: Line,
+                    text_style: <USERNAME_TEXT_STYLE>{ font_size: 11.5 },
+                    color: #000
+                }
+                text: "Actions"
+            }
 
             direct_message_button = <UserProfileActionButton> {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
@@ -394,19 +396,15 @@ live_design! {
                 height: Fit,
                 align: {x: 0.0, y: 0.0},
                 margin: 7,
-                padding: 10,
+                padding: 15,
 
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
                     fn get_color(self) -> vec4 {
-                        return #fff;
+                        return #x0;
                     }
                 }
-                draw_bg: {
-                    color: #777,
-                    color_hover: #fff,
-                }
-                icon_walk: {width: 16, height: 16}
+                icon_walk: {width: 14, height: 14}
             }
         }
 

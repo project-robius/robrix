@@ -6,7 +6,7 @@ use crate::shared::adaptive_layout_view::AdaptiveLayoutViewAction;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
 use crate::shared::html_or_plaintext::HtmlOrPlaintextWidgetRefExt;
-use crate::utils::{unix_time_millis_to_datetime, self};
+use crate::utils::{self, relative_format};
 
 const MIN_DESKTOP_WIDTH: f64 = 860.0;
 
@@ -32,7 +32,7 @@ live_design! {
             instance border_width: 0.0
             instance border_color: #0000
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-            instance radius: 2.5
+            instance radius: 4.0
             
             fn get_color(self) -> vec4 {
                 return self.color
@@ -63,46 +63,53 @@ live_design! {
 
         preview = <View> {
             width: Fill, height: Fit
-            flow: Down, spacing: 7.
+            flow: Down, spacing: 5.
 
-            room_name = <Label> {
+            header = <View> {
                 width: Fill, height: Fit
-                draw_text:{
-                    color: #000,
-                    wrap: Ellipsis,
-                    text_style: <REGULAR_TEXT>{ font_size: 12.0 }
+                flow: Right
+                spacing: 10.
+                align: {y: 0.5}
+
+                room_name = <Label> {
+                    width: Fill, height: Fit
+                    draw_text:{
+                        color: #000,
+                        wrap: Ellipsis,
+                        text_style: <USERNAME_TEXT_STYLE>{ font_size: 10. }
+                    }
+                    text: "[Room name unknown]"
                 }
-                text: "[Room name unknown]"
+
+                timestamp = <Label> {
+                    width: Fit, height: Fit
+                    draw_text:{
+                        color: (TIMESTAMP_TEXT_COLOR)
+                        text_style: <TIMESTAMP_TEXT_STYLE>{
+                            font_size: 7.5
+                        },
+                    }
+                    text: "[Timestamp unknown]"
+                }
             }
 
             latest_message = <HtmlOrPlaintext> {
                 html_view = { html = {
-                    font_size: 10.5,
-                    draw_normal:      { text_style: { font_size: 10.5 } },
-                    draw_italic:      { text_style: { font_size: 10.5 } },
-                    draw_bold:        { text_style: { font_size: 10.5 } },
-                    draw_bold_italic: { text_style: { font_size: 10.5 } },
-                    draw_fixed:       { text_style: { font_size: 10.5 } },
-                    a = { draw_text:  { text_style: { font_size: 10.5 } } },
+                    font_size: 9.3, line_spacing: 1.,
+                    draw_normal:      { text_style: { font_size: 9.3, line_spacing: 1. } },
+                    draw_italic:      { text_style: { font_size: 9.3, line_spacing: 1. } },
+                    draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
+                    draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
+                    draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
+                    a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
-                        text_style: { font_size: 10.5 },
+                        text_style: { font_size: 9.5, line_spacing: 1. },
                     }
                     text: "[Latest message unknown]"
                 } }
             }
-        }
-
-        timestamp = <Label> {
-            width: Fit, height: Fit
-            draw_text:{
-                color: (TIMESTAMP_TEXT_COLOR)
-                text_style: <TIMESTAMP_TEXT_STYLE>{
-                    font_size: 8.
-                },
-            }
-            text: "[Timestamp unknown]"
         }
     }
 
@@ -112,9 +119,17 @@ live_design! {
         }
 
         preview = {
-            room_name = {
-                draw_text: {
-                    color: (COLOR_PRIMARY)
+            header = {
+                room_name = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY)
+                    }
+                }
+
+                timestamp = {
+                    draw_text: {
+                        color: (COLOR_PRIMARY)
+                    }
                 }
             }
 
@@ -124,7 +139,7 @@ live_design! {
                     draw_italic:      { color: (COLOR_PRIMARY) },
                     draw_bold:        { color: (COLOR_PRIMARY) },
                     draw_bold_italic: { color: (COLOR_PRIMARY) },
-                    draw_fixed:       { color: (COLOR_PRIMARY) },
+                    draw_fixed:       { color: (MESSAGE_TEXT_COLOR) },
                     a = { draw_text:  { color: (COLOR_PRIMARY) }, },
                 } }
                 plaintext_view = { pt_label = {
@@ -132,12 +147,6 @@ live_design! {
                         color: (COLOR_PRIMARY)
                     }
                 } }
-            }
-        }
-
-        timestamp = {
-            draw_text: {
-                color: (COLOR_PRIMARY)
             }
         }
     }
@@ -425,10 +434,9 @@ impl Widget for RoomsList {
                         item.label(id!(preview.room_name)).set_text(name);
                     }
                     if let Some((ts, msg)) = room_info.latest.as_ref() {
-                        if let Some(dt) = unix_time_millis_to_datetime(ts) {
-                            let text = format!("{} {}", dt.date_naive(), dt.time().format("%l:%M %P"));
-                            item.label(id!(timestamp)).set_text(&text);
-                        }
+                        if let Some(human_readable_date) = relative_format(ts) {
+                            item.label(id!(timestamp)).set_text(&human_readable_date);
+                        }                        
                         item.html_or_plaintext(id!(preview.latest_message)).show_html(msg);
                     }
                     match room_info.avatar {

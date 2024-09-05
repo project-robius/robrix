@@ -11,8 +11,8 @@ live_design! {
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
-    HTML_LINE_SPACING = 8.0
-    HTML_TEXT_HEIGHT_FACTOR = 1.2
+    HTML_LINE_SPACING = 6.0
+    HTML_TEXT_HEIGHT_FACTOR = 1.1
     HTML_BLOCK_LINE_SPACING = 5.0
 
 
@@ -51,8 +51,9 @@ live_design! {
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
         list_item_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
-        code_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 4.0, bottom: 4.0}, }
-        quote_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 0.0, bottom: 8.0}, }
+        code_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {left: 7.0, right: 7.0, top: 8.0, bottom: 0.0}, }
+        quote_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 0.0, bottom: 0.0}, }
+        inline_code_padding: { left: 5.0, right: 5.0, top: 7.0, bottom: 0.0 }
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }

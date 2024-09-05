@@ -44,7 +44,8 @@ live_design! {
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
             draw_bg: {
-                instance background_color: #bfb,
+                instance background_color: (COLOR_AVATAR_BG)
+                
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
@@ -56,10 +57,10 @@ live_design! {
             
             text = <Label> {
                 width: Fit, height: Fit,
-                padding: { top: 1.0 } // for better vertical alignment
+                padding: { top: 0.5 } // for better vertical alignment
                 draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 15. }
-                    color: #777,
+                    color: #f,
                 }
                 text: "?"
             }
@@ -125,8 +126,8 @@ impl Widget for Avatar {
 
     fn set_text(&mut self, v: &str) {
         let f = utils::user_name_first_letter(v)
-            .unwrap_or("?");
-        self.label(id!(text_view.text)).set_text(f);
+            .unwrap_or("?").to_uppercase();
+        self.label(id!(text_view.text)).set_text(&f);
         self.view(id!(img_view)).set_visible(false);
         self.view(id!(text_view)).set_visible(true);
     }

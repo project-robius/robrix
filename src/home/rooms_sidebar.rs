@@ -91,9 +91,9 @@ live_design! {
     RoomsSideBar = <AdaptiveLayoutView> {
         composition: {
             desktop: {
-                padding: {top: 20., left: 20., right: 20.}
+                padding: {top: 20., left: 10., right: 10.}
                 flow: Down, spacing: 10
-                width: 400, height: Fill
+                width: 280, height: Fill
                 visibility: Visible
             },
             mobile: {

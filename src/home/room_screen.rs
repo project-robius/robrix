@@ -71,8 +71,8 @@ live_design! {
     }
 
     COLOR_BG = #xfff8ee
-    COLOR_BRAND = #xf88
-    COLOR_BRAND_HOVER = #xf66
+    COLOR_BRAND = #x5
+    COLOR_BRAND_HOVER = #x3
     COLOR_META_TEXT = #xaaa
     COLOR_META = #xccc
     COLOR_META_INV = #xfffa
@@ -130,7 +130,8 @@ live_design! {
     }
 
     Timestamp = <Label> {
-        padding: { top: 10.0, bottom: 0.0, left: 0.0, right: 0.0 }
+        width: Fit, height: Fit
+        padding: { bottom: 0.0, left: 0.0, right: 0.0 }
         draw_text: {
             text_style: <TIMESTAMP_TEXT_STYLE> {},
             color: (TIMESTAMP_TEXT_COLOR)
@@ -148,7 +149,7 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
-        padding: {left: 5.0, bottom: 5.0, top: 5.0}
+        padding: {left: 10.0, bottom: 5.0, top: 5.0}
 
         <View> {
             width: Fill
@@ -161,7 +162,7 @@ live_design! {
                 width: 19.,
                 height: 19.,
                 text_view = { text = { draw_text: {
-                    text_style: { font_size: 7.0 }
+                    text_style: { font_size: 6.0 }
                 }}}
             }
 
@@ -279,7 +280,7 @@ live_design! {
         html_content = <RobrixHtml> {
             width: Fill,
             height: Fit,
-            padding: {top: 7.5, bottom: 5.0 },
+            padding: { bottom: 5.0, top: 0.0 },
             font_size: 10.5,
             draw_normal:      { color: (REACTION_TEXT_COLOR) },
             draw_italic:      { color: (REACTION_TEXT_COLOR) },
@@ -306,9 +307,9 @@ live_design! {
         replied_to_message = <RepliedToMessage> {
             flow: Right
             cursor: Hand
-            margin: { bottom: 10 }
+            margin: { bottom: 5.0, top: 10.0 }
             replied_to_message_content = {
-                margin: { left: 10 }
+                margin: { left: 29 }
             }
         }
 
@@ -322,7 +323,7 @@ live_design! {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 65.0,
                 height: Fit,
-                margin: {top: 7.5, right: 10}
+                margin: {top: 4.5, right: 10}
                 flow: Down,
                 avatar = <Avatar> {
                     width: 50.,
@@ -338,9 +339,11 @@ live_design! {
                     //     }
                     // }
                 }
-                timestamp = <Timestamp> { }
+                timestamp = <Timestamp> {
+                    padding: { top: 3.0 }
+                }
                 datestamp = <Timestamp> {
-                    padding: { top: 5.0 }
+                    padding: { top: 3.0 }
                 }
             }
             content = <View> {
@@ -351,7 +354,7 @@ live_design! {
 
                 username = <Label> {
                     width: Fill,
-                    margin: {bottom: 10.0, top: 10.0, right: 10.0,}
+                    margin: {bottom: 9.0, top: 11.0, right: 10.0,}
                     draw_text: {
                         text_style: <USERNAME_TEXT_STYLE> {},
                         color: (USERNAME_TEXT_COLOR)
@@ -373,7 +376,7 @@ live_design! {
             // once the message menu is done with overlays this wont be necessary.
             <View> {
                 width: 1,
-                height: 30
+                height: 1
             }
         }
     }
@@ -382,19 +385,27 @@ live_design! {
     // from the same sender, and thus doesn't need to display the sender's profile again.
     CondensedMessage = <Message> {
         padding: { top: 2.0, bottom: 2.0 }
+        replied_to_message = <RepliedToMessage> {
+            replied_to_message_content = {
+                margin: { left: 74, bottom: 5.0 }
+            }
+        }
         body = {
-            padding: { top: 5.0, bottom: 5.0, left: 10.0, right: 10.0 },
+            padding: { top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
             profile = <View> {
                 align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
                 width: 65.0,
                 height: Fit,
                 flow: Down,
-                timestamp = <Timestamp> { padding: {top: 3.0} }
+                timestamp = <Timestamp> {
+                    margin: {top: 1.5}
+                }
             }
             content = <View> {
                 width: Fill,
                 height: Fit,
                 flow: Down,
+                padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
                 message_annotations = <MessageAnnotations> {}
@@ -407,6 +418,7 @@ live_design! {
     ImageMessage = <Message> {
         body = {
             content = {
+                padding: { left: 10.0 }
                 message = <TextOrImage> {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
@@ -441,22 +453,22 @@ live_design! {
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
+        margin: { left: 2.5, top: 4.0, bottom: 4.0}
 
         body = <View> {
             width: Fill,
             height: Fit
             flow: Right,
-            padding: { top: 2.0, bottom: 2.0 }
+            padding: { left: 7.0, top: 2.0, bottom: 2.0 }
             spacing: 5.0
+            align: {y: 0.5}
 
             left_container = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                align: {x: 0.5, y: 0.5}
                 width: 70.0,
                 height: Fit
-                flow: Right,
 
                 timestamp = <Timestamp> {
-                    padding: {top: 5.0}
                     draw_text: {
                         text_style: <TIMESTAMP_TEXT_STYLE> {},
                         color: (TIMESTAMP_TEXT_COLOR)
@@ -476,7 +488,7 @@ live_design! {
             content = <Label> {
                 width: Fill,
                 height: Fit
-                padding: {top: 5.0},
+                padding: { top: 0.0, bottom: 0.0, left: 0.0, right: 0.0 }
                 draw_text: {
                     wrap: Word,
                     text_style: <SMALL_STATE_TEXT_STYLE> {},
@@ -667,11 +679,12 @@ live_design! {
                     width: Fill
                     height: Fit
                     flow: Down
-                    padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
+                    padding: 0.0
             
                     // Displays a "Replying to" label and a cancel button
                     // above the preview of the message being replied to.
                     <View> {
+                        padding: {right: 12.0, left: 12.0}
                         width: Fill
                         height: Fit
                         flow: Right
@@ -719,7 +732,7 @@ live_design! {
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
                         draw_bg: {
-                            color: #fff
+                            color: (COLOR_PRIMARY)
                             instance radius: 2.0
                             instance border_width: 0.8
                             instance border_color: #D0D5DD
@@ -755,16 +768,8 @@ live_design! {
 
                             fn get_color(self) -> vec4 {
                                 return mix(
-                                    mix(
-                                        mix(
-                                            #xFFFFFF55,
-                                            #xFFFFFF88,
-                                            self.hover
-                                        ),
-                                        self.color,
-                                        self.focus
-                                    ),
-                                    #BBBBBB,
+                                    self.color,
+                                    #B,
                                     self.is_empty
                                 )
                             }
@@ -2587,7 +2592,7 @@ impl Widget for Message {
         // TODO: need vecs for apply_over(), maybe use an animator so we just set the state here
         // and the animator handles the color changes from inside the dsl.
         let default_color = vec3(1.0, 1.0, 1.0); // #ffffff
-        let hover_color = vec3(0.95, 0.95, 0.95); // #f3f3f3  (very light gray)
+        let hover_color = vec3(0.98, 0.98, 0.98); // #fafafa  (very light gray)
 
         let bg_color = if self.hovered {
             hover_color
