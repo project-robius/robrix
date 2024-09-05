@@ -124,7 +124,7 @@ live_design! {
                     draw_italic:      { color: (COLOR_PRIMARY) },
                     draw_bold:        { color: (COLOR_PRIMARY) },
                     draw_bold_italic: { color: (COLOR_PRIMARY) },
-                    draw_fixed:       { color: (COLOR_PRIMARY) },
+                    draw_fixed:       { color: (MESSAGE_TEXT_COLOR) },
                     a = { draw_text:  { color: (COLOR_PRIMARY) }, },
                 } }
                 plaintext_view = { pt_label = {
