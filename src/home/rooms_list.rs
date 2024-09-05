@@ -32,7 +32,7 @@ live_design! {
             instance border_width: 0.0
             instance border_color: #0000
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-            instance radius: 2.5
+            instance radius: 4.0
             
             fn get_color(self) -> vec4 {
                 return self.color
@@ -76,7 +76,7 @@ live_design! {
                     draw_text:{
                         color: #000,
                         wrap: Ellipsis,
-                        text_style: <REGULAR_TEXT>{ font_size: 10.5 }
+                        text_style: <USERNAME_TEXT_STYLE>{ font_size: 10. }
                     }
                     text: "[Room name unknown]"
                 }

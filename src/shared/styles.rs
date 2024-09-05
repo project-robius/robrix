@@ -17,10 +17,10 @@ live_design! {
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
-    USERNAME_FONT_SIZE = 11.0
-    USERNAME_TEXT_COLOR = #x060 // dark green
+    USERNAME_FONT_SIZE = 10.5
+    USERNAME_TEXT_COLOR = #x2
     USERNAME_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Bold.ttf")}
         font_size: (USERNAME_FONT_SIZE),
         // height_factor: 1.5,
     }
@@ -67,4 +67,7 @@ live_design! {
     COLOR_SECONDARY = #eef2f4
 
     COLOR_SELECTED_PRIMARY = #0f88fe
+    COLOR_SELECTED_PRIMARY_DARKER = #106fcc
+
+    COLOR_AVATAR_BG = #52b2ac
 }

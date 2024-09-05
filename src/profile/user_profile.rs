@@ -120,22 +120,17 @@ live_design! {
         width: Fit,
         height: Fit,
         spacing: 10,
-        padding: {top: 10, bottom: 10, left: 15, right: 15}
+        padding: {top: 10, bottom: 10, left: 8, right: 15}
 
         draw_bg: {
-            instance color: #EDFCF2
-            instance color_hover: #fff
-            instance border_width: 1.2
+            instance color: (COLOR_PRIMARY)
+            instance color_hover: #A
+            instance border_width: 0.0
             instance border_color: #D0D5DD
-            instance border_color_hover: #fff
             instance radius: 3.0
 
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
-
-            fn get_border_color(self) -> vec4 {
-                return mix(self.border_color, mix(self.border_color, self.border_color_hover, 0.2), self.hover)
             }
 
             fn pixel(self) -> vec4 {
@@ -149,7 +144,7 @@ live_design! {
                 )
                 sdf.fill_keep(self.get_color())
                 if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
+                    sdf.stroke(self.border_color, self.border_width)
                 }
                 return sdf.result;
             }
@@ -224,8 +219,7 @@ live_design! {
 
         show_bg: true,
         draw_bg: {
-            color: #f3f3fa
-            // 241, 244, 251
+            color: (COLOR_PRIMARY)
         }
 
         personal_info = <View> {
@@ -307,8 +301,7 @@ live_design! {
             width: Fill, height: Fit
             flow: Down,
             spacing: 10
-            padding: {left: 10, right: 10, bottom: 50}
-
+            padding: {left: 10., right: 10, bottom: 50}
             <Label> {
                 width: Fill, height: Fit
                 draw_text: {
@@ -397,19 +390,15 @@ live_design! {
                 height: Fit,
                 align: {x: 0.0, y: 0.0},
                 margin: 7,
-                padding: 10,
+                padding: 15,
 
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
                     fn get_color(self) -> vec4 {
-                        return #fff;
+                        return #x0;
                     }
                 }
-                draw_bg: {
-                    color: #777,
-                    color_hover: #fff,
-                }
-                icon_walk: {width: 16, height: 16}
+                icon_walk: {width: 14, height: 14}
             }
         }
 

@@ -71,8 +71,8 @@ live_design! {
     }
 
     COLOR_BG = #xfff8ee
-    COLOR_BRAND = #xf88
-    COLOR_BRAND_HOVER = #xf66
+    COLOR_BRAND = #x5
+    COLOR_BRAND_HOVER = #x3
     COLOR_META_TEXT = #xaaa
     COLOR_META = #xccc
     COLOR_META_INV = #xfffa

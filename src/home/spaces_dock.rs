@@ -59,7 +59,7 @@ live_design! {
                 show_bg: true,
 
                 draw_bg: {
-                    instance background_color: #b8e5cc,
+                    instance background_color: (COLOR_AVATAR_BG),
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
