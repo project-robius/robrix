@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{Deref, DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -1472,26 +1472,13 @@ impl Widget for Timeline {
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
-            let orig_first_id = portal_list.first_id();
-            let scroll_from_first_id = portal_list.scroll_position();
+            let curr_first_id = portal_list.first_id();
             let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        // Determine which item is currently visible the top of the screen (the first event)
-                        // so that we can jump back to that position instantly after applying this update.
-                        let current_first_event_id_opt = tl.items
-                            .get(orig_first_id)
-                            .and_then(|item| item.as_event()
-                                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-                            );
-                        
-                        log!("current_first_event_id_opt: {current_first_event_id_opt:?}, orig_first_id: {orig_first_id}, old items: {}, new items: {}",
-                            tl.items.len(), items.len(),
-                        );
-
                         if items.is_empty() {
                             log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
 
@@ -1519,33 +1506,38 @@ impl Widget for Timeline {
 
                         // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
                         //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                        //       any index that comes before (is less than) the above `orig_first_id`.
+                        //       any index that comes before (is less than) the above `curr_first_id`.
 
-                        if orig_first_id > items.len() {
-                            log!("Timeline::handle_event(): orig_first_id {} is out of bounds for new items list of length {}", orig_first_id, items.len());
-                            portal_list.set_first_id_and_scroll(items.len().saturating_sub(1), 0.0);
+                        if items.len() == tl.items.len() {
+                            // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
                         }
-                        else if let Some(top_event_id) = current_first_event_id_opt.as_ref() {
-                            for (idx, item) in items.iter().enumerate() {
-                                let Some(item_event_id) = item.as_event().and_then(|ev| ev.event_id()) else {
-                                    continue
-                                };
-                                if top_event_id.deref() == item_event_id {
-                                    if orig_first_id != idx {
-                                        log!("Timeline::handle_event(): jumping view from top event index {orig_first_id} to new index {idx}");
-                                        portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
-                                    }
-                                    break;
-                                } else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
-                                    // TODO: should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
-                                    log!("!!!!!!!!!!!!!!!!!!!!!!! Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
-                                    portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
-                                    break;
-                                }
+                        else if curr_first_id > items.len() {
+                            log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, items.len());
+                            portal_list.set_first_id_and_scroll(items.len().saturating_sub(1), 0.0);
+                            portal_list.set_tail_range(true);
+                        }
+                        else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
+                            find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &items)
+                        {
+                            if curr_item_idx != new_item_idx {
+                                log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
+                                portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
                             }
                         }
+                        // TODO: after an (un)ignore user event, all timelines are cleared.
+                        //       To handle this, we must remember one or more currently-visible events across multiple updates
+                        //       such that we can jump back to the correct (current) position after enough updates have been received
+                        //       to restore the timeline to its previous position of at least one of the previously-existing events
+                        //       having also been found in the new items.
+                        //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
+                        //
+                        // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
+                        //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
+                        //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
+                        //     break;
+                        // }
                         else {
-                            warning!("Couldn't get unique event ID for event at the top of room {:?}", tl.room_id);
+                            warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
                         }
 
                         if clear_cache {
@@ -1749,6 +1741,63 @@ impl Widget for Timeline {
 }
 
 
+/// Returns info about the item in the list of `new_items` that matches the event ID
+/// of a visible item in the given `curr_items` list.
+///
+/// This info includes a tuple of:
+/// 1. the index of the item in the currennt items list,
+/// 2. the index of the item in the new items list,
+/// 3. the positional "scroll" offset of the corresponding current item in the portal list,
+/// 4. the unique event ID of the item.
+fn find_new_item_matching_current_item(
+    cx: &mut Cx,
+    portal_list: &PortalListRef,
+    starting_at_curr_idx: usize,
+    curr_items: &Vector<Arc<TimelineItem>>,
+    new_items: &Vector<Arc<TimelineItem>>,
+) -> Option<(usize, usize, f64, OwnedEventId)> {
+    let mut curr_item_focus = curr_items.focus();
+    let mut idx_curr = starting_at_curr_idx;
+    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> = Vec::with_capacity(
+        portal_list.visible_items()
+    );
+
+    // Find all items with real event IDs that are currently visible in the portal list.
+    // TODO: if this is slow, we could limit it to 3-5 events at the most.
+    if curr_items_with_ids.len() <= portal_list.visible_items() {
+        while let Some(curr_item) = curr_item_focus.get(idx_curr) {
+            if let Some(event_id) = curr_item.as_event().and_then(|ev| ev.event_id()) {
+                curr_items_with_ids.push((idx_curr, event_id.to_owned()));
+            }
+            if curr_items_with_ids.len() >= portal_list.visible_items() {
+                break;
+            }
+            idx_curr += 1;
+        }
+    }
+
+    // Find a new item that has the same real event ID as any of the current items.
+    for (idx_new, new_item) in new_items.iter().enumerate() {
+        let Some(event_id) = new_item.as_event().and_then(|ev| ev.event_id()) else {
+            continue;
+        };
+        if let Some((idx_curr, _)) = curr_items_with_ids.iter()
+            .find(|(_, ev_id)| ev_id == &event_id)
+        {
+            // Not all items in the portal list are guaranteed to have a position offset,
+            // some may be zeroed-out, so we need to account for that possibility by only
+            // using events that have a real non-zero area
+            if let Some(pos_offset) = portal_list.position_of_item(cx, *idx_curr) {
+                log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");  
+                return Some((*idx_curr, idx_new, pos_offset, event_id.to_owned()));
+            }
+        }
+    }
+
+    None
+}
+
+
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 struct ItemDrawnStatus {
     /// Whether the profile info (avatar and displayable username) were drawn for this item.
@@ -1826,7 +1875,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 // We're done drawing the message content, so mark it as fully drawn
                 // *if and only if* the reply preview was also fully drawn.
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
@@ -1851,7 +1900,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
@@ -1879,7 +1928,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id - 1);
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
             }
