@@ -204,6 +204,7 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
+
         padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
 
         // A reply preview with a vertical bar drawn in the background.
@@ -301,6 +302,54 @@ live_design! {
         flow: Down,
         padding: 0.0,
         spacing: 0.0
+
+        show_bg: true
+        draw_bg: {
+            instance highlight: 0.0
+            instance hover: 0.0
+            fn pixel(self) -> vec4 {
+                return mix(
+                    mix(
+                        #ffffff,
+                        #f3f3f3,
+                        self.hover
+                    ),
+                    #f3f3f3,
+                    self.highlight
+                )
+            }
+        }
+
+        animator: {
+            highlight = {
+                default: off
+                off = {
+                    redraw: true,
+                    from: { all: Forward {duration: 2.0} }
+                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { draw_bg: {highlight: 0.0} }
+                }
+                on = {
+                    redraw: true,
+                    from: { all: Forward {duration: 0.5} }
+                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { draw_bg: {highlight: 1.0} }
+                }
+            }
+            hover = {
+                default: off
+                off = {
+                    redraw: true,
+                    from: { all: Snap }
+                    apply: { draw_bg: {hover: 0.0} }
+                }
+                on = {
+                    redraw: true,
+                    from: { all: Snap }
+                    apply: { draw_bg: {hover: 1.0} }
+                }
+            }
+        }
 
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
@@ -1002,7 +1051,7 @@ impl Widget for RoomScreen {
                         }
                     }
                     MessageAction::ReplyPreviewClicked(item_id) => {
-                        let portal_list = self.portal_list(id!(list));
+                        let mut portal_list = self.portal_list(id!(list));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
@@ -1022,7 +1071,17 @@ impl Widget for RoomScreen {
                                                     })
                                             });
                                         if let Some(index) = message_replied_to_tl_index {
-                                            portal_list.set_first_id(index);
+                                            let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
+					    let base_speed = 5.0;
+                                            // apply a scaling based on the distance
+                                            let scaled_speed = base_speed * (distance * distance);
+
+                                            portal_list.smooth_scroll_to(cx, index , scaled_speed);
+					    // start highlight animation.
+                                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                                item_id: index + 1
+                                            };
+
                                             self.redraw(cx);
                                         }
                                     }
@@ -1030,7 +1089,23 @@ impl Widget for RoomScreen {
                             }
                         }
                     }
-                    MessageAction::None => {}
+                    _ => {}
+                }
+
+                // Handle the highlight animation. 
+                let portal_list = self.portal_list(id!(list));
+                let Some(tl) = self.tl_state.as_mut() else {
+                    return;
+                };
+                if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
+                    if portal_list.smooth_scroll_reached(actions) {
+                        cx.widget_action(
+                            widget_uid,
+                            &scope.path,
+                            MessageAction::MessageHighlight(item_id),
+                        );
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
+                    }
                 }
                 
                 // Handle message reply action
@@ -1214,7 +1289,6 @@ impl Widget for RoomScreen {
         }
 
     }
-
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -1437,6 +1511,7 @@ impl RoomScreen {
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
+                message_highlight_animation_state: MessageHighlightAnimationState::default(),
             };
             (new_tl_state, true)
         };
@@ -1653,6 +1728,15 @@ struct TimelineUiState {
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
+
+    /// The state of the message highlight animation.
+    ///
+    /// We need to run the animation once the scrolling, triggered by the click of of a
+    /// a reply preview, ends. so we keep a small state for it.
+    /// By default, it starts in Off.
+    /// Once the scrolling is started, the state becomes Pending.
+    /// If the animation was trigged, the state goes back to Off.
+    message_highlight_animation_state: MessageHighlightAnimationState,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
@@ -1676,6 +1760,14 @@ impl<const N: usize> Default for FirstDrawnEvents<N> {
 struct ItemIndexScroll {
     index: usize,
     scroll: f64,
+}
+
+
+#[derive(Default, Debug)]
+enum MessageHighlightAnimationState {
+    Pending { item_id: usize, },
+    #[default]
+    Off,
 }
 
 /// States that are necessary to save in order to maintain a consistent UI display for a timeline.
@@ -2482,6 +2574,7 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
 pub enum MessageAction {
     MessageReply(usize),
     ReplyPreviewClicked(usize),
+    MessageHighlight(usize),
     None,
 }
 
@@ -2495,10 +2588,22 @@ pub struct Message {
     can_be_replied_to: bool,
     #[rust]
     item_id: usize,
+    #[animator]
+    animator: Animator,
 }
 
 impl Widget for Message {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+
+        if !self.animator.is_track_animating(cx, id!(highlight))
+            && self.animator_in_state(cx, id!(highlight.on))
+        {
+            self.animator_play(cx, id!(highlight.off));
+        }
+
         let widget_uid = self.widget_uid();
 
         if let Event::Actions(actions) = event {
@@ -2521,15 +2626,31 @@ impl Widget for Message {
             }
         }
 
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.as_widget_action().cast() {
+                    MessageAction::MessageHighlight(id) if id == self.item_id => {
+                        self.animator_play(cx, id!(highlight.on));
+                        self.redraw(cx);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         if let Event::MouseMove(e) = event {
             let hovered = self.view.area().rect(cx).contains(e.abs);
-            if self.hovered != hovered {
+            if (self.hovered != hovered) || (!hovered && self.animator_in_state(cx, id!(hover.on))){
                 self.hovered = hovered;
 
                 // TODO: Once we have a context menu, the messageMenu can be displayed on hover or push only
                 // self.view.view(id!(message_menu)).set_visible(hovered);
-
-                self.redraw(cx);
+                let hover_animator = if self.hovered {
+                    id!(hover.on)
+                } else {
+                    id!(hover.off)
+                };
+                self.animator_play(cx, hover_animator);
             }
         }
 
@@ -2537,25 +2658,6 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // TODO: need vecs for apply_over(), maybe use an animator so we just set the state here
-        // and the animator handles the color changes from inside the dsl.
-        let default_color = vec3(1.0, 1.0, 1.0); // #ffffff
-        let hover_color = vec3(0.98, 0.98, 0.98); // #fafafa  (very light gray)
-
-        let bg_color = if self.hovered {
-            hover_color
-        } else {
-            default_color
-        };
-
-        self.view.apply_over(
-            cx,
-            live! {
-                show_bg: true,
-                draw_bg: {color: (bg_color)}
-            },
-        );
-
         self.view
             .button(id!(reply_button))
             .set_visible(self.can_be_replied_to);
