@@ -87,8 +87,9 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Backwards pagination (upon viewing a room timeline)
 - [ ] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
 - [ ] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
-- [x] Stable positioning of events during timeline update
-- [ ] Stable positioning of events after a full timeline clear: https://github.com/project-robius/robrix/issues/103 
+- [x] Stable positioning of events during simple timeline update
+- [x] Stable positioning of events during complex/multi-part timeline update
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103 
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
@@ -97,10 +98,10 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
-- [ ] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
+- [x] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
 - [ ] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
-- [ ] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
+- [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
@@ -109,7 +110,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [ ] Dedicated view of spaces
-- [ ] Dedicated view of direct messages (DMs)
+- [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
