@@ -620,8 +620,31 @@ live_design! {
                     }
                 }
             }
+        },
+
+            // Badge overlay for unread message count
+            unread_message_badge = <View> {
+            width: 20, height: 20,
+            align: {x: 1.0, y: -1.0}, // Position at the top-right of the button
+            margin: {top: -5.0, right: -5.0}, // Slightly overlap the button
+            draw_bg: {
+                instance background_color: #FF0000FF, // Red badge background
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    let c = self.rect_size * 0.5;
+                    sdf.circle(c.x, c.x, c.x);
+                    sdf.fill_keep(self.background_color);
+                    return sdf.result;
+                }
+            },
+
+            // Text inside the badge for unread message count
+            label = <Label> {
+                text: "0", // Default text, will be updated dynamically
+                draw_text: {color: #FFFFFF}, // White text color
+                align: {x: 0.5, y: 0.5}, // Center the text within the badge
+            }
         }
-        
     }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
@@ -853,6 +876,8 @@ struct RoomScreen {
     room_name: String,
     #[rust(None)]
     replying_to: Option<RepliedToInfo>,
+    #[rust]
+    unread_message_count: usize,
 }
 
 impl Widget for RoomScreen {
@@ -1004,6 +1029,28 @@ impl Widget for RoomScreen {
                         }
                     }
                 }
+
+                if let Some(timeline_update) = action.downcast_ref::<TimelineUpdate>() {
+                    match timeline_update {
+                        TimelineUpdate::NewItems {items, ..} => {
+                            let portal_list = self.portal_list(id!(timeline.list));
+                            if !portal_list.is_at_end() {
+                                self.unread_message_count += items.len();
+                                self.view(id!(jump_to_bottom_view)).set_visible(true);
+                                let label_text  = if self.unread_message_count > 0 {
+                                    format!("{} new messagers", self.unread_message_count)
+                                } else {
+                                    "".to_string()
+                                };
+                                self.label(id!(unread_message_badge.label)).set_text_and_redraw(cx, &label_text);
+                            } else {
+                                self.unread_message_count = 0;
+                                self.view(id!(jump_to_bottom_view)).set_visible(false);
+                            }
+                        },
+                        _ => {},
+                    }
+                }
             }
 
             // Handle the cancel reply button being clicked.
@@ -1056,6 +1103,7 @@ impl Widget for RoomScreen {
                         SCROLL_TO_BOTTOM_SPEED,
                     );
                     jump_to_bottom_view.set_visible(false);
+                    self.unread_message_count = 0;
                     self.redraw(cx);
                 }
             }
@@ -1114,6 +1162,7 @@ pub enum TimelineAction {
 
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
+#[derive(Debug)]
 pub enum TimelineUpdate {
     /// The content of a room's timeline was updated in the background.
     NewItems {
