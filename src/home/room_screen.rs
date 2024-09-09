@@ -572,7 +572,7 @@ live_design! {
         }
     }
 
-    Timeline = {{Timeline}} {
+    Timeline = <View> {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
@@ -845,639 +845,23 @@ live_design! {
 /// A simple deref wrapper around the `RoomScreen` widget that enables us to handle its events.
 #[derive(Live, LiveHook, Widget)]
 struct RoomScreen {
-    #[deref]
-    view: View,
-    #[rust]
-    room_id: Option<OwnedRoomId>,
-    #[rust]
-    room_name: String,
-    #[rust(None)]
-    replying_to: Option<RepliedToInfo>,
+    #[deref] view: View,
+
+    /// The room ID of the currently-shown room.
+    #[rust] room_id: Option<OwnedRoomId>,
+    /// The display name of the currently-shown room .
+    #[rust] room_name: String,
+    /// The UI-relevant states for the room that this widget is currently displaying.
+    #[rust] tl_state: Option<TimelineUiState>,
+    /// Info about the event currently being replied to, if any.
+    #[rust] replying_to: Option<RepliedToInfo>,
 }
 
 impl Widget for RoomScreen {
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
-    }
-
-    // Handle events and actions at the RoomScreen level.
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
-        let timeline = self.timeline(id!(timeline));
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                // Handle message reply action
-                if let TimelineAction::MessageReply(message_to_reply) =
-                    action.as_widget_action().cast()
-                {
-                    let replying_preview_view = self.view(id!(replying_preview));
-
-                    let (replying_preview_username, _) = set_avatar_and_get_username(
-                        cx,
-                        replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
-                        self.room_id.as_ref().unwrap(),
-                        message_to_reply.sender(),
-                        message_to_reply.sender_profile(),
-                        message_to_reply.event_id(),
-                    );
-
-                    replying_preview_view
-                        .label(id!(reply_preview_content.reply_preview_username))
-                        .set_text(replying_preview_username.as_str());
-
-                    // const MAX_REPLYING_PREVIEW_BODY_LENGTH: usize = 100;
-                    // let body_of_reply_preview =
-                    //     if message.body().chars().count() > MAX_REPLYING_PREVIEW_BODY_LENGTH {
-                    //         let truncated: String = message
-                    //             .body()
-                    //             .chars()
-                    //             .take(MAX_REPLYING_PREVIEW_BODY_LENGTH - 1)
-                    //             .collect();
-                    //         &(truncated + "...")
-                    //     } else {
-                    //         message.body()
-                    //     };
-
-                    // TODO: truncate the reply preview body to 2-3 lines or something
-
-                    populate_preview_of_timeline_item(
-                        &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
-                        message_to_reply.content(),
-                        &replying_preview_username,
-                    );
-
-                    self.set_replying_to(message_to_reply.replied_to_info().ok());
-                    self.redraw(cx);
-                }
-
-                // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) =
-                    action.as_widget_action().cast()
-                {
-                    timeline.show_user_profile(
-                        cx,
-                        &pane,
-                        UserProfilePaneInfo {
-                            profile_and_room_id,
-                            room_name: self.room_name.clone(),
-                            room_member: None,
-                        },
-                    );
-                }
-
-                // Handle a link being clicked.
-                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-                    // A closure that handles both MatrixToUri and MatrixUri links.
-                    let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-                        match id {
-                            MatrixId::Room(room_id) => {
-                                if self.room_id.as_ref() == Some(room_id) {
-                                    return true;
-                                }
-                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                                    log!("TODO: jump to known room {}", room_id);
-                                } else {
-                                    log!("TODO: fetch and display room preview for room {}", room_id);
-                                }
-
-                                true
-                            }
-                            MatrixId::RoomAlias(room_alias) => {
-                                log!("TODO: open room alias {}", room_alias);
-                                // TODO: open a room loading screen that shows a spinner
-                                //       while our background async task calls Client::resolve_room_alias()
-                                //       and then either jumps to the room if known, or fetches and displays
-                                //       a room preview for that room.
-                                true
-                            }
-                            MatrixId::User(user_id) => {
-                                log!("Opening matrix.to user link for {}", user_id);
-
-                                // There is no synchronous way to get the user's full profile info
-                                // including the details of their room membership,
-                                // so we fill in with the details we *do* know currently,
-                                // show the UserProfileSlidingPane, and then after that,
-                                // the UserProfileSlidingPane itself will fire off
-                                // an async request to get the rest of the details.
-                                timeline.show_user_profile(
-                                    cx,
-                                    &pane,
-                                    UserProfilePaneInfo {
-                                        profile_and_room_id: UserProfileAndRoomId {
-                                            user_profile: UserProfile {
-                                                user_id: user_id.to_owned(),
-                                                username: None,
-                                                avatar_state: AvatarState::Unknown,
-                                            },
-                                            room_id: self.room_id.clone().unwrap(),
-                                        },
-                                        room_name: self.room_name.clone(),
-                                        // TODO: use the extra `via` parameters
-                                        room_member: None,
-                                    },
-                                );
-                                true
-                            }
-                            MatrixId::Event(room_id, event_id) => {
-                                log!("TODO: open event {} in room {}", event_id, room_id);
-                                // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                                //       but then we need to call Room::event_with_context() to get the event
-                                //       and its context (surrounding events ?).
-                                true
-                            }
-                            _ => false,
-                        }
-                    };
-
-                    let mut link_was_handled = false;
-                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                        link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
-                    }
-                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                        link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
-                    }
-
-                    if !link_was_handled {
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                        }
-                    }
-                }
-            }
-
-            // Handle the cancel reply button being clicked.
-            if self.button(id!(cancel_reply_button)).clicked(&actions) {
-                self.set_replying_to(None);
-                self.redraw(cx);
-            }
-
-            // Handle the send message button being clicked.
-            if self.button(id!(send_message_button)).clicked(&actions) {
-                let msg_input_widget = self.text_input(id!(message_input));
-                let entered_text = msg_input_widget.text();
-                msg_input_widget.set_text_and_redraw(cx, "");
-                if !entered_text.is_empty() {
-                    let room_id = self.room_id.clone().unwrap();
-                    log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        RoomMessageEventContent::text_html(html_text, html_text)
-                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        RoomMessageEventContent::text_plain(plain_text)
-                    } else {
-                        RoomMessageEventContent::text_markdown(entered_text)
-                    };
-                    submit_async_request(MatrixRequest::SendMessage {
-                        room_id,
-                        message,
-                        replied_to: self.replying_to.clone(),
-                        // TODO: support attaching mentions, etc.
-                    });
-
-                    self.set_replying_to(None);
-                }
-            }
-
-            // Handle the jump to bottom button: update its visibility, and handle clicks.
-            {
-                let mut portal_list = self.portal_list(id!(timeline.list));
-                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
-                if portal_list.scrolled(&actions) {
-                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
-                }
-
-                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
-                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                    portal_list.smooth_scroll_to_end(
-                        cx,
-                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
-                        SCROLL_TO_BOTTOM_SPEED,
-                    );
-                    jump_to_bottom_view.set_visible(false);
-                    self.redraw(cx);
-                }
-            }
-
-            // Handle a typing action on the message input box.
-            if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
-                submit_async_request(MatrixRequest::SendTypingNotice {
-                    room_id: self.room_id.clone().unwrap(),
-                    typing: !new_text.is_empty(),
-                });
-            }
-        }
-
-        // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
-        // if the user profile sliding pane is not visible.
-        if event.requires_visibility() && pane.is_currently_shown(cx) {
-            // Forward the event to the user profile sliding pane,
-            // preventing the underlying timeline view from receiving it.
-            pane.handle_event(cx, event, scope);
-        } else {
-            // Forward the event to the inner timeline view.
-            self.view.handle_event(cx, event, scope);
-        }
-
-    }
-}
-
-impl RoomScreen {
-    fn set_replying_to(&mut self, replying_to: Option<RepliedToInfo>) {
-        self.view(id!(replying_preview))
-            .set_visible(replying_to.is_some());
-        self.replying_to = replying_to;
-    }
-    pub fn reset_state(&mut self) {
-        self.set_replying_to(None);
-    }
-}
-
-impl RoomScreenRef {
-    /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(&self, room_name: String, room_id: OwnedRoomId) {
-        let Some(mut room_screen) = self.borrow_mut() else { return };
-        room_screen.room_name = room_name;
-        room_screen.room_id = Some(room_id.clone());
-        room_screen.timeline(id!(timeline)).set_room(room_id);
-        room_screen.label(id!(room_name)).set_text(&room_screen.room_name);
-        room_screen.reset_state();
-    }
-}
-
-#[derive(Clone, DefaultNone, Debug)]
-pub enum TimelineAction {
-    MessageReply(EventTimelineItem),
-    None,
-}
-
-/// A message that is sent from a background async task to a room's timeline view
-/// for the purpose of update the Timeline UI contents or metadata.
-pub enum TimelineUpdate {
-    /// The content of a room's timeline was updated in the background.
-    NewItems {
-        /// The entire list of timeline items (events) for a room.
-        items: Vector<Arc<TimelineItem>>,
-        /// The range of indices in the `items` list that have been changed in this update
-        /// and thus must be removed from any caches of drawn items in the timeline.
-        /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
-        changed_indices: Range<usize>,
-        /// Whether to clear the entire cache of drawn items in the timeline.
-        /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
-        clear_cache: bool,
-    },
-    /// A notice that the start of the timeline has been reached, meaning that
-    /// there is no need to send further backwards pagination requests.
-    TimelineStartReached,
-    /// A notice that the background task doing pagination for this room has become idle,
-    /// meaning that it has completed its recent pagination request(s) and is now waiting
-    /// for more requests, but that the start of the timeline has not yet been reached.
-    PaginationIdle,
-    /// A notice that event details have been fetched from the server,
-    /// including a `result` that indicates whether the request was successful.
-    EventDetailsFetched {
-        event_id: OwnedEventId,
-        result: Result<(), matrix_sdk_ui::timeline::Error>,
-    },
-    /// A notice that the room's members have been fetched from the server,
-    /// though the success or failure of the request is not yet known until the client
-    /// requests the member info via a timeline event's `sender_profile()` method.
-    RoomMembersFetched,
-    /// A notice that one or more requested media items (images, videos, etc.)
-    /// that should be displayed in this timeline have now been fetched and are available.
-    MediaFetched,
-}
-
-/// A Timeline widget displays the list of events (timeline "items") for a room.
-#[derive(Live, LiveHook, Widget)]
-pub struct Timeline {
-    #[deref] view: View,
-
-    /// The room ID that this timeline is currently displaying.
-    #[rust] room_id: Option<OwnedRoomId>,
-    /// The UI-relevant states for the room that this widget is currently displaying.
-    #[rust] tl_state: Option<TimelineUiState>,
-}
-
-/// The global set of all timeline states, one entry per room.
-static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineUiState>> = Mutex::new(BTreeMap::new());
-
-/// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
-struct TimelineUiState {
-    /// The ID of the room that this timeline is for.
-    room_id: OwnedRoomId,
-
-    /// Whether this room's timeline has been fully paginated, which means
-    /// that the oldest (first) event in the timeline is locally synced and available.
-    /// When `true`, further backwards pagination requests will not be sent.
-    ///
-    /// This must be reset to `false` whenever the timeline is fully cleared.
-    fully_paginated: bool,
-
-    /// The list of items (events) in this room's timeline that our client currently knows about.
-    items: Vector<Arc<TimelineItem>>,
-
-    /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
-    /// since the last update and thus do not need to be re-populated on future draw events.
-    ///
-    /// This range is partially cleared on each background update (see below) to ensure that
-    /// items modified during the update are properly redrawn. Thus, it is a conservative
-    /// "cache tracker" that may not include all items that have already been drawn,
-    /// but that's okay because big updates that clear out large parts of the rangeset
-    /// only occur during back pagination, which is both rare and slow in and of itself.
-    /// During typical usage, new events are appended to the end of the timeline,
-    /// meaning that the range of already-drawn items doesn't need to be cleared.
-    ///
-    /// Upon a background update, only item indices greater than or equal to the
-    /// `index_of_first_change` are removed from this set.
-    content_drawn_since_last_update: RangeSet<usize>,
-
-    /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
-    profile_drawn_since_last_update: RangeSet<usize>,
-
-    /// The channel receiver for timeline updates for this room.
-    ///
-    /// Here we use a synchronous (non-async) channel because the receiver runs
-    /// in a sync context and the sender runs in an async context,
-    /// which is okay because a sender on an unbounded channel never needs to block.
-    update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
-
-    /// The cache of media items (images, videos, etc.) that appear in this timeline.
-    ///
-    /// Currently this excludes avatars, as those are shared across multiple rooms.
-    media_cache: MediaCache,
-    
-    /// The index and scroll position of the first three events that have been drawn
-    /// in the most recent draw pass of this timeline's PortalList.
-    ///
-    /// We save three events because one of 3 adjacent timeline items is (practically)
-    /// guaranteed to be a standard real event that has a true unique ID.
-    /// (For example, not day dividers, not read markers, etc.)
-    ///
-    /// If any of the `event_ids` are `Some`, this indicates that the timeline was
-    /// fully cleared and is in the process of being restored via pagination,
-    /// but it has not yet been paginated enough to the point where one of events
-    /// in this list are visible.
-    /// Once the timeline has been sufficiently paginated to display
-    /// one of the events in this list, all `event_ids` should be set to `None`.`
-    first_three_events: FirstDrawnEvents<3>,
-
-    /// The states relevant to the UI display of this timeline that are saved upon
-    /// a `Hide` action and restored upon a `Show` action.
-    saved_state: SavedState,
-}
-
-/// The item index, scroll position, and optional unique IDs of the first `N` events
-/// that have been drawn in the most recent draw pass of a timeline's PortalList.
-#[derive(Debug)]
-struct FirstDrawnEvents<const N: usize> {
-    index_and_scroll: [ItemIndexScroll; N],
-    event_ids: [Option<OwnedEventId>; N],
-}
-impl<const N: usize> Default for FirstDrawnEvents<N> {
-    fn default() -> Self {
-        Self {
-            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
-            event_ids: std::array::from_fn(|_| None),
-        }
-    }
-}
-
-/// 
-#[derive(Clone, Copy, Debug, Default)]
-struct ItemIndexScroll {
-    index: usize,
-    scroll: f64,
-}
-
-/// States that are necessary to save in order to maintain a consistent UI display for a timeline.
-///
-/// These are saved when navigating away from a timeline (upon `Hide`)
-/// and restored when navigating back to a timeline (upon `Show`).
-#[derive(Default, Debug)]
-struct SavedState {
-    /// The index of the first item in the timeline's PortalList that is currently visible,
-    /// and the scroll offset from the top of the list's viewport to the beginning of that item.
-    /// If this is `None`, then the timeline has not yet been scrolled by the user
-    /// and the portal list will be set to "tail" (track) the bottom of the list.
-    first_index_and_scroll: Option<(usize, f64)>,
-    /// The unique ID of the event that corresponds to the first item visible in the timeline.
-    first_event_id: Option<OwnedEventId>,
-
-    /// The content of the message input box.
-    draft: Option<String>,
-    /// The position of the cursor head and tail in the message input box.
-    cursor: (usize, usize),
-}
-
-impl Timeline {
-    /// Invoke this when this timeline is being shown,
-    /// e.g., when the user navigates to this timeline.
-    fn show_timeline(&mut self) {
-        let room_id = self.room_id.clone()
-            .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-        assert!( // just an optional sanity check
-            self.tl_state.is_none(),
-            "BUG: tried to show_timeline() into a timeline with existing state. \
-            Did you forget to save the timeline state back to the global map of states?",
-        );
-
-        let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
-            (existing, false)
-        } else {
-            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
-                .expect("BUG: couldn't get timeline state for first-viewed room.");
-            let new_tl_state = TimelineUiState {
-                room_id: room_id.clone(),
-                // We assume timelines being viewed for the first time haven't been fully paginated.
-                fully_paginated: false,
-                items: Vector::new(),
-                content_drawn_since_last_update: RangeSet::new(),
-                profile_drawn_since_last_update: RangeSet::new(),
-                update_receiver,
-                first_three_events: Default::default(),
-                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
-                saved_state: SavedState::default(),
-            };
-            (new_tl_state, true)
-        };
-
-        // log!("Timeline::set_room(): opening room {room_id}
-        //     content_drawn_since_last_update: {:#?}
-        //     profile_drawn_since_last_update: {:#?}",
-        //     tl_state.content_drawn_since_last_update,
-        //     tl_state.profile_drawn_since_last_update,
-        // );
-
-        // kick off a back pagination request for this room
-        if !tl_state.fully_paginated {
-            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                room_id: room_id.clone(),
-                num_events: 50,
-                forwards: false,
-            })
-        } else {
-            // log!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
-        }
-
-        // Even though we specify that room member profiles should be lazy-loaded,
-        // the matrix server still doesn't consistently send them to our client properly.
-        // So we kick off a request to fetch the room members here upon first viewing the room.
-        if first_time_showing_room {
-            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
-            // TODO: in the future, move the back pagination request to here,
-            //       once back pagination is done dynamically based on timeline scroll position.
-        }
-
-        // Now, restore the visual state of this timeline from its previously-saved state.
-        self.restore_state(&tl_state);
-
-        // As the final step , store the tl_state for this room into the Timeline widget,
-        // such that it can be accessed in future event/draw handlers.
-        self.tl_state = Some(tl_state);
-    }
-
-    /// Invoke this when this timeline is being hidden or no longer being shown,
-    /// e.g., when the user navigates away from this timeline.
-    fn hide_timeline(&mut self) {
-        self.save_state();
-    }
-
-    /// Removes this Timeline's current visual UI state from this Timeline widget
-    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
-    ///
-    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
-    fn save_state(&mut self) {
-        let Some(mut tl) = self.tl_state.take() else {
-            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
-            return;
-        };
-        let portal_list = self.portal_list(id!(list));
-        let first_index = portal_list.first_id();
-        tl.saved_state.first_index_and_scroll = Some((
-            first_index,
-            portal_list.scroll_position(),
-        ));
-        tl.saved_state.first_event_id = tl.items
-            .get(first_index)
-            .and_then(|item| item
-                .as_event()
-                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-            );
-
-
-        // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
-    }
-
-    /// Restores the previously-saved visual UI state of this timeline.
-    ///
-    /// Note: this accepts a direct reference to the timeline's UI state,
-    /// so this function must not try to re-obtain it by accessing `self.tl_state`.
-    fn restore_state(&mut self, tl_state: &TimelineUiState) {
-        if let Some((first_index, scroll_from_first_id)) = tl_state.saved_state.first_index_and_scroll {
-            self.portal_list(id!(list))
-                .set_first_id_and_scroll(first_index, scroll_from_first_id);
-        } else {
-            // If the first index is not set, then the timeline has not yet been scrolled by the user,
-            // so we set the portal list to "tail" (track) the bottom of the list.
-            self.portal_list(id!(list)).set_tail_range(true);
-        }
-
-        // TODO: restore the message input box's draft text and cursor head/tail positions.
-    }
-}
-
-impl TimelineRef {
-    /// Sets this timeline widget to display the timeline for the given room.
-    fn set_room(&self, room_id: OwnedRoomId) {
-        let Some(mut timeline) = self.borrow_mut() else { return };
-        timeline.hide_timeline(); // TODO: re-organize these methods
-        timeline.room_id = Some(room_id);
-        timeline.show_timeline();
-    }
-
-    /// Shows the user profile sliding pane with the given avatar info.
-    fn show_user_profile(
-        &self,
-        cx: &mut Cx,
-        pane: &UserProfileSlidingPaneRef,
-        info: UserProfilePaneInfo,
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        pane.set_info(cx, info);
-        pane.show(cx);
-        // Not sure if this redraw is necessary
-        inner.redraw(cx);
-    }
-}
-
-impl Widget for Timeline {
+    // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-
-                match action.as_widget_action().cast() {
-                    MessageAction::MessageReply(item_id) => {
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            return;
-                        };
-                        let tl_idx = item_id as usize;
-                        if let Some(tl_item) = tl.items.get(tl_idx) {
-                            if let Some(tl_event_item) = tl_item.as_event() {
-                                // TODO: this is ugly, but i couldnt find a clean way of making the Message
-                                // dispatch the action itself, it would need access to the timeline state or data
-                                cx.widget_action(
-                                    widget_uid,
-                                    &scope.path,
-                                    TimelineAction::MessageReply(tl_event_item.clone()),
-                                );
-                            }
-                        }
-                    }
-                    MessageAction::ReplyPreviewClicked(item_id) => {
-                        let portal_list = self.portal_list(id!(list));
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            return;
-                        };
-                        let tl_idx = item_id as usize;
-
-                        if let Some(tl_item) = tl.items.get(tl_idx) {
-                            if let Some(tl_event_item) = tl_item.as_event() {
-                                if let Some(message) = tl_event_item.content().as_message() {
-                                    if let Some(details) = message.in_reply_to() {
-                                        // Find the replyed message on timeline so we use the id for scrolling portal list
-                                        let message_replied_to_tl_index =
-                                            tl.items.iter().position(|i| {
-                                                i.as_event()
-                                                    .and_then(|e| e.event_id())
-                                                    .map_or(false, |event_id| {
-                                                        details.event_id == event_id
-                                                    })
-                                            });
-                                        if let Some(index) = message_replied_to_tl_index {
-                                            portal_list.set_first_id(index);
-                                            self.redraw(cx);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    MessageAction::None => {}
-                }
-                // Handle other actions here
-                // TODO: handle actions upon an item being clicked.
-                // for (item_id, item) in self.list.items_with_actions(&actions) {
-                //     if item.button(id!(likes)).clicked(&actions) {
-                //         log!("hello {}", item_id);
-                //     }
-                // }
-            }
-        }
+        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -1599,27 +983,292 @@ impl Widget for Timeline {
             self.redraw(cx);
         }
 
-        // Forward events to this Timeline's inner child view.
-        self.view.handle_event(cx, event, scope);
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
+                match action.as_widget_action().cast() {
+                    MessageAction::MessageReply(item_id) => {
+                        let Some(tl) = self.tl_state.as_mut() else {
+                            return;
+                        };
+                        let tl_idx = item_id as usize;
+                        if let Some(tl_item) = tl.items.get(tl_idx) {
+                            if let Some(tl_event_item) = tl_item.as_event() {
+                                // TODO: this is ugly, but i couldnt find a clean way of making the Message
+                                // dispatch the action itself, it would need access to the timeline state or data
+                                cx.widget_action(
+                                    widget_uid,
+                                    &scope.path,
+                                    TimelineAction::MessageReply(tl_event_item.clone()),
+                                );
+                            }
+                        }
+                    }
+                    MessageAction::ReplyPreviewClicked(item_id) => {
+                        let portal_list = self.portal_list(id!(list));
+                        let Some(tl) = self.tl_state.as_mut() else {
+                            return;
+                        };
+                        let tl_idx = item_id as usize;
+
+                        if let Some(tl_item) = tl.items.get(tl_idx) {
+                            if let Some(tl_event_item) = tl_item.as_event() {
+                                if let Some(message) = tl_event_item.content().as_message() {
+                                    if let Some(details) = message.in_reply_to() {
+                                        // Find the replyed message on timeline so we use the id for scrolling portal list
+                                        let message_replied_to_tl_index =
+                                            tl.items.iter().position(|i| {
+                                                i.as_event()
+                                                    .and_then(|e| e.event_id())
+                                                    .map_or(false, |event_id| {
+                                                        details.event_id == event_id
+                                                    })
+                                            });
+                                        if let Some(index) = message_replied_to_tl_index {
+                                            portal_list.set_first_id(index);
+                                            self.redraw(cx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    MessageAction::None => {}
+                }
+                
+                // Handle message reply action
+                if let TimelineAction::MessageReply(message_to_reply) = action.as_widget_action().cast()
+                {
+                    let replying_preview_view = self.view(id!(replying_preview));
+
+                    let (replying_preview_username, _) = set_avatar_and_get_username(
+                        cx,
+                        replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
+                        self.room_id.as_ref().unwrap(),
+                        message_to_reply.sender(),
+                        message_to_reply.sender_profile(),
+                        message_to_reply.event_id(),
+                    );
+
+                    replying_preview_view
+                        .label(id!(reply_preview_content.reply_preview_username))
+                        .set_text(replying_preview_username.as_str());
+
+                    // const MAX_REPLYING_PREVIEW_BODY_LENGTH: usize = 100;
+                    // let body_of_reply_preview =
+                    //     if message.body().chars().count() > MAX_REPLYING_PREVIEW_BODY_LENGTH {
+                    //         let truncated: String = message
+                    //             .body()
+                    //             .chars()
+                    //             .take(MAX_REPLYING_PREVIEW_BODY_LENGTH - 1)
+                    //             .collect();
+                    //         &(truncated + "...")
+                    //     } else {
+                    //         message.body()
+                    //     };
+
+                    // TODO: truncate the reply preview body to 2-3 lines or something
+
+                    populate_preview_of_timeline_item(
+                        &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
+                        message_to_reply.content(),
+                        &replying_preview_username,
+                    );
+
+                    self.set_replying_to(message_to_reply.replied_to_info().ok());
+                    self.redraw(cx);
+                }
+
+                // Handle the action that requests to show the user profile sliding pane.
+                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) =
+                    action.as_widget_action().cast()
+                {
+                    self.show_user_profile(
+                        cx,
+                        &pane,
+                        UserProfilePaneInfo {
+                            profile_and_room_id,
+                            room_name: self.room_name.clone(),
+                            room_member: None,
+                        },
+                    );
+                }
+
+                // Handle a link being clicked.
+                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+                    // A closure that handles both MatrixToUri and MatrixUri links.
+                    let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+                        match id {
+                            MatrixId::Room(room_id) => {
+                                if self.room_id.as_ref() == Some(room_id) {
+                                    return true;
+                                }
+                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                                    log!("TODO: jump to known room {}", room_id);
+                                } else {
+                                    log!("TODO: fetch and display room preview for room {}", room_id);
+                                }
+
+                                true
+                            }
+                            MatrixId::RoomAlias(room_alias) => {
+                                log!("TODO: open room alias {}", room_alias);
+                                // TODO: open a room loading screen that shows a spinner
+                                //       while our background async task calls Client::resolve_room_alias()
+                                //       and then either jumps to the room if known, or fetches and displays
+                                //       a room preview for that room.
+                                true
+                            }
+                            MatrixId::User(user_id) => {
+                                log!("Opening matrix.to user link for {}", user_id);
+
+                                // There is no synchronous way to get the user's full profile info
+                                // including the details of their room membership,
+                                // so we fill in with the details we *do* know currently,
+                                // show the UserProfileSlidingPane, and then after that,
+                                // the UserProfileSlidingPane itself will fire off
+                                // an async request to get the rest of the details.
+                                self.show_user_profile(
+                                    cx,
+                                    &pane,
+                                    UserProfilePaneInfo {
+                                        profile_and_room_id: UserProfileAndRoomId {
+                                            user_profile: UserProfile {
+                                                user_id: user_id.to_owned(),
+                                                username: None,
+                                                avatar_state: AvatarState::Unknown,
+                                            },
+                                            room_id: self.room_id.clone().unwrap(),
+                                        },
+                                        room_name: self.room_name.clone(),
+                                        // TODO: use the extra `via` parameters
+                                        room_member: None,
+                                    },
+                                );
+                                true
+                            }
+                            MatrixId::Event(room_id, event_id) => {
+                                log!("TODO: open event {} in room {}", event_id, room_id);
+                                // TODO: this requires the same first step as the `MatrixId::Room` case above,
+                                //       but then we need to call Room::event_with_context() to get the event
+                                //       and its context (surrounding events ?).
+                                true
+                            }
+                            _ => false,
+                        }
+                    };
+
+                    let mut link_was_handled = false;
+                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                        link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+                    }
+                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                        link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+                    }
+
+                    if !link_was_handled {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                        }
+                    }
+                }
+            }
+
+            // Handle the cancel reply button being clicked.
+            if self.button(id!(cancel_reply_button)).clicked(&actions) {
+                self.set_replying_to(None);
+                self.redraw(cx);
+            }
+
+            // Handle the send message button being clicked.
+            if self.button(id!(send_message_button)).clicked(&actions) {
+                let msg_input_widget = self.text_input(id!(message_input));
+                let entered_text = msg_input_widget.text();
+                msg_input_widget.set_text_and_redraw(cx, "");
+                if !entered_text.is_empty() {
+                    let room_id = self.room_id.clone().unwrap();
+                    log!("Sending message to room {}: {:?}", room_id, entered_text);
+                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
+                        RoomMessageEventContent::text_html(html_text, html_text)
+                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
+                        RoomMessageEventContent::text_plain(plain_text)
+                    } else {
+                        RoomMessageEventContent::text_markdown(entered_text)
+                    };
+                    submit_async_request(MatrixRequest::SendMessage {
+                        room_id,
+                        message,
+                        replied_to: self.replying_to.clone(),
+                        // TODO: support attaching mentions, etc.
+                    });
+
+                    self.set_replying_to(None);
+                }
+            }
+
+            // Handle the jump to bottom button: update its visibility, and handle clicks.
+            {
+                let mut portal_list = self.portal_list(id!(timeline.list));
+                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+                if portal_list.scrolled(&actions) {
+                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
+                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
+                }
+
+                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
+                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
+                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
+                    portal_list.smooth_scroll_to_end(
+                        cx,
+                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
+                        SCROLL_TO_BOTTOM_SPEED,
+                    );
+                    jump_to_bottom_view.set_visible(false);
+                    self.redraw(cx);
+                }
+            }
+
+            // Handle a typing action on the message input box.
+            if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
+                submit_async_request(MatrixRequest::SendTypingNotice {
+                    room_id: self.room_id.clone().unwrap(),
+                    typing: !new_text.is_empty(),
+                });
+            }
+        }
+
+        // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
+        // if the user profile sliding pane is not visible.
+        if event.requires_visibility() && pane.is_currently_shown(cx) {
+            // Forward the event to the user profile sliding pane,
+            // preventing the underlying timeline view from receiving it.
+            pane.handle_event(cx, event, scope);
+        } else {
+            // Forward the event to the inner timeline view.
+            self.view.handle_event(cx, event, scope);
+        }
+
     }
 
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some(tl_state) = self.tl_state.as_mut() else {
-            return DrawStep::done();
-        };
-        let room_id = &tl_state.room_id;
-        let tl_items = &tl_state.items;
-
-        // Determine length of the portal list based on the number of timeline items.
-        let last_item_id = tl_items.len();
-
-        // Start the actual drawing procedure.
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
-            let Some(mut list_ref) = portal_list_ref.borrow_mut() else { continue };
-            let list = list_ref.deref_mut();
+            let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
+                error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
+                continue;
+            };
+            let Some(tl_state) = self.tl_state.as_mut() else {
+                return DrawStep::done();
+            };
+            let room_id = &tl_state.room_id;
+            let tl_items = &tl_state.items;
 
+            // Set the portal list's range based on the number of timeline items.
+            let last_item_id = tl_items.len();
+
+            let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
@@ -1726,29 +1375,328 @@ impl Widget for Timeline {
             }
         }
 
-
-        // Note: we shouldn't need to save any states here, as the `TimelineUpdate::NewItems` event handler
-        //       will be able to query the event ID of the first/top item in the timeline 
-        //       **BEFORE** it actually applies the new items to the timeline's TimelineUiState.
-
-        /*
-        let first_index = portal_list.first_id();
-        let scroll_from_first_id = portal_list.scroll_position();
-
-        // TODO: the PortalList doesn't support this yet, but we should get the scroll positions
-        //       of other nearby item IDs as well, in case the first item ID corresponds to
-        //       a virtual event or an event that doesn't have a valid `event_id()`,
-        //       such that we can jump back to the same relative position in the timeline after an update.
-        let first_event_id = tl_items
-            .get(first_index)
-            .and_then(|item| item.as_event()
-                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-            );
-        tl_state.saved_state.first_event_id = first_event_id;
-        */
-
         DrawStep::done()
     }
+}
+
+
+impl RoomScreen {
+    /// Sets this timeline widget to display the timeline for the given room.
+    fn set_room(&mut self, room_id: OwnedRoomId) {
+        self.hide_timeline(); // TODO: re-organize these methods
+        self.room_id = Some(room_id);
+        self.show_timeline();
+    }
+
+    /// Shows the user profile sliding pane with the given avatar info.
+    fn show_user_profile(
+        &mut self,
+        cx: &mut Cx,
+        pane: &UserProfileSlidingPaneRef,
+        info: UserProfilePaneInfo,
+    ) {
+        pane.set_info(cx, info);
+        pane.show(cx);
+        // Not sure if this redraw is necessary
+        self.redraw(cx);
+    }
+
+
+    fn set_replying_to(&mut self, replying_to: Option<RepliedToInfo>) {
+        self.view(id!(replying_preview))
+            .set_visible(replying_to.is_some());
+        self.replying_to = replying_to;
+    }
+
+    // TODO: remove? this shouldn't be necessary, and should be integrated into save/restore state.
+    pub fn reset_state(&mut self) {
+        self.set_replying_to(None);
+    }
+
+    /// Invoke this when this timeline is being shown,
+    /// e.g., when the user navigates to this timeline.
+    fn show_timeline(&mut self) {
+        let room_id = self.room_id.clone()
+            .expect("BUG: Timeline::show_timeline(): no room_id was set.");
+        assert!( // just an optional sanity check
+            self.tl_state.is_none(),
+            "BUG: tried to show_timeline() into a timeline with existing state. \
+            Did you forget to save the timeline state back to the global map of states?",
+        );
+
+        let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
+            (existing, false)
+        } else {
+            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
+                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let new_tl_state = TimelineUiState {
+                room_id: room_id.clone(),
+                // We assume timelines being viewed for the first time haven't been fully paginated.
+                fully_paginated: false,
+                items: Vector::new(),
+                content_drawn_since_last_update: RangeSet::new(),
+                profile_drawn_since_last_update: RangeSet::new(),
+                update_receiver,
+                first_three_events: Default::default(),
+                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                saved_state: SavedState::default(),
+            };
+            (new_tl_state, true)
+        };
+
+        // log!("Timeline::set_room(): opening room {room_id}
+        //     content_drawn_since_last_update: {:#?}
+        //     profile_drawn_since_last_update: {:#?}",
+        //     tl_state.content_drawn_since_last_update,
+        //     tl_state.profile_drawn_since_last_update,
+        // );
+
+        // kick off a back pagination request for this room
+        if !tl_state.fully_paginated {
+            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                room_id: room_id.clone(),
+                num_events: 50,
+                forwards: false,
+            })
+        } else {
+            // log!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
+        }
+
+        // Even though we specify that room member profiles should be lazy-loaded,
+        // the matrix server still doesn't consistently send them to our client properly.
+        // So we kick off a request to fetch the room members here upon first viewing the room.
+        if first_time_showing_room {
+            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            // TODO: in the future, move the back pagination request to here,
+            //       once back pagination is done dynamically based on timeline scroll position.
+        }
+
+        // Now, restore the visual state of this timeline from its previously-saved state.
+        self.restore_state(&tl_state);
+
+        // As the final step , store the tl_state for this room into the Timeline widget,
+        // such that it can be accessed in future event/draw handlers.
+        self.tl_state = Some(tl_state);
+    }
+
+    /// Invoke this when this timeline is being hidden or no longer being shown,
+    /// e.g., when the user navigates away from this timeline.
+    fn hide_timeline(&mut self) {
+        self.save_state();
+    }
+
+    /// Removes this Timeline's current visual UI state from this Timeline widget
+    /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
+    ///
+    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
+    fn save_state(&mut self) {
+        let Some(mut tl) = self.tl_state.take() else {
+            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
+            return;
+        };
+        let portal_list = self.portal_list(id!(list));
+        let first_index = portal_list.first_id();
+        tl.saved_state.first_index_and_scroll = Some((
+            first_index,
+            portal_list.scroll_position(),
+        ));
+        tl.saved_state.first_event_id = tl.items
+            .get(first_index)
+            .and_then(|item| item
+                .as_event()
+                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+            );
+
+
+        // Store this Timeline's `TimelineUiState` in the global map of states.
+        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
+    }
+
+    /// Restores the previously-saved visual UI state of this timeline.
+    ///
+    /// Note: this accepts a direct reference to the timeline's UI state,
+    /// so this function must not try to re-obtain it by accessing `self.tl_state`.
+    fn restore_state(&mut self, tl_state: &TimelineUiState) {
+        if let Some((first_index, scroll_from_first_id)) = tl_state.saved_state.first_index_and_scroll {
+            self.portal_list(id!(timeline.list))
+                .set_first_id_and_scroll(first_index, scroll_from_first_id);
+        } else {
+            // If the first index is not set, then the timeline has not yet been scrolled by the user,
+            // so we set the portal list to "tail" (track) the bottom of the list.
+            self.portal_list(id!(timeline.list)).set_tail_range(true);
+        }
+
+        // TODO: restore the message input box's draft text and cursor head/tail positions.
+    }
+}
+
+impl RoomScreenRef {
+    /// Sets this `RoomScreen` widget to display the timeline for the given room.
+    // TODO: move this logic into RoomScreen::set_displayed_room() and then make this function a simple wrapper around that.
+    pub fn set_displayed_room(&self, room_name: String, room_id: OwnedRoomId) {
+        let Some(mut room_screen) = self.borrow_mut() else { return };
+        room_screen.room_name = room_name;
+        room_screen.room_id = Some(room_id.clone());
+        room_screen.set_room(room_id);
+        room_screen.label(id!(room_name)).set_text(&room_screen.room_name);
+        room_screen.reset_state();
+    }
+
+    // TODO: expose public wrappers around other RoomScreen methods that need to be called from outside.
+}
+
+#[derive(Clone, DefaultNone, Debug)]
+pub enum TimelineAction {
+    MessageReply(EventTimelineItem),
+    None,
+}
+
+/// A message that is sent from a background async task to a room's timeline view
+/// for the purpose of update the Timeline UI contents or metadata.
+pub enum TimelineUpdate {
+    /// The content of a room's timeline was updated in the background.
+    NewItems {
+        /// The entire list of timeline items (events) for a room.
+        items: Vector<Arc<TimelineItem>>,
+        /// The range of indices in the `items` list that have been changed in this update
+        /// and thus must be removed from any caches of drawn items in the timeline.
+        /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
+        changed_indices: Range<usize>,
+        /// Whether to clear the entire cache of drawn items in the timeline.
+        /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
+        clear_cache: bool,
+    },
+    /// A notice that the start of the timeline has been reached, meaning that
+    /// there is no need to send further backwards pagination requests.
+    TimelineStartReached,
+    /// A notice that the background task doing pagination for this room has become idle,
+    /// meaning that it has completed its recent pagination request(s) and is now waiting
+    /// for more requests, but that the start of the timeline has not yet been reached.
+    PaginationIdle,
+    /// A notice that event details have been fetched from the server,
+    /// including a `result` that indicates whether the request was successful.
+    EventDetailsFetched {
+        event_id: OwnedEventId,
+        result: Result<(), matrix_sdk_ui::timeline::Error>,
+    },
+    /// A notice that the room's members have been fetched from the server,
+    /// though the success or failure of the request is not yet known until the client
+    /// requests the member info via a timeline event's `sender_profile()` method.
+    RoomMembersFetched,
+    /// A notice that one or more requested media items (images, videos, etc.)
+    /// that should be displayed in this timeline have now been fetched and are available.
+    MediaFetched,
+}
+
+/// The global set of all timeline states, one entry per room.
+static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineUiState>> = Mutex::new(BTreeMap::new());
+
+/// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
+struct TimelineUiState {
+    /// The ID of the room that this timeline is for.
+    room_id: OwnedRoomId,
+
+    /// Whether this room's timeline has been fully paginated, which means
+    /// that the oldest (first) event in the timeline is locally synced and available.
+    /// When `true`, further backwards pagination requests will not be sent.
+    ///
+    /// This must be reset to `false` whenever the timeline is fully cleared.
+    fully_paginated: bool,
+
+    /// The list of items (events) in this room's timeline that our client currently knows about.
+    items: Vector<Arc<TimelineItem>>,
+
+    /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
+    /// since the last update and thus do not need to be re-populated on future draw events.
+    ///
+    /// This range is partially cleared on each background update (see below) to ensure that
+    /// items modified during the update are properly redrawn. Thus, it is a conservative
+    /// "cache tracker" that may not include all items that have already been drawn,
+    /// but that's okay because big updates that clear out large parts of the rangeset
+    /// only occur during back pagination, which is both rare and slow in and of itself.
+    /// During typical usage, new events are appended to the end of the timeline,
+    /// meaning that the range of already-drawn items doesn't need to be cleared.
+    ///
+    /// Upon a background update, only item indices greater than or equal to the
+    /// `index_of_first_change` are removed from this set.
+    content_drawn_since_last_update: RangeSet<usize>,
+
+    /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
+    profile_drawn_since_last_update: RangeSet<usize>,
+
+    /// The channel receiver for timeline updates for this room.
+    ///
+    /// Here we use a synchronous (non-async) channel because the receiver runs
+    /// in a sync context and the sender runs in an async context,
+    /// which is okay because a sender on an unbounded channel never needs to block.
+    update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
+
+    /// The cache of media items (images, videos, etc.) that appear in this timeline.
+    ///
+    /// Currently this excludes avatars, as those are shared across multiple rooms.
+    media_cache: MediaCache,
+    
+    /// The index and scroll position of the first three events that have been drawn
+    /// in the most recent draw pass of this timeline's PortalList.
+    ///
+    /// We save three events because one of 3 adjacent timeline items is (practically)
+    /// guaranteed to be a standard real event that has a true unique ID.
+    /// (For example, not day dividers, not read markers, etc.)
+    ///
+    /// If any of the `event_ids` are `Some`, this indicates that the timeline was
+    /// fully cleared and is in the process of being restored via pagination,
+    /// but it has not yet been paginated enough to the point where one of events
+    /// in this list are visible.
+    /// Once the timeline has been sufficiently paginated to display
+    /// one of the events in this list, all `event_ids` should be set to `None`.`
+    first_three_events: FirstDrawnEvents<3>,
+
+    /// The states relevant to the UI display of this timeline that are saved upon
+    /// a `Hide` action and restored upon a `Show` action.
+    saved_state: SavedState,
+}
+
+/// The item index, scroll position, and optional unique IDs of the first `N` events
+/// that have been drawn in the most recent draw pass of a timeline's PortalList.
+#[derive(Debug)]
+struct FirstDrawnEvents<const N: usize> {
+    index_and_scroll: [ItemIndexScroll; N],
+    event_ids: [Option<OwnedEventId>; N],
+}
+impl<const N: usize> Default for FirstDrawnEvents<N> {
+    fn default() -> Self {
+        Self {
+            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
+            event_ids: std::array::from_fn(|_| None),
+        }
+    }
+}
+
+/// 
+#[derive(Clone, Copy, Debug, Default)]
+struct ItemIndexScroll {
+    index: usize,
+    scroll: f64,
+}
+
+/// States that are necessary to save in order to maintain a consistent UI display for a timeline.
+///
+/// These are saved when navigating away from a timeline (upon `Hide`)
+/// and restored when navigating back to a timeline (upon `Show`).
+#[derive(Default, Debug)]
+struct SavedState {
+    /// The index of the first item in the timeline's PortalList that is currently visible,
+    /// and the scroll offset from the top of the list's viewport to the beginning of that item.
+    /// If this is `None`, then the timeline has not yet been scrolled by the user
+    /// and the portal list will be set to "tail" (track) the bottom of the list.
+    first_index_and_scroll: Option<(usize, f64)>,
+    /// The unique ID of the event that corresponds to the first item visible in the timeline.
+    first_event_id: Option<OwnedEventId>,
+
+    /// The content of the message input box.
+    draft: Option<String>,
+    /// The position of the cursor head and tail in the message input box.
+    cursor: (usize, usize),
 }
 
 
