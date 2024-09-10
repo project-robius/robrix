@@ -110,11 +110,7 @@ impl MatchEvent for MainContent {
         for action in actions.iter() {
             match action.as_widget_action().cast() {
                 // Whenever a room is selected, we hide the welcome message and switch the to the rooms screen.
-                RoomListAction::Selected {
-                    room_id,
-                    room_index: _,
-                    room_name,
-                } => {
+                RoomListAction::Selected { room_id, room_index: _, room_name } => {
                     self.panel_status = PanelStatus::DisplayingRooms;
 
                     let displayed_room_name =

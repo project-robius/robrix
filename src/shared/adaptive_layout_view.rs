@@ -753,6 +753,10 @@ impl WidgetNode for AdaptiveLayoutView {
         self.current_walk
     }
 
+    fn area(&self) -> Area {
+        self.area
+    }
+
     fn redraw(&mut self, cx: &mut Cx) {
         self.area.redraw(cx);
         // Redraw all children
@@ -1327,10 +1331,6 @@ impl AdaptiveLayoutView {
         } else {
             self.current_layout.scroll = v;
         }
-    }
-
-    pub fn area(&self) -> Area {
-        self.area
     }
 
     pub fn walk_from_previous_size(&self, walk: Walk) -> Walk {
