@@ -6,11 +6,10 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{
-    events::
-        room::{
-            message::{ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent, TextMessageEventContent}, MediaSource
-        }
-    , matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+    events::room::{
+        message::{ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent, TextMessageEventContent}, MediaSource
+    },
+    matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange,
@@ -853,8 +852,6 @@ struct RoomScreen {
     #[rust] room_name: String,
     /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// Info about the event currently being replied to, if any.
-    #[rust] replying_to: Option<RepliedToInfo>,
 }
 
 impl Widget for RoomScreen {
@@ -1184,7 +1181,6 @@ impl Widget for RoomScreen {
             if self.button(id!(send_message_button)).clicked(&actions) {
                 let msg_input_widget = self.text_input(id!(message_input));
                 let entered_text = msg_input_widget.text();
-                msg_input_widget.set_text_and_redraw(cx, "");
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
@@ -1198,11 +1194,12 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
-                        replied_to: self.replying_to.clone(),
+                        replied_to: self.tl_state.as_ref().and_then(|tl| tl.replying_to.clone()),
                         // TODO: support attaching mentions, etc.
                     });
 
                     self.set_replying_to(None);
+                    msg_input_widget.set_text_and_redraw(cx, "");
                 }
             }
 
@@ -1381,13 +1378,6 @@ impl Widget for RoomScreen {
 
 
 impl RoomScreen {
-    /// Sets this timeline widget to display the timeline for the given room.
-    fn set_room(&mut self, room_id: OwnedRoomId) {
-        self.hide_timeline(); // TODO: re-organize these methods
-        self.room_id = Some(room_id);
-        self.show_timeline();
-    }
-
     /// Shows the user profile sliding pane with the given avatar info.
     fn show_user_profile(
         &mut self,
@@ -1401,16 +1391,12 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
-
     fn set_replying_to(&mut self, replying_to: Option<RepliedToInfo>) {
         self.view(id!(replying_preview))
             .set_visible(replying_to.is_some());
-        self.replying_to = replying_to;
-    }
-
-    // TODO: remove? this shouldn't be necessary, and should be integrated into save/restore state.
-    pub fn reset_state(&mut self) {
-        self.set_replying_to(None);
+        if let Some(tl_state) = self.tl_state.as_mut() {
+            tl_state.replying_to = replying_to;
+        }
     }
 
     /// Invoke this when this timeline is being shown,
@@ -1437,19 +1423,12 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
-                first_three_events: Default::default(),
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                replying_to: None,
                 saved_state: SavedState::default(),
             };
             (new_tl_state, true)
         };
-
-        // log!("Timeline::set_room(): opening room {room_id}
-        //     content_drawn_since_last_update: {:#?}
-        //     profile_drawn_since_last_update: {:#?}",
-        //     tl_state.content_drawn_since_last_update,
-        //     tl_state.profile_drawn_since_last_update,
-        // );
 
         // kick off a back pagination request for this room
         if !tl_state.fully_paginated {
@@ -1485,64 +1464,80 @@ impl RoomScreen {
         self.save_state();
     }
 
-    /// Removes this Timeline's current visual UI state from this Timeline widget
+    /// Removes the current room's visual UI state from this widget
     /// and saves it to the map of `TIMELINE_STATES` such that it can be restored later.
     ///
-    /// Note: after calling this function, the timeline's `tl_state` will be `None`.
+    /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
             error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
             return;
         };
+
         let portal_list = self.portal_list(id!(list));
         let first_index = portal_list.first_id();
-        tl.saved_state.first_index_and_scroll = Some((
-            first_index,
-            portal_list.scroll_position(),
-        ));
-        tl.saved_state.first_event_id = tl.items
-            .get(first_index)
-            .and_then(|item| item
-                .as_event()
-                .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-            );
-
-
+        let message_input_box = self.text_input(id!(message_input));
+        let state = SavedState {
+            first_index_and_scroll: Some((
+                first_index,
+                portal_list.scroll_position(),
+            )),
+            first_event_id: tl.items
+                .get(first_index)
+                .and_then(|item| item
+                    .as_event()
+                    .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
+                ),
+            message_input_state: message_input_box.save_state(),
+            replying_to: tl.replying_to.clone(),
+        };
+        tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
         TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
     }
 
-    /// Restores the previously-saved visual UI state of this timeline.
+    /// Restores the previously-saved visual UI state of this room.
     ///
     /// Note: this accepts a direct reference to the timeline's UI state,
     /// so this function must not try to re-obtain it by accessing `self.tl_state`.
     fn restore_state(&mut self, tl_state: &TimelineUiState) {
-        if let Some((first_index, scroll_from_first_id)) = tl_state.saved_state.first_index_and_scroll {
+        let SavedState {
+            first_index_and_scroll,
+            first_event_id: _,
+            message_input_state,
+            replying_to,
+        } = &tl_state.saved_state;
+        if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
             self.portal_list(id!(timeline.list))
-                .set_first_id_and_scroll(first_index, scroll_from_first_id);
+                .set_first_id_and_scroll(*first_index, *scroll_from_first_id);
         } else {
             // If the first index is not set, then the timeline has not yet been scrolled by the user,
             // so we set the portal list to "tail" (track) the bottom of the list.
             self.portal_list(id!(timeline.list)).set_tail_range(true);
         }
 
-        // TODO: restore the message input box's draft text and cursor head/tail positions.
+        self.text_input(id!(message_input)).restore_state(message_input_state.clone());
+        self.set_replying_to(replying_to.clone());
+
+        // TODO: FIXME: we need to actually re-draw the replying_preview view here.
+    }
+
+    /// Sets this `RoomScreen` widget to display the timeline for the given room.
+    pub fn set_displayed_room(&mut self, room_name: String, room_id: OwnedRoomId) {
+        self.hide_timeline();
+        self.room_name = room_name;
+        self.room_id = Some(room_id);
+        self.show_timeline();
+        self.label(id!(room_name)).set_text(&self.room_name);
     }
 }
 
 impl RoomScreenRef {
-    /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    // TODO: move this logic into RoomScreen::set_displayed_room() and then make this function a simple wrapper around that.
+    /// See [`RoomScreen::set_displayed_room()`].
     pub fn set_displayed_room(&self, room_name: String, room_id: OwnedRoomId) {
         let Some(mut room_screen) = self.borrow_mut() else { return };
-        room_screen.room_name = room_name;
-        room_screen.room_id = Some(room_id.clone());
-        room_screen.set_room(room_id);
-        room_screen.label(id!(room_name)).set_text(&room_screen.room_name);
-        room_screen.reset_state();
+        room_screen.set_displayed_room(room_name, room_id);
     }
-
-    // TODO: expose public wrappers around other RoomScreen methods that need to be called from outside.
 }
 
 #[derive(Clone, DefaultNone, Debug)]
@@ -1635,22 +1630,10 @@ struct TimelineUiState {
     ///
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
-    
-    /// The index and scroll position of the first three events that have been drawn
-    /// in the most recent draw pass of this timeline's PortalList.
-    ///
-    /// We save three events because one of 3 adjacent timeline items is (practically)
-    /// guaranteed to be a standard real event that has a true unique ID.
-    /// (For example, not day dividers, not read markers, etc.)
-    ///
-    /// If any of the `event_ids` are `Some`, this indicates that the timeline was
-    /// fully cleared and is in the process of being restored via pagination,
-    /// but it has not yet been paginated enough to the point where one of events
-    /// in this list are visible.
-    /// Once the timeline has been sufficiently paginated to display
-    /// one of the events in this list, all `event_ids` should be set to `None`.`
-    first_three_events: FirstDrawnEvents<3>,
 
+    /// Info about the event currently being replied to, if any.
+    replying_to: Option<RepliedToInfo>,
+    
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
@@ -1694,9 +1677,9 @@ struct SavedState {
     first_event_id: Option<OwnedEventId>,
 
     /// The content of the message input box.
-    draft: Option<String>,
-    /// The position of the cursor head and tail in the message input box.
-    cursor: (usize, usize),
+    message_input_state: TextInputState,
+    /// The event that the user is currently replying to, if any.
+    replying_to: Option<RepliedToInfo>,
 }
 
 
