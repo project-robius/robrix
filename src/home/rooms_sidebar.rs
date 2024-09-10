@@ -94,7 +94,7 @@ live_design! {
             desktop: {
                 padding: {top: 20., left: 10., right: 10.}
                 flow: Down, spacing: 10
-                width: 280, height: Fill
+                width: 150, height: Fill
                 visibility: Visible
             },
             mobile: {
@@ -134,7 +134,7 @@ live_design! {
                 title = {
                     text: "People"
                     draw_text: {
-                        color: #999999
+                        color: (COLOR_TEXT_IDLE)
                     }
                 }
             }
@@ -142,7 +142,7 @@ live_design! {
                 title = {
                     text: "Channels"
                     draw_text: {
-                        color: COLOR_TEXT_IDLE
+                        color: (COLOR_TEXT_IDLE)
                     }
                 }
             }
@@ -150,7 +150,7 @@ live_design! {
                 title = {
                     text: "Rooms"
                     draw_text: {
-                        color: #999999
+                        color: #666666
                     }
                 }
                 collapse_icon = {
@@ -161,6 +161,25 @@ live_design! {
                 }
             }
         }
-        <RoomsList> {}
+        <RoomsList> {
+
+            list = {
+                room_preview = {
+                    preview = {
+                        latest_message = {
+                            visible: false
+                        }
+                    }
+                }
+                room_preview_selected = {
+                    preview = {
+                        latest_message = {
+                            visible: false
+                        }
+                    }
+                }
+            }
+
+        }
     }
 }
