@@ -67,7 +67,7 @@ live_design! {
 
             header = <View> {
                 width: Fill, height: Fit
-                flow: Down
+                flow: Right
                 spacing: 10.
                 align: {y: 0.5}
 

@@ -94,7 +94,7 @@ live_design! {
             desktop: {
                 padding: {top: 20., left: 10., right: 10.}
                 flow: Down, spacing: 10
-                width: 150, height: Fill
+                width: 250, height: Fill
                 visibility: Visible
             },
             mobile: {
@@ -161,25 +161,6 @@ live_design! {
                 }
             }
         }
-        <RoomsList> {
-
-            list = {
-                room_preview = {
-                    preview = {
-                        latest_message = {
-                            visible: false
-                        }
-                    }
-                }
-                room_preview_selected = {
-                    preview = {
-                        latest_message = {
-                            visible: false
-                        }
-                    }
-                }
-            }
-
-        }
+        <RoomsList> {}
     }
 }
