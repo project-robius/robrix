@@ -986,7 +986,7 @@ impl Widget for RoomScreen {
                 match action.as_widget_action().cast() {
                     MessageAction::MessageReply(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
-                            return;
+                            continue;
                         };
                         let tl_idx = item_id as usize;
                         if let Some(tl_item) = tl.items.get(tl_idx) {
@@ -1004,7 +1004,7 @@ impl Widget for RoomScreen {
                     MessageAction::ReplyPreviewClicked(item_id) => {
                         let portal_list = self.portal_list(id!(list));
                         let Some(tl) = self.tl_state.as_mut() else {
-                            return;
+                            continue;
                         };
                         let tl_idx = item_id as usize;
 
@@ -1034,46 +1034,12 @@ impl Widget for RoomScreen {
                 }
                 
                 // Handle message reply action
-                if let TimelineAction::MessageReply(message_to_reply) = action.as_widget_action().cast()
-                {
-                    let replying_preview_view = self.view(id!(replying_preview));
-
-                    let (replying_preview_username, _) = set_avatar_and_get_username(
-                        cx,
-                        replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
-                        self.room_id.as_ref().unwrap(),
-                        message_to_reply.sender(),
-                        message_to_reply.sender_profile(),
-                        message_to_reply.event_id(),
-                    );
-
-                    replying_preview_view
-                        .label(id!(reply_preview_content.reply_preview_username))
-                        .set_text(replying_preview_username.as_str());
-
-                    // const MAX_REPLYING_PREVIEW_BODY_LENGTH: usize = 100;
-                    // let body_of_reply_preview =
-                    //     if message.body().chars().count() > MAX_REPLYING_PREVIEW_BODY_LENGTH {
-                    //         let truncated: String = message
-                    //             .body()
-                    //             .chars()
-                    //             .take(MAX_REPLYING_PREVIEW_BODY_LENGTH - 1)
-                    //             .collect();
-                    //         &(truncated + "...")
-                    //     } else {
-                    //         message.body()
-                    //     };
-
-                    // TODO: truncate the reply preview body to 2-3 lines or something
-
-                    populate_preview_of_timeline_item(
-                        &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
-                        message_to_reply.content(),
-                        &replying_preview_username,
-                    );
-
-                    self.set_replying_to(message_to_reply.replied_to_info().ok());
-                    self.redraw(cx);
+                if let TimelineAction::MessageReply(message_to_reply_to) = action.as_widget_action().cast() {
+                    if let Ok(replied_to_info) = message_to_reply_to.replied_to_info() {
+                        self.show_replying_to(cx, (message_to_reply_to, replied_to_info));
+                    } else {
+                        error!("Failed to get replied-to info for message {:?}", message_to_reply_to);
+                    }
                 }
 
                 // Handle the action that requests to show the user profile sliding pane.
@@ -1173,7 +1139,7 @@ impl Widget for RoomScreen {
 
             // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(&actions) {
-                self.set_replying_to(None);
+                self.clear_replying_to();
                 self.redraw(cx);
             }
 
@@ -1194,11 +1160,13 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
-                        replied_to: self.tl_state.as_ref().and_then(|tl| tl.replying_to.clone()),
+                        replied_to: self.tl_state.as_mut().and_then(
+                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
+                        ),
                         // TODO: support attaching mentions, etc.
                     });
 
-                    self.set_replying_to(None);
+                    self.clear_replying_to();
                     msg_input_widget.set_text_and_redraw(cx, "");
                 }
             }
@@ -1391,17 +1359,60 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
-    fn set_replying_to(&mut self, replying_to: Option<RepliedToInfo>) {
-        self.view(id!(replying_preview))
-            .set_visible(replying_to.is_some());
-        if let Some(tl_state) = self.tl_state.as_mut() {
-            tl_state.replying_to = replying_to;
+    /// Shows a preview of the given event that the user is currently replying to
+    /// above the message input bar.
+    fn show_replying_to(
+        &mut self,
+        cx: &mut Cx,
+        replying_to: (EventTimelineItem, RepliedToInfo),
+    ) {
+        let replying_preview_view = self.view(id!(replying_preview));
+        let (replying_preview_username, _) = set_avatar_and_get_username(
+            cx,
+            replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
+            self.room_id.as_ref().unwrap(),
+            replying_to.0.sender(),
+            replying_to.0.sender_profile(),
+            replying_to.0.event_id(),
+        );
+
+        replying_preview_view
+            .label(id!(reply_preview_content.reply_preview_username))
+            .set_text(replying_preview_username.as_str());
+
+        populate_preview_of_timeline_item(
+            &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
+            replying_to.0.content(),
+            &replying_preview_username,
+        );
+
+        self.view(id!(replying_preview)).set_visible(true);
+        if let Some(tl) = self.tl_state.as_mut() {
+            tl.replying_to = Some(replying_to);
+        }
+
+        // After the user clicks the reply button next to a message,
+        // and we get to this point where the replying-to preview is shown,
+        // we should automatically focus the keyboard on the message input box
+        // so that the user can immediately start typing their reply
+        // without having to manually click on the message input box.
+        self.text_input(id!(message_input)).set_key_focus(cx);
+        self.redraw(cx);
+    }
+
+
+    /// Clears (and makes invisible) the preview of the message
+    /// that the user is currently replying to.
+    fn clear_replying_to(&mut self) {
+        self.view(id!(replying_preview)).set_visible(false);
+        if let Some(tl) = self.tl_state.as_mut() {
+            tl.replying_to = None;
         }
     }
 
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
-    fn show_timeline(&mut self) {
+    fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
         assert!( // just an optional sanity check
@@ -1410,7 +1421,7 @@ impl RoomScreen {
             Did you forget to save the timeline state back to the global map of states?",
         );
 
-        let (tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
+        let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
             let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
@@ -1451,7 +1462,7 @@ impl RoomScreen {
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
-        self.restore_state(&tl_state);
+        self.restore_state(cx, &mut tl_state);
 
         // As the final step , store the tl_state for this room into the Timeline widget,
         // such that it can be accessed in future event/draw handlers.
@@ -1500,13 +1511,13 @@ impl RoomScreen {
     ///
     /// Note: this accepts a direct reference to the timeline's UI state,
     /// so this function must not try to re-obtain it by accessing `self.tl_state`.
-    fn restore_state(&mut self, tl_state: &TimelineUiState) {
+    fn restore_state(&mut self, cx: &mut Cx, tl_state: &mut TimelineUiState) {
         let SavedState {
             first_index_and_scroll,
             first_event_id: _,
             message_input_state,
             replying_to,
-        } = &tl_state.saved_state;
+        } = &mut tl_state.saved_state;
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
             self.portal_list(id!(timeline.list))
                 .set_first_id_and_scroll(*first_index, *scroll_from_first_id);
@@ -1516,27 +1527,32 @@ impl RoomScreen {
             self.portal_list(id!(timeline.list)).set_tail_range(true);
         }
 
-        self.text_input(id!(message_input)).restore_state(message_input_state.clone());
-        self.set_replying_to(replying_to.clone());
+        let saved_message_input_state = std::mem::take(message_input_state);
+        self.text_input(id!(message_input)).restore_state(saved_message_input_state);
+        if let Some(replying_to_event) = replying_to.take() {
+            self.show_replying_to(cx, replying_to_event);
+        } else {
+            self.clear_replying_to();
+        }
 
         // TODO: FIXME: we need to actually re-draw the replying_preview view here.
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(&mut self, room_name: String, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(&mut self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
         self.hide_timeline();
         self.room_name = room_name;
         self.room_id = Some(room_id);
-        self.show_timeline();
+        self.show_timeline(cx);
         self.label(id!(room_name)).set_text(&self.room_name);
     }
 }
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room(&self, room_name: String, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(&self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
         let Some(mut room_screen) = self.borrow_mut() else { return };
-        room_screen.set_displayed_room(room_name, room_id);
+        room_screen.set_displayed_room(cx, room_name, room_id);
     }
 }
 
@@ -1632,7 +1648,7 @@ struct TimelineUiState {
     media_cache: MediaCache,
 
     /// Info about the event currently being replied to, if any.
-    replying_to: Option<RepliedToInfo>,
+    replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
     
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
@@ -1679,7 +1695,7 @@ struct SavedState {
     /// The content of the message input box.
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
-    replying_to: Option<RepliedToInfo>,
+    replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
 }
 
 
@@ -2367,6 +2383,7 @@ fn set_timestamp(
 ///
 /// If the sender profile is not ready, this function will submit an async request
 /// to fetch the sender profile from the server, but only if the event ID is `Some`.
+///
 /// This function will always choose a nice, displayable username and avatar.
 ///
 /// The specific behavior is as follows:
