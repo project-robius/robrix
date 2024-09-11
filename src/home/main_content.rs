@@ -118,7 +118,7 @@ impl MatchEvent for MainContent {
                     // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
                     self.view
                         .room_screen(id!(room_screen))
-                        .set_displayed_room(displayed_room_name, room_id);
+                        .set_displayed_room(cx, displayed_room_name, room_id);
                     self.redraw(cx);
                 }
                 _ => (),
