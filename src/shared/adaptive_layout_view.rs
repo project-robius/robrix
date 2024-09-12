@@ -980,6 +980,7 @@ impl Widget for AdaptiveLayoutView {
                             cx,
                             TextureFormat::RenderBGRAu8 {
                                 size: TextureSize::Auto,
+                                initial: true, // [Kevin]: not sure if correct
                             },
                         );
                         texture_cache.pass.add_color_texture(

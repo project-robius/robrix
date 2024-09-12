@@ -60,12 +60,12 @@ live_design! {
 
         a = {
             padding: {left: 1.0, right: 1.5},
-            draw_text: {
-                text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE), height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING), top_drop: 1.2, },
-                color: #00f,
-                color_pressed: #f00,
-                color_hover: #0f0,
-            }
+            // draw_text: {
+            //     text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE), height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING), top_drop: 1.2, },
+            //     color: #00f,
+            //     color_pressed: #f00,
+            //     color_hover: #0f0,
+            // }
         }
 
         body: "[<i> HTML message placeholder</i>]",
