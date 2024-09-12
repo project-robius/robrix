@@ -4,4 +4,5 @@
 .DS_Store
 
 ## Temp hack to support login on mobile platforms.
-login.toml
+
+.login.toml
