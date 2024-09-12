@@ -84,7 +84,7 @@ live_design! {
     HtmlOrPlaintext = {{HtmlOrPlaintext}} {
         width: Fill, height: Fit, // see above comment
         flow: Overlay
-        
+
         plaintext_view = <View> {
             visible: true,
             width: Fill, height: Fit, // see above comment
@@ -98,7 +98,7 @@ live_design! {
                 text: "[plaintext message placeholder]",
             }
         }
-        
+
         html_view = <View> {
             visible: false,
             width: Fill, height: Fit, // see above comment
@@ -129,7 +129,7 @@ impl Widget for MatrixHtmlSpan {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.ll.handle_event(cx, event, scope);
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.ll.draw_walk(cx, scope, walk)
     }

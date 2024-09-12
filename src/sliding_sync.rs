@@ -34,7 +34,7 @@ struct Cli {
     /// The user name that should be used for the login.
     #[clap(value_parser)]
     username: String,
-    
+
     /// The password that should be used for the login.
     #[clap(value_parser)]
     password: String,
@@ -200,7 +200,7 @@ pub enum MatrixRequest {
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
     REQUEST_SENDER.get()
-        .unwrap() // this is initialized 
+        .unwrap() // this is initialized
         .send(req)
         .expect("BUG: async worker task receiver has died!");
 }
@@ -212,7 +212,7 @@ pub fn submit_async_request(req: MatrixRequest) {
 /// and then executes them within an async runtime context.
 async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<()> {
     log!("Started async_worker task.");
-    
+
     while let Some(request) = receiver.recv().await {
         match request {
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, forwards } => {
@@ -441,7 +441,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     });
                 });
             }
-        
+
             MatrixRequest::SendTypingNotice { room_id, typing } => {
                 let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
                     error!("BUG: client/room not found for typing notice request {room_id}");
@@ -481,7 +481,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let media = client.media();
-                
+
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
@@ -540,7 +540,7 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
-    
+
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
@@ -608,7 +608,7 @@ struct RoomInfo {
     /// When a new room is joined, an unbounded crossbeam channel will be created
     /// and its sender given to a background task that enqueues timeline updates
     /// as vector diffs when they are received from the server.
-    /// 
+    ///
     /// The UI thread can take ownership of these items  receiver in order for a specific
     /// timeline view (currently room_sccren) to receive and display updates to this room's timeline.
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
@@ -704,7 +704,7 @@ async fn async_main_loop() -> Result<()> {
             None
         }
     });
-    
+
     let Some(cli) = cli else {
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: String::from("Error: missing username and password in 'login.toml' file. \
@@ -931,12 +931,12 @@ async fn async_main_loop() -> Result<()> {
             }
 
             let room_name_str = room_name.ok().map(|n| n.to_string());
-            
+
             // Handle an entirely new room that we haven't seen before.
             if !room_exists {
                 // Indicate that we'll fetch the avatar for this new room later.
                 room_avatar_changed = true;
-                
+
                 let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
                 let tl_arc = Arc::new(timeline);
 
@@ -1078,7 +1078,7 @@ async fn timeline_subscriber_handler(
                 changed_indices,
                 clear_cache,
             }).expect("Error: timeline update sender couldn't send update with new items!");
-            
+
             // Send a Makepad-level signal to update this room's timeline UI view.
             SignalToUI::set_ui_signal();
         }

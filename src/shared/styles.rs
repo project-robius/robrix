@@ -70,4 +70,10 @@ live_design! {
     COLOR_SELECTED_PRIMARY_DARKER = #106fcc
 
     COLOR_AVATAR_BG = #52b2ac
+    COLOR_AVATAR_BG_IDLE = #d8d8d8
+
+    COLOR_TEXT_IDLE = #d8d8d8
+    COLOR_TEXT = #1C274C
+
+    COLOR_TEXT_INPUT_IDLE = #d8d8d8
 }
