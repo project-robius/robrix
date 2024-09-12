@@ -101,7 +101,7 @@ live_design! {
                     draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
                     draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
                     draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
+                    // a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
@@ -140,7 +140,7 @@ live_design! {
                     draw_bold:        { color: (COLOR_PRIMARY) },
                     draw_bold_italic: { color: (COLOR_PRIMARY) },
                     draw_fixed:       { color: (MESSAGE_TEXT_COLOR) },
-                    a = { draw_text:  { color: (COLOR_PRIMARY) }, },
+                    // a = { draw_text:  { color: (COLOR_PRIMARY) }, },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
