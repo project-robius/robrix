@@ -9,7 +9,7 @@ use matrix_sdk::{ruma::{
     events::room::{
         message::{ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent, TextMessageEventContent}, MediaSource
     },
-    matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+    matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange,
@@ -620,7 +620,7 @@ live_design! {
                 }
             }
         }
-        
+
     }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
@@ -634,7 +634,7 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-        
+
         tab_title = <View> {
             width: Fit, height: Fit,
             align: {x: 0.0, y: 0.5},
@@ -661,7 +661,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
+
             <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -679,7 +679,7 @@ live_design! {
                     height: Fit
                     flow: Down
                     padding: 0.0
-            
+
                     // Displays a "Replying to" label and a cancel button
                     // above the preview of the message being replied to.
                     <View> {
@@ -688,7 +688,7 @@ live_design! {
                         height: Fit
                         flow: Right
                         align: {y: 0.5}
-            
+
                         <Label> {
                             draw_text: {
                                 text_style: <TEXT_SUB> {},
@@ -696,14 +696,14 @@ live_design! {
                             }
                             text: "Replying to:"
                         }
-            
+
                         filler = <View> {width: Fill, height: Fill}
-            
+
                         // TODO: Fix style
                         cancel_reply_button = <IconButton> {
                             width: Fit,
                             height: Fit,
-            
+
                             draw_icon: {
                                 svg_file: (ICO_CLOSE),
                                 fn get_color(self) -> vec4 {
@@ -713,7 +713,7 @@ live_design! {
                             icon_walk: {width: 12, height: 12}
                         }
                     }
-            
+
                     reply_preview_content = <ReplyPreviewContent> { }
                 }
 
@@ -736,15 +736,15 @@ live_design! {
                             instance border_width: 0.8
                             instance border_color: #D0D5DD
                             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-                
+
                             fn get_color(self) -> vec4 {
                                 return self.color
                             }
-                
+
                             fn get_border_color(self) -> vec4 {
                                 return self.border_color
                             }
-                
+
                             fn pixel(self) -> vec4 {
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                                 sdf.box(
@@ -885,13 +885,13 @@ impl Widget for RoomScreen {
 
                             // TODO: here we need to re-build the timeline via TimelineBuilder
                             //       and set the TimelineFocus to one of the above-saved event IDs.
-                            
-                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode 
+
+                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode
                             //       can be changed after creation, but I do not see any methods to actually do that.
                             //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
                             //
                             //       As such, we probably need to create a new async request enum variant
-                            //       that tells the background async task to build a new timeline 
+                            //       that tells the background async task to build a new timeline
                             //       (either in live mode or focused mode around one or more events)
                             //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                         }
@@ -968,6 +968,12 @@ impl Widget for RoomScreen {
                         // Here, to be most efficient, we could redraw only the media items in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
+
+                    TimelineUpdate::TypingUsers { users } => {
+                        let first = users.first().unwrap();
+                        log!("Timeline::handle_event(): typing users from first users:  {}", first);
+                        log!("Timeline::handle_event(): typing users from  {}", tl.room_id);
+                    }
                 }
             }
 
@@ -1032,7 +1038,7 @@ impl Widget for RoomScreen {
                     }
                     MessageAction::None => {}
                 }
-                
+
                 // Handle message reply action
                 if let TimelineAction::MessageReply(message_to_reply_to) = action.as_widget_action().cast() {
                     if let Ok(replied_to_info) = message_to_reply_to.replied_to_info() {
@@ -1441,6 +1447,12 @@ impl RoomScreen {
             (new_tl_state, true)
         };
 
+        submit_async_request(
+            MatrixRequest::SubTypingNotice {
+                room_id: room_id.clone(),
+            }
+        );
+
         // kick off a back pagination request for this room
         if !tl_state.fully_paginated {
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
@@ -1597,6 +1609,10 @@ pub enum TimelineUpdate {
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
+    /// A notice that the room's member is typing
+    TypingUsers{
+        users: Vec<OwnedUserId>,
+    },
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -1649,7 +1665,7 @@ struct TimelineUiState {
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
-    
+
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
@@ -1671,7 +1687,7 @@ impl<const N: usize> Default for FirstDrawnEvents<N> {
     }
 }
 
-/// 
+///
 #[derive(Clone, Copy, Debug, Default)]
 struct ItemIndexScroll {
     index: usize,
@@ -1746,7 +1762,7 @@ fn find_new_item_matching_current_item(
             // some may be zeroed-out, so we need to account for that possibility by only
             // using events that have a real non-zero area
             if let Some(pos_offset) = portal_list.position_of_item(cx, *idx_curr) {
-                log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");  
+                log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");
                 return Some((*idx_curr, idx_new, pos_offset, event_id.to_owned()));
             }
         }
@@ -2407,7 +2423,7 @@ fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
     room_id: &RoomId,
-    sender_user_id: &UserId, 
+    sender_user_id: &UserId,
     sender_profile: &TimelineDetails<Profile>,
     event_id: Option<&EventId>,
 ) -> (String, bool) {

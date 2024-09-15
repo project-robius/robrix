@@ -194,7 +194,13 @@ pub enum MatrixRequest {
     SendTypingNotice {
         room_id: OwnedRoomId,
         typing: bool,
-    }
+    },
+    /// Subscribe a notice to the given room that the current user is or is not typing.
+    ///
+    /// This request does not return a response or notify the UI thread
+    SubTypingNotice {
+        room_id: OwnedRoomId,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -452,6 +458,34 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         error!("Failed to send typing notice to room {room_id}: {e:?}");
                     }
                 });
+            }
+
+            MatrixRequest::SubTypingNotice { room_id } => {
+                log!("Submited async request SubTypingNotice");
+                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                    error!("BUG: client/room not found for typing notice request {room_id}");
+                    continue;
+                };
+
+                let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    log!("Skipping pagination request for not-yet-known room {room_id}");
+                    continue;
+                };
+
+                let sender = room_info.timeline_update_sender.clone();
+
+                let _sub_typing_users = Handle::current().spawn(async move {
+                    log!("spawned submit async request for SubTypingNotice");
+                    let (_drop_guard, mut recv) = room.subscribe_to_typing_notifications();
+                    while let Ok(typing_users) = recv.recv().await {
+                        log!("recved submit async request for SubTypingNotice");
+                        sender.send(TimelineUpdate::TypingUsers {
+                            users: typing_users,
+                        }).expect("Error: timeline update sender couldn't send update with sub typing users!");
+                    }
+                });
+
             }
 
             MatrixRequest::ResolveRoomAlias(room_alias) => {
@@ -1031,7 +1065,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
                 .collect::<BTreeSet<_>>();
-            
+
             // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
             let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
             let has_changed = *ignored_users_old != ignored_users_new;
