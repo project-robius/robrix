@@ -1083,6 +1083,12 @@ impl Widget for RoomScreen {
                 if portal_list.scrolled(&actions) {
                     // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
                     jump_to_bottom_view.set_visible(!portal_list.is_at_end());
+                    if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
+                        if let Some(mut tl_state) = timeline.tl_state.borrow_mut() {
+                            tl_state.unread_messages = !portal_list.is_at_end();
+                        }
+                    }
+                    self.view(id!(unread_message_badge)).set_visible(!portal_list.is_at_end());
                 }
 
                 const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
