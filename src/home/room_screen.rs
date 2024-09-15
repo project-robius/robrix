@@ -1038,7 +1038,7 @@ impl Widget for RoomScreen {
                                 self.unread_message_count += items.len();
                                 self.view(id!(jump_to_bottom_view)).set_visible(true);
                                 let label_text  = if self.unread_message_count > 0 {
-                                    format!("{} new messagers", self.unread_message_count)
+                                    format!("{} new messages", self.unread_message_count)
                                 } else {
                                     "".to_string()
                                 };
