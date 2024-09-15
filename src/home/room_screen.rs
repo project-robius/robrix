@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::{BorrowMut, Cow}, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -622,7 +622,7 @@ live_design! {
             }
         },
 
-            // Badge overlay for unread message count
+            // Badge overlay for unread messages
             unread_message_badge = <View> {
             width: 20, height: 20,
             align: {x: 1.0, y: -1.0}, // Position at the top-right of the button
@@ -637,13 +637,6 @@ live_design! {
                     return sdf.result;
                 }
             },
-
-            // Text inside the badge for unread message count
-            label = <Label> {
-                text: "0", // Default text, will be updated dynamically
-                draw_text: {color: #FFFFFF}, // White text color
-                align: {x: 0.5, y: 0.5}, // Center the text within the badge
-            }
         }
     }
 
@@ -876,8 +869,6 @@ struct RoomScreen {
     room_name: String,
     #[rust(None)]
     replying_to: Option<RepliedToInfo>,
-    #[rust]
-    unread_message_count: usize,
 }
 
 impl Widget for RoomScreen {
@@ -1031,26 +1022,26 @@ impl Widget for RoomScreen {
                 }
 
                 if let Some(timeline_update) = action.downcast_ref::<TimelineUpdate>() {
-                    match timeline_update {
-                        TimelineUpdate::NewItems {items, ..} => {
-                            let portal_list = self.portal_list(id!(timeline.list));
-                            if !portal_list.is_at_end() {
-                                self.unread_message_count += items.len();
-                                self.view(id!(jump_to_bottom_view)).set_visible(true);
-                                let label_text  = if self.unread_message_count > 0 {
-                                    format!("{} new messages", self.unread_message_count)
-                                } else {
-                                    "".to_string()
-                                };
-                                self.label(id!(unread_message_badge.label)).set_text_and_redraw(cx, &label_text);
-                            } else {
-                                self.unread_message_count = 0;
-                                self.view(id!(jump_to_bottom_view)).set_visible(false);
+                    if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
+                        if let Some(mut tl_state) = timeline.tl_state.borrow_mut() {
+                            match timeline_update {
+                                TimelineUpdate::NewItems { items, ..} => {
+                                    let portal_list = self.portal_list(id!(timeline.list));
+                                    if !portal_list.is_at_end() {
+                                        tl_state.unread_messages = true;
+                                        self.view(id!(jump_to_bottom_button)).set_visible(true);
+                                        self.view(id!(unread_message_badge)).set_visible(true);
+                                    } else {
+                                        tl_state.unread_messages = false;
+                                        self.view(id!(jump_to_bottom_button)).set_visible(false);
+                                        self.view(id!(unread_message_badge)).set_visible(false);
+                                    }
+                                },
+                                _ => {},
                             }
-                        },
-                        _ => {},
+                        }
                     }
-                }
+                }                        
             }
 
             // Handle the cancel reply button being clicked.
@@ -1103,7 +1094,6 @@ impl Widget for RoomScreen {
                         SCROLL_TO_BOTTOM_SPEED,
                     );
                     jump_to_bottom_view.set_visible(false);
-                    self.unread_message_count = 0;
                     self.redraw(cx);
                 }
             }
@@ -1275,6 +1265,9 @@ struct TimelineUiState {
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
+
+    /// The number of unread messages in this room's timeline.
+    unread_messages: bool,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
@@ -1348,6 +1341,7 @@ impl Timeline {
                 first_three_events: Default::default(),
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 saved_state: SavedState::default(),
+                unread_messages: false,
             };
             (new_tl_state, true)
         };
