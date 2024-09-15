@@ -1094,6 +1094,12 @@ impl Widget for RoomScreen {
                         SCROLL_TO_BOTTOM_SPEED,
                     );
                     jump_to_bottom_view.set_visible(false);
+                    if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
+                        if let Some(mut tl_state) = timeline.tl_state.borrow_mut() {
+                            tl_state.unread_messages = false;
+                        }
+                    }
+                    self.view(id!(unread_message_badge)).set_visible(false);
                     self.redraw(cx);
                 }
             }
