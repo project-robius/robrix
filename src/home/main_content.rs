@@ -49,6 +49,7 @@ impl Widget for MainContent {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // log!("Redrawing MainContent");
         let app_state = scope.data.get::<AppState>().unwrap();
 
         if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
@@ -58,7 +59,6 @@ impl Widget for MainContent {
             self.view
                 .room_screen(id!(room_screen))
                 .set_displayed_room(cx, displayed_room_name, room.id.clone());
-            self.redraw(cx);
 
             self.view.view(id!(welcome)).set_visible(false);
             self.view.view(id!(rooms)).set_visible(true);
