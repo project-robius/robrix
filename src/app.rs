@@ -162,6 +162,7 @@ impl MatchEvent for App {
                         &Scope::default().path,
                         StackNavigationAction::NavigateTo(live_id!(main_content_view))
                     );
+                    self.ui.redraw(cx);
                 }
                 _ => (),
             }
