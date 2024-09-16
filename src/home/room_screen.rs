@@ -1540,6 +1540,13 @@ impl RoomScreen {
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     pub fn set_displayed_room(&mut self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
+        // If the room is already being displayed, then do nothing.
+        if let Some(current_room_id) = &self.room_id {
+            if current_room_id.eq(&room_id) {
+                return;
+            }
+        }
+
         self.hide_timeline();
         self.room_name = room_name;
         self.room_id = Some(room_id);
