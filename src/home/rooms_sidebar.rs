@@ -7,7 +7,7 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
-    import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
+    import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
 
@@ -88,21 +88,7 @@ live_design! {
         }
     }
 
-    RoomsSideBar = <AdaptiveLayoutView> {
-        composition: {
-            desktop: {
-                padding: {top: 20., left: 10., right: 10.}
-                flow: Down, spacing: 10
-                width: 280, height: Fill
-                visibility: Visible
-            },
-            mobile: {
-                padding: {top: 17., left: 17., right: 17.}
-                flow: Down, spacing: 7
-                width: Fill, height: Fill
-                visibility: Visible
-            }
-        }
+    RoomsView = <View> {
         show_bg: true,
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
@@ -152,5 +138,18 @@ live_design! {
             }
         }
         <RoomsList> {}
+    }
+
+    RoomsSideBar = <AdaptiveView> {
+        Desktop = <RoomsView> {
+            padding: {top: 20., left: 10., right: 10.}
+            flow: Down, spacing: 10
+            width: 280, height: Fill
+        },
+        Mobile = <RoomsView> {
+            padding: {top: 17., left: 17., right: 17.}
+            flow: Down, spacing: 7
+            width: Fill, height: Fill
+        }        
     }
 }

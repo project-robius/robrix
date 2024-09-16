@@ -41,7 +41,7 @@ live_design! {
 
         input = <TextInput> {
             width: Fill,
-            height: Fit,
+            height: 30.,
 
             empty_message: "Search"
 

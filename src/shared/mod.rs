@@ -1,6 +1,6 @@
 use makepad_widgets::Cx;
 
-pub mod adaptive_layout_view;
+pub mod adaptive_view;
 pub mod avatar;
 pub mod clickable_view;
 pub mod helpers;
@@ -18,5 +18,5 @@ pub fn live_design(cx: &mut Cx) {
     avatar::live_design(cx);
     text_or_image::live_design(cx);
     html_or_plaintext::live_design(cx);
-    adaptive_layout_view::live_design(cx);
+    adaptive_view::live_design(cx);
 }

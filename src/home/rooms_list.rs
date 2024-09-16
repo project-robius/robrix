@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
-use crate::shared::adaptive_layout_view::AdaptiveLayoutViewAction;
+
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
 use crate::shared::html_or_plaintext::HtmlOrPlaintextWidgetRefExt;
@@ -363,12 +363,6 @@ impl Widget for RoomsList {
                             room_name: room_details.room_name.clone(),
                         }
                     );
-
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        AdaptiveLayoutViewAction::NavigateTo(live_id!(main_content))
-                    );
                 }
             }
         }
@@ -466,6 +460,7 @@ impl Widget for RoomsList {
 // This is a workaround for detecting if we should show the room previews as selected, which we don't want to do for mobile.
 // TODO: find a centralized way to fetch the current screen width or layout mode.
 impl MatchEvent for RoomsList {
+    // TODO: we can do this differently with an adaptive view.
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
         for action in actions {
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
