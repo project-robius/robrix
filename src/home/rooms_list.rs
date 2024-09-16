@@ -33,15 +33,15 @@ live_design! {
             instance border_color: #0000
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
             instance radius: 4.0
-            
+
             fn get_color(self) -> vec4 {
                 return self.color
             }
-            
+
             fn get_border_color(self) -> vec4 {
                 return self.border_color
             }
-            
+
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                 sdf.box(
@@ -101,7 +101,7 @@ live_design! {
                     draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
                     draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
                     draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
+                    // a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
@@ -140,7 +140,7 @@ live_design! {
                     draw_bold:        { color: (COLOR_PRIMARY) },
                     draw_bold_italic: { color: (COLOR_PRIMARY) },
                     draw_fixed:       { color: (MESSAGE_TEXT_COLOR) },
-                    a = { draw_text:  { color: (COLOR_PRIMARY) }, },
+                    // a = { draw_text:  { color: (COLOR_PRIMARY) }, },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
@@ -383,7 +383,7 @@ impl Widget for RoomsList {
             // We only care about drawing the portal list.
             let portal_list_ref = list_item.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
-        
+
             // Add 1 again for the status label at the bottom.
             list.set_item_range(cx, 0, last_item_id + 1);
 
@@ -421,16 +421,16 @@ impl Widget for RoomsList {
                     let item = list.item(cx, item_id, item_template).unwrap();
                     let index_of_room = item_id as usize;
                     let room_info = &self.all_rooms[index_of_room];
-    
+
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
-    
+
                     if let Some(ref name) = room_info.room_name {
                         item.label(id!(preview.room_name)).set_text(name);
                     }
                     if let Some((ts, msg)) = room_info.latest.as_ref() {
                         if let Some(human_readable_date) = relative_format(ts) {
                             item.label(id!(timestamp)).set_text(&human_readable_date);
-                        }                        
+                        }
                         item.html_or_plaintext(id!(preview.latest_message)).show_html(msg);
                     }
                     match room_info.avatar {
@@ -466,7 +466,7 @@ impl MatchEvent for RoomsList {
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
                 if self.screen_width != ce.new_geom.inner_size.x {
                     self.screen_width = ce.new_geom.inner_size.x;
-                    cx.redraw_all();    
+                    cx.redraw_all();
                 }
             }
         }

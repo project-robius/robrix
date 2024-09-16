@@ -23,7 +23,8 @@ live_design! {
                 svg_file: (ICON_COLLAPSE),
                 uniform rotation_angle: -90.0,
                 fn get_color(self) -> vec4 {
-                    return #666;
+                    // return #666;
+                    return (COLOR_TEXT_IDLE);
                 }
 
                 // Support rotation of the icon
@@ -81,7 +82,7 @@ live_design! {
                 draw_icon: {
                     svg_file: (ICON_ADD),
                     fn get_color(self) -> vec4 {
-                        return #1C274C;
+                        return (COLOR_TEXT_IDLE);
                     }
                 }
             }
@@ -118,16 +119,25 @@ live_design! {
             <CollapsableTitle> {
                 title = {
                     text: "People"
+                    draw_text: {
+                        color: (COLOR_TEXT_IDLE)
+                    }
                 }
             }
             <CollapsableTitle> {
                 title = {
                     text: "Channels"
+                    draw_text: {
+                        color: (COLOR_TEXT_IDLE)
+                    }
                 }
             }
             <CollapsableTitle> {
                 title = {
                     text: "Rooms"
+                    draw_text: {
+                        color: #666666
+                    }
                 }
                 collapse_icon = {
                     draw_icon: { rotation_angle: 0. }

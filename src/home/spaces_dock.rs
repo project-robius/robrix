@@ -26,7 +26,7 @@ live_design! {
             show_bg: true,
 
             draw_bg: {
-                instance background_color: (COLOR_AVATAR_BG),
+                instance background_color: (COLOR_AVATAR_BG_IDLE),
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                     let c = self.rect_size * 0.5;
@@ -64,6 +64,7 @@ live_design! {
             border_color: (COLOR_SELECTED_PRIMARY)
             border_width: 1.5
         }
+
         align: {x: 0.5, y: 0.5}
         <Icon> {
             draw_icon: {
@@ -93,7 +94,8 @@ live_design! {
             draw_icon: {
                 svg_file: (ICON_SETTINGS),
                 fn get_color(self) -> vec4 {
-                    return #x566287; // grayed-out #1C274C until enabled
+                    return (COLOR_TEXT_IDLE);
+                    // return #x566287; // grayed-out #1C274C until enabled
                 }
             }
             icon_walk: {width: 25, height: Fit}
