@@ -15,8 +15,6 @@ live_design! {
     import crate::home::room_screen::RoomScreen;
     import crate::home::welcome_screen::WelcomeScreen;
 
-    ICON_NAV_BACK = dep("crate://self/resources/icons/navigate_back.svg")
-
     MainContent = {{MainContent}} {
         width: Fill, height: Fill
         flow: Down,
