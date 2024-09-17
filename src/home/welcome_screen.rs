@@ -49,12 +49,12 @@ live_design! {
                 }
                 a = {
                     padding: {left: 8., right: 8., top: 4., bottom: 5.},
-                    draw_text: {
-                        text_style: <THEME_FONT_BOLD> {top_drop: 1.2, font_size: 11. },
-                        color: #f,
-                        color_pressed: #f00,
-                        color_hover: #0f0,
-                    }
+                    // draw_text: {
+                    //     text_style: <THEME_FONT_BOLD> {top_drop: 1.2, font_size: 11. },
+                    //     color: #f,
+                    //     color_pressed: #f00,
+                    //     color_hover: #0f0,
+                    // }
                     draw_bg: {
                         instance border_width: 0.0
                         instance border_color: #0000

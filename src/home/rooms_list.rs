@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
+use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use crate::shared::adaptive_layout_view::AdaptiveLayoutViewAction;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::shared::clickable_view::*;
@@ -101,7 +101,7 @@ live_design! {
                     draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
                     draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
                     draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
+                    // a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
@@ -140,7 +140,7 @@ live_design! {
                     draw_bold:        { color: (COLOR_PRIMARY) },
                     draw_bold_italic: { color: (COLOR_PRIMARY) },
                     draw_fixed:       { color: (MESSAGE_TEXT_COLOR) },
-                    a = { draw_text:  { color: (COLOR_PRIMARY) }, },
+                    // a = { draw_text:  { color: (COLOR_PRIMARY) }, },
                 } }
                 plaintext_view = { pt_label = {
                     draw_text: {
@@ -256,6 +256,10 @@ pub struct RoomPreviewEntry {
     pub room_id: Option<OwnedRoomId>,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The main alias for this room, if known.
+    pub cannonical_alias: Option<OwnedRoomAliasId>,
+    /// A list of alternative aliases for this room.
+    pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
@@ -293,13 +297,20 @@ pub struct RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+
         // Process all pending updates to the list of all rooms, and then redraw it.
         {
             let mut num_updates: usize = 0;
+
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;
+
+                let search_value = *(&scope.data.get::<String>());
+                log!("Search value: {:?}", search_value);
+
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        // If the search bar has a value, filter the rooms by the search value.
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
@@ -372,7 +383,6 @@ impl Widget for RoomsList {
                 }
             }
         }
-
         self.match_event(cx, event);
     }
 

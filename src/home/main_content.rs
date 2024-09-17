@@ -59,7 +59,8 @@ live_design! {
             }
         }
 
-        <SearchBar> {}
+        // maybe we can move the search bar to the rooms list widget top?
+        // <SearchBar> {}
 
         welcome = <WelcomeScreen> {}
         rooms = <View> {
