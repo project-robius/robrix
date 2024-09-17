@@ -550,6 +550,8 @@ live_design! {
         }
     }
 
+
+
     // The top space is used to display a loading animation while the room is being paginated.
     TopSpace = <View> {
         visible: false,
@@ -635,6 +637,7 @@ live_design! {
         }
         flow: Down, spacing: 0.0
 
+
         tab_title = <View> {
             width: Fit, height: Fit,
             align: {x: 0.0, y: 0.5},
@@ -654,6 +657,7 @@ live_design! {
             }
         }
 
+
         <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -670,6 +674,9 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
+
+
+
 
                 // Below that, display an optional preview of the message that the user
                 // is currently drafting a replied to.
@@ -715,6 +722,27 @@ live_design! {
                     }
 
                     reply_preview_content = <ReplyPreviewContent> { }
+                }
+
+                // Below that, display user typing notice
+                typing_notice = <View> {
+                    visible: true
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    padding: 10.0
+                    show_bg: true,
+                    draw_bg: {
+                        color: (COLOR_TEXT_IDLE)
+                    }
+
+                    typing_label = <Label> {
+                        draw_text: {
+                            color: #999999
+                            text_style: <REGULAR_TEXT>{font_size: 9.5}
+                        }
+                        text: "......Someone is typing"
+                    }
                 }
 
                 // Below that, display a view that holds the message input bar and send button.
@@ -970,6 +998,7 @@ impl Widget for RoomScreen {
                     }
 
                     TimelineUpdate::TypingUsers { users } => {
+                        // TODO update to UI
                         let first = users.first().unwrap();
                         log!("Timeline::handle_event(): typing users from first users:  {}", first);
                         log!("Timeline::handle_event(): typing users from  {}", tl.room_id);
