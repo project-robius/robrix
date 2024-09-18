@@ -782,17 +782,7 @@ async fn async_main_loop() -> Result<()> {
     let sliding_sync = client
         .sliding_sync("main-sync")?
         .sliding_sync_proxy("https://slidingsync.lab.matrix.org".try_into()?)
-        // .with_all_extensions()
-        // we enable the account-data extension
-        .with_account_data_extension(
-            assign!(AccountData::default(), { enabled: Some(true) }),
-        )
-        // and the e2ee extension
-        .with_e2ee_extension(assign!(E2EE::default(), { enabled: Some(true) }))
-        // and the to-device extension
-        .with_to_device_extension(
-            assign!(ToDevice::default(), { enabled: Some(true) }),
-        )
+        .with_all_extensions()
         // .add_cached_list(visible_room_list).await?
         .add_list(visible_room_list)
         .build()
