@@ -311,10 +311,10 @@ live_design! {
                 return mix(
                     mix(
                         #ffffff,
-                        #f3f3f3,
+                        #fafafa,
                         self.hover
                     ),
-                    #f3f3f3,
+                    #fafafa,
                     self.highlight
                 )
             }
