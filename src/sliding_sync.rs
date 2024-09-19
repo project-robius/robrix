@@ -478,12 +478,15 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let _sub_typing_users = Handle::current().spawn(async move {
                     log!("spawned submit async request for SubTypingNotice");
                     let (_drop_guard, mut recv) = room.subscribe_to_typing_notifications();
+                    log!("Calling subscribe_to_typing_notifications for room {}", room_id);
                     while let Ok(typing_users) = recv.recv().await {
                         log!("recved submit async request for SubTypingNotice");
                         sender.send(TimelineUpdate::TypingUsers {
                             users: typing_users,
                         }).expect("Error: timeline update sender couldn't send update with sub typing users!");
                     }
+                    log!("Typing notifications loop ended for room {}", room_id);
+
                 });
 
             }
