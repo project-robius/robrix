@@ -1072,14 +1072,15 @@ impl Widget for RoomScreen {
                                             });
                                         if let Some(index) = message_replied_to_tl_index {
                                             let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-					    let base_speed = 5.0;
+					    let base_speed = 10.0;
                                             // apply a scaling based on the distance
                                             let scaled_speed = base_speed * (distance * distance);
 
-                                            portal_list.smooth_scroll_to(cx, index , scaled_speed);
+                                            // substract to leave some space.
+                                            portal_list.smooth_scroll_to(cx, index - 2, scaled_speed);
 					    // start highlight animation.
                                             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                                                item_id: index + 1
+                                                item_id: index
                                             };
 
                                             self.redraw(cx);
@@ -2616,7 +2617,7 @@ impl Widget for Message {
             }
         }
 
-        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(reply_preview)).area()) {
+        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
                 cx.widget_action(
                     widget_uid,
