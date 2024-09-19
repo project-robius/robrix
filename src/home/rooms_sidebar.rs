@@ -89,7 +89,7 @@ live_design! {
         }
     }
 
-    RoomsView = <View> {
+    RoomsView = {{RoomsView}} {
         show_bg: true,
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
@@ -161,5 +161,42 @@ live_design! {
             flow: Down, spacing: 7
             width: Fill, height: Fill
         }        
+    }
+}
+
+#[derive(Widget, Live, LiveHook)]
+pub struct RoomsView {
+    #[deref]
+    view: View,
+
+    #[rust]
+    new_walk: Walk
+}
+
+impl Widget for RoomsView {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        // TODO(julian): remove this
+        if let Event::KeyDown(ke) = event {
+            if ke.key_code == KeyCode::ArrowLeft {
+                self.new_walk = self.walk.clone();
+                self.new_walk.width = Size::Fixed(self.new_walk.width.fixed_or_zero() - 5.0);
+                self.walk = self.new_walk.clone();
+                self.redraw(cx);
+            }
+
+            if ke.key_code == KeyCode::ArrowRight {
+                self.new_walk = self.walk.clone();
+                self.new_walk.width = Size::Fixed(self.new_walk.width.fixed_or_zero() + 5.0);
+                self.walk = self.new_walk.clone();
+                self.redraw(cx);
+            }
+        }
+    }
+    
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // TODO(julian): remove this
+        self.view.draw_walk(cx, scope, self.new_walk)
+        // self.view.draw_walk(cx, scope, walk)
     }
 }

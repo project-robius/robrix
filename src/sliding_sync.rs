@@ -960,6 +960,7 @@ async fn async_main_loop() -> Result<()> {
                     }),
                     avatar: avatar_from_room_name(room_name_str.as_deref().unwrap_or_default()),
                     room_name: room_name_str.clone(),
+                    ..RoomPreviewEntry::default()
                 }));
 
                 ALL_ROOM_INFO.lock().unwrap().insert(
