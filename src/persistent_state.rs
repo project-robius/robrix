@@ -84,6 +84,7 @@ pub async fn restore_session<P: AsRef<Path>>(
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
         .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
+        .simplified_sliding_sync(false)
         .build()
         .await?;
 
@@ -121,9 +122,12 @@ pub async fn save_session<P: AsRef<Path>>(
     let session_file = session_file_path_ref
         .map(|p| p.as_ref().to_path_buf())
         .unwrap_or_else(|| session_file_path());
+    if let Some(parent) = session_file.parent() {
+        fs::create_dir_all(parent).await?;
+    }
     fs::write(&session_file, serialized_session).await?;
 
-    log!("Session persisted to: {}", session_file.to_string_lossy());
+    log!("Session persisted to: {}", session_file.display());
 
     // After logging in, you might want to verify this session with another one (see
     // the `emoji_verification` example), or bootstrap cross-signing if this is your
