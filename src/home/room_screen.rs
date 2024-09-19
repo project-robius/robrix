@@ -726,7 +726,7 @@ live_design! {
 
                 // Below that, display user typing notice
                 typing_notice = <View> {
-                    visible: true
+                    visible: false
                     width: Fill
                     height: Fit
                     flow: Down
@@ -999,9 +999,17 @@ impl Widget for RoomScreen {
 
                     TimelineUpdate::TypingUsers { users } => {
                         // TODO update to UI
-                        let first = users.first().unwrap();
-                        log!("Timeline::handle_event(): typing users from first users:  {}", first);
-                        log!("Timeline::handle_event(): typing users from  {}", tl.room_id);
+
+                        if let Some(first) = users.first() {
+                            log!("Timeline::handle_event(): typing users from first users:  {}", first);
+                            log!("Timeline::handle_event(): typing users from  {}", tl.room_id);
+
+                            self.view.view(id!(typing_notice)).set_visible(true);
+                        }else {
+                            self.view.view(id!(typing_notice)).set_visible(false);
+                        }
+
+
                     }
                 }
             }
