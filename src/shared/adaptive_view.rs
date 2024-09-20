@@ -10,10 +10,7 @@ live_design! {
     AdaptiveView = {{AdaptiveView}} {
         width: Fill, height: Fill
         
-        Shared = <View> {}
-    
         Mobile = <View> {}
-        Tablet = <View> {}
         Desktop = <View> {}
     }
 }
@@ -248,7 +245,7 @@ impl AdaptiveView {
     }
 
     pub fn set_default_variant_selector(&mut self, cx: &mut Cx) {
-        // TODO(Julian): more comprehensive default
+        // TODO(Julian): setup a more comprehensive default
         self.set_variant_selector(cx, |cx, _parent_size| {
             if cx.get_global::<DisplayContext>().is_desktop() {
                 live_id!(Desktop)
