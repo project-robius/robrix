@@ -729,11 +729,15 @@ live_design! {
                     visible: false
                     width: Fill
                     height: Fit
-                    flow: Down
+                    flow: Right
                     padding: 10.0
                     show_bg: true,
                     draw_bg: {
                         color: (COLOR_TEXT_IDLE)
+                    }
+
+                    typing_animate = <Label> {
+                        // TODO: Animate for typing
                     }
 
                     typing_label = <Label> {
@@ -741,7 +745,7 @@ live_design! {
                             color: #999999
                             text_style: <REGULAR_TEXT>{font_size: 9.5}
                         }
-                        text: "......Someone is typing"
+                        text: "Someone is typing..."
                     }
                 }
 
@@ -1003,7 +1007,7 @@ impl Widget for RoomScreen {
                             let users = users.into_iter()
                                 .map(|u| u.localpart().to_string())
                                 .collect::<Vec<String>>().join(",");
-                            let display_typing_users = format!("{} is typing", users);
+                            let display_typing_users = format!("{} is typing...", users);
                             self.view.view(id!(typing_notice)).set_visible(true);
                             self.view.view(id!(typing_label)).set_text_and_redraw(cx, &display_typing_users);
                         }else {
