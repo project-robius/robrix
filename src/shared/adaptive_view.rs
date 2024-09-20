@@ -15,6 +15,50 @@ live_design! {
     }
 }
 
+/// A widget that adapts its content based on the current context.
+///
+/// `AdaptiveView` allows you to define different layouts for various conditions, like display context, 
+/// parent size or platform variations, (e.g., desktop vs. mobile) and automatically switches 
+/// between them based on a selector function.
+///
+/// Optionally retains unused variants to preserve their state
+///
+/// # Example
+///
+/// ```rust
+
+/// live_design! {
+///     // ...
+///     adaptive = <AdaptiveView> {
+///         Desktop = <CustomView> {
+///             label =  { text: "Desktop View" } // override specific values of the same widget
+///         }
+///         Mobile = <CustomView> {
+///             label =  { text: "Mobile View" }
+///         }
+///     }
+///  // ...
+/// }
+///
+/// fn setup_adaptive_view(cx: &mut Cx) {;
+///     self.adaptive_view(id!(adaptive)).set_variant_selector(cx, |cx, parent_size| {
+///         if cx.get_global::<DisplayContext>().screen_size.x >= 1280.0 {
+///             live_id!(Desktop)
+///         } else {
+///             live_id!(Mobile)
+///         }
+///     });
+/// }
+/// ```
+///
+/// In this example, the `AdaptiveView` switches between Desktop and Mobile layouts
+/// based on the screen width. The `set_variant_selector` method allows you to define
+/// custom logic for choosing the appropriate layout variant.
+/// 
+/// `AdaptiveView` implements a default variant selector based on the screen width for different
+/// device layouts (Currently `Desktop` and `Mobile`). You can override this through the `set_variant_selector` method.
+///
+/// Check out [VariantSelector] for more information on how to define custom selectors, and what information is available to them.
 #[derive(Live, LiveRegisterWidget, WidgetRef)]
 pub struct AdaptiveView {
     #[rust]
@@ -103,7 +147,6 @@ impl LiveHook for AdaptiveView {
         self.set_default_variant_selector(cx);
     }
     
-    // hook the apply flow to collect our templates and apply to instanced childnodes
     fn apply_value_instance(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) -> usize {
         if nodes[index].is_instance_prop() {
             if let Some(live_ptr) = apply.from.to_live_ptr(cx, index){
