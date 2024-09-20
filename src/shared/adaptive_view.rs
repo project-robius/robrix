@@ -54,12 +54,11 @@ pub struct WidgetVariant {
 
 impl WidgetNode for AdaptiveView {
     fn walk(&mut self, cx: &mut Cx) -> Walk {
-        self.walk
-        // if let Some(active_widget) = self.active_widget.as_ref() {
-        //     active_widget.1.walk(cx)
-        // } else {
-        //     self.walk
-        // }
+        if let Some(active_widget) = self.active_widget.as_ref() {
+            active_widget.widget_ref.walk(cx)
+        } else {
+            self.walk
+        }
     }
     fn area(&self)->Area{
         self.area
@@ -69,14 +68,13 @@ impl WidgetNode for AdaptiveView {
         self.area.redraw(cx);
     }
 
-    fn find_widgets(&self, path: &[LiveId], _cached: WidgetCache, results: &mut WidgetSet) {
+    fn find_widgets(&self, path: &[LiveId], cached: WidgetCache, results: &mut WidgetSet) {
         if let Some(active_widget) = self.active_widget.as_ref() {
-            // We do not cache the results of the find_widgets call, as the active widget in children AdaptiveViews may change.
-            // However this is not enough to prevent this AdaptiveView from being cached, since the setting is part of its parent.
-            // Therefore we currently cannot rely on querying nested elements (e.g. `self.ui.button(id!(my_button))`) within an AdaptiveView, 
-            // from a non-AdaptiveView parent.
-            // TODO: Makepad should support a way to prevent caching for scenarios like this.
-            active_widget.widget_ref.find_widgets(path, WidgetCache::Clear, results);
+            // Currently we cannot rely on querying nested elements (e.g. `self.ui.button(id!(my_button))`) within an AdaptiveView, 
+            // from a non-AdaptiveView parent. This is becuase higher up in the UI tree other widgets have cached the search result.
+            // Makepad should support a way to prevent caching for scenarios like this. 
+            // TODO(Julian): We'll add a mechanism to clear the cache upawards on template change (e.g. InvalidateCache action).
+            active_widget.widget_ref.find_widgets(path, cached, results);
         }
     }
     
@@ -99,15 +97,15 @@ impl LiveHook for AdaptiveView {
 
     fn after_apply_from_doc(&mut self, cx:&mut Cx) {
         self.set_default_variant_selector(cx);
-        // If we have a global variant context, apply the variant selector
+        // If we have a global display context, apply the variant selector
         // This is useful for AdaptiveViews spawned after the initial resize event (e.g. PortalList items)
-        // In Robrix we know there are parent AdaptiveViews that have already set the global variant context,
+        // In Robrix we know there are parent AdaptiveViews that have already set the global display context,
         // but we'll have to make sure that's the case in Makepad when porting this Widget.
-        if cx.has_global::<VariantContext>() {
-            let variant_context = cx.get_global::<VariantContext>().clone();
-            self.apply_after_resize(cx, &variant_context);
+        if cx.has_global::<DisplayContext>() {
+            let display_context = cx.get_global::<DisplayContext>().clone();
+            self.apply_after_resize(cx, &display_context);
         } else {
-            error!("No global variant context found for AdaptiveView {:?}", self.widget_uid());
+            error!("No global display context found for AdaptiveView {:?}", self.widget_uid());
         }
     }
     
@@ -142,8 +140,8 @@ impl Widget for AdaptiveView {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.active_widget.is_some() {
-            let mut context = cx.get_global::<VariantContext>().clone(); // TODO avoid cloning
-            context.peeked_parent_rect = cx.peek_walk_turtle(walk);
+            let mut context = cx.get_global::<DisplayContext>().clone(); // TODO(Julian) avoid cloning
+            context.parent_size = cx.peek_walk_turtle(walk).size;
     
             // Apply the resize which may modify self.active_widget
             self.apply_after_resize(cx, &context);
@@ -163,30 +161,32 @@ impl WidgetMatchEvent for AdaptiveView {
         for action in actions {
             // Handle window geom change events to update the screen width, this is triggered at startup and on window resize
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
-                // TODO(julian): Fix excessive cloning
+                // TODO(Julian): Fix excessive cloning
                 let redraw_id = cx.redraw_id;
                 if self.screen_width != ce.new_geom.inner_size.x {
                     self.screen_width = ce.new_geom.inner_size.x;
                     // Cache a query context for the current `WindowGeomChange`
-                    if cx.has_global::<VariantContext>() {
-                        let current_context = cx.get_global::<VariantContext>();
-                        // if current_context.updated_on_event_id == redraw_id { return }
+                    if cx.has_global::<DisplayContext>() {
+                        let current_context = cx.get_global::<DisplayContext>();
+                        // TODO(Julian): Optimize this by skipping the update on the same event id for different instances
+                        // We should add an accesor in Makepad for cx.event_id  
+                        // if current_context.updated_on_event_id == event_id { return }
                         
                         current_context.updated_on_event_id = redraw_id;
                         current_context.screen_width = self.screen_width;
-                        current_context.peeked_parent_rect = Rect::default();
+                        current_context.parent_size = DVec2::default();
 
                         let cloned_context = current_context.clone();
                         self.apply_after_resize(cx, &cloned_context);
                     } else {
-                        let variant_context = VariantContext {
+                        let display_context = DisplayContext {
                             updated_on_event_id: cx.redraw_id,
                             screen_width: self.screen_width,
-                            peeked_parent_rect: Rect::default(),
+                            parent_size: DVec2::default(),
                         };
 
-                        self.apply_after_resize(cx, &variant_context);
-                        cx.set_global(variant_context);
+                        self.apply_after_resize(cx, &display_context);
+                        cx.set_global(display_context);
                     }
 
                     cx.redraw_all();
@@ -200,12 +200,12 @@ impl AdaptiveView {
     /// Apply the variant selector to determine which template to use.
     /// If the selector returns a template that is different from the current active widget,
     /// we create a new widget from that given template. Otherwise, we do nothing.
-    fn apply_after_resize(&mut self, cx: &mut Cx, variant_context: &VariantContext) {
+    fn apply_after_resize(&mut self, cx: &mut Cx, display_context: &DisplayContext) {
         let widget_uid = self.widget_uid().0;
         let result = cx.get_global::<VaraintSelectors>()
             .map
             .get_mut(&widget_uid)
-            .map(|selector| selector(variant_context));
+            .map(|selector| selector(display_context));
 
         match result {
             Some(template_id) => {
@@ -249,8 +249,8 @@ impl AdaptiveView {
     }
 
     /// Set a variant selector for this widget. 
-    /// The selector is a closure that takes a `VariantContext` and returns a `LiveId`, corresponding to the template to use.
-    pub fn set_variant_selector(&mut self, cx: &mut Cx, query: impl FnMut(&VariantContext) -> LiveId + 'static) {
+    /// The selector is a closure that takes a `DisplayContext` and returns a `LiveId`, corresponding to the template to use.
+    pub fn set_variant_selector(&mut self, cx: &mut Cx, query: impl FnMut(&DisplayContext) -> LiveId + 'static) {
         if !cx.has_global::<VaraintSelectors>() {
             cx.set_global(VaraintSelectors::default());
         }
@@ -271,16 +271,16 @@ impl AdaptiveView {
 
 impl AdaptiveViewRef {
     /// Set a variant selector for this widget. 
-    /// The selector is a closure that takes a `VariantContext` and returns a `LiveId`, corresponding to the template to use.
-    pub fn set_variant_selector(&mut self, cx: &mut Cx, query: impl FnMut(&VariantContext) -> LiveId + 'static) {
+    /// The selector is a closure that takes a `DisplayContext` and returns a `LiveId`, corresponding to the template to use.
+    pub fn set_variant_selector(&mut self, cx: &mut Cx, query: impl FnMut(&DisplayContext) -> LiveId + 'static) {
         let Some(mut inner) = self.borrow_mut() else { return };
         if !cx.has_global::<VaraintSelectors>() {
             cx.set_global(VaraintSelectors::default());
         }
 
         cx.get_global::<VaraintSelectors>().map.insert(inner.widget_uid().0, Box::new(query));
-        let variant_context = cx.get_global::<VariantContext>().clone();
-        inner.apply_after_resize(cx, &variant_context);
+        let display_context = cx.get_global::<DisplayContext>().clone();
+        inner.apply_after_resize(cx, &display_context);
     }
 }
 
@@ -288,20 +288,26 @@ impl AdaptiveViewRef {
 /// We store them in a global context as a workaround for the lack of support for closures in `Live` (cannot store the variant in the `AdaptiveView`).
 #[derive(Default)]
 pub struct VaraintSelectors {
+    // TODO(Julian): add suport for closures in `Live`, to avoid this.
     pub map: HashMap<u64, Box<VariantSelector>>,
 }
 
-pub type VariantSelector = dyn FnMut(&VariantContext) -> LiveId;
+pub type VariantSelector = dyn FnMut(&DisplayContext) -> LiveId;
 
-// TODO(julian): rename
 /// A context that is used to determine which view to display in an `AdaptiveView` widget.
 /// Later to be expanded with more context data like platfrom information, accessibility settings, etc.
-/// VariantContext is stored in a global context so that they can be accessed from multiple `AdaptiveView` widget instances.
+/// DisplayContext is stored in a global context so that they can be accessed from multiple `AdaptiveView` widget instances.
 #[derive(Clone, Debug)]
-pub struct VariantContext {
+pub struct DisplayContext {
     pub updated_on_event_id: u64,
     pub screen_width: f64,
     /// The [Rect] obtained from running `cx.peek_walk_turtle(walk)` before the widget is drawn.
     /// Useful for determining the parent size and position.
-    pub peeked_parent_rect: Rect,
+    pub parent_size: DVec2, // just do size
+}
+
+impl DisplayContext {
+    pub fn is_desktop(&self) -> bool {
+        self.screen_width >= MIN_DESKTOP_WIDTH
+    }
 }

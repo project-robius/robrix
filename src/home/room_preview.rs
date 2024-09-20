@@ -2,7 +2,7 @@ use makepad_widgets::*;
 
 use crate::{
     shared::{
-        adaptive_view::AdaptiveViewWidgetExt, avatar::AvatarWidgetExt,
+        adaptive_view::{AdaptiveViewWidgetExt, DisplayContext}, avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt,
     },
     utils::{self, relative_format},
@@ -105,7 +105,7 @@ live_design! {
         adaptive_preview = <AdaptiveView> {
 
             OnlyIcon = <RoomPreviewContent> {
-                align: {x: 0.5, y: 0.5} // TODO(julian): this causes dsl errors
+                align: {x: 0.5, y: 0.5}
                 padding: 5.
                 avatar = <Avatar> {}
             }
@@ -161,11 +161,11 @@ impl LiveHook for RoomPreview {
             .adaptive_view(id!(adaptive_preview))
             .set_variant_selector(cx, |context| {
                 // if the parent view is uninitialized, default to just showing the icon.
-                if context.peeked_parent_rect.size.x <= 0. {
+                if context.parent_size.x <= 0. {
                     return live_id!(OnlyIcon);
                 }
 
-                match context.peeked_parent_rect.size.x {
+                match context.parent_size.x {
                     x if x <= 100. => live_id!(OnlyIcon),
                     x if x <= 250. => live_id!(IconAndName),
                     _ => live_id!(FullPreview),
@@ -245,10 +245,7 @@ impl Widget for RoomPreviewContent {
                 }
             }
 
-            let variant_context = cx.get_global::<crate::shared::adaptive_view::VariantContext>();
-
-            // TODO(julian): add a helper for this in variant_context, rename variant_context
-            if variant_context.screen_width >= 800. {
+            if cx.get_global::<DisplayContext>().is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
             }
         }
@@ -263,6 +260,8 @@ impl RoomPreviewContent {
         let room_name_color;
         let timestamp_color;
 
+        // TODO: This is quite verbose, makepad should provide a way to override this at a higher level.
+        // If the rooms sidebar is resized into a smaller width, there will be DSL logs in the console regarding failure to apply_over the missing labels.
         if is_selected {
             bg_color = vec3(0.059, 0.533, 0.996); // COLOR_PRIMARY_SELECTED
             message_text_color = vec3(1., 1., 1.); // COLOR_PRIMARY
