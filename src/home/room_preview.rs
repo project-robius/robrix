@@ -102,8 +102,9 @@ live_design! {
     }
     
     RoomPreview = {{RoomPreview}} {
+        // Wraps the RoomPreviewContent in an AdaptiveView
+        // to change the displayed content (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {
-
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
                 padding: 5.
@@ -142,13 +143,6 @@ pub struct RoomPreview {
     view: View,
 }
 
-pub struct RoomPreviewProps {
-    pub name: String,
-    pub timestamp: String,
-    pub latest_message: String,
-    pub avatar: RoomPreviewAvatar,
-}
-
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomPreviewAction {
     None,
@@ -157,6 +151,7 @@ pub enum RoomPreviewAction {
 
 impl LiveHook for RoomPreview {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
+        // Adapt the preview based on the available space.
         self.view
             .adaptive_view(id!(adaptive_preview))
             .set_variant_selector(cx, |_cx, parent_size| {
@@ -254,6 +249,7 @@ impl Widget for RoomPreviewContent {
 }
 
 impl RoomPreviewContent {
+    /// Updates the styling of the preview based on whether the room is selected or not.
     pub fn update_preview_colors(&mut self, cx: &mut Cx, is_selected: bool) {
         let bg_color;
         let message_text_color;
@@ -261,7 +257,6 @@ impl RoomPreviewContent {
         let timestamp_color;
 
         // TODO: This is quite verbose, makepad should provide a way to override this at a higher level.
-        // If the rooms sidebar is resized into a smaller width, there will be DSL logs in the console regarding failure to apply_over the missing labels.
         if is_selected {
             bg_color = vec3(0.059, 0.533, 0.996); // COLOR_PRIMARY_SELECTED
             message_text_color = vec3(1., 1., 1.); // COLOR_PRIMARY
