@@ -156,8 +156,6 @@ pub struct RoomsList {
     #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
-    /// The current width of the inner screen
-    #[rust] screen_width: f64,
 }
 
 impl Widget for RoomsList {
@@ -236,8 +234,6 @@ impl Widget for RoomsList {
                 }
             }
         }
-
-        self.match_event(cx, event);
     }
 
 
@@ -258,8 +254,7 @@ impl Widget for RoomsList {
             list.set_item_range(cx, 0, last_item_id + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                let mut scope_room_info = None;
-                // TODO(julian): cleanup and comment
+                let mut scope = Scope::empty();
                 // Draw the status label as the bottom entry.
                 let item = if item_id == last_item_id {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
@@ -290,15 +285,10 @@ impl Widget for RoomsList {
                     
                     let room_info = &mut self.all_rooms[index_of_room];
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
-                    scope_room_info = Some(&*room_info);
+                    // Pass down the room info to the RoomPreview widget.
+                    scope = Scope::with_props(&*room_info);
 
                     item
-                };
-
-                let mut scope = if let Some(room_info) = scope_room_info {
-                    Scope::with_props(room_info)
-                } else {
-                    Scope::empty()
                 };
 
                 item.draw_all(cx, &mut scope);
@@ -308,20 +298,4 @@ impl Widget for RoomsList {
         DrawStep::done()
     }
 
-}
-
-// This is a workaround for detecting if we should show the room previews as selected, which we don't want to do for mobile.
-// TODO: find a centralized way to fetch the current screen width or layout mode.
-impl MatchEvent for RoomsList {
-    // TODO: we can do this differently with an adaptive view.
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
-        for action in actions {
-            if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
-                if self.screen_width != ce.new_geom.inner_size.x {
-                    self.screen_width = ce.new_geom.inner_size.x;
-                    cx.redraw_all();
-                }
-            }
-        }
-    }
 }
