@@ -242,6 +242,11 @@ impl Widget for RoomPreviewContent {
 
             if cx.get_global::<DisplayContext>().is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
+            } else if room_info.is_selected {
+                // Mobile doesn't have a selected state. Always use the default colors.
+                // We call the update in case the app was resized from desktop to mobile while the room was selected.
+                // This can be optimized by only calling this when the app is resized.
+                self.update_preview_colors(cx, false); 
             }
         }
         self.view.draw_walk(cx, scope, walk)

@@ -10,6 +10,7 @@ live_design! {
     import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
+    import crate::shared::cached_widget::CachedWidget;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
@@ -147,7 +148,9 @@ live_design! {
                 }
             }
         }
-        <RoomsList> {}
+        <CachedWidget> {
+            rooms_list = <RoomsList> {}
+        }
     }
 
     RoomsSideBar = <AdaptiveView> {
@@ -168,35 +171,14 @@ live_design! {
 pub struct RoomsView {
     #[deref]
     view: View,
-
-    #[rust]
-    new_walk: Walk
 }
 
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-        // TODO(julian): remove this
-        if let Event::KeyDown(ke) = event {
-            if ke.key_code == KeyCode::ArrowLeft {
-                self.new_walk = self.walk.clone();
-                self.new_walk.width = Size::Fixed(self.new_walk.width.fixed_or_zero() - 5.0);
-                self.walk = self.new_walk.clone();
-                self.redraw(cx);
-            }
-
-            if ke.key_code == KeyCode::ArrowRight {
-                self.new_walk = self.walk.clone();
-                self.new_walk.width = Size::Fixed(self.new_walk.width.fixed_or_zero() + 5.0);
-                self.walk = self.new_walk.clone();
-                self.redraw(cx);
-            }
-        }
     }
     
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // TODO(julian): remove this
-        self.view.draw_walk(cx, scope, self.new_walk)
-        // self.view.draw_walk(cx, scope, walk)
+        self.view.draw_walk(cx, scope, walk)
     }
 }

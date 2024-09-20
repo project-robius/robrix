@@ -11,6 +11,7 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::search_bar::SearchBar;
+    import crate::shared::cached_widget::CachedWidget;
 
     import crate::home::room_screen::RoomScreen;
     import crate::home::welcome_screen::WelcomeScreen;
@@ -30,7 +31,9 @@ live_design! {
         rooms = <View> {
             align: {x: 0.5, y: 0.5}
             width: Fill, height: Fill
-            room_screen = <RoomScreen> {}
+            <CachedWidget> {
+                room_screen = <RoomScreen> {}
+            }
         }
     }
 }

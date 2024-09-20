@@ -150,7 +150,6 @@ impl MatchEvent for App {
                     room_index: _,
                     room_name,
                 } => {
-                    // TODO there seems to be unnecessary redrawing and/or fetching backwards in the timeline
                     self.app_state.rooms_panel.selected_room = Some(Room {
                         id: room_id.clone(),
                         name: room_name.clone(),

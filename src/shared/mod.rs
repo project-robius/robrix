@@ -8,6 +8,7 @@ pub mod html_or_plaintext;
 pub mod search_bar;
 pub mod styles;
 pub mod text_or_image;
+pub mod cached_widget;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
@@ -19,4 +20,5 @@ pub fn live_design(cx: &mut Cx) {
     text_or_image::live_design(cx);
     html_or_plaintext::live_design(cx);
     adaptive_view::live_design(cx);
+    cached_widget::live_design(cx);
 }
