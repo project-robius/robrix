@@ -159,13 +159,8 @@ impl LiveHook for RoomPreview {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         self.view
             .adaptive_view(id!(adaptive_preview))
-            .set_variant_selector(cx, |context| {
-                // if the parent view is uninitialized, default to just showing the icon.
-                if context.parent_size.x <= 0. {
-                    return live_id!(OnlyIcon);
-                }
-
-                match context.parent_size.x {
+            .set_variant_selector(cx, |_cx, parent_size| {
+                match parent_size.x {
                     x if x <= 100. => live_id!(OnlyIcon),
                     x if x <= 250. => live_id!(IconAndName),
                     _ => live_id!(FullPreview),

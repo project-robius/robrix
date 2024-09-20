@@ -49,8 +49,9 @@ pub struct AdaptiveView {
     #[rust]
     variant_selector: Option<Box<VariantSelector>>,
 
+    /// A flag to reapply the selector on the next draw call.
     #[rust]
-    screen_width: f64,
+    should_reapply_selector: bool,
 }
 
 pub struct WidgetVariant {
@@ -135,18 +136,14 @@ impl Widget for AdaptiveView {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.active_widget.is_some() {
-            let mut context = cx.get_global::<DisplayContext>().clone(); // TODO(Julian) avoid cloning
-            context.parent_size = cx.peek_walk_turtle(walk).size;
+            if self.should_reapply_selector {
+                let parent_size = cx.peek_walk_turtle(walk).size;
+                self.apply_selector(cx, &parent_size);
+            }
     
-            // Apply the resize which may modify self.active_widget
-            self.apply_after_resize(cx, &context);
-    
-            // Re-borrow to make the borrow checker happy
             if let Some(active_widget) = self.active_widget.as_mut() {
                 active_widget.widget_ref.draw_walk(cx, scope, walk)?;
             }
-        }
     
         DrawStep::done()
     }
@@ -155,38 +152,32 @@ impl Widget for AdaptiveView {
 impl WidgetMatchEvent for AdaptiveView {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for action in actions {
-            // Handle window geom change events to update the screen width, this is triggered at startup and on window resize
+            // Handle window geom change events, this is triggered at startup and on window resize.
             if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
-                // TODO(Julian): Fix excessive cloning
                 let redraw_id = cx.redraw_id;
-                if self.screen_width != ce.new_geom.inner_size.x {
-                    self.screen_width = ce.new_geom.inner_size.x;
-                    // Cache a query context for the current `WindowGeomChange`
-                    if cx.has_global::<DisplayContext>() {
-                        let current_context = cx.get_global::<DisplayContext>();
-                        // TODO(Julian): Optimize this by skipping the update on the same event id for different instances
-                        // We should add an accesor in Makepad for cx.event_id  
-                        // if current_context.updated_on_event_id == event_id { return }
-                        
+                // Update or create the global display context
+                if cx.has_global::<DisplayContext>() {
+                    let current_context = cx.get_global::<DisplayContext>();
+                    // TODO(Julian): Optimize this by skipping the update on the same event id for different instances
+                    // We should add an accesor in Makepad for cx.event_id  
+                    // if current_context.updated_on_event_id == event_id { return }
+                    if current_context.screen_size != ce.new_geom.inner_size {
                         current_context.updated_on_event_id = redraw_id;
-                        current_context.screen_width = self.screen_width;
-                        current_context.parent_size = DVec2::default();
-
-                        let cloned_context = current_context.clone();
-                        self.apply_after_resize(cx, &cloned_context);
-                    } else {
-                        let display_context = DisplayContext {
-                            updated_on_event_id: cx.redraw_id,
-                            screen_width: self.screen_width,
-                            parent_size: DVec2::default(),
-                        };
-
-                        self.apply_after_resize(cx, &display_context);
-                        cx.set_global(display_context);
+                        current_context.screen_size = ce.new_geom.inner_size;
+    
+                        self.should_reapply_selector = true;
                     }
+                } else {
+                    let display_context = DisplayContext {
+                        updated_on_event_id: cx.redraw_id,
+                        screen_size: ce.new_geom.inner_size,
+                    };
 
-                    cx.redraw_all();
+                    self.should_reapply_selector = true;
+                    cx.set_global(display_context);
                 }
+
+                cx.redraw_all();
             }
         }
     }
@@ -194,10 +185,19 @@ impl WidgetMatchEvent for AdaptiveView {
 
 impl AdaptiveView {
     /// Apply the variant selector to determine which template to use.
-    fn apply_after_resize(&mut self, cx: &mut Cx, display_context: &DisplayContext) {
+    fn apply_selector(&mut self, cx: &mut Cx, parent_size: &DVec2) {
         let Some(variant_selector) = self.variant_selector.as_mut() else {return};
 
-        let template_id = variant_selector(display_context);
+        // If there is no global display context, create a default one
+        // This will be replaced by having context directly in Cx in Makepad.
+        if !cx.has_global::<DisplayContext>() {
+            cx.set_global(DisplayContext {
+                updated_on_event_id: cx.redraw_id,
+                screen_size: DVec2::default(),
+            });
+        }
+
+        let template_id = variant_selector(cx, parent_size);
 
         // If the selector resulted in a widget that is already active, do nothing
         if let Some(active_widget) = self.active_widget.as_mut() {
@@ -234,27 +234,26 @@ impl AdaptiveView {
 
     /// Set a variant selector for this widget. 
     /// The selector is a closure that takes a `DisplayContext` and returns a `LiveId`, corresponding to the template to use.
-    pub fn set_variant_selector(&mut self, cx: &mut Cx, selector: impl FnMut(&DisplayContext) -> LiveId + 'static) {
+    pub fn set_variant_selector(&mut self, cx: &mut Cx, selector: impl FnMut(&mut Cx, &DVec2) -> LiveId + 'static) {
         self.variant_selector = Some(Box::new(selector));
         
-        // If we have a global display context, apply the variant selector
+        // If we have a global display context, re-apply the variant selector
         // This should be always done after updating selectors. This is useful for AdaptiveViews 
         // spawned after the initial resize event (e.g. PortalList items)
         // In Robrix we know there are parent AdaptiveViews that have already set the global display context,
         // but we'll have to make sure that's the case in Makepad when porting this Widget.
         if cx.has_global::<DisplayContext>() {
-            let display_context = cx.get_global::<DisplayContext>().clone();
-            self.apply_after_resize(cx, &display_context);
+            self.should_reapply_selector = true;
         }
     }
 
     pub fn set_default_variant_selector(&mut self, cx: &mut Cx) {
         // TODO(Julian): more comprehensive default
-        self.set_variant_selector(cx, |context| {
-            if context.screen_width < MIN_DESKTOP_WIDTH {
-                live_id!(Mobile)
-            } else {
+        self.set_variant_selector(cx, |cx, _parent_size| {
+            if cx.get_global::<DisplayContext>().is_desktop() {
                 live_id!(Desktop)
+            } else {
+                live_id!(Mobile)
             }
         });
     }
@@ -263,28 +262,30 @@ impl AdaptiveView {
 impl AdaptiveViewRef {
     /// Set a variant selector for this widget. 
     /// The selector is a closure that takes a `DisplayContext` and returns a `LiveId`, corresponding to the template to use.
-    pub fn set_variant_selector(&mut self, cx: &mut Cx, selector: impl FnMut(&DisplayContext) -> LiveId + 'static) {
+    pub fn set_variant_selector(&mut self, cx: &mut Cx, selector: impl FnMut(&mut Cx, &DVec2) -> LiveId + 'static) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_variant_selector(cx, selector);
     }
 }
 
-/// A closure that takes a `DisplayContext` and returns a `LiveId`, corresponding to the template to use.
-pub type VariantSelector = dyn FnMut(&DisplayContext) -> LiveId;
+/// A closure that returns a `LiveId` corresponding to the template to use.
+pub type VariantSelector = dyn FnMut(&mut Cx, &ParentSize) -> LiveId;
+
+/// The size of the parent obtained from running `cx.peek_walk_turtle(walk)` before the widget is drawn.
+type ParentSize = DVec2;
 
 /// A context that is used to determine which view to display in an `AdaptiveView` widget.
 /// DisplayContext is stored in a global context so that they can be accessed from multiple `AdaptiveView` widget instances.
+/// This will soon be replaced by having this context directly in Makepad's Cx.
 /// Later to be expanded with more context data like platfrom information, accessibility settings, etc.
 #[derive(Clone, Debug)]
 pub struct DisplayContext {
     pub updated_on_event_id: u64,
-    pub screen_width: f64,
-    /// The size of the parent obtained from running `cx.peek_walk_turtle(walk)` before the widget is drawn.
-    pub parent_size: DVec2,
+    pub screen_size: DVec2,
 }
 
 impl DisplayContext {
     pub fn is_desktop(&self) -> bool {
-        self.screen_width >= MIN_DESKTOP_WIDTH
+        self.screen_size.x >= MIN_DESKTOP_WIDTH
     }
 }
