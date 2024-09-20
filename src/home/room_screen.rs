@@ -1507,7 +1507,6 @@ impl RoomScreen {
                 prev_first_index: None,
                 read_event_hashmap:HashMap::new(),
                 marked_fully_read_queue:HashMap::new(),
-                prev_fullyread_last_timestamp:None
             };
             (new_tl_state, true)
         };
