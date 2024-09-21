@@ -110,22 +110,28 @@ impl MatchEvent for MainContent {
         for action in actions.iter() {
             match action.as_widget_action().cast() {
                 // Whenever a room is selected, we hide the welcome message and switch the to the rooms screen.
-                RoomListAction::Selected { room_id, room_index: _, room_name } => {
+                RoomListAction::Selected {
+                    room_id,
+                    room_index: _,
+                    room_name,
+                } => {
                     self.panel_status = PanelStatus::DisplayingRooms;
 
                     let displayed_room_name =
                         room_name.unwrap_or_else(|| format!("Room ID {}", &room_id));
                     // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
-                    self.view
-                        .room_screen(id!(room_screen))
-                        .set_displayed_room(cx, displayed_room_name, room_id);
+                    self.view.room_screen(id!(room_screen)).set_displayed_room(
+                        cx,
+                        displayed_room_name,
+                        room_id,
+                    );
                     self.redraw(cx);
                 }
                 _ => (),
             }
 
             // TODO: Once we introduce navigation history, make this navigate back instead and slide out
-            if self.view.button(id!(navigate_back)).clicked(&actions) {
+            if self.view.button(id!(navigate_back)).clicked(actions) {
                 cx.widget_action(
                     self.widget_uid(),
                     &Scope::default().path,
