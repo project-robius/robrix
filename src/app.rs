@@ -150,7 +150,7 @@ impl MatchEvent for App {
                     room_index: _,
                     room_name,
                 } => {
-                    self.app_state.rooms_panel.selected_room = Some(Room {
+                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
                         id: room_id.clone(),
                         name: room_name.clone(),
                     });
@@ -209,12 +209,11 @@ pub struct AppState {
 
 #[derive(Default, Debug)]
 pub struct RoomsPanelState {
-    // pub open_rooms: Vec<Room>,
-    pub selected_room: Option<Room>,
+    pub selected_room: Option<SelectedRoom>,
 }
 
 #[derive(Debug)]
-pub struct Room {
+pub struct SelectedRoom {
     pub id: OwnedRoomId,
     pub name: Option<String>,
 }
