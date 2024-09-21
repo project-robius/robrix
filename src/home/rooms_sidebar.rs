@@ -10,6 +10,7 @@ live_design! {
     import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
 
     import crate::home::rooms_list::RoomsList;
+    import crate::home::rooms_list::PeopleList;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
@@ -126,26 +127,54 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
+        // <View> {
+        //     flow: Down, spacing: 20
+        //     padding: {top: 20}
+        //     width: Fill, height: Fit
+            // <CollapsableTitle> {
+            //     title = {
+            //         text: "People"
+            //         draw_text: {
+            //             color: (COLOR_TEXT_IDLE)
+            //         }
+            //     }
+            //     collapse_icon = {
+            //         draw_icon: { rotation_angle: 0. }
+            //     }
+            //     add_icon = {
+            //         visible: true
+            //     }
+
+            // }
+            // <CollapsableTitle> {
+            //     title = {
+            //         text: "Channels"
+            //         draw_text: {
+            //             color: (COLOR_TEXT_IDLE)
+            //         }
+            //     }
+            // }
+            // <CollapsableTitle> {
+            //     title = {
+            //         text: "Rooms"
+            //         draw_text: {
+            //             color: #666666
+            //         }
+            //     }
+            //     collapse_icon = {
+            //         draw_icon: { rotation_angle: 0. }
+            //     }
+            //     add_icon = {
+            //         visible: true
+            //     }
+            // }
+        // }
+
+
         <View> {
-            flow: Down, spacing: 20
-            padding: {top: 20}
-            width: Fill, height: Fit
-            <CollapsableTitle> {
-                title = {
-                    text: "People"
-                    draw_text: {
-                        color: (COLOR_TEXT_IDLE)
-                    }
-                }
-            }
-            <CollapsableTitle> {
-                title = {
-                    text: "Channels"
-                    draw_text: {
-                        color: (COLOR_TEXT_IDLE)
-                    }
-                }
-            }
+            flow: Down,
+            spacing: 10.
+            padding: {top: 20},
             <CollapsableTitle> {
                 title = {
                     text: "Rooms"
@@ -160,7 +189,28 @@ live_design! {
                     visible: true
                 }
             }
+            <PeopleList> {}
         }
-        <RoomsList> {}
+
+        // <View> {
+        //     flow: Up,
+        //     spacing: 10.
+        //     padding: {top: 20},
+        //     <CollapsableTitle> {
+        //         title = {
+        //             text: "People"
+        //             draw_text: {
+        //                 color: #666666
+        //             }
+        //         }
+        //         collapse_icon = {
+        //             draw_icon: { rotation_angle: 0. }
+        //         }
+        //         add_icon = {
+        //             visible: true
+        //         }
+        //     }
+        //     <PeopleList> {}
+        // }
     }
 }
