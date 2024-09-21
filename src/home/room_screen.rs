@@ -1526,11 +1526,11 @@ impl RoomScreen {
     /// Invoke this when this timeline is being hidden or no longer being shown,
     /// e.g., when the user navigates away from this timeline.
     fn hide_timeline(&mut self) {
-        if let Some(room_id) = &self.room_id {
+        if let Some(room_id) = self.room_id.clone() {
             self.save_state();
             submit_async_request(
                 MatrixRequest::SubscribeToTypingNotices {
-                    room_id: room_id.clone(),
+                    room_id,
                     subscribe: false,
                 }
             );
