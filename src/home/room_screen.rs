@@ -730,16 +730,16 @@ live_design! {
                     width: Fill
                     height: Fit
                     flow: Right
-                    padding: 10.0
+                    padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
                     show_bg: true,
                     draw_bg: {
-                        color: (COLOR_TEXT_IDLE)
+                        color: #e8f4ff,
                     }
 
                     typing_label = <Label> {
                         draw_text: {
-                            color: #999999
-                            text_style: <REGULAR_TEXT>{font_size: 9.5}
+                            color: #121570,
+                            text_style: <REGULAR_TEXT>{font_size: 9}
                         }
                         text: "Someone is typing..."
                     }
