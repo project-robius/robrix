@@ -9,7 +9,7 @@ use matrix_sdk::{ruma::{
     events::room::{
         message::{ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent, TextMessageEventContent}, MediaSource
     },
-    matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId
+    matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange,
@@ -736,10 +736,6 @@ live_design! {
                         color: (COLOR_TEXT_IDLE)
                     }
 
-                    typing_animate = <Label> {
-                        // TODO: Animate for typing
-                    }
-
                     typing_label = <Label> {
                         draw_text: {
                             color: #999999
@@ -747,6 +743,8 @@ live_design! {
                         }
                         text: "Someone is typing..."
                     }
+
+                    // TODO: add a bouncing/moving ellipsis animation after the list of typing users.
                 }
 
                 // Below that, display a view that holds the message input bar and send button.
@@ -1002,19 +1000,20 @@ impl Widget for RoomScreen {
                     }
 
                     TimelineUpdate::TypingUsers { users } => {
-                        log!("Timeline::handle_event(): typing users from  {}", tl.room_id);
-                        if !users.is_empty() {
-                            let users = users.into_iter()
-                                .map(|u| u.localpart().to_string())
-                                .collect::<Vec<String>>().join(",");
-                            let display_typing_users = format!("{} is typing...", users);
-                            self.view.view(id!(typing_notice)).set_visible(true);
-                            self.view.view(id!(typing_label)).set_text_and_redraw(cx, &display_typing_users);
-                        }else {
-                            self.view.view(id!(typing_notice)).set_visible(false);
-                        }
-
-
+                        let typing_text = match users.as_slice() {
+                            [] => String::new(),
+                            [user] => format!("{user} is typing..."),
+                            [user1, user2] => format!("{user1} and {user2} are typing..."),
+                            [user1, user2, others @ ..] => {
+                                if others.len() > 1 {
+                                    format!("{user1}, {user2}, and {} are typing...", &others[0])
+                                } else {
+                                    format!("{user1}, {user2}, and {} others are typing...", others.len())
+                                }
+                            }
+                        };
+                        self.view.view(id!(typing_notice)).set_visible(!users.is_empty());
+                        self.view.label(id!(typing_label)).set_text(&typing_text);
                     }
                 }
             }
@@ -1490,8 +1489,9 @@ impl RoomScreen {
         };
 
         submit_async_request(
-            MatrixRequest::SubTypingNotice {
+            MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
+                subscribe: true,
             }
         );
 
@@ -1526,7 +1526,15 @@ impl RoomScreen {
     /// Invoke this when this timeline is being hidden or no longer being shown,
     /// e.g., when the user navigates away from this timeline.
     fn hide_timeline(&mut self) {
-        self.save_state();
+        if let Some(room_id) = &self.room_id {
+            self.save_state();
+            submit_async_request(
+                MatrixRequest::SubscribeToTypingNotices {
+                    room_id: room_id.clone(),
+                    subscribe: false,
+                }
+            );
+        }
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -1651,9 +1659,10 @@ pub enum TimelineUpdate {
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
-    /// A notice that the room's member is typing
-    TypingUsers{
-        users: Vec<OwnedUserId>,
+    /// A notice that one or more members of a this room are currently typing.
+    TypingUsers {
+        /// The list of users (their displayable name) who are currently typing in this room.
+        users: Vec<String>,
     },
 }
 

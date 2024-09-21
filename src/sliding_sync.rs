@@ -3,11 +3,11 @@ use clap::Parser;
 use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use makepad_widgets::{error, log, SignalToUI};
+use makepad_widgets::{error, log, warning, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, assign, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
-    }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
+        api::client::session::get_login_types::v3::LoginType, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+    }, sliding_sync::http::request::ListFilters, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
@@ -195,11 +195,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         typing: bool,
     },
-    /// Subscribe a notice to the given room that the current user is or is not typing.
+    /// Subscribe to typing notices for the given room.
     ///
-    /// This request does not return a response or notify the UI thread
-    SubTypingNotice {
+    /// This request does not return a response or notify the UI thread.
+    SubscribeToTypingNotices {
         room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe from typing notices for this room.
+        subscribe: bool,
     },
 }
 
@@ -319,8 +321,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
             MatrixRequest::FetchRoomMembers { room_id } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
@@ -460,35 +462,53 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 });
             }
 
-            MatrixRequest::SubTypingNotice { room_id } => {
-                log!("Submited async request SubTypingNotice");
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                    error!("BUG: client/room not found for typing notice request {room_id}");
-                    continue;
+            MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
+                let (room, timeline_update_sender, mut typing_notice_receiver) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
+                        continue;
+                    };
+                    let (room, recv) = if subscribe {
+                        if room_info.typing_notice_subscriber.is_some() {
+                            warning!("Note: room {room_id} is already subscribed to typing notices.");
+                            continue;
+                        } else {
+                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                                error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
+                                continue;
+                            };
+                            let (drop_guard, recv) = room.subscribe_to_typing_notifications();
+                            room_info.typing_notice_subscriber = Some(drop_guard);
+                            (room, recv)
+                        }
+                    } else {
+                        room_info.typing_notice_subscriber.take();
+                        continue;
+                    };
+                    // Here: we don't have an existing subscriber running, so we fall through and start one.
+                    (room, room_info.timeline_update_sender.clone(), recv)
                 };
 
-                let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                    log!("Skipping pagination request for not-yet-known room {room_id}");
-                    continue;
-                };
-
-                let sender = room_info.timeline_update_sender.clone();
-
-                let _sub_typing_users = Handle::current().spawn(async move {
-                    log!("spawned submit async request for SubTypingNotice");
-                    let (_drop_guard, mut recv) = room.subscribe_to_typing_notifications();
-                    log!("Calling subscribe_to_typing_notifications for room {}", room_id);
-                    while let Ok(typing_users) = recv.recv().await {
-                        log!("recved submit async request for SubTypingNotice");
-                        sender.send(TimelineUpdate::TypingUsers {
-                            users: typing_users,
-                        }).expect("Error: timeline update sender couldn't send update with sub typing users!");
+                let _typing_notices_task = Handle::current().spawn(async move {
+                    while let Ok(user_ids) = typing_notice_receiver.recv().await {
+                        let mut users = Vec::with_capacity(user_ids.len());
+                        for user_id in user_ids {
+                            users.push(
+                                room.get_member_no_sync(&user_id)
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|m| m.display_name().map(|d| d.to_owned()))
+                                    .unwrap_or_else(|| user_id.to_string())
+                            );
+                        }
+                        if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
+                            error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
+                        }
                     }
-                    log!("Typing notifications loop ended for room {}", room_id);
-
+                    // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
-
             }
 
             MatrixRequest::ResolveRoomAlias(room_alias) => {
@@ -651,6 +671,8 @@ struct RoomInfo {
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// The async task that is subscribed to the timeline's back-pagination status.
     pagination_status_task: Option<JoinHandle<()>>,
+    /// A drop guard for the event handler that represents a subscription to typing notices for this room.
+    typing_notice_subscriber: Option<EventHandlerDropGuard>,
 }
 
 /// Information about all of the rooms we currently know about.
@@ -997,9 +1019,10 @@ async fn async_main_loop() -> Result<()> {
                             .map(|ev| ev.timestamp())
                             .unwrap_or(MilliSecondsSinceUnixEpoch(UInt::MIN)),
                         timeline: tl_arc,
-                        pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
                         timeline_update_sender,
+                        pagination_status_task: None,
+                        typing_notice_subscriber: None,
                     },
                 );
             }
