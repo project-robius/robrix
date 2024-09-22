@@ -45,7 +45,7 @@ live_design! {
 
             empty_message: "Search"
 
-            draw_label: {
+            draw_text: {
                 text_style: { font_size: 10 },
                 fn get_color(self) -> vec4 {
                     return (COLOR_TEXT_INPUT_IDLE);
