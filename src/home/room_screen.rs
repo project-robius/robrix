@@ -1118,7 +1118,7 @@ impl Widget for RoomScreen {
                                 .into_iter()
                                 .rposition(|i| i.as_event()
                                     .and_then(|e| e.event_id())
-                                    .map_or(false, |ev_id| ev_id == details.event_id)
+                                    .is_some_and(|ev_id| ev_id == details.event_id)
                                 );
 
                             if let Some(index) = replied_to_msg_tl_index {
