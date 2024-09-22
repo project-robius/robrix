@@ -1137,6 +1137,8 @@ impl Widget for RoomScreen {
                                 };
 
                                 self.redraw(cx);
+                            } else {
+                                log!("TODO: the replied-to message was not yet available in the timeline.");
                             }
                         }
                     }
