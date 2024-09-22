@@ -38,6 +38,7 @@ live_design! {
         line_spacing: (HTML_LINE_SPACING),
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
         font_size: (MESSAGE_FONT_SIZE),
+        font_color: (MESSAGE_TEXT_COLOR),
         draw_normal:      { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
         draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
         draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }

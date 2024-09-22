@@ -314,7 +314,7 @@ live_design! {
                         #fafafa,
                         self.hover
                     ),
-                    #fafafa,
+                    #c5d6fa, // light blue
                     self.highlight
                 )
             }
@@ -840,7 +840,7 @@ live_design! {
                                 return sdf.result;
                             }
                         }
-                        draw_label: {
+                        draw_text: {
                             color: (MESSAGE_TEXT_COLOR),
                             text_style: <MESSAGE_TEXT_STYLE>{},
 
@@ -1104,36 +1104,39 @@ impl Widget for RoomScreen {
                         };
                         let tl_idx = item_id as usize;
 
-                        if let Some(tl_item) = tl.items.get(tl_idx) {
-                            if let Some(tl_event_item) = tl_item.as_event() {
-                                if let Some(message) = tl_event_item.content().as_message() {
-                                    if let Some(details) = message.in_reply_to() {
-                                        // Find the replyed message on timeline so we use the id for scrolling portal list
-                                        let message_replied_to_tl_index =
-                                            tl.items.iter().position(|i| {
-                                                i.as_event()
-                                                    .and_then(|e| e.event_id())
-                                                    .map_or(false, |event_id| {
-                                                        details.event_id == event_id
-                                                    })
-                                            });
-                                        if let Some(index) = message_replied_to_tl_index {
-                                            let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-					    let base_speed = 10.0;
-                                            // apply a scaling based on the distance
-                                            let scaled_speed = base_speed * (distance * distance);
+                        if let Some(details) = tl.items.get(tl_idx)
+                            .and_then(|item| item.as_event())
+                            .and_then(|event| event.content().as_message())
+                            .and_then(|message| message.in_reply_to())
+                        {
+                            // Attempt to find the index of replied-to message on the timeline.
+                            // Start from the current item's index (`tl_idx`)and search backwards,
+                            // since we know the replied-to message must come before the current item.
+                            let replied_to_msg_tl_index = tl.items
+                                .focus()
+                                .narrow(..tl_idx)
+                                .into_iter()
+                                .rposition(|i| i.as_event()
+                                    .and_then(|e| e.event_id())
+                                    .map_or(false, |ev_id| ev_id == details.event_id)
+                                );
 
-                                            // substract to leave some space.
-                                            portal_list.smooth_scroll_to(cx, index - 2, scaled_speed);
-					    // start highlight animation.
-                                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                                                item_id: index
-                                            };
+                            if let Some(index) = replied_to_msg_tl_index {
+                                let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
+                                let base_speed = 10.0;
+                                // apply a scaling based on the distance
+                                let scaled_speed = base_speed * (distance * distance);
+                                // Scroll to the message right before the replied-to message.
+                                // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                                //       so that we can scroll to the replied-to message and have it
+                                //       appear beneath the top of the viewport.
+                                portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
+                                // start highlight animation.
+                                tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                    item_id: index
+                                };
 
-                                            self.redraw(cx);
-                                        }
-                                    }
-                                }
+                                self.redraw(cx);
                             }
                         }
                     }
@@ -1153,6 +1156,8 @@ impl Widget for RoomScreen {
                             MessageAction::MessageHighlight(item_id),
                         );
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
+                        // Adjust the scrolled-to item's position to be slightly beneath the top of the viewport.
+                        // portal_list.set_first_id_and_scroll(portal_list.first_id(), 15.0);
                     }
                 }
 
