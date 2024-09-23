@@ -2,13 +2,8 @@ use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
-use crate::shared::adaptive_layout_view::AdaptiveLayoutViewAction;
-use crate::shared::avatar::AvatarWidgetRefExt;
-use crate::shared::clickable_view::*;
-use crate::shared::html_or_plaintext::HtmlOrPlaintextWidgetRefExt;
-use crate::utils::{self, relative_format};
 
-const MIN_DESKTOP_WIDTH: f64 = 860.0;
+use super::room_preview::RoomPreviewAction;
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -19,137 +14,10 @@ live_design! {
     import crate::shared::search_bar::SearchBar;
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
-    import crate::shared::clickable_view::ClickableView;
     import crate::shared::avatar::Avatar;
     import crate::shared::html_or_plaintext::HtmlOrPlaintext;
-
-    // This will become a custom widget to add hovering and other animations.
-    RoomPreview = <ClickableView> {
-        flow: Right, spacing: 10., padding: 10.
-        width: Fill, height: Fit
-        show_bg: true
-        draw_bg: {
-            instance border_width: 0.0
-            instance border_color: #0000
-            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-            instance radius: 4.0
-
-            fn get_color(self) -> vec4 {
-                return self.color
-            }
-
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_width,
-                    self.inset.y + self.border_width,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                    max(1.0, self.radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
-                }
-                return sdf.result;
-            }
-        }
-
-        avatar = <Avatar> {}
-
-        preview = <View> {
-            width: Fill, height: Fit
-            flow: Down, spacing: 5.
-
-            header = <View> {
-                width: Fill, height: Fit
-                flow: Right
-                spacing: 10.
-                align: {y: 0.5}
-
-                room_name = <Label> {
-                    width: Fill, height: Fit
-                    draw_text:{
-                        color: #000,
-                        wrap: Ellipsis,
-                        text_style: <USERNAME_TEXT_STYLE>{ font_size: 10. }
-                    }
-                    text: "[Room name unknown]"
-                }
-
-                timestamp = <Label> {
-                    width: Fit, height: Fit
-                    draw_text:{
-                        color: (TIMESTAMP_TEXT_COLOR)
-                        text_style: <TIMESTAMP_TEXT_STYLE>{
-                            font_size: 7.5
-                        },
-                    }
-                    text: "[Timestamp unknown]"
-                }
-            }
-
-            latest_message = <HtmlOrPlaintext> {
-                html_view = { html = {
-                    font_size: 9.3, line_spacing: 1.,
-                    draw_normal:      { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    draw_italic:      { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
-                    // a = { draw_text:  { text_style: { font_size: 9.3, line_spacing: 1. } } },
-                } }
-                plaintext_view = { pt_label = {
-                    draw_text: {
-                        text_style: { font_size: 9.5, line_spacing: 1. },
-                    }
-                    text: "[Latest message unknown]"
-                } }
-            }
-        }
-    }
-
-    RoomPreviewSelected = <RoomPreview> {
-        draw_bg: {
-            color: (COLOR_SELECTED_PRIMARY)
-        }
-
-        preview = {
-            header = {
-                room_name = {
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                    }
-                }
-
-                timestamp = {
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                    }
-                }
-            }
-
-            latest_message = {
-                html_view = { html = {
-                    draw_normal:      { color: (COLOR_PRIMARY) },
-                    draw_italic:      { color: (COLOR_PRIMARY) },
-                    draw_bold:        { color: (COLOR_PRIMARY) },
-                    draw_bold_italic: { color: (COLOR_PRIMARY) },
-                    draw_fixed:       { color: (MESSAGE_TEXT_COLOR) },
-                    // a = { draw_text:  { color: (COLOR_PRIMARY) }, },
-                } }
-                plaintext_view = { pt_label = {
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                    }
-                } }
-            }
-        }
-    }
+    
+    import crate::home::room_preview::*;
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -181,7 +49,6 @@ live_design! {
             flow: Down, spacing: 0.0
 
             room_preview = <RoomPreview> {}
-            room_preview_selected = <RoomPreviewSelected> {}
             empty = <Empty> {}
             status_label = <StatusLabel> {}
             bottom_filler = <View> {
@@ -261,8 +128,10 @@ pub struct RoomPreviewEntry {
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
-
+    /// Whether this room is currently selected in the UI.
+    pub is_selected: bool,
 }
+
 #[derive(Debug)]
 pub enum RoomPreviewAvatar {
     Text(String),
@@ -287,8 +156,6 @@ pub struct RoomsList {
     #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
-    /// The current width of the inner screen
-    #[rust] screen_width: f64,
 }
 
 impl Widget for RoomsList {
@@ -344,7 +211,7 @@ impl Widget for RoomsList {
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         let widget_uid = self.widget_uid();
         for list_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
-            if let ClickableViewAction::Click = list_action.as_widget_action().cast() {
+            if let RoomPreviewAction::Click = list_action.as_widget_action().cast() {
                 let widget_action = list_action.as_widget_action();
 
                 if let Some(room_index) = self.rooms_list_map
@@ -363,17 +230,10 @@ impl Widget for RoomsList {
                             room_name: room_details.room_name.clone(),
                         }
                     );
-
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        AdaptiveLayoutViewAction::NavigateTo(live_id!(main_content))
-                    );
+                    self.redraw(cx);
                 }
             }
         }
-
-        self.match_event(cx, event);
     }
 
 
@@ -394,6 +254,7 @@ impl Widget for RoomsList {
             list.set_item_range(cx, 0, last_item_id + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                let mut scope = Scope::empty();
                 // Draw the status label as the bottom entry.
                 let item = if item_id == last_item_id {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
@@ -415,65 +276,26 @@ impl Widget for RoomsList {
                 else if item_id > last_item_id {
                     list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
                 }
-                // Draw actual room preview entries.
                 else {
-                    // Workaround for programatically showing the room preview as selected.
-                    // TODO: We should support overriding the draw_bg implementation on AdaptiveLayoutView instead and replace the RoomPreview ClickableView with it.
-                    let item_template = if self.current_active_room_index == Some(item_id) && self.screen_width > MIN_DESKTOP_WIDTH {
-                        live_id!(room_preview_selected)
-                    } else {
-                        live_id!(room_preview)
-                    };
+                    let item_template = live_id!(room_preview);
+
                     let item = list.item(cx, item_id, item_template).unwrap();
                     let index_of_room = item_id as usize;
-                    let room_info = &self.all_rooms[index_of_room];
-
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
-
-                    if let Some(ref name) = room_info.room_name {
-                        item.label(id!(preview.room_name)).set_text(name);
-                    }
-                    if let Some((ts, msg)) = room_info.latest.as_ref() {
-                        if let Some(human_readable_date) = relative_format(ts) {
-                            item.label(id!(timestamp)).set_text(&human_readable_date);
-                        }
-                        item.html_or_plaintext(id!(preview.latest_message)).show_html(msg);
-                    }
-                    match room_info.avatar {
-                        RoomPreviewAvatar::Text(ref text) => {
-                            item.avatar(id!(avatar)).show_text(None, text);
-                        }
-                        RoomPreviewAvatar::Image(ref img_bytes) => {
-                            let _ = item.avatar(id!(avatar)).show_image(
-                                None, // don't make room preview avatars clickable.
-                                |img| utils::load_png_or_jpg(&img, cx, img_bytes)
-                            );
-                        }
-                    }
+                    
+                    let room_info = &mut self.all_rooms[index_of_room];
+                    room_info.is_selected = self.current_active_room_index == Some(item_id);
+                    // Pass down the room info to the RoomPreview widget.
+                    scope = Scope::with_props(&*room_info);
 
                     item
                 };
 
-                item.draw_all(cx, &mut Scope::empty());
+                item.draw_all(cx, &mut scope);
             }
         }
 
         DrawStep::done()
     }
 
-}
-
-// This is a workaround for detecting if we should show the room previews as selected, which we don't want to do for mobile.
-// TODO: find a centralized way to fetch the current screen width or layout mode.
-impl MatchEvent for RoomsList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
-        for action in actions {
-            if let WindowAction::WindowGeomChange(ce) = action.as_widget_action().cast() {
-                if self.screen_width != ce.new_geom.inner_size.x {
-                    self.screen_width = ce.new_geom.inner_size.x;
-                    cx.redraw_all();
-                }
-            }
-        }
-    }
 }

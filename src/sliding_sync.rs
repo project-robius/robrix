@@ -3,11 +3,11 @@ use clap::Parser;
 use eyeball_im::VectorDiff;
 use futures_util::{StreamExt, pin_mut};
 use imbl::Vector;
-use makepad_widgets::{error, log, SignalToUI};
+use makepad_widgets::{error, log, warning, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, media::MediaRequest, room::{Receipts,RoomMember}, ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType,session::get_login_types::v3::LoginType}, assign, events::{receipt::{ReceiptThread}, room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
-    }, sliding_sync::http::request::{AccountData, ListFilters, ToDevice, E2EE}, Client, Room, SlidingSyncList, SlidingSyncMode
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{RoomMember,Receipts}, ruma::{
+        api::client::{session::get_login_types::v3::LoginType,receipt::create_receipt::v3::ReceiptType}, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType,receipt::ReceiptThread}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+    }, sliding_sync::http::request::ListFilters, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
@@ -195,6 +195,11 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         typing: bool,
     },
+    SubscribeToTypingNotices {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe from typing notices for this room.
+        subscribe: bool,
+    },
     ReadReceipt{
         room_id:OwnedRoomId,
         event_id:OwnedEventId,
@@ -321,8 +326,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
             MatrixRequest::FetchRoomMembers { room_id } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
@@ -459,6 +464,55 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     if let Err(e) = room.typing_notice(typing).await {
                         error!("Failed to send typing notice to room {room_id}: {e:?}");
                     }
+                });
+            }
+
+            MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
+                let (room, timeline_update_sender, mut typing_notice_receiver) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
+                        continue;
+                    };
+                    let (room, recv) = if subscribe {
+                        if room_info.typing_notice_subscriber.is_some() {
+                            warning!("Note: room {room_id} is already subscribed to typing notices.");
+                            continue;
+                        } else {
+                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                                error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
+                                continue;
+                            };
+                            let (drop_guard, recv) = room.subscribe_to_typing_notifications();
+                            room_info.typing_notice_subscriber = Some(drop_guard);
+                            (room, recv)
+                        }
+                    } else {
+                        room_info.typing_notice_subscriber.take();
+                        continue;
+                    };
+                    // Here: we don't have an existing subscriber running, so we fall through and start one.
+                    (room, room_info.timeline_update_sender.clone(), recv)
+                };
+
+                let _typing_notices_task = Handle::current().spawn(async move {
+                    while let Ok(user_ids) = typing_notice_receiver.recv().await {
+                        let mut users = Vec::with_capacity(user_ids.len());
+                        for user_id in user_ids {
+                            users.push(
+                                room.get_member_no_sync(&user_id)
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|m| m.display_name().map(|d| d.to_owned()))
+                                    .unwrap_or_else(|| user_id.to_string())
+                            );
+                        }
+                        if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
+                            error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
+                        }
+                    }
+                    // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
 
@@ -655,6 +709,8 @@ struct RoomInfo {
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// The async task that is subscribed to the timeline's back-pagination status.
     pagination_status_task: Option<JoinHandle<()>>,
+    /// A drop guard for the event handler that represents a subscription to typing notices for this room.
+    typing_notice_subscriber: Option<EventHandlerDropGuard>,
 }
 
 /// Information about all of the rooms we currently know about.
@@ -991,6 +1047,7 @@ async fn async_main_loop() -> Result<()> {
                     }),
                     avatar: avatar_from_room_name(room_name_str.as_deref().unwrap_or_default()),
                     room_name: room_name_str.clone(),
+                    ..RoomPreviewEntry::default()
                 }));
 
                 ALL_ROOM_INFO.lock().unwrap().insert(
@@ -1001,9 +1058,10 @@ async fn async_main_loop() -> Result<()> {
                             .map(|ev| ev.timestamp())
                             .unwrap_or(MilliSecondsSinceUnixEpoch(UInt::MIN)),
                         timeline: tl_arc,
-                        pagination_status_task: None,
                         timeline_update_receiver: Some(timeline_update_receiver),
                         timeline_update_sender,
+                        pagination_status_task: None,
+                        typing_notice_subscriber: None,
                     },
                 );
             }
@@ -1062,7 +1120,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                 .into_iter()
                 .filter_map(|u| OwnedUserId::try_from(u).ok())
                 .collect::<BTreeSet<_>>();
-            
+
             // TODO: when we support persistent state, don't forget to update `IGNORED_USERS` upon app boot.
             let mut ignored_users_old = IGNORED_USERS.lock().unwrap();
             let has_changed = *ignored_users_old != ignored_users_new;

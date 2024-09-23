@@ -198,6 +198,7 @@ live_design! {
         width: Fill
         height: Fit
         flow: Down
+
         padding: {top: 0.0, right: 12.0, bottom: 0.0, left: 12.0}
 
         // A reply preview with a vertical bar drawn in the background.
@@ -295,6 +296,54 @@ live_design! {
         flow: Down,
         padding: 0.0,
         spacing: 0.0
+
+        show_bg: true
+        draw_bg: {
+            instance highlight: 0.0
+            instance hover: 0.0
+            fn pixel(self) -> vec4 {
+                return mix(
+                    mix(
+                        #ffffff,
+                        #fafafa,
+                        self.hover
+                    ),
+                    #c5d6fa, // light blue
+                    self.highlight
+                )
+            }
+        }
+
+        animator: {
+            highlight = {
+                default: off
+                off = {
+                    redraw: true,
+                    from: { all: Forward {duration: 2.0} }
+                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { draw_bg: {highlight: 0.0} }
+                }
+                on = {
+                    redraw: true,
+                    from: { all: Forward {duration: 0.5} }
+                    ease: ExpDecay {d1: 0.80, d2: 0.97}
+                    apply: { draw_bg: {highlight: 1.0} }
+                }
+            }
+            hover = {
+                default: off
+                off = {
+                    redraw: true,
+                    from: { all: Snap }
+                    apply: { draw_bg: {hover: 0.0} }
+                }
+                on = {
+                    redraw: true,
+                    from: { all: Snap }
+                    apply: { draw_bg: {hover: 1.0} }
+                }
+            }
+        }
 
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
@@ -544,6 +593,8 @@ live_design! {
         }
     }
 
+
+
     // The top space is used to display a loading animation while the room is being paginated.
     TopSpace = <View> {
         visible: false,
@@ -614,7 +665,7 @@ live_design! {
                 }
             }
         }
-        
+
     }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
@@ -628,7 +679,8 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-        
+
+
         tab_title = <View> {
             width: Fit, height: Fit,
             align: {x: 0.0, y: 0.5},
@@ -648,6 +700,7 @@ live_design! {
             }
         }
 
+
         <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -655,7 +708,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            
+
             <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -665,6 +718,9 @@ live_design! {
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
 
+
+
+
                 // Below that, display an optional preview of the message that the user
                 // is currently drafting a replied to.
                 replying_preview = <View> {
@@ -673,7 +729,7 @@ live_design! {
                     height: Fit
                     flow: Down
                     padding: 0.0
-            
+
                     // Displays a "Replying to" label and a cancel button
                     // above the preview of the message being replied to.
                     <View> {
@@ -682,7 +738,7 @@ live_design! {
                         height: Fit
                         flow: Right
                         align: {y: 0.5}
-            
+
                         <Label> {
                             draw_text: {
                                 text_style: <TEXT_SUB> {},
@@ -690,14 +746,14 @@ live_design! {
                             }
                             text: "Replying to:"
                         }
-            
+
                         filler = <View> {width: Fill, height: Fill}
-            
+
                         // TODO: Fix style
                         cancel_reply_button = <IconButton> {
                             width: Fit,
                             height: Fit,
-            
+
                             draw_icon: {
                                 svg_file: (ICO_CLOSE),
                                 fn get_color(self) -> vec4 {
@@ -707,8 +763,31 @@ live_design! {
                             icon_walk: {width: 12, height: 12}
                         }
                     }
-            
+
                     reply_preview_content = <ReplyPreviewContent> { }
+                }
+
+                // Below that, display user typing notice
+                typing_notice = <View> {
+                    visible: false
+                    width: Fill
+                    height: Fit
+                    flow: Right
+                    padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
+                    show_bg: true,
+                    draw_bg: {
+                        color: #e8f4ff,
+                    }
+
+                    typing_label = <Label> {
+                        draw_text: {
+                            color: #121570,
+                            text_style: <REGULAR_TEXT>{font_size: 9}
+                        }
+                        text: "Someone is typing..."
+                    }
+
+                    // TODO: add a bouncing/moving ellipsis animation after the list of typing users.
                 }
 
                 // Below that, display a view that holds the message input bar and send button.
@@ -730,15 +809,15 @@ live_design! {
                             instance border_width: 0.8
                             instance border_color: #D0D5DD
                             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-                
+
                             fn get_color(self) -> vec4 {
                                 return self.color
                             }
-                
+
                             fn get_border_color(self) -> vec4 {
                                 return self.border_color
                             }
-                
+
                             fn pixel(self) -> vec4 {
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                                 sdf.box(
@@ -755,7 +834,7 @@ live_design! {
                                 return sdf.result;
                             }
                         }
-                        draw_label: {
+                        draw_text: {
                             color: (MESSAGE_TEXT_COLOR),
                             text_style: <MESSAGE_TEXT_STYLE>{},
 
@@ -950,13 +1029,13 @@ impl Widget for RoomScreen {
 
                             // TODO: here we need to re-build the timeline via TimelineBuilder
                             //       and set the TimelineFocus to one of the above-saved event IDs.
-                            
-                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode 
+
+                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode
                             //       can be changed after creation, but I do not see any methods to actually do that.
                             //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
                             //
                             //       As such, we probably need to create a new async request enum variant
-                            //       that tells the background async task to build a new timeline 
+                            //       that tells the background async task to build a new timeline
                             //       (either in live mode or focused mode around one or more events)
                             //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
                         }
@@ -1036,6 +1115,23 @@ impl Widget for RoomScreen {
                         // Here, to be most efficient, we could redraw only the media items in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
+
+                    TimelineUpdate::TypingUsers { users } => {
+                        let typing_text = match users.as_slice() {
+                            [] => String::new(),
+                            [user] => format!("{user} is typing..."),
+                            [user1, user2] => format!("{user1} and {user2} are typing..."),
+                            [user1, user2, others @ ..] => {
+                                if others.len() > 1 {
+                                    format!("{user1}, {user2}, and {} are typing...", &others[0])
+                                } else {
+                                    format!("{user1}, {user2}, and {} others are typing...", others.len())
+                                }
+                            }
+                        };
+                        self.view.view(id!(typing_notice)).set_visible(!users.is_empty());
+                        self.view.label(id!(typing_label)).set_text(&typing_text);
+                    }
                 }
             }
 
@@ -1071,37 +1167,71 @@ impl Widget for RoomScreen {
                         }
                     }
                     MessageAction::ReplyPreviewClicked(item_id) => {
-                        let portal_list = self.portal_list(id!(list));
+                        let mut portal_list = self.portal_list(id!(list));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
                         let tl_idx = item_id as usize;
 
-                        if let Some(tl_item) = tl.items.get(tl_idx) {
-                            if let Some(tl_event_item) = tl_item.as_event() {
-                                if let Some(message) = tl_event_item.content().as_message() {
-                                    if let Some(details) = message.in_reply_to() {
-                                        // Find the replyed message on timeline so we use the id for scrolling portal list
-                                        let message_replied_to_tl_index =
-                                            tl.items.iter().position(|i| {
-                                                i.as_event()
-                                                    .and_then(|e| e.event_id())
-                                                    .map_or(false, |event_id| {
-                                                        details.event_id == event_id
-                                                    })
-                                            });
-                                        if let Some(index) = message_replied_to_tl_index {
-                                            portal_list.set_first_id(index);
-                                            self.redraw(cx);
-                                        }
-                                    }
-                                }
+                        if let Some(details) = tl.items.get(tl_idx)
+                            .and_then(|item| item.as_event())
+                            .and_then(|event| event.content().as_message())
+                            .and_then(|message| message.in_reply_to())
+                        {
+                            // Attempt to find the index of replied-to message on the timeline.
+                            // Start from the current item's index (`tl_idx`)and search backwards,
+                            // since we know the replied-to message must come before the current item.
+                            let replied_to_msg_tl_index = tl.items
+                                .focus()
+                                .narrow(..tl_idx)
+                                .into_iter()
+                                .rposition(|i| i.as_event()
+                                    .and_then(|e| e.event_id())
+                                    .is_some_and(|ev_id| ev_id == details.event_id)
+                                );
+
+                            if let Some(index) = replied_to_msg_tl_index {
+                                let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
+                                let base_speed = 10.0;
+                                // apply a scaling based on the distance
+                                let scaled_speed = base_speed * (distance * distance);
+                                // Scroll to the message right before the replied-to message.
+                                // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                                //       so that we can scroll to the replied-to message and have it
+                                //       appear beneath the top of the viewport.
+                                portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
+                                // start highlight animation.
+                                tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                    item_id: index
+                                };
+
+                                self.redraw(cx);
+                            } else {
+                                log!("TODO: the replied-to message was not yet available in the timeline.");
                             }
                         }
                     }
-                    MessageAction::None => {}
+                    _ => {}
                 }
-                
+
+                // Handle the highlight animation. 
+                let portal_list = self.portal_list(id!(list));
+                let Some(tl) = self.tl_state.as_mut() else {
+                    return;
+                };
+                if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
+                    if portal_list.smooth_scroll_reached(actions) {
+                        cx.widget_action(
+                            widget_uid,
+                            &scope.path,
+                            MessageAction::MessageHighlight(item_id),
+                        );
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
+                        // Adjust the scrolled-to item's position to be slightly beneath the top of the viewport.
+                        // portal_list.set_first_id_and_scroll(portal_list.first_id(), 15.0);
+                    }
+                }
+
                 // Handle message reply action
                 if let TimelineAction::MessageReply(message_to_reply_to) = action.as_widget_action().cast() {
                     if let Ok(replied_to_info) = message_to_reply_to.replied_to_info() {
@@ -1295,7 +1425,6 @@ impl Widget for RoomScreen {
         }
 
     }
-
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -1518,12 +1647,20 @@ impl RoomScreen {
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
+                message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 prev_first_index: None,
                 read_event_hashmap:HashMap::new(),
                 marked_fully_read_queue:HashMap::new(),
             };
             (new_tl_state, true)
         };
+
+        submit_async_request(
+            MatrixRequest::SubscribeToTypingNotices {
+                room_id: room_id.clone(),
+                subscribe: true,
+            }
+        );
 
         // kick off a back pagination request for this room
         if !tl_state.fully_paginated {
@@ -1556,7 +1693,15 @@ impl RoomScreen {
     /// Invoke this when this timeline is being hidden or no longer being shown,
     /// e.g., when the user navigates away from this timeline.
     fn hide_timeline(&mut self) {
-        self.save_state();
+        if let Some(room_id) = self.room_id.clone() {
+            self.save_state();
+            submit_async_request(
+                MatrixRequest::SubscribeToTypingNotices {
+                    room_id,
+                    subscribe: false,
+                }
+            );
+        }
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -1624,6 +1769,13 @@ impl RoomScreen {
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
     pub fn set_displayed_room(&mut self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
+        // If the room is already being displayed, then do nothing.
+        if let Some(current_room_id) = &self.room_id {
+            if current_room_id.eq(&room_id) {
+                return;
+            }
+        }
+
         self.hide_timeline();
         self.room_name = room_name;
         self.room_id = Some(room_id);
@@ -1681,6 +1833,11 @@ pub enum TimelineUpdate {
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
+    /// A notice that one or more members of a this room are currently typing.
+    TypingUsers {
+        /// The list of users (their displayable name) who are currently typing in this room.
+        users: Vec<String>,
+    },
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -1733,16 +1890,10 @@ struct TimelineUiState {
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
-    
+
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
-    /// To detect if scroll changes when it is not scrolled
-    prev_first_index:Option<usize>,
-    // Intermediate hashmap to track display time, last bool value: true indicates moved to queue
-    read_event_hashmap:HashMap<String,(OwnedRoomId,OwnedEventId,std::time::Instant,bool)>,
-    // Queue to send fully read receipt
-    marked_fully_read_queue:HashMap<String,(OwnedRoomId,OwnedEventId)>,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
@@ -1761,11 +1912,19 @@ impl<const N: usize> Default for FirstDrawnEvents<N> {
     }
 }
 
-/// 
+///
 #[derive(Clone, Copy, Debug, Default)]
 struct ItemIndexScroll {
     index: usize,
     scroll: f64,
+}
+
+
+#[derive(Default, Debug)]
+enum MessageHighlightAnimationState {
+    Pending { item_id: usize, },
+    #[default]
+    Off,
 }
 
 /// States that are necessary to save in order to maintain a consistent UI display for a timeline.
@@ -1836,7 +1995,7 @@ fn find_new_item_matching_current_item(
             // some may be zeroed-out, so we need to account for that possibility by only
             // using events that have a real non-zero area
             if let Some(pos_offset) = portal_list.position_of_item(cx, *idx_curr) {
-                log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");  
+                log!("Found matching event ID {event_id} at index {idx_new} in new items list, corresponding to current item index {idx_curr} at pos offset {pos_offset}");
                 return Some((*idx_curr, idx_new, pos_offset, event_id.to_owned()));
             }
         }
@@ -2497,7 +2656,7 @@ fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
     room_id: &RoomId,
-    sender_user_id: &UserId, 
+    sender_user_id: &UserId,
     sender_profile: &TimelineDetails<Profile>,
     event_id: Option<&EventId>,
 ) -> (String, bool) {
@@ -2572,6 +2731,7 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
 pub enum MessageAction {
     MessageReply(usize),
     ReplyPreviewClicked(usize),
+    MessageHighlight(usize),
     None,
 }
 
@@ -2585,10 +2745,22 @@ pub struct Message {
     can_be_replied_to: bool,
     #[rust]
     item_id: usize,
+    #[animator]
+    animator: Animator,
 }
 
 impl Widget for Message {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+
+        if !self.animator.is_track_animating(cx, id!(highlight))
+            && self.animator_in_state(cx, id!(highlight.on))
+        {
+            self.animator_play(cx, id!(highlight.off));
+        }
+
         let widget_uid = self.widget_uid();
 
         if let Event::Actions(actions) = event {
@@ -2601,7 +2773,7 @@ impl Widget for Message {
             }
         }
 
-        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(reply_preview)).area()) {
+        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
                 cx.widget_action(
                     widget_uid,
@@ -2611,15 +2783,31 @@ impl Widget for Message {
             }
         }
 
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.as_widget_action().cast() {
+                    MessageAction::MessageHighlight(id) if id == self.item_id => {
+                        self.animator_play(cx, id!(highlight.on));
+                        self.redraw(cx);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         if let Event::MouseMove(e) = event {
             let hovered = self.view.area().rect(cx).contains(e.abs);
-            if self.hovered != hovered {
+            if (self.hovered != hovered) || (!hovered && self.animator_in_state(cx, id!(hover.on))){
                 self.hovered = hovered;
 
                 // TODO: Once we have a context menu, the messageMenu can be displayed on hover or push only
                 // self.view.view(id!(message_menu)).set_visible(hovered);
-
-                self.redraw(cx);
+                let hover_animator = if self.hovered {
+                    id!(hover.on)
+                } else {
+                    id!(hover.off)
+                };
+                self.animator_play(cx, hover_animator);
             }
         }
 
@@ -2627,25 +2815,6 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // TODO: need vecs for apply_over(), maybe use an animator so we just set the state here
-        // and the animator handles the color changes from inside the dsl.
-        let default_color = vec3(1.0, 1.0, 1.0); // #ffffff
-        let hover_color = vec3(0.98, 0.98, 0.98); // #fafafa  (very light gray)
-
-        let bg_color = if self.hovered {
-            hover_color
-        } else {
-            default_color
-        };
-
-        self.view.apply_over(
-            cx,
-            live! {
-                show_bg: true,
-                draw_bg: {color: (bg_color)}
-            },
-        );
-
         self.view
             .button(id!(reply_button))
             .set_visible(self.can_be_replied_to);

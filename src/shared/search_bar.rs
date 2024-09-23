@@ -41,11 +41,11 @@ live_design! {
 
         input = <TextInput> {
             width: Fill,
-            height: Fit,
+            height: 30.,
 
             empty_message: "Search"
 
-            draw_label: {
+            draw_text: {
                 text_style: { font_size: 10 },
                 fn get_color(self) -> vec4 {
                     return (COLOR_TEXT_INPUT_IDLE);
