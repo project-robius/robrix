@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::{home::rooms_list::RoomsListWidgetExt, shared::{adaptive_layout_view::AdaptiveLayoutView, search_bar::SearchBarAction}};
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -7,6 +9,8 @@ live_design! {
 
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
+    import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
+    import crate::shared::search_bar::SearchBar;
     import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
@@ -90,6 +94,7 @@ live_design! {
         }
     }
 
+
     RoomsView = {{RoomsView}} {
         show_bg: true,
         draw_bg: {
@@ -112,6 +117,9 @@ live_design! {
                 color: #x0
                 text_style: <TITLE_TEXT>{}
             }
+        }
+        <SearchBar> {
+            placeholder: "Please enter room name, alias or id..."
         }
         <View> {
             flow: Down, spacing: 20
@@ -178,6 +186,32 @@ impl Widget for RoomsView {
         self.view.handle_event(cx, event, scope);
     }
     
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct RoomsSideBar {
+    #[deref] view: AdaptiveLayoutView,
+}
+
+impl Widget for RoomsSideBar {
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        for rooms_sidebar_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
+            if let SearchBarAction::Change(value) = rooms_sidebar_action.as_widget_action().cast() {
+
+                log!("Search value: {}", value);
+
+                // pass the search value to the rooms list widget
+                self.view.rooms_list(id!(room_list)).handle_event(cx, event, &mut Scope::with_data(&mut value.clone()));
+
+            }
+            // also can handle collapsable title actions here, open or close the collapsable content.
+        }
+    }
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }

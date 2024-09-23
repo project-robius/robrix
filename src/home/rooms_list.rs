@@ -123,6 +123,10 @@ pub struct RoomPreviewEntry {
     pub room_id: Option<OwnedRoomId>,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The main alias for this room, if known.
+    pub cannonical_alias: Option<OwnedRoomAliasId>,
+    /// A list of alternative aliases for this room.
+    pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
@@ -160,13 +164,20 @@ pub struct RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+
         // Process all pending updates to the list of all rooms, and then redraw it.
         {
             let mut num_updates: usize = 0;
+
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;
+
+                let search_value = *(&scope.data.get::<String>());
+                log!("Search value: {:?}", search_value);
+
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        // If the search bar has a value, filter the rooms by the search value.
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
