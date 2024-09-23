@@ -198,12 +198,10 @@ pub enum MatrixRequest {
     ReadReceipt{
         room_id:OwnedRoomId,
         event_id:OwnedEventId,
-        message:String,
     },
     FullyReadReceipt{
         room_id:OwnedRoomId,
         event_id:OwnedEventId,
-        message:String,
     }
 }
 
@@ -526,28 +524,27 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     SignalToUI::set_ui_signal();
                 });
             }
-            MatrixRequest::ReadReceipt { room_id,event_id, message }=>{
+            MatrixRequest::ReadReceipt { room_id,event_id }=>{
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for send message request {room_id}");
+                        log!("BUG: room info not found for send read receipt request {room_id}");
                         continue;
                     };
-
                     room_info.timeline.clone()
                 };
                 let _send_message_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(_send_handle) => log!("Sent message to room  {room_id}.read_marker {event_id} message {message}"),
-                        Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+                        Ok(_send_handle) => log!("Sent read receipt request to room  {room_id} {event_id}"),
+                        Err(_e) => error!("Failed to send read receipt request to room {room_id}: {_e:?}"),
                     }
                 });
             },
-            MatrixRequest::FullyReadReceipt { room_id,event_id,message }=>{
+            MatrixRequest::FullyReadReceipt { room_id,event_id }=>{
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for send message request {room_id}");
+                        log!("BUG: room info not found for send read receipt request {room_id}");
                         continue;
                     };
 
@@ -556,8 +553,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let _send_message_task = Handle::current().spawn(async move {
                     let receipt = Receipts::new().fully_read_marker(event_id.clone());
                     match timeline.send_multiple_receipts(receipt).await {
-                        Ok(_send_handle) => log!("Sent message to room  {room_id}.fully_read_marker {event_id} message {message}"),
-                        Err(_e) => error!("Failed to send message to room {room_id}: {_e:?}"),
+                        Ok(_send_handle) => log!("Sent fully read receipt / fully_read_marker to room  {room_id} {event_id}"),
+                        Err(_e) => error!("Failed to fully read receipt to room {room_id}: {_e:?}"),
                     }
                 });
             }    
