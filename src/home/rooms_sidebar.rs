@@ -11,8 +11,10 @@ live_design! {
     import crate::shared::helpers::*;
     import crate::shared::adaptive_layout_view::AdaptiveLayoutView;
     import crate::shared::search_bar::SearchBar;
+    import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
+    import crate::shared::cached_widget::CachedWidget;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
@@ -92,21 +94,8 @@ live_design! {
         }
     }
 
-    RoomsSideBar = {{RoomsSideBar}} {
-        composition: {
-            desktop: {
-                padding: {top: 20., left: 10., right: 10.}
-                flow: Down, spacing: 10
-                width: 350, height: Fill
-                visibility: Visible
-            },
-            mobile: {
-                padding: {top: 17., left: 17., right: 17.}
-                flow: Down, spacing: 7
-                width: Fill, height: Fill
-                visibility: Visible
-            }
-        }
+
+    RoomsView = {{RoomsView}} {
         show_bg: true,
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
@@ -167,7 +156,38 @@ live_design! {
                 }
             }
         }
-        room_list = <RoomsList> {}
+        <CachedWidget> {
+            rooms_list = <RoomsList> {}
+        }
+    }
+
+    RoomsSideBar = <AdaptiveView> {
+        Desktop = <RoomsView> {
+            padding: {top: 20., left: 10., right: 10.}
+            flow: Down, spacing: 10
+            width: 280, height: Fill
+        },
+        Mobile = <RoomsView> {
+            padding: {top: 17., left: 17., right: 17.}
+            flow: Down, spacing: 7
+            width: Fill, height: Fill
+        }        
+    }
+}
+
+#[derive(Widget, Live, LiveHook)]
+pub struct RoomsView {
+    #[deref]
+    view: View,
+}
+
+impl Widget for RoomsView {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+    
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 

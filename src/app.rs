@@ -1,4 +1,7 @@
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedRoomId;
+
+use crate::home::rooms_list::RoomListAction;
 
 live_design! {
     import makepad_widgets::base::*;
@@ -100,7 +103,7 @@ live_design! {
             pass: {clear_color: #2A}
 
             body = {
-                <HomeScreen> {}
+                home_screen = <HomeScreen> {}
             } // end of body
         }
     }
@@ -112,6 +115,9 @@ app_main!(App);
 pub struct App {
     #[live]
     ui: WidgetRef,
+
+    #[rust]
+    app_state: AppState,
 }
 
 impl LiveRegister for App {
@@ -134,6 +140,34 @@ impl MatchEvent for App {
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        for action in actions {
+            match action.as_widget_action().cast() {
+                // A room has been selected, update the app state and navigate to the main content view.
+                RoomListAction::Selected {
+                    room_id,
+                    room_index: _,
+                    room_name,
+                } => {
+                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
+                        id: room_id.clone(),
+                        name: room_name.clone(),
+                    });
+
+                    let widget_uid = self.ui.widget_uid();
+                    cx.widget_action(
+                        widget_uid,
+                        &Scope::default().path,
+                        StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    );
+                    self.ui.redraw(cx);
+                }
+                _ => (),
+            }
+        }
+    }
+
     /*
     fn handle_shutdown(&mut self, _cx: &mut Cx) {
         log!("App::handle_shutdown()");
@@ -163,6 +197,23 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
-        self.ui.handle_event(cx, event, &mut Scope::empty());
+        let scope = &mut Scope::with_data(&mut self.app_state);
+        self.ui.handle_event(cx, event, scope);
     }
+}
+
+#[derive(Default, Debug)]
+pub struct AppState {
+    pub rooms_panel: RoomsPanelState,
+}
+
+#[derive(Default, Debug)]
+pub struct RoomsPanelState {
+    pub selected_room: Option<SelectedRoom>,
+}
+
+#[derive(Debug)]
+pub struct SelectedRoom {
+    pub id: OwnedRoomId,
+    pub name: Option<String>,
 }

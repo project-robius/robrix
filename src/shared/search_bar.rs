@@ -41,17 +41,17 @@ live_design! {
                 icon_walk: {width: 14, height: Fit}
             }
 
-            input = <TextInput> {
-                width: Fill,
-                height: Fit,
+
+        input = <TextInput> {
+            width: Fill,
+            height: 30.,
 
                 empty_message: "Search"
 
-                draw_label: {
-                    text_style: { font_size: 10 },
-                    fn get_color(self) -> vec4 {
-                        return (COLOR_TEXT_INPUT_IDLE);
-                    }
+            draw_text: {
+                text_style: { font_size: 10 },
+                fn get_color(self) -> vec4 {
+                    return (COLOR_TEXT_INPUT_IDLE);
                 }
 
                 // TODO find a way to override colors
