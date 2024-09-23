@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}};
+use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::Instant};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -1894,6 +1894,10 @@ struct TimelineUiState {
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
+    message_highlight_animation_state: MessageHighlightAnimationState,
+    prev_first_index: Option<usize>,
+    read_event_hashmap: HashMap<String,(OwnedRoomId,OwnedEventId,Instant,bool)>,
+    marked_fully_read_queue: HashMap<String,(OwnedRoomId,OwnedEventId)>,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
