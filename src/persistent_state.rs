@@ -9,7 +9,7 @@ use makepad_widgets::{error, log};
 use matrix_sdk::{
     config::SyncSettings,
     matrix_auth::MatrixSession,
-    ruma::api::client::filter::FilterDefinition,
+    ruma::{api::client::filter::FilterDefinition, OwnedUserId, UserId},
     Client, Error, LoopCtrl,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
@@ -49,31 +49,54 @@ pub struct FullSessionPersisted {
     pub sync_token: Option<String>,
 }
 
-
-pub fn persistent_state_dir() -> PathBuf {
-    app_data_dir().join("persistent_state")
+fn user_id_to_file_name(user_id: &UserId) -> String {
+    user_id.as_str()
+        .replace(":", "_")
+        .replace("@", "_")
 }
 
-pub fn session_file_path() -> PathBuf {
-    persistent_state_dir().join("session")
+pub fn persistent_state_dir(user_id: &UserId) -> PathBuf {
+    app_data_dir()
+        .join(user_id_to_file_name(user_id))
+        .join("persistent_state")
+}
+
+pub fn session_file_path(user_id: &UserId) -> PathBuf {
+    persistent_state_dir(user_id).join("session")
+}
+
+const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
+
+/// Returns the user ID of the most recently-logged in user session.
+pub fn most_recent_user_id() -> Option<OwnedUserId> {
+    std::fs::read_to_string(
+        app_data_dir().join(LATEST_USER_ID_FILE_NAME)
+    )
+    .ok()?
+    .trim()
+    .try_into()
+    .ok()
 }
 
 
-/// Restores a previous session from the filesystem at the optional path provided.
+/// Restores the given user's previous session from the filesystem.
 ///
-/// If no path is provided (the default recommendation), the path given by [`session_file_path()`] is used.
-pub async fn restore_session<P: AsRef<Path>>(
-    session_file_path_ref: Option<P>
+/// If no User ID is specified, the ID of the most recently-logged in user
+/// is retrieved from the filesystem.
+pub async fn restore_session(
+    user_id: Option<&UserId>
 ) -> anyhow::Result<(Client, Option<String>)> {
-    let session_file = session_file_path_ref
-        .map(|p| p.as_ref().to_path_buf())
-        .unwrap_or_else(|| session_file_path());
-
+    let session_file = if let Some(user_id) = user_id {
+        session_file_path(user_id)
+    } else if let Some(user_id) = most_recent_user_id() {
+        session_file_path(&user_id)
+    } else {
+        bail!("Could not find previous latest User ID");
+    };
     if !session_file.exists() {
-        log!("Could not find previous session file at {}", session_file.display());
         bail!("Could not find previous session file");
     }
-    log!("Found existing session at '{}'", session_file.to_string_lossy());
+    log!("Found existing session at '{}'", session_file.display());
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
@@ -107,21 +130,25 @@ pub async fn restore_session<P: AsRef<Path>>(
 pub async fn save_session<P: AsRef<Path>>(
     client: &Client,
     client_session: ClientSessionPersisted,
-    session_file_path_ref: Option<P>,
 ) -> anyhow::Result<()> {
     let user_session = client
         .matrix_auth()
         .session()
         .ok_or_else(|| anyhow!("A logged-in client should have a session"))?;
 
+    // Save which user was the most recently logged in.
+    fs::write(
+        app_data_dir().join(LATEST_USER_ID_FILE_NAME),
+        user_session.meta.user_id.as_str(),
+    )?;
+
+    // Save that user's session.
+    let session_file = session_file_path(&user_session.meta.user_id);
     let serialized_session = serde_json::to_string(&FullSessionPersisted {
         client_session,
         user_session,
         sync_token: None,
     })?;
-    let session_file = session_file_path_ref
-        .map(|p| p.as_ref().to_path_buf())
-        .unwrap_or_else(|| session_file_path());
     if let Some(parent) = session_file.parent() {
         fs::create_dir_all(parent).await?;
     }
