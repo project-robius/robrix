@@ -7,7 +7,7 @@ use makepad_widgets::{error, log, warning, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
         api::client::session::get_login_types::v3::LoginType, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
-    }, sliding_sync::http::request::ListFilters, Client, Room, SlidingSyncList, SlidingSyncMode
+    }, sliding_sync::VersionBuilder, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, Timeline};
 use tokio::{
@@ -61,10 +61,10 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         .map(|h| h.as_str())
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
+    
     let mut builder = Client::builder()
         .homeserver_url(homeserver_url)
-        // The matrix homeserver's sliding sync proxy doesn't support Simplified MSC3575.
-        .simplified_sliding_sync(false);
+        .sliding_sync_version_builder(VersionBuilder::DiscoverNative);
 
     if let Some(proxy) = cli.proxy {
         builder = builder.proxy(proxy);
@@ -782,8 +782,8 @@ async fn async_main_loop() -> Result<()> {
     // Listen for updates to the ignored user list.
     handle_ignore_user_list_subscriber(client.clone());
 
-    let mut filters = ListFilters::default();
-    filters.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
+    // let mut filters = ListFilters::default();
+    // filters.not_room_types = vec!["m.space".into()]; // Ignore spaces for now.
 
     let visible_room_list_name = "VisibleRooms".to_owned();
     let visible_room_list = SlidingSyncList::builder(&visible_room_list_name)
@@ -791,7 +791,7 @@ async fn async_main_loop() -> Result<()> {
         // .sync_mode(SlidingSyncMode::new_growing(1))
         // only load a few timeline events per room to start with. We'll load more later on demand when a room is first viewed.
         .timeline_limit(20)
-        .filters(Some(filters))
+        // .filters(Some(filters))
         .required_state(vec![ // we want to know immediately:
             (StateEventType::RoomEncryption, "".to_owned()),  // is it encrypted
             (StateEventType::RoomMember, "$LAZY".to_owned()), // lazily fetch room member profiles for users that have sent events
@@ -802,11 +802,9 @@ async fn async_main_loop() -> Result<()> {
             // (StateEventType::RoomTopic,  "".to_owned()),      // any topic if known (optional, can be fetched later)
         ]);
 
-    // Now that we're logged in, try to connect to the sliding sync proxy.
-    log!("Sliding sync proxy URL: {:?}", client.sliding_sync_proxy());
+    // Now that we're logged in, try to start up a sliding sync instance.
     let sliding_sync = client
         .sliding_sync("main-sync")?
-        .sliding_sync_proxy("https://slidingsync.lab.matrix.org".try_into()?)
         .with_all_extensions()
         // .add_cached_list(visible_room_list).await?
         .add_list(visible_room_list)
@@ -893,15 +891,16 @@ async fn async_main_loop() -> Result<()> {
                 continue;
             };
 
-            // TODO: when the event cache handles its own cache, we can remove this.
-            client
-                .event_cache()
-                .add_initial_events(
-                    &room_id,
-                    ssroom.timeline_queue().iter().cloned().collect(),
-                    ssroom.prev_batch(),
-                )
-                .await?;
+            // // TODO: when the event cache handles its own cache, we can remove this.
+            // TODO FIXME: we should only do this once
+            // client
+            //     .event_cache()
+            //     .add_initial_events(
+            //         &room_id,
+            //         ssroom.timeline_queue().iter().cloned().collect(),
+            //         ssroom.prev_batch(),
+            //     )
+            //     .await?;
 
             let timeline = Timeline::builder(&room)
                 .track_read_marker_and_receipts()
@@ -1123,7 +1122,7 @@ async fn timeline_subscriber_handler(
 
     let send_update = |timeline_items: Vector<Arc<TimelineItem>>, changed_indices: Range<usize>, clear_cache: bool, num_updates: usize| {
         if num_updates > 0 {
-            // log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
+            log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
             sender.send(TimelineUpdate::NewItems {
                 items: timeline_items,
                 changed_indices,
@@ -1135,7 +1134,7 @@ async fn timeline_subscriber_handler(
         }
     };
 
-    const LOG_DIFFS: bool = false;
+    const LOG_DIFFS: bool = true;
 
     while let Some(batch) = subscriber.next().await {
         let mut num_updates = 0;
