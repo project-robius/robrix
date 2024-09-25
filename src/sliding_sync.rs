@@ -136,7 +136,6 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         if let Err(e) = persistent_state::save_session(
             &client,
             client_session,
-            Option::<&Path>::None,
         ).await {
             error!("Failed to save session state to storage: {e:?}");
         }
@@ -814,7 +813,19 @@ async fn async_main_loop() -> Result<()> {
         status: format!("Logging in as {}...", &cli.username)
     });
 
-    let (client, sync_token) = if let Ok(restored) = persistent_state::restore_session(Option::<&Path>::None).await {
+    let specified_username: Option<OwnedUserId> = cli.username.to_string().try_into().ok()
+        .or_else(|| {
+            let homeserver_url = cli.homeserver.as_ref()
+                .and_then(|u| u.host_str())
+                .unwrap_or("matrix.org");
+            let user_id_str = if cli.username.starts_with("@") {
+                format!("{}:{}", cli.username, homeserver_url)
+            } else {
+                format!("@{}:{}", cli.username, homeserver_url)
+            };
+            user_id_str.as_str().try_into().ok()
+        });
+    let (client, sync_token) = if let Ok(restored) = persistent_state::restore_session(specified_username).await {
         restored
     } else {
         match login(cli).await {
@@ -933,11 +944,6 @@ async fn async_main_loop() -> Result<()> {
 
             // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
             // log!("    --> Subscribing to above room {:?}", room_id);
-
-            let Some(ssroom) = sliding_sync.get_room(&room_id).await else {
-                error!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
-                continue;
-            };
 
             let timeline = Timeline::builder(&room)
                 .track_read_marker_and_receipts()

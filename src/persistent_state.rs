@@ -1,18 +1,15 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
 use std::{
-    io::{self, Write},
     path::{Path, PathBuf},
 };
 use anyhow::{anyhow, bail};
-use makepad_widgets::{error, log};
+use makepad_widgets::log;
 use matrix_sdk::{
-    config::SyncSettings,
     matrix_auth::MatrixSession,
-    ruma::{api::client::filter::FilterDefinition, OwnedUserId, UserId},
-    Client, Error, LoopCtrl,
+    ruma::{OwnedUserId, UserId},
+    Client,
 };
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
@@ -52,7 +49,7 @@ pub struct FullSessionPersisted {
 fn user_id_to_file_name(user_id: &UserId) -> String {
     user_id.as_str()
         .replace(":", "_")
-        .replace("@", "_")
+        .replace("@", "")
 }
 
 pub fn persistent_state_dir(user_id: &UserId) -> PathBuf {
@@ -78,22 +75,30 @@ pub fn most_recent_user_id() -> Option<OwnedUserId> {
     .ok()
 }
 
+/// Save which user was the most recently logged in.
+async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
+    fs::write(
+        app_data_dir().join(LATEST_USER_ID_FILE_NAME),
+        user_id.as_str(),
+    ).await?;
+    Ok(())
+}
+
 
 /// Restores the given user's previous session from the filesystem.
 ///
 /// If no User ID is specified, the ID of the most recently-logged in user
 /// is retrieved from the filesystem.
 pub async fn restore_session(
-    user_id: Option<&UserId>
+    user_id: Option<OwnedUserId>
 ) -> anyhow::Result<(Client, Option<String>)> {
-    let session_file = if let Some(user_id) = user_id {
-        session_file_path(user_id)
-    } else if let Some(user_id) = most_recent_user_id() {
-        session_file_path(&user_id)
-    } else {
+    let Some(user_id) = user_id.or_else(|| most_recent_user_id()) else {
+        log!("Could not find previous latest User ID");
         bail!("Could not find previous latest User ID");
     };
+    let session_file = session_file_path(&user_id);
     if !session_file.exists() {
+        log!("Could not find previous session file for user {user_id}");
         bail!("Could not find previous session file");
     }
     log!("Found existing session at '{}'", session_file.display());
@@ -115,10 +120,10 @@ pub async fn restore_session(
 
     // Restore the Matrix user session.
     client.restore_session(user_session).await?;
+    save_latest_user_id(&user_id).await?;
 
     Ok((client, sync_token))
 }
-
 
 
 /// Persist a logged-in client session to the filesystem for later use.
@@ -127,7 +132,7 @@ pub async fn restore_session(
 ///       or `keyring-rs` to storing secrets securely.
 ///
 /// Note that we could also build the user session from the login response.
-pub async fn save_session<P: AsRef<Path>>(
+pub async fn save_session(
     client: &Client,
     client_session: ClientSessionPersisted,
 ) -> anyhow::Result<()> {
@@ -136,11 +141,7 @@ pub async fn save_session<P: AsRef<Path>>(
         .session()
         .ok_or_else(|| anyhow!("A logged-in client should have a session"))?;
 
-    // Save which user was the most recently logged in.
-    fs::write(
-        app_data_dir().join(LATEST_USER_ID_FILE_NAME),
-        user_session.meta.user_id.as_str(),
-    )?;
+    save_latest_user_id(&user_session.meta.user_id).await?;
 
     // Save that user's session.
     let session_file = session_file_path(&user_session.meta.user_id);
@@ -161,83 +162,6 @@ pub async fn save_session<P: AsRef<Path>>(
     // first session with encryption, or if you need to reset cross-signing because
     // you don't have access to your old sessions (see the
     // `cross_signing_bootstrap` example).
-
-    Ok(())
-}
-
-
-/// Setup the client to listen to new messages.
-async fn sync(
-    client: Client,
-    initial_sync_token: Option<String>,
-    session_file: &Path,
-) -> anyhow::Result<()> {
-    log!("Launching a first sync to ignore past messages...");
-
-    // Enable room members lazy-loading, it will speed up the initial sync a lot
-    // with accounts in lots of rooms.
-    // See <https://spec.matrix.org/v1.6/client-server-api/#lazy-loading-room-members>.
-    let filter = FilterDefinition::with_lazy_loading();
-
-    let mut sync_settings = SyncSettings::default().filter(filter.into());
-
-    // We restore the sync where we left.
-    // This is not necessary when not using `sync_once`. The other sync methods get
-    // the sync token from the store.
-    if let Some(sync_token) = initial_sync_token {
-        sync_settings = sync_settings.token(sync_token);
-    }
-
-    // Let's ignore messages before the program was launched.
-    // This is a loop in case the initial sync is longer than our timeout. The
-    // server should cache the response and it will ultimately take less time to
-    // receive.
-    loop {
-        match client.sync_once(sync_settings.clone()).await {
-            Ok(response) => {
-                // This is the last time we need to provide this token, the sync method after
-                // will handle it on its own.
-                sync_settings = sync_settings.token(response.next_batch.clone());
-                persist_sync_token(session_file, response.next_batch).await?;
-                break;
-            }
-            Err(error) => {
-                error!("An error occurred during initial sync: {error}");
-                error!("Trying again...");
-            }
-        }
-    }
-
-    log!("The client is ready! Listening to new messages...");
-
-    // This loops until we kill the program or an error happens.
-    client
-        .sync_with_result_callback(sync_settings, |sync_result| async move {
-            let response = sync_result?;
-
-            // We persist the token each time to be able to restore our session
-            persist_sync_token(session_file, response.next_batch)
-                .await
-                .map_err(|err| Error::UnknownError(err.into()))?;
-
-            Ok(LoopCtrl::Continue)
-        })
-        .await?;
-
-    Ok(())
-}
-
-
-/// Persist the sync token for a future session.
-/// Note that this is needed only when using `sync_once`. Other sync methods get
-/// the sync token from the store.
-async fn persist_sync_token(session_file: &Path, sync_token: String) -> anyhow::Result<()> {
-    let serialized_session = fs::read_to_string(session_file).await?;
-    let mut full_session: FullSessionPersisted = serde_json::from_str(&serialized_session)?;
-
-    full_session.sync_token = Some(sync_token);
-    let serialized_session = serde_json::to_string(&full_session)?;
-    fs::write(session_file, serialized_session).await?;
 
     Ok(())
 }
