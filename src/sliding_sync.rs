@@ -492,6 +492,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
+                        // log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
                         for user_id in user_ids {
                             users.push(
@@ -506,6 +507,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         if let Err(e) = timeline_update_sender.send(TimelineUpdate::TypingUsers { users }) {
                             error!("Error: timeline update sender couldn't send the list of typing users: {e:?}");
                         }
+                        SignalToUI::set_ui_signal();
                     }
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
