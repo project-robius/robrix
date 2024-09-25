@@ -6,6 +6,7 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
+    import crate::shared::html_or_plaintext::*;
 
     WELCOME_TEXT_COLOR: #x4
 
@@ -41,9 +42,10 @@ live_design! {
             }
 
             // Using the HTML widget to taking advantage of embedding a link within text with proper vertical alignment
-            <Html> {
+            <RobrixHtml> {
                 padding: {top: 12, left: 0.}
                 font_size: 14.
+                font_color: (WELCOME_TEXT_COLOR)
                 draw_normal: {
                     color: (WELCOME_TEXT_COLOR)
                 }
@@ -55,36 +57,6 @@ live_design! {
                     //     color_pressed: #f00,
                     //     color_hover: #0f0,
                     // }
-                    draw_bg: {
-                        instance border_width: 0.0
-                        instance border_color: #0000
-                        instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-                        instance radius: 2.
-                        instance color: #x0
-                        fn get_color(self) -> vec4 {
-                            return self.color
-                        }
-
-                        fn get_border_color(self) -> vec4 {
-                            return self.border_color
-                        }
-
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                            sdf.box(
-                                self.inset.x + self.border_width,
-                                self.inset.y + self.border_width,
-                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                                max(1.0, self.radius)
-                            )
-                            sdf.fill_keep(self.get_color())
-                            if self.border_width > 0.0 {
-                                sdf.stroke(self.get_border_color(), self.border_width)
-                            }
-                            return sdf.result;
-                        }
-                    }
                 }
                 body:"
                 Look out for the latest announcements in our Matrix channel: <a href=\"https://matrix.to/#/#robius-robrix:matrix.org\">[m] Robrix</a><br/>
