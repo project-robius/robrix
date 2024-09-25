@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use clap::Parser;
 use eyeball_im::VectorDiff;
-use futures_util::{StreamExt, pin_mut};
+use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, SignalToUI};
 use matrix_sdk::{
@@ -15,14 +15,14 @@ use tokio::{
     sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, path:: Path, sync::{Arc, Mutex, OnceLock}};
 use url::Url;
 
 use crate::{
-    avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate,
         rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate},
-    }, media_cache::MediaCacheEntry, profile::{
+    }, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, utils::MEDIA_THUMBNAIL_FORMAT
@@ -53,21 +53,41 @@ struct Cli {
 }
 
 
-async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
-    // Note that when encryption is enabled, you should use a persistent store to be
-    // able to restore the session with a working encryption setup.
-    // See the `persist_session` example.
+/// Build a new client.
+async fn build_client(
+    cli: &Cli,
+    data_dir: &Path,
+) -> anyhow::Result<(Client, ClientSessionPersisted)> {
+    // Generate a unique subfolder name for the client database,
+    // which allows multiple clients to run simultaneously.
+    let now = chrono::Local::now();
+    let db_subfolder_name: String = format!("db_{}", now.format("%F_%H_%M_%S_%f"));
+    let db_path = data_dir.join(db_subfolder_name);
+
+    // Generate a random passphrase.
+    let passphrase: String = {
+        use rand::{Rng, thread_rng};
+        thread_rng()
+            .sample_iter(rand::distributions::Alphanumeric)
+            .take(32)
+            .map(char::from)
+            .collect()
+    };
+
     let homeserver_url = cli.homeserver.as_ref()
         .map(|h| h.as_str())
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
+
     let mut builder = Client::builder()
         .homeserver_url(homeserver_url)
+        // Use a sqlite database to persist the client's encryption setup.
+        .sqlite_store(&db_path, Some(&passphrase))
         // The matrix homeserver's sliding sync proxy doesn't support Simplified MSC3575.
         .simplified_sliding_sync(false);
 
-    if let Some(proxy) = cli.proxy {
-        builder = builder.proxy(proxy);
+    if let Some(proxy) = cli.proxy.as_ref() {
+        builder = builder.proxy(proxy.clone());
     }
 
     // Use a 60 second timeout for all requests to the homeserver.
@@ -78,10 +98,20 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     );
 
     builder = builder.handle_refresh_tokens();
-
     let client = builder.build().await?;
+    Ok((
+        client,
+        ClientSessionPersisted {
+            homeserver: homeserver_url.to_string(),
+            db_path,
+            passphrase,
+        },
+    ))
+}
 
-    let mut _token = None;
+
+async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
+    let (client, client_session) = build_client(&cli, app_data_dir()).await?;
 
     // Query the server for supported login types.
     let login_kinds = client.matrix_auth().get_login_types().await?;
@@ -98,13 +128,18 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         .await?;
 
     log!("Login result: {login_result:?}");
-
-    if client.logged_in() {
+    if client.logged_in() {    
         log!("Logged in successfully? {:?}", client.logged_in());
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Logged in as {}. Loading rooms...", &cli.username),
         });
-        Ok((client, _token))
+        if let Err(e) = persistent_state::save_session(
+            &client,
+            client_session,
+        ).await {
+            error!("Failed to save session state to storage: {e:?}");
+        }
+        Ok((client, None))
     } else {
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
@@ -778,7 +813,27 @@ async fn async_main_loop() -> Result<()> {
         status: format!("Logging in as {}...", &cli.username)
     });
 
-    let (client, _token) = login(cli).await?;
+    let specified_username: Option<OwnedUserId> = cli.username.to_string().try_into().ok()
+        .or_else(|| {
+            let homeserver_url = cli.homeserver.as_ref()
+                .and_then(|u| u.host_str())
+                .unwrap_or("matrix.org");
+            let user_id_str = if cli.username.starts_with("@") {
+                format!("{}:{}", cli.username, homeserver_url)
+            } else {
+                format!("@{}:{}", cli.username, homeserver_url)
+            };
+            user_id_str.as_str().try_into().ok()
+        });
+    let (client, sync_token) = if let Ok(restored) = persistent_state::restore_session(specified_username).await {
+        restored
+    } else {
+        match login(cli).await {
+            Ok(new_login) => new_login,
+            Err(e) => return Err(e),
+        }
+    };
+
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
     // Listen for updates to the ignored user list.
@@ -889,11 +944,6 @@ async fn async_main_loop() -> Result<()> {
 
             // sliding_sync.subscribe_to_room(room_id.to_owned(), None);
             // log!("    --> Subscribing to above room {:?}", room_id);
-
-            let Some(ssroom) = sliding_sync.get_room(&room_id).await else {
-                error!("Error: couldn't get SlidingSyncRoom {room_id:?} that had an update.");
-                continue;
-            };
 
             let timeline = Timeline::builder(&room)
                 .track_read_marker_and_receipts()
