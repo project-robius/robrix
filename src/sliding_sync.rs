@@ -895,16 +895,6 @@ async fn async_main_loop() -> Result<()> {
                 continue;
             };
 
-            // TODO: when the event cache handles its own cache, we can remove this.
-            client
-                .event_cache()
-                .add_initial_events(
-                    &room_id,
-                    ssroom.timeline_queue().iter().cloned().collect(),
-                    ssroom.prev_batch(),
-                )
-                .await?;
-
             let timeline = Timeline::builder(&room)
                 .track_read_marker_and_receipts()
                 .build()
