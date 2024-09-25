@@ -30,7 +30,6 @@ pub const APP_ORGANIZATION: &str = "robius";
 pub const APP_NAME: &str = "robrix";
 
 pub fn project_dir() -> &'static ProjectDirs {
-    // This can be redesigned once std::sync::LazyLock is stabilized.
     static ROBRIX_PROJECT_DIRS: OnceLock<ProjectDirs> = OnceLock::new();
 
     ROBRIX_PROJECT_DIRS.get_or_init(|| {
