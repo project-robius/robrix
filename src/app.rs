@@ -137,6 +137,11 @@ impl LiveHook for App { }
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, _cx: &mut Cx) {
+        // Initialize the project directory here from the main UI thread
+        // such that background threads/tasks will be able to can access it.
+        let _app_data_dir = crate::app_data_dir();
+        log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
+
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }

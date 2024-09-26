@@ -827,15 +827,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "directories"
-version = "5.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9a49173b84e034382284f27f1af4dcbbd231ffa358c0fe316541a7337f376a35"
-dependencies = [
- "dirs-sys",
-]
-
-[[package]]
 name = "dirs-sys"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3077,6 +3068,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "312584c40c0d996c96a0c8498c6e556c38ca5785eda670ae11ba12fe2e556c4f"
 dependencies = [
  "jni",
+ "makepad-android-state",
+]
+
+[[package]]
+name = "robius-directories"
+version = "5.0.1"
+source = "git+https://github.com/project-robius/robius-directories?branch=robius#a7ac6b7b137232f5a835b4d4946a07f9dda05c3d"
+dependencies = [
+ "dirs-sys",
+ "jni",
+ "robius-android-env",
 ]
 
 [[package]]
@@ -3093,6 +3095,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "robius-use-makepad"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dc404c4111c88cd9f8a409b2831d13fe93e5242c95939a3852e7e7d675f89c4"
+dependencies = [
+ "robius-android-env",
+]
+
+[[package]]
 name = "robrix"
 version = "0.0.1-pre-alpha"
 dependencies = [
@@ -3101,7 +3112,6 @@ dependencies = [
  "clap",
  "crossbeam-channel",
  "crossbeam-queue",
- "directories",
  "emojis",
  "eyeball",
  "eyeball-im",
@@ -3114,7 +3124,9 @@ dependencies = [
  "matrix-sdk-ui",
  "rand",
  "rangemap",
+ "robius-directories",
  "robius-open",
+ "robius-use-makepad",
  "serde",
  "serde_json",
  "tokio",

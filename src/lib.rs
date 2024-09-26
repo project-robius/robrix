@@ -1,6 +1,6 @@
 use std::{path::Path, sync::OnceLock};
 
-use directories::ProjectDirs;
+use robius_directories::ProjectDirs;
 
 pub use makepad_widgets;
 pub mod app;
