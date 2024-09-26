@@ -1,7 +1,9 @@
 username = " "
 password = " "
+homeserver = " "
 
 ### Please fill in your username and password above.
+### The homeserver name/URL field is optional, but defaults to "matrix.org".
 ###
 ### Robrix does not yet have a login splash screen.
 ### Thus, on desktop platforms, we allow the user to
@@ -12,7 +14,7 @@ password = " "
 ### Instead, we enable the mobile apps to read them from a copy
 ### of this file that is included in the app package files.
 ###
-### Only the two username and password fields are supported.
+### Only the username, password, and homeserver fields are supported.
 ###
 ### Note that for obvious reasons you should not commit this file
 ### or upload it to a public repo with your actual username and password in it.
