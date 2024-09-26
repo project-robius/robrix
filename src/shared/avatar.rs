@@ -209,6 +209,12 @@ impl Avatar {
             AvatarDisplayStatus::Text
         }
     }
+    pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
+        event.hits_with_options(
+            cx,
+            self.area(),
+            HitOptions::new().with_sweep_area(sweep_area))
+    }
 }
 
 impl AvatarRef {

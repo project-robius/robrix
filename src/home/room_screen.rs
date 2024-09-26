@@ -31,6 +31,7 @@ use crate::{
     },
     sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    home::room_read_receipt::*
 };
 use rangemap::RangeSet;
 
@@ -45,6 +46,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
+    import crate::home::room_read_receipt::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -78,7 +80,6 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
@@ -418,7 +419,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-
+            sequencer = <Sequencer> {width: 40, height: 30, margin: {top: (12.0)},hover_actions_enabled:true}
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -671,7 +672,7 @@ live_design! {
                 }
             }
         }
-
+        tooltip = <Tooltip> {}
     }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
@@ -1077,6 +1078,20 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let portal_list = self.portal_list(id!(list));
+            let mut tooltip = self.tooltip(id!(tooltip));
+            for (_,wr) in portal_list.items_with_actions(actions).iter(){
+                let seq = wr.sequencer(id!(sequencer));
+                let num_seen = seq.get_read_receipts().len();
+                if let Some(rect) = seq.hover_in(actions){
+                    tooltip.show_with_options(cx, rect.pos, &format!("{} seen",num_seen));
+                }
+                if seq.hover_out(&actions) {
+                    tooltip.hide(cx);
+                }
+            }
+           
+     
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().cast() {
@@ -1965,7 +1980,9 @@ fn populate_message_view(
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
-
+    let receipts = event_tl_item.read_receipts();
+    //#123
+    
     let mut new_drawn_status = item_drawn_status;
 
     let ts_millis = event_tl_item.timestamp();
@@ -1993,6 +2010,12 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            let mut read_receipts =vec![];
+            for (ower_user_id,_) in receipts.iter(){
+                read_receipts.push(ower_user_id.clone());
+            }
+            item.sequencer(id!(sequencer)).set_read_receipts(cx,room_id.to_owned(),read_receipts);
+            
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2458,7 +2481,6 @@ impl SmallStateEventContent for RoomMembershipChange {
                 ItemDrawnStatus::new(),
             );
         };
-
         item.label(id!(content)).set_text(&preview.format_with(username));
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
