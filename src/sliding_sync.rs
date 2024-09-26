@@ -1168,9 +1168,13 @@ async fn timeline_subscriber_handler(
         clear_cache: true,
     }).expect("Error: timeline update sender couldn't send update with initial items!");
 
+    const LOG_DIFFS: bool = false;
+
     let send_update = |timeline_items: Vector<Arc<TimelineItem>>, changed_indices: Range<usize>, clear_cache: bool, num_updates: usize| {
         if num_updates > 0 {
-            log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
+            if LOG_DIFFS {
+                log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
+            }
             sender.send(TimelineUpdate::NewItems {
                 items: timeline_items,
                 changed_indices,
@@ -1181,8 +1185,6 @@ async fn timeline_subscriber_handler(
             SignalToUI::set_ui_signal();
         }
     };
-
-    const LOG_DIFFS: bool = true;
 
     while let Some(batch) = subscriber.next().await {
         let mut num_updates = 0;
