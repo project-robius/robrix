@@ -1,7 +1,7 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 use anyhow::{anyhow, bail};
 use makepad_widgets::log;
@@ -110,7 +110,7 @@ pub async fn restore_session(
 
     // Build the client with the previous settings from the session.
     let client = Client::builder()
-        .homeserver_url(client_session.homeserver)
+        .server_name_or_homeserver_url(client_session.homeserver)
         .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
         .simplified_sliding_sync(false)
         .build()

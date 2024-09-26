@@ -16,12 +16,10 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Range, path:: Path, sync::{Arc, Mutex, OnceLock}};
-use url::Url;
 
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate,
-        rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate},
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
     }, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -41,11 +39,11 @@ struct Cli {
 
     /// The homeserver to connect to.
     #[clap(value_parser)]
-    homeserver: Option<Url>,
+    homeserver: Option<String>,
 
     /// Set the proxy that should be used for the connection.
     #[clap(short, long)]
-    proxy: Option<Url>,
+    proxy: Option<String>,
 
     /// Enable verbose logging output.
     #[clap(short, long, action)]
@@ -74,13 +72,12 @@ async fn build_client(
             .collect()
     };
 
-    let homeserver_url = cli.homeserver.as_ref()
-        .map(|h| h.as_str())
+    let homeserver_url = cli.homeserver.as_deref()
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
 
     let mut builder = Client::builder()
-        .homeserver_url(homeserver_url)
+        .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
         .sqlite_store(&db_path, Some(&passphrase))
         // The matrix homeserver's sliding sync proxy doesn't support Simplified MSC3575.
@@ -763,10 +760,12 @@ async fn async_main_loop() -> Result<()> {
     let start = std::time::Instant::now();
 
     let cli = Cli::try_parse().ok().or_else(|| {
-        // Quickly try to parse the username and password fields from "login.toml".
+        // Quickly try to parse the username, password, and homeserver fields from "login.toml".
         let login_file = std::include_str!("../login.toml");
         let mut username = None;
         let mut password = None;
+        let mut homeserver = None;
+        let mut homeserver_found = false;
         for line in login_file.lines() {
             if line.starts_with("username") {
                 username = line.find('=')
@@ -778,7 +777,16 @@ async fn async_main_loop() -> Result<()> {
                     .and_then(|i| line.get((i + 1) ..))
                     .map(|s| s.trim().trim_matches('"').trim().to_string());
             }
-            if username.is_some() && password.is_some() {
+            if line.starts_with("homeserver") {
+                homeserver_found = true;
+                homeserver = line.find('=')
+                    .and_then(|i| line.get((i + 1) ..))
+                    .map(|s| s.trim().trim_matches('"').trim().to_string());
+                if homeserver.as_ref().is_some_and(|h| h.is_empty()) {
+                    homeserver = None;
+                }
+            }
+            if username.is_some() && password.is_some() && homeserver_found {
                 break;
             }
         }
@@ -786,11 +794,11 @@ async fn async_main_loop() -> Result<()> {
             if username.is_empty() || password.is_empty() {
                 None
             } else {
-                log!("Parsed username: {username:?} and password.");
+                log!("Parsed username and password from 'login.toml': {username:?}, homeserver: {homeserver:?}");
                 Some(Cli {
                     username,
                     password,
-                    homeserver: None,
+                    homeserver,
                     proxy: None,
                     verbose: false,
                 })
@@ -815,8 +823,7 @@ async fn async_main_loop() -> Result<()> {
 
     let specified_username: Option<OwnedUserId> = cli.username.to_string().try_into().ok()
         .or_else(|| {
-            let homeserver_url = cli.homeserver.as_ref()
-                .and_then(|u| u.host_str())
+            let homeserver_url = cli.homeserver.as_deref()
                 .unwrap_or("matrix.org");
             let user_id_str = if cli.username.starts_with("@") {
                 format!("{}:{}", cli.username, homeserver_url)
