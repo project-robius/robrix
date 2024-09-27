@@ -177,9 +177,6 @@ live_design! {
 pub struct SearchBar {
     #[deref] view: View,
 
-    /// The placeholder text for the search input.
-    #[live] pub placeholder: String,
-
     #[rust]
     search_timer: Timer,
 
@@ -219,16 +216,6 @@ impl Widget for SearchBar {
         let clear_button = self.view.button(id!(clear_button));
 
         if input.text().is_empty() {
-
-            if let Some(mut inner) = input.borrow_mut() {
-                // only set the empty message if placeholder is not empty, otherwise, it will be set to "Search"
-                if !self.placeholder.is_empty() {
-                    inner.empty_message = self.placeholder.clone();
-                } else {
-                    inner.empty_message = "Search".to_string();
-                }
-            }
-
             clear_button.set_visible(false);
         } else {
             clear_button.set_visible(true);

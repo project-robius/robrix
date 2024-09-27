@@ -102,6 +102,7 @@ live_design! {
     }
     
     RoomPreview = {{RoomPreview}} {
+        height: 65.
         // Wraps the RoomPreviewContent in an AdaptiveView
         // to change the displayed content (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {

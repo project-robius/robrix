@@ -189,6 +189,8 @@ pub struct RoomsList {
     #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
+    /// The search value to filter the list of all rooms.
+    #[rust] search_value: String,
     /// The list of indices of the currently filtered rooms.
     #[rust] current_filtered_rooms_indices: Vec<usize>,
 }
@@ -202,7 +204,6 @@ impl Widget for RoomsList {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
-                        log!("Adding room: {:#?}", room.room_name);
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
@@ -276,11 +277,21 @@ impl Widget for RoomsList {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
-        let count = self.current_filtered_rooms_indices.len();
-        log!("Current filtered rooms: {}", count);
+        // let count = self.current_filtered_rooms_indices.len();
+
+        let mut count = self.all_rooms.len();
+
+        if !self.current_filtered_rooms_indices.is_empty() {
+            count = self.current_filtered_rooms_indices.len();
+        } else if !self.search_value.is_empty() {
+            count = 0;
+            self.status = "No rooms found.".to_string();
+        }
+
+
+
         let last_item_id = count;
 
         // Start the actual drawing procedure.
@@ -293,7 +304,6 @@ impl Widget for RoomsList {
             list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                log!("Drawing item {}", item_id);
                 let mut scope = Scope::empty();
                 // Draw the status label as the bottom entry.
                 let item = if item_id == last_item_id {
@@ -314,18 +324,14 @@ impl Widget for RoomsList {
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else if item_id > last_item_id {
-                    log!("Drawing bottom filler");
                     list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
                 }
                 else {
                     let item_template = live_id!(room_preview);
                     let item = list.item(cx, item_id, item_template).unwrap();
-
-                    
                     let index_of_room = self.current_filtered_rooms_indices.get(item_id).cloned().unwrap_or(item_id);
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
                     let room_info = &mut self.all_rooms[index_of_room];
-                    log!("Drawing room: {:#?}", room_info.room_name);
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
                     // Pass down the room info to the RoomPreview widget.
                     scope = Scope::with_props(&*room_info);
@@ -350,29 +356,31 @@ impl WidgetMatchEvent for RoomsList {
                 RoomsViewAction::Filter { value, filter } => {
                     // we only handle the filter action for the rooms view
                     if let RoomsSideBarFilter::Rooms = filter {
-
-                        log!("search value: {}", value);
+                        // we only filter the rooms list if the value is not empty
 
                         if self.all_rooms.is_empty() {
-                            self.current_filtered_rooms_indices = Vec::new();
-                            self.status = "No joined rooms found.".to_string();
-                        } else if value.is_empty() {
-                            self.current_filtered_rooms_indices = (0..self.all_rooms.len()).collect();
+                            self.status = "You did't have any rooms.".to_string();
                         } else {
+                            if value.is_empty() {
+                                self.current_filtered_rooms_indices = (0..self.all_rooms.len()).collect();
+                            } else {
 
-                            let indices = self.filter_rooms(
-                                &value,
-                                RoomsFilterCondition::All,
-                                RoomsFilterType::Fuzzy
-                            );
+                                self.search_value = value.clone();
 
-                            log!("[Current Filtered Rooms Indices]: {:#?}", indices);
+                                let indices = self.filter_rooms(
+                                    &value,
+                                    RoomsFilterCondition::All,
+                                    RoomsFilterType::Fuzzy
+                                );
 
-                            self.current_filtered_rooms_indices = indices;
-
-                            log!("filtered rooms: {:#?}", self.current_filtered_rooms_indices);
+                                if indices.is_empty() {
+                                    self.status = "No rooms found.".to_string();
+                                    self.current_filtered_rooms_indices = Vec::new();
+                                } else {
+                                    self.current_filtered_rooms_indices = indices;
+                                }
+                            }
                         }
-
 
                         self.redraw(cx);
                     }
@@ -384,7 +392,6 @@ impl WidgetMatchEvent for RoomsList {
 }
 
 impl RoomsList {
-
     /// Filter the list of all rooms based on the given conditions and filter string.
     pub fn filter_rooms(&self, value: &str, filter_condition: RoomsFilterCondition, filter_type: RoomsFilterType) -> Vec<usize>{
         self.filter_all(value, filter_condition, filter_type)

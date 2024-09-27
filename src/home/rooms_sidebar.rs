@@ -111,7 +111,9 @@ live_design! {
         }
 
         <SearchBar> {
-            placeholder: "Please enter room name, alias or id..."
+            input = {
+                empty_message: "Please enter room name, alias or id..."
+            }
         }
 
         <Label> {
