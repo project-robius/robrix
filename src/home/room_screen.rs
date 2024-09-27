@@ -17,21 +17,16 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry},
-    event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item},
-    media_cache::{MediaCache, MediaCacheEntry},
-    profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::emoji::EmojiSequencerWidgetRefExt, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    },
-    shared::{
+    }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-    },
-    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
-    utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
+use crate::home::emoji::*;
 use rangemap::RangeSet;
 
 live_design! {
@@ -46,6 +41,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
+    import crate::home::emoji::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -289,6 +285,7 @@ live_design! {
             draw_fixed:       { color: (REACTION_TEXT_COLOR) },
             body: ""
         }
+        
     }
 
     // An empty view that takes up no space in the portal list.
@@ -411,12 +408,13 @@ live_design! {
                     text: "<Username not available>"
                 }
                 message = <HtmlOrPlaintext> { }
-
+                
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
                 message_annotations = <MessageAnnotations> {}
+                emoji_sequencer = <EmojiSequencer>{width: 200, height: 100, margin: {top: (12.0)}}
             }
 
             message_menu = <MessageMenu> {}
@@ -1996,6 +1994,7 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                println!("content.message {:?}",text);
                 populate_text_message_content(
                     &item.html_or_plaintext(id!(content.message)),
                     text,
@@ -2315,8 +2314,10 @@ fn draw_reactions(
         .set_visible(true);
 
     let mut label_text = String::new();
+    let mut text_to_display_vec = vec![];
     for (reaction_raw, reaction_senders) in reactions.iter() {
         // Just take the first char of the emoji, which ignores any variant selectors.
+        println!("reaction_raw {:?}",reaction_raw);
         let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
         let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
         let text_to_display = emojis::get(reaction_str)
@@ -2325,8 +2326,9 @@ fn draw_reactions(
         let count = reaction_senders.len();
         // log!("Found reaction {:?} with count {}", text_to_display, count);
         label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
+        text_to_display_vec.push(text_to_display.to_string());
     }
-
+    message_item.emoji_sequencer(id!(content.emoji_sequencer)).set_list( text_to_display_vec);
     // Debugging: draw the item ID as a reaction
     if DRAW_ITEM_ID_REACTION {
         label_text = format!("{label_text}<i>ID: {}</i>", id);
@@ -2334,6 +2336,7 @@ fn draw_reactions(
 
     let html_reaction_view = message_item.html(id!(message_annotations.html_content));
     html_reaction_view.set_text(&label_text);
+
 }
 
 
