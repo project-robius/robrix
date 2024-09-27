@@ -1,7 +1,5 @@
 use makepad_widgets::*;
 
-use super::clickable_icon::{ClickableIconAction, ClickableIconWidgetExt};
-
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
@@ -12,8 +10,8 @@ live_design! {
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
     ICON_CLOSE = dep("crate://self/resources/icons/close.svg")
-    // <RoundedView>
-    SearchBar = {{SearchBar}} {
+
+    SearchBar = {{SearchBar}}<RoundedView> {
         width: Fill,
         height: Fit,
 
@@ -125,10 +123,44 @@ live_design! {
             }
         }
 
-        clear_icon = <ClickableIcon> {
-            height: Fill,
-            width: 30,
+        clear_button = <Button> {
+            height: Fit,
+            height: Fit,
+
             visible: false
+
+            draw_bg: {
+                instance color: #0000
+                instance color_hover: #fff
+                instance border_width: 1.0
+                instance border_color: #0000
+                instance border_color_hover: #fff
+                instance radius: 2.5
+
+                fn get_color(self) -> vec4 {
+                    return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+                }
+
+                fn get_border_color(self) -> vec4 {
+                    return mix(self.border_color, mix(self.border_color, self.border_color_hover, 0.2), self.hover)
+                }
+
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        self.border_width,
+                        self.border_width,
+                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.y - (self.border_width * 2.0),
+                        max(1.0, self.radius)
+                    )
+                    sdf.fill_keep(self.get_color())
+                    if self.border_width > 0.0 {
+                        sdf.stroke(self.get_border_color(), self.border_width)
+                    }
+                    return sdf.result;
+                }
+            }
 
             draw_icon: {
                 svg_file: (ICON_CLOSE),
@@ -137,14 +169,7 @@ live_design! {
                 }
             }
 
-            icon_walk: {width: 8, height: Fit}
-
-            padding: {
-                top: 5,
-                right: 5,
-                bottom: 5,
-                left: 5
-            }
+            icon_walk: { width: 8, height: 8 }
         }
     }
 }
@@ -155,90 +180,86 @@ pub struct SearchBar {
 
     /// The placeholder text for the search input.
     #[live] pub placeholder: String,
+
+    #[rust]
+    search_timer: Timer,
+
+    #[live(0.3)]
+    search_debounce_time: f64,
 }
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum SearchBarAction {
+    SearchValue(String),
     None,
-    Change(String),
-    // Maybe we can add more actions here, e.g., focus, blur, clear, etc.
 }
 
 impl Widget for SearchBar {
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid();
-        let text_input_ref = self.view.text_input(id!(input));
+        self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
 
-        // Now, handle any actions on this widget, e.g., a user focus or blur the input.
-        for search_bar_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
+        if self.search_timer.is_event(event).is_some() {
+            self.search_timer = Timer::default();
 
-            // Now, we handle the clear icon click event, other events are left to the component caller to implement.
-            // However, we also can expose the clear icon click event to the component caller, but now we handle it here.
-            if let ClickableIconAction::Clicked = search_bar_action.as_widget_action().cast() {
-                text_input_ref.set_text("");
-                // hide the clear icon
-                let clear_icon_ref = self.view.clickable_icon(id!(clear_icon));
-                clear_icon_ref.set_visible(cx, false);
+            let input = self.text_input(id!(input));
+            let keywords = input.text();
 
-                cx.widget_action(
-                    uid,
-                    &scope.path,
-                    SearchBarAction::Change("".to_string())
-                );
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                SearchBarAction::SearchValue(keywords)
+            );
 
-                cx.redraw_all();
-            }
-
-            if let TextInputAction::Change(value) = search_bar_action.as_widget_action().cast() {
-                // expose the value to the component caller
-                // TODO: debounce the search input here, e.g., wait for 500ms before sending the search query.
-                // But this comment is more commonly used on the front end, but I haven't tried it in makepad yet.
-                cx.widget_action(
-                    uid,
-                    &scope.path,
-                    SearchBarAction::Change(value)
-                );
-            }
-
-            // if let TextInputAction::KeyFocus = search_bar_action.as_widget_action().cast() {
-            //     log!("SearchBar key focus");
-            // }
-
-            // if let TextInputAction::KeyFocusLost = search_bar_action.as_widget_action().cast() {
-            //     log!("SearchBar key blur");
-            // }
         }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
 
-        let input_ref = self.view.text_input(id!(input));
-        let clear_icon_ref = self.view.clickable_icon(id!(clear_icon));
+        let input = self.view.text_input(id!(input));
+        let clear_button = self.view.button(id!(clear_button));
 
-        if input_ref.text().is_empty() {
+        if input.text().is_empty() {
 
-            if let Some(mut inner) = input_ref.borrow_mut() {
+            if let Some(mut inner) = input.borrow_mut() {
                 // only set the empty message if placeholder is not empty, otherwise, it will be set to "Search"
                 if !self.placeholder.is_empty() {
-                     // set the empty message
                     inner.empty_message = self.placeholder.clone();
                 } else {
-                    // default empty message
                     inner.empty_message = "Search".to_string();
                 }
             }
 
-            // hide the clear icon
-            clear_icon_ref.set_visible(cx, false);
-            cx.redraw_area(clear_icon_ref.area());
+            clear_button.set_visible(false);
         } else {
-            // show the clear icon
-            clear_icon_ref.set_visible(cx, true);
-            cx.redraw_area(clear_icon_ref.area());
+            clear_button.set_visible(true);
         }
 
         self.view.draw_walk(cx, scope, walk)
+    }
+
+}
+
+impl WidgetMatchEvent for SearchBar {
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
+
+        let input = self.text_input(id!(input));
+        let clear_button = self.button(id!(clear_button));
+
+        if clear_button.clicked(actions) {
+            input.set_text("");
+            clear_button.set_visible(false);
+
+            self.redraw(cx);
+        }
+
+        if let Some(_) = input.changed(actions) {
+            cx.stop_timer(self.search_timer);
+            self.search_timer = cx.start_timeout(self.search_debounce_time);
+        }
+
     }
 
 }

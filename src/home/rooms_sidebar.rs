@@ -200,47 +200,39 @@ pub enum RoomsViewAction {
 
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-
-        let widget_uid = self.widget_uid();
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                if let SearchBarAction::Change(value) = action.as_widget_action().cast() {
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        RoomsViewAction::Filter {
-                            value: value.clone(),
-                            filter: RoomsSideBarFilter::Rooms,
-                        },
-                    );
-
-                    // Reverse the filter for the people and channels, if component caller wants to filter them.
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        RoomsViewAction::Filter {
-                            value: value.clone(),
-                            filter: RoomsSideBarFilter::People,
-                        },
-                    );
-
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        RoomsViewAction::Filter {
-                            value: value.clone(),
-                            filter: RoomsSideBarFilter::Channels,
-                        },
-                    );
-                }
-            }
-        }
-
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for RoomsView {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+
+        for action in actions {
+            if let SearchBarAction::SearchValue(value) = action.as_widget_action().cast() {
+                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
+                        value: value.clone(),
+                        filter: RoomsSideBarFilter::Rooms,
+                    },
+                );
+
+                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
+                        value: value.clone(),
+                        filter: RoomsSideBarFilter::People,
+                    },
+                );
+
+                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
+                        value: value.clone(),
+                        filter: RoomsSideBarFilter::Channels,
+                    },
+                );
+            }
+        }
     }
 }

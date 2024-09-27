@@ -187,12 +187,10 @@ pub struct RoomsList {
     #[rust] rooms_list_map: HashMap<u64, usize>,
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
-    /// The search value to filter the list of all rooms.
-    #[rust] search_value: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
-    /// The index of the all rooms that match the current filter
-    #[rust] current_filtered_all_rooms_index: Vec<usize>
+    /// The list of indices of the currently filtered rooms.
+    #[rust] current_filtered_rooms_indices: Vec<usize>,
 }
 
 impl Widget for RoomsList {
@@ -245,25 +243,6 @@ impl Widget for RoomsList {
             }
         }
 
-        //Handle any actions except action on this widget
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                match action.as_widget_action().cast() {
-                    RoomsViewAction::Filter { value, filter } => {
-                        // we only handle the filter action for the rooms view
-                        if let RoomsSideBarFilter::Rooms = filter {
-                            self.search_value = value.clone();
-                            self.current_filtered_all_rooms_index = self.filter_rooms(
-                                RoomsFilterCondition::All,
-                                RoomsFilterType::Fuzzy
-                            );
-                        }
-                    }
-                    _ => (),
-                }
-            }
-        }
-
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         let widget_uid = self.widget_uid();
         for list_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
@@ -290,6 +269,7 @@ impl Widget for RoomsList {
                 }
             }
         }
+        self.widget_match_event(cx, event, scope);
     }
 
 
@@ -297,15 +277,7 @@ impl Widget for RoomsList {
 
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
-        let mut count = self.all_rooms.len();
-
-        if !self.current_filtered_all_rooms_index.is_empty() {
-            count = self.current_filtered_all_rooms_index.len();
-        } else if !self.search_value.is_empty()  {
-            count = 0;
-            self.status = "No rooms found.".to_string();
-        }
-
+        let count = self.current_filtered_rooms_indices.len();
         let last_item_id = count;
 
         // Start the actual drawing procedure.
@@ -343,7 +315,7 @@ impl Widget for RoomsList {
                 else {
                     let item_template = live_id!(room_preview);
                     let item = list.item(cx, item_id, item_template).unwrap();
-                    let index_of_room = self.current_filtered_all_rooms_index.get(item_id).cloned().unwrap_or(item_id);
+                    let index_of_room = self.current_filtered_rooms_indices.get(item_id).cloned().unwrap_or(item_id);
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
                     let room_info = &mut self.all_rooms[index_of_room];
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
@@ -362,51 +334,62 @@ impl Widget for RoomsList {
 
 }
 
+impl WidgetMatchEvent for RoomsList {
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+        for action in actions {
+            match action.as_widget_action().cast() {
+                RoomsViewAction::Filter { value, filter } => {
+                    // we only handle the filter action for the rooms view
+                    if let RoomsSideBarFilter::Rooms = filter {
+
+                        log!("search value: {}", value);
+
+                        let indices = self.filter_rooms(
+                            &value,
+                            RoomsFilterCondition::All,
+                            RoomsFilterType::Fuzzy
+                        );
+
+                        self.current_filtered_rooms_indices = indices;
+                        self.redraw(cx);
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+}
+
 impl RoomsList {
 
-    pub fn set_search_value(&mut self, value: &str) {
-        self.search_value = value.to_string();
-    }
-
-    pub fn get_search_value(&self) -> &str {
-        &self.search_value
-    }
-
     /// Filter the list of all rooms based on the given conditions and filter string.
-    pub fn filter_rooms(&self, filter_condition: RoomsFilterCondition, filter_type: RoomsFilterType) -> Vec<usize>{
-        self.filter_all(&self.search_value, filter_condition, filter_type)
+    pub fn filter_rooms(&self, value: &str, filter_condition: RoomsFilterCondition, filter_type: RoomsFilterType) -> Vec<usize>{
+        self.filter_all(value, filter_condition, filter_type)
     }
 
     /// Filter the list of all rooms by room ID.
-    /// Returns a list of indices into the `all_rooms` vector that match the filter.
     pub fn filter_by_room_id(&self, filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        log!("Filtering rooms by room id {:?}", value);
         self.filter_all(value, RoomsFilterCondition::RoomId, filter_type)
     }
 
     /// Filter the list of all rooms by room name.
-    /// Returns a list of indices into the `all_rooms` vector that match the filter.
     pub fn filter_by_room_name(&self, filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        log!("Filtering rooms by room name {:?}", value);
         self.filter_all(value, RoomsFilterCondition::RoomName, filter_type)
     }
 
     /// Filter the list of all rooms by room cannonical alias.
-    /// Returns a list of indices into the `all_rooms` vector that match the filter.
     pub fn filter_by_room_cannonical_alias(&self,filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        log!("Filtering room alias ID: {:?}", value);
         self.filter_all(value, RoomsFilterCondition::RoomCannonicalAlias, filter_type)
     }
 
     /// Filter the list of all rooms by room alternative aliases.
-    /// Returns a list of indices into the `all_rooms` vector that match the filter.
     pub fn filter_by_room_alt_aliases(&self,filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        log!("Filtering room by room alt aliases: {:#?}", value);
         self.filter_all(value, RoomsFilterCondition::RoomAltAliases, filter_type)
     }
 
     /// The main filtering function that filters the list of all rooms based on the given conditions and filter string.
-    fn filter_all(&self, value: &str, filter_condition: RoomsFilterCondition, filter_type: RoomsFilterType) -> Vec<usize> {
+    fn filter_all(&self, value: &str, filter_condition: RoomsFilterCondition, _filter_type: RoomsFilterType) -> Vec<usize> {
         let mut filtered_rooms_index = Vec::new();
 
         for (index, room) in self.all_rooms.iter().enumerate() {
