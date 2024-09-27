@@ -214,7 +214,10 @@ impl WidgetMatchEvent for RoomsView {
         let widget_uid = self.widget_uid();
 
         for action in actions {
-            if let SearchBarAction::SearchValue(value) = action.as_widget_action().cast() {
+            if let SearchBarAction::Search(value) = action.as_widget_action().cast() {
+
+                log!("[Rooms Sidebar Search Value]: {}", value);
+
                 cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
                         value: value.clone(),
                         filter: RoomsSideBarFilter::Rooms,

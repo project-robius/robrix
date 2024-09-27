@@ -202,6 +202,7 @@ impl Widget for RoomsList {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        log!("Adding room: {:#?}", room.room_name);
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
@@ -269,6 +270,7 @@ impl Widget for RoomsList {
                 }
             }
         }
+
         self.widget_match_event(cx, event, scope);
     }
 
@@ -278,6 +280,7 @@ impl Widget for RoomsList {
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
         let count = self.current_filtered_rooms_indices.len();
+        log!("Current filtered rooms: {}", count);
         let last_item_id = count;
 
         // Start the actual drawing procedure.
@@ -287,13 +290,14 @@ impl Widget for RoomsList {
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
             // Add 1 again for the status label at the bottom.
-            list.set_item_range(cx, 0, last_item_id + 1);
+            list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                log!("Drawing item {}", item_id);
                 let mut scope = Scope::empty();
                 // Draw the status label as the bottom entry.
                 let item = if item_id == last_item_id {
-                    let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
+                    let item: WidgetRef = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     if count > 0 {
                         let text = format!("Found {count} joined rooms.");
                         item.as_view().apply_over(cx, live!{
@@ -310,14 +314,18 @@ impl Widget for RoomsList {
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else if item_id > last_item_id {
+                    log!("Drawing bottom filler");
                     list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
                 }
                 else {
                     let item_template = live_id!(room_preview);
                     let item = list.item(cx, item_id, item_template).unwrap();
+
+                    
                     let index_of_room = self.current_filtered_rooms_indices.get(item_id).cloned().unwrap_or(item_id);
                     self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
                     let room_info = &mut self.all_rooms[index_of_room];
+                    log!("Drawing room: {:#?}", room_info.room_name);
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
                     // Pass down the room info to the RoomPreview widget.
                     scope = Scope::with_props(&*room_info);
@@ -345,13 +353,27 @@ impl WidgetMatchEvent for RoomsList {
 
                         log!("search value: {}", value);
 
-                        let indices = self.filter_rooms(
-                            &value,
-                            RoomsFilterCondition::All,
-                            RoomsFilterType::Fuzzy
-                        );
+                        if self.all_rooms.is_empty() {
+                            self.current_filtered_rooms_indices = Vec::new();
+                            self.status = "No joined rooms found.".to_string();
+                        } else if value.is_empty() {
+                            self.current_filtered_rooms_indices = (0..self.all_rooms.len()).collect();
+                        } else {
 
-                        self.current_filtered_rooms_indices = indices;
+                            let indices = self.filter_rooms(
+                                &value,
+                                RoomsFilterCondition::All,
+                                RoomsFilterType::Fuzzy
+                            );
+
+                            log!("[Current Filtered Rooms Indices]: {:#?}", indices);
+
+                            self.current_filtered_rooms_indices = indices;
+
+                            log!("filtered rooms: {:#?}", self.current_filtered_rooms_indices);
+                        }
+
+
                         self.redraw(cx);
                     }
                 }

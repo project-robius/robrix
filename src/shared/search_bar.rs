@@ -6,7 +6,6 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     import crate::shared::styles::*;
-    import crate::shared::clickable_icon::ClickableIcon;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
     ICON_CLOSE = dep("crate://self/resources/icons/close.svg")
@@ -190,7 +189,7 @@ pub struct SearchBar {
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum SearchBarAction {
-    SearchValue(String),
+    Search(String),
     None,
 }
 
@@ -205,13 +204,12 @@ impl Widget for SearchBar {
 
             let input = self.text_input(id!(input));
             let keywords = input.text();
-
+            // We don't to handle the keywords is empty, if keywords is empty pass to child weiget.
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                SearchBarAction::SearchValue(keywords)
+                SearchBarAction::Search(keywords)
             );
-
         }
     }
 
@@ -245,14 +243,14 @@ impl WidgetMatchEvent for SearchBar {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
 
+        let uid = self.widget_uid();
         let input = self.text_input(id!(input));
         let clear_button = self.button(id!(clear_button));
 
         if clear_button.clicked(actions) {
             input.set_text("");
             clear_button.set_visible(false);
-
-            self.redraw(cx);
+            cx.widget_action(uid, &scope.path, SearchBarAction::Search("".to_string()));
         }
 
         if let Some(_) = input.changed(actions) {
