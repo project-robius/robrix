@@ -27,6 +27,7 @@ use crate::{
     }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use crate::home::emoji::*;
+use crate::home::room_reaction_list::*;
 use rangemap::RangeSet;
 
 live_design! {
@@ -42,6 +43,7 @@ live_design! {
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::home::emoji::*;
+    import crate::home::room_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -414,7 +416,12 @@ live_design! {
                 // }
 
                 message_annotations = <MessageAnnotations> {}
-                emoji_sequencer = <EmojiSequencer>{width: 200, height: 100, margin: {top: (12.0)}}
+                button = <Button> {
+                    text: "Hello world",
+                    draw_text:{color:#d8d8d8},
+                    draw_bg : { fn pixel (self) -> vec4 { return vec4 (1.0 , 0.0 , 0.0 , 1.0) ; } }
+                }
+                reaction_list = <ReactionList>{width: 100, height: 200, margin: {top: (12.0)}}
             }
 
             message_menu = <MessageMenu> {}

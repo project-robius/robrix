@@ -1,16 +1,16 @@
 use makepad_widgets::*;
 use crate::shared::avatar::{Avatar};
 live_design!{
-    import makepad_draw::shader::std::*;    
+    import makepad_draw::shader::std::*;
+    import crate::shared::avatar::Avatar;
     EmojiSequencer = {{EmojiSequencer}} {
-        button: <Avatar> {
-            width: 15.0,
-            height: 15.0,
-            text_view = { text = { draw_text: {
-                text_style: { font_size: 6.0 }
-            }}}
+        button: <Button> {
+            width: 14,
+            height: 14,
+            text: "Hello world",
+            draw_text:{color:#52b2ac},
+            draw_bg : { fn pixel (self) -> vec4 { return vec4 (1.0 , 0.0 , 0.0 , 1.0) ; } }
         }
-        margin: {top: 3, right: 10, bottom: 3, left: 10}
         width: Fit,
         height: Fit
     }
@@ -26,7 +26,7 @@ pub struct EmojiSequencer {
     #[walk] walk: Walk,
     #[live] button: Option<LivePtr>,
     #[live(false)] hover_actions_enabled: bool,
-    #[rust] buttons: ComponentMap<ButtonId, Avatar>,
+    #[rust] buttons: ComponentMap<ButtonId, Button>,
     #[rust] list: Vec<String>
 }
 
@@ -50,7 +50,7 @@ impl Widget for EmojiSequencer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
         for button in self.buttons.values_mut() {
-            
+
         }
         
     }
@@ -59,10 +59,9 @@ impl Widget for EmojiSequencer {
         cx.begin_turtle(walk, Layout::default());        
         let button = self.button;
         for (i,name) in vec![String::from("g"),String::from("k")].iter().enumerate(){
-            
             let btn_id = LiveId(i as u64).into();
             let btn = self.buttons.get_or_insert(cx, btn_id, | cx | {
-                Avatar::new_from_ptr(cx, button)
+                Button::new_from_ptr(cx, button)
             });
             btn.set_text(name);
             btn.draw(cx, scope).unwrap();
