@@ -40,7 +40,7 @@ live_design! {
                 font_size: 7.5
             },
         }
-        text: "[Timestamp unknown]"
+        text: "??"
     }
 
     MessagePreview = <View> {

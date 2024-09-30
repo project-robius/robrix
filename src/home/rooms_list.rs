@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId}, Room};
+use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
 use super::room_preview::RoomPreviewAction;
 
@@ -35,7 +35,7 @@ live_design! {
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: <REGULAR_TEXT>{}
             }
-            text: "Loading joined rooms..."
+            text: "Loading rooms..."
         }
     }
 
@@ -70,7 +70,7 @@ pub enum RoomsListUpdate {
     NotLoaded,
     /// Some rooms were loaded, and the server optionally told us
     /// the max number of rooms that will ever be loaded.
-    LoadedRooms{ max_rooms: Option<usize> },
+    LoadedRooms{ max_rooms: Option<u32> },
     /// Add a new room to the list of all rooms.
     AddRoom(RoomPreviewEntry),
     /// Clear all rooms in the list of all rooms.
@@ -123,7 +123,7 @@ pub enum RoomListAction {
     None,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RoomPreviewEntry {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
@@ -165,7 +165,7 @@ pub struct RoomsList {
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
-    #[rust] max_known_rooms: Option<usize>,
+    #[rust] max_known_rooms: Option<u32>,
 }
 
 impl RoomsList {
@@ -190,28 +190,28 @@ impl Widget for RoomsList {
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
                             room.avatar = avatar;
                         } else {
                             error!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
                     RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
                             room.latest = Some((timestamp, latest_message_text));
                         } else {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
                             room.room_name = Some(new_room_name);
                         } else {
                             error!("Error: couldn't find room {room_id} to update room name");
                         }
                     }
                     RoomsListUpdate::RemoveRoom(room_id) => {
-                        if let Some(idx) = self.all_rooms.iter().position(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(idx) = self.all_rooms.iter().position(|r| &r.room_id == &room_id) {
                             self.all_rooms.remove(idx);
                         } else {
                             error!("Error: couldn't find room {room_id} to remove room");
@@ -256,7 +256,7 @@ impl Widget for RoomsList {
                         &scope.path,
                         RoomListAction::Selected {
                             room_index,
-                            room_id: room_details.room_id.clone().unwrap(),
+                            room_id: room_details.room_id.to_owned(),
                             room_name: room_details.room_name.clone(),
                         }
                     );
@@ -288,18 +288,10 @@ impl Widget for RoomsList {
                 // Draw the status label as the bottom entry.
                 let item = if item_id == last_item_id {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
-                    if count > 0 {
-                        let text = format!("Found {count} joined rooms.");
-                        item.as_view().apply_over(cx, live!{
-                            height: 80.0,
-                            label = { text: (text) }
-                        });
-                    } else {
-                        item.as_view().apply_over(cx, live!{
-                            height: Fit,
-                            label = { text: (&self.status) }
-                        });
-                    }
+                    item.as_view().apply_over(cx, live!{
+                        height: Fit,
+                        label = { text: (&self.status) }
+                    });
                     item
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
