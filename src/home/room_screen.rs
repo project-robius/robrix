@@ -276,12 +276,14 @@ live_design! {
         visible: false,
         width: Fill,
         height: Fit,
+        padding: {top: 5.0}
 
         html_content = <RobrixHtml> {
             width: Fill,
             height: Fit,
             padding: { bottom: 5.0, top: 0.0 },
             font_size: 10.5,
+            font_color: (REACTION_TEXT_COLOR),
             draw_normal:      { color: (REACTION_TEXT_COLOR) },
             draw_italic:      { color: (REACTION_TEXT_COLOR) },
             draw_bold:        { color: (REACTION_TEXT_COLOR) },

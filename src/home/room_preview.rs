@@ -48,6 +48,7 @@ live_design! {
         flow: Down, spacing: 5.
 
         latest_message = <HtmlOrPlaintext> {
+            padding: {top: 3.0}
             html_view = { html = {
                 font_size: 9.3, line_spacing: 1.,
                 draw_normal:      { text_style: { font_size: 9.3, line_spacing: 1. } },
@@ -60,7 +61,7 @@ live_design! {
                 draw_text: {
                     text_style: { font_size: 9.5, line_spacing: 1. },
                 }
-                text: "[Latest message unknown]"
+                text: "[Loading latest message]"
             } }
         }
     }
@@ -301,6 +302,7 @@ impl RoomPreviewContent {
             live!(
                     html_view = {
                         html = {
+                            font_color: (message_text_color),
                             draw_normal:      { color: (message_text_color) },
                             draw_italic:      { color: (message_text_color) },
                             draw_bold:        { color: (message_text_color) },

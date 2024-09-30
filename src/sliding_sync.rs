@@ -836,7 +836,7 @@ async fn async_main_loop() -> Result<()> {
             };
             user_id_str.as_str().try_into().ok()
         });
-    let (client, sync_token) = if let Ok(restored) = persistent_state::restore_session(specified_username).await {
+    let (client, _sync_token) = if let Ok(restored) = persistent_state::restore_session(specified_username).await {
         restored
     } else {
         match login(cli).await {
@@ -853,14 +853,15 @@ async fn async_main_loop() -> Result<()> {
     let sync_service = SyncService::builder(client.clone())
         .build()
         .await?;
-    sync_service.start().await;
     handle_sync_service_state_subscriber(sync_service.state());
+    sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
     let (mut all_known_rooms, mut room_diff_stream) = all_rooms_list.entries();
+    log!("Populating initial set of {} known rooms.", all_known_rooms.len());
     for room in all_known_rooms.iter() {
         add_new_room(room).await?;
     }
@@ -980,6 +981,8 @@ fn remove_room(room: room_list_service::Room) {
 async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     let room_id = room.room_id().to_owned();
 
+    log!("Adding new room: {:?}, room_id: {room_id}", room.compute_display_name().await.map(|n| n.to_string()).unwrap_or_default());
+
     let timeline = room.default_room_timeline_builder().await?
         .track_read_marker_and_receipts()
         .build()
@@ -1024,11 +1027,13 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
         room_id: room_id.clone(),
         latest,
-        // start with a basic text avatar; the avatar image will be fetched asynchronously later.
+        // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
         is_selected: false,
     }));
+
+    spawn_fetch_room_avatar(room.inner_room().clone());
 
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
@@ -1112,6 +1117,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
     Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
+            log!("Received a room list loading state update: {state:?}");
             match state {
                 RoomListLoadingState::NotLoaded => {
                     enqueue_rooms_list_update(RoomsListUpdate::NotLoaded);
@@ -1134,7 +1140,7 @@ async fn timeline_subscriber_handler(
     let room_id = room.room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}...");
     let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
-    log!("Received initial timeline update for room {room_id}.");
+    log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
     sender.send(TimelineUpdate::NewItems {
         items: timeline_items.clone(),
@@ -1146,7 +1152,8 @@ async fn timeline_subscriber_handler(
 
     while let Some(batch) = subscriber.next().await {
         let mut num_updates = 0;
-        let mut reobtain_latest_event = false;
+        // For now we always requery the latest event, but this can be better optimized.
+        let mut reobtain_latest_event = true;
         let mut index_of_first_change = usize::MAX;
         let mut index_of_last_change = usize::MIN;
         let mut clear_cache = false; // whether to clear the entire cache of items
@@ -1275,21 +1282,11 @@ async fn timeline_subscriber_handler(
         
             // Update the latest event for this room.
             if let Some(new_latest) = new_latest_event {
-                if latest_event.as_ref().is_some_and(|ev| ev.timestamp() < new_latest.timestamp()) {
+                if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
                     let room_avatar_changed = update_latest_event(&room_id, &new_latest);
                     latest_event = Some(new_latest);
                     if room_avatar_changed {
-                        // Spawn a new async task to fetch the room's new avatar.
-                        let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
-                        let room2 = room.clone();
-                        let room_id2 = room_id.to_owned();
-                        Handle::current().spawn(async move {
-                            let avatar = room_avatar(&room2, &room_name_str).await;
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
-                                room_id: room_id2,
-                                avatar,
-                            });
-                        });
+                        spawn_fetch_room_avatar(room.clone());
                     }
                 }
             }
@@ -1352,6 +1349,20 @@ fn update_latest_event(
         latest_message_text,
     });
     room_avatar_changed
+}
+
+
+/// Spawn a new async task to fetch the room's new avatar.
+fn spawn_fetch_room_avatar(room: Room) {
+    let room_id = room.room_id().to_owned();
+    let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
+    Handle::current().spawn(async move {
+        let avatar = room_avatar(&room, &room_name_str).await;
+        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
+            room_id,
+            avatar,
+        });
+    });
 }
 
 /// Fetches and returns the avatar image for the given room (if one exists),
