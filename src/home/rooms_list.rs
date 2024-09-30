@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
+use matrix_sdk::{ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId}, Room};
 
 use super::room_preview::RoomPreviewAction;
 
@@ -66,8 +66,15 @@ live_design! {
 /// (which is called from background async tasks that receive updates from the matrix server),
 /// and then dequeued by the `RoomsList` widget's `handle_event` function.
 pub enum RoomsListUpdate {
+    /// No rooms have been loaded yet.
+    NotLoaded,
+    /// Some rooms were loaded, and the server optionally told us
+    /// the max number of rooms that will ever be loaded.
+    LoadedRooms{ max_rooms: Option<usize> },
     /// Add a new room to the list of all rooms.
     AddRoom(RoomPreviewEntry),
+    /// Clear all rooms in the list of all rooms.
+    ClearRooms,
     /// Update the latest event content and timestamp for the given room.
     UpdateLatestEvent {
         room_id: OwnedRoomId,
@@ -86,7 +93,6 @@ pub enum RoomsListUpdate {
         avatar: RoomPreviewAvatar,
     },
     /// Remove the given room from the list of all rooms.
-    #[allow(unused)]
     RemoveRoom(OwnedRoomId),
     /// Update the status label at the bottom of the list of all rooms.
     Status {
@@ -120,7 +126,7 @@ pub enum RoomListAction {
 #[derive(Debug, Default)]
 pub struct RoomPreviewEntry {
     /// The matrix ID of this room.
-    pub room_id: Option<OwnedRoomId>,
+    pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
     /// The timestamp and Html text content of the latest message in this room.
@@ -149,6 +155,8 @@ pub struct RoomsList {
     #[deref] view: View,
 
     /// The list of all known rooms and their cached preview info.
+    //
+    // TODO: change this into a hashmap keyed by room ID.
     #[rust] all_rooms: Vec<RoomPreviewEntry>,
     /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `all_rooms` vector.
     #[rust] rooms_list_map: HashMap<u64, usize>,
@@ -156,6 +164,18 @@ pub struct RoomsList {
     #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
+    /// The maximum number of rooms that will ever be loaded.
+    #[rust] max_known_rooms: Option<usize>,
+}
+
+impl RoomsList {
+    fn update_status_rooms_count(&mut self) {
+        self.status = if let Some(max_rooms) = self.max_known_rooms {
+            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
+        } else {
+            format!("Loaded {} rooms.", self.all_rooms.len())
+        };
+    }
 }
 
 impl Widget for RoomsList {
@@ -196,6 +216,16 @@ impl Widget for RoomsList {
                         } else {
                             error!("Error: couldn't find room {room_id} to remove room");
                         }
+                    }
+                    RoomsListUpdate::ClearRooms => {
+                        self.all_rooms.clear();
+                    }
+                    RoomsListUpdate::NotLoaded => {
+                        self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                    }
+                    RoomsListUpdate::LoadedRooms { max_rooms } => {
+                        self.max_known_rooms = max_rooms;
+                        self.update_status_rooms_count();
                     }
                     RoomsListUpdate::Status { status } => {
                         self.status = status;

@@ -1,8 +1,6 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
-use std::{
-    path::PathBuf,
-};
+use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::log;
 use matrix_sdk::{
