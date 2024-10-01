@@ -937,7 +937,7 @@ struct RoomScreen {
     /// The room ID of the currently-shown room.
     #[rust] room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room .
-    #[rust]     room_name: String,
+    #[rust] room_name: String,
     /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
@@ -1101,10 +1101,8 @@ impl Widget for RoomScreen {
                             tl.profile_drawn_since_last_update.clear();
                             tl.fully_paginated = false;
                         } else {
-                            tl.content_drawn_since_last_update
-                                .remove(changed_indices.clone());
-                            tl.profile_drawn_since_last_update
-                                .remove(changed_indices.clone());
+                            tl.content_drawn_since_last_update.remove(changed_indices.clone());
+                            tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                             // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                         }
                         tl.items = items;
@@ -1562,10 +1560,10 @@ impl Widget for RoomScreen {
 
                     // Now that we've drawn the item, add its index to the set of drawn items.
                     if item_new_draw_status.content_drawn {
-                        tl_state.content_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                        tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
                     }
                     if item_new_draw_status.profile_drawn {
-                        tl_state.profile_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
+                        tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
                     }
                     item
                 };
