@@ -1894,7 +1894,16 @@ struct TimelineUiState {
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
     saved_state: SavedState,
+
+    /// The state of the message highlight animation.
+    ///
+    /// We need to run the animation once the scrolling, triggered by the click of of a
+    /// a reply preview, ends. so we keep a small state for it.
+    /// By default, it starts in Off.
+    /// Once the scrolling is started, the state becomes Pending.
+    /// If the animation was trigged, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
+
     prev_first_index: Option<usize>,
     read_event_hashmap: HashMap<String,(OwnedRoomId,OwnedEventId,Instant,bool)>,
     marked_fully_read_queue: HashMap<String,(OwnedRoomId,OwnedEventId)>,

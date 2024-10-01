@@ -227,18 +227,23 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         typing: bool,
     },
+    /// Subscribe to typing notices for the given room.
+    ///
+    /// This request does not return a response or notify the UI thread.
     SubscribeToTypingNotices {
         room_id: OwnedRoomId,
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
+    /// Sends a read receipt for the given event in the given room.
     ReadReceipt{
-        room_id:OwnedRoomId,
-        event_id:OwnedEventId,
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
     },
+    /// Sends a fully-read receipt for the given event in the given room.
     FullyReadReceipt{
-        room_id:OwnedRoomId,
-        event_id:OwnedEventId,
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
     }
 }
 
@@ -612,37 +617,38 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     SignalToUI::set_ui_signal();
                 });
             }
-            MatrixRequest::ReadReceipt { room_id,event_id }=>{
+
+            MatrixRequest::ReadReceipt { room_id, event_id }=>{
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for send read receipt request {room_id}");
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
                         continue;
                     };
                     room_info.timeline.clone()
                 };
-                let _send_message_task = Handle::current().spawn(async move {
+                let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(_send_handle) => log!("Sent read receipt request to room  {room_id} {event_id}"),
-                        Err(_e) => error!("Failed to send read receipt request to room {room_id}: {_e:?}"),
+                        Ok(()) => log!("Sent read receipt to room {room_id}, {event_id}"),
+                        Err(_e) => error!("Failed to send read receipt to room {room_id}, {event_id}; error: {_e:?}"),
                     }
                 });
             },
-            MatrixRequest::FullyReadReceipt { room_id,event_id }=>{
+
+            MatrixRequest::FullyReadReceipt { room_id, event_id }=>{
                 let timeline = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for send read receipt request {room_id}");
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
                     };
-
                     room_info.timeline.clone()
                 };
-                let _send_message_task = Handle::current().spawn(async move {
+                let _send_frr_task = Handle::current().spawn(async move {
                     let receipt = Receipts::new().fully_read_marker(event_id.clone());
                     match timeline.send_multiple_receipts(receipt).await {
-                        Ok(_send_handle) => log!("Sent fully read receipt / fully_read_marker to room  {room_id} {event_id}"),
-                        Err(_e) => error!("Failed to fully read receipt to room {room_id}: {_e:?}"),
+                        Ok(()) => log!("Sent fully read receipt to room {room_id}, {event_id}"),
+                        Err(_e) => error!("Failed to send fully read receipt to room {room_id}, {event_id}; error: {_e:?}"),
                     }
                 });
             }    
