@@ -5,14 +5,34 @@ use eyeball_im::VectorDiff;
 use futures_util::StreamExt;
 use makepad_widgets::{error, log, warning, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent}, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
-    }, sliding_sync::VersionBuilder, Client, Room
+    config::RequestConfig,
+    event_handler::EventHandlerDropGuard,
+    media::MediaRequest,
+    room::{Receipts, RoomMember},
+    ruma::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
+        events::{
+            receipt::ReceiptThread, room::{
+                message::{ForwardThread, RoomMessageEventContent},
+                MediaSource,
+            }, FullStateEventContent
+        },
+        OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
+    },
+    sliding_sync::VersionBuilder,
+    Client,
+    Room,
 };
-use matrix_sdk_ui::{room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItemContent}, Timeline};
+use matrix_sdk_ui::{
+    room_list_service::{self, RoomListLoadingState},
+    sync_service::{self, SyncService},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItemContent},
+    Timeline,
+};
 use tokio::{
     runtime::Handle,
-    sync::mpsc::{UnboundedSender, UnboundedReceiver}, task::JoinHandle,
+    sync::mpsc::{UnboundedSender, UnboundedReceiver},
+    task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
@@ -235,6 +255,16 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
+    /// Sends a read receipt for the given event in the given room.
+    ReadReceipt{
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+    },
+    /// Sends a fully-read receipt for the given event in the given room.
+    FullyReadReceipt{
+        room_id: OwnedRoomId,
+        event_id: OwnedEventId,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -608,6 +638,40 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 });
             }
 
+            MatrixRequest::ReadReceipt { room_id, event_id }=>{
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let _send_rr_task = Handle::current().spawn(async move {
+                    match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
+                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
+                        Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
+                    }
+                });
+            },
+
+            MatrixRequest::FullyReadReceipt { room_id, event_id }=>{
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let _send_frr_task = Handle::current().spawn(async move {
+                    let receipt = Receipts::new().fully_read_marker(event_id.clone());
+                    match timeline.send_multiple_receipts(receipt).await {
+                        Ok(()) => log!("Sent fully read receipt to room {room_id}, event {event_id}"),
+                        Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
+                    }
+                });
+            }    
         }
     }
 
