@@ -1,12 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{
-    borrow::Cow,
-    collections::BTreeMap,
-    ops::{DerefMut, Range},
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::Instant};
 
 use imbl::Vector;
 use makepad_widgets::*;
@@ -32,30 +27,16 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry},
-    event_preview::{
-        text_preview_of_member_profile_change, text_preview_of_other_state,
-        text_preview_of_redacted_message, text_preview_of_room_membership_change,
-        text_preview_of_timeline_item,
-    },
-    media_cache::{MediaCache, MediaCacheEntry},
-    profile::{
-        user_profile::{
-            AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId,
-            UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt,
-        },
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::main_content::MainContentWidgetRefExt, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    },
-    shared::{
+    }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
     },
-    sliding_sync::{
-        get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest,
-    },
-    utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -302,12 +283,14 @@ live_design! {
         visible: false,
         width: Fill,
         height: Fit,
+        padding: {top: 5.0}
 
         html_content = <RobrixHtml> {
             width: Fill,
             height: Fit,
             padding: { bottom: 5.0, top: 0.0 },
             font_size: 10.5,
+            font_color: (REACTION_TEXT_COLOR),
             draw_normal:      { color: (REACTION_TEXT_COLOR) },
             draw_italic:      { color: (REACTION_TEXT_COLOR) },
             draw_bold:        { color: (REACTION_TEXT_COLOR) },
@@ -964,8 +947,79 @@ struct RoomScreen {
     #[rust]
     room_name: String,
     /// The UI-relevant states for the room that this widget is currently displaying.
-    #[rust]
-    tl_state: Option<TimelineUiState>,
+    #[rust] tl_state: Option<TimelineUiState>,
+    /// 5 secs timer when scroll ends
+    #[rust] fully_read_timer: Timer,
+}
+
+impl RoomScreen{
+    fn send_user_read_receipts_based_on_scroll_pos(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+    ) {
+        let portal_list = self.portal_list(id!(list));
+        //stopped scrolling
+        if portal_list.scrolled(actions) {
+            return;
+        }
+        let first_index = portal_list.first_id();
+        
+        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(room_id) = self.room_id.as_ref() else { return };
+        if let Some(ref mut index) = tl_state.prev_first_index {
+            // to detect change of scroll when scroll ends
+            if *index != first_index {  
+                // scroll changed         
+                self.fully_read_timer = cx.start_interval(5.0);
+                let time_now = std::time::Instant::now();
+                if first_index > *index {
+                    // Store visible event messages with current time into a hashmap
+                    let mut read_receipt_event = None;
+                    for r in first_index .. (first_index + portal_list.visible_items() + 1) {
+                        if let Some(v) = tl_state.items.get(r) {
+                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
+                                read_receipt_event = Some(e.to_owned());
+                                if !tl_state.read_event_hashmap.contains_key(&e.to_string()) {
+                                    tl_state.read_event_hashmap.insert(
+                                        e.to_string(),
+                                        (room_id.clone(), e.to_owned(), time_now, false),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    if let Some(event_id) = read_receipt_event {
+                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id });
+                    }
+                    let mut fully_read_receipt_event = None;
+                    // Implements sending fully read receipts when message is scrolled out of first row
+                    for r in *index..first_index {
+                        if let Some(v) = tl_state.items.get(r).clone() {
+                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
+                                let mut to_remove = vec![];
+                                for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
+                                    if e == event_id {
+                                        fully_read_receipt_event = Some(event_id.clone());
+                                        to_remove.push(event_id_string.clone());
+                                    }
+                                }
+                                for r in to_remove {
+                                    tl_state.marked_fully_read_queue.remove(&r);
+                                }
+                            }
+                        }
+                    }
+                    if let Some(event_id) = fully_read_receipt_event {
+                        submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone()});
+                    }
+                }
+                *index = first_index;
+            }
+        } else {
+            tl_state.prev_first_index = Some(first_index);
+        }
+    }
 }
 
 impl Widget for RoomScreen {
@@ -992,10 +1046,9 @@ impl Widget for RoomScreen {
                         clear_cache,
                     } => {
                         if items.is_empty() {
-                            log!(
-                                "Timeline::handle_event(): timeline was cleared for room {}",
-                                tl.room_id
-                            );
+                            if !tl.items.is_empty() {
+                                log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
+                            }
 
                             // If the bottom of the timeline (the last event) is visible, then we should
                             // set the timeline to live mode.
@@ -1044,6 +1097,8 @@ impl Widget for RoomScreen {
                             if curr_item_idx != new_item_idx {
                                 log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                                 portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
+                                tl.prev_first_index = Some(new_item_idx);
+                                cx.stop_timer(self.fully_read_timer);
                             }
                         }
                         // TODO: after an (un)ignore user event, all timelines are cleared.
@@ -1074,6 +1129,7 @@ impl Widget for RoomScreen {
                             // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                         }
                         tl.items = items;
+                        
                     }
                     TimelineUpdate::TimelineStartReached => {
                         log!(
@@ -1159,6 +1215,7 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().cast() {
@@ -1431,6 +1488,19 @@ impl Widget for RoomScreen {
             }
         }
 
+        // Mark events as fully read after they have been displayed on screen for 5 seconds.
+        if self.fully_read_timer.is_event(event).is_some() {
+            if let (Some(ref mut tl_state), Some(ref _room_id)) = (&mut self.tl_state, &self.room_id) {
+                for (k, (room, event, start, ref mut moved_to_queue)) in &mut tl_state.read_event_hashmap {
+                    if start.elapsed() > std::time::Duration::new(5, 0) && !*moved_to_queue{
+                        tl_state.marked_fully_read_queue.insert(k.clone(), (room.clone(), event.clone()));
+                        *moved_to_queue = true;
+                    }
+                }
+            }
+            cx.stop_timer(self.fully_read_timer);
+        }
+
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -1655,26 +1725,27 @@ impl RoomScreen {
             Did you forget to save the timeline state back to the global map of states?",
         );
 
-        let (mut tl_state, first_time_showing_room) =
-            if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
-                (existing, false)
-            } else {
-                let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
-                    .expect("BUG: couldn't get timeline state for first-viewed room.");
-                let new_tl_state = TimelineUiState {
-                    room_id: room_id.clone(),
-                    // We assume timelines being viewed for the first time haven't been fully paginated.
-                    fully_paginated: false,
-                    items: Vector::new(),
-                    content_drawn_since_last_update: RangeSet::new(),
-                    profile_drawn_since_last_update: RangeSet::new(),
-                    update_receiver,
-                    media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
-                    replying_to: None,
-                    saved_state: SavedState::default(),
-                    message_highlight_animation_state: MessageHighlightAnimationState::default(),
-                };
-                (new_tl_state, true)
+
+        let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
+            (existing, false)
+        } else {
+            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
+                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let new_tl_state = TimelineUiState {
+                room_id: room_id.clone(),
+                // We assume timelines being viewed for the first time haven't been fully paginated.
+                fully_paginated: false,
+                items: Vector::new(),
+                content_drawn_since_last_update: RangeSet::new(),
+                profile_drawn_since_last_update: RangeSet::new(),
+                update_receiver,
+                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                replying_to: None,
+                saved_state: SavedState::default(),
+                message_highlight_animation_state: MessageHighlightAnimationState::default(),
+                prev_first_index: None,
+                read_event_hashmap: HashMap::new(),
+                marked_fully_read_queue: HashMap::new(),
             };
 
         // Subscribe to typing notices, but hide the typing notice view initially.
@@ -1925,6 +1996,10 @@ struct TimelineUiState {
     /// Once the scrolling is started, the state becomes Pending.
     /// If the animation was trigged, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
+
+    prev_first_index: Option<usize>,
+    read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
+    marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
