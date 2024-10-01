@@ -983,15 +983,14 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
 
     log!("Adding new room: {:?}, room_id: {room_id}", room.compute_display_name().await.map(|n| n.to_string()).unwrap_or_default());
 
-    let timeline = room.default_room_timeline_builder().await?
-        .track_read_marker_and_receipts()
-        .build()
-        .await?;
-
+    let timeline = {
+        let builder = room.default_room_timeline_builder().await?
+            .track_read_marker_and_receipts();
+        room.init_timeline_with_builder(builder).await?;
+        room.timeline().ok_or_else(|| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?
+    };
     let latest_event = timeline.latest_event().await;
-
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
-    let tl_arc = Arc::new(timeline);
 
     let room_name = room.compute_display_name().await
         .map(|n| n.to_string())
@@ -999,7 +998,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
 
     Handle::current().spawn(timeline_subscriber_handler(
         room.inner_room().clone(),
-        tl_arc.clone(),
+        timeline.clone(),
         timeline_update_sender.clone(),
     ));
 
@@ -1039,7 +1038,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         room_id.clone(),
         RoomInfo {
             room_id,
-            timeline: tl_arc,
+            timeline,
             timeline_update_receiver: Some(timeline_update_receiver),
             timeline_update_sender,
             pagination_status_task: None,
@@ -1069,6 +1068,7 @@ async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserI
 fn handle_ignore_user_list_subscriber(client: Client) {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
     Handle::current().spawn(async move {
+        let mut first_update = true;
         while let Some(ignore_list) = subscriber.next().await {
             log!("Received an updated ignored-user list: {ignore_list:?}");
             let ignored_users_new = ignore_list
@@ -1081,7 +1081,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
             let has_changed = *ignored_users_old != ignored_users_new;
             *ignored_users_old = ignored_users_new;
 
-            if has_changed {
+            if has_changed && !first_update {
                 // After successfully (un)ignoring a user, all timelines are fully cleared by the Matrix SDK.
                 // Therefore, we need to re-fetch all timelines for all rooms,
                 // and currently the only way to actually accomplish this is via pagination.
@@ -1094,6 +1094,8 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                     });
                 }
             }
+
+            first_update = false;
         }
     });
 }
@@ -1164,19 +1166,19 @@ async fn timeline_subscriber_handler(
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
                     timeline_items.extend(values);
                     index_of_last_change = max(index_of_last_change, timeline_items.len());
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
                 VectorDiff::Clear => {
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Clear"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Clear"); }
                     clear_cache = true;
                     timeline_items.clear();
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
                 VectorDiff::PushFront { value } => {
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff PushFront"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushFront"); }
                     clear_cache = true;
                     timeline_items.push_front(value);
                     reobtain_latest_event |= latest_event.is_none();
@@ -1186,12 +1188,12 @@ async fn timeline_subscriber_handler(
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
                     timeline_items.push_back(value);
                     index_of_last_change = max(index_of_last_change, timeline_items.len());
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
                 VectorDiff::PopFront => {
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff PopFront"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopFront"); }
                     clear_cache = true;
                     timeline_items.pop_front();
                     // This doesn't affect whether we should reobtain the latest event.
@@ -1201,7 +1203,7 @@ async fn timeline_subscriber_handler(
                     timeline_items.pop_back();
                     index_of_first_change = min(index_of_first_change, timeline_items.len());
                     index_of_last_change = usize::MAX;
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
@@ -1213,7 +1215,7 @@ async fn timeline_subscriber_handler(
                         index_of_last_change = usize::MAX;
                     }
                     timeline_items.insert(index, value);
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
@@ -1221,7 +1223,7 @@ async fn timeline_subscriber_handler(
                     index_of_first_change = min(index_of_first_change, index);
                     index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
                     timeline_items.set(index, value);
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
@@ -1233,7 +1235,7 @@ async fn timeline_subscriber_handler(
                         index_of_last_change = usize::MAX;
                     }
                     timeline_items.remove(index);
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
@@ -1245,12 +1247,12 @@ async fn timeline_subscriber_handler(
                         index_of_last_change = usize::MAX;
                     }
                     timeline_items.truncate(length);
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
                     num_updates += 1;
                 }
                 VectorDiff::Reset { values } => {
-                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: diff Reset, new length {}", values.len()); }
+                    if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Reset, new length {}", values.len()); }
                     clear_cache = true; // we must assume all items have changed.
                     timeline_items = values;
                     reobtain_latest_event = true;

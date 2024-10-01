@@ -953,7 +953,9 @@ impl Widget for RoomScreen {
                 match update {
                     TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
                         if items.is_empty() {
-                            log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
+                            if !tl.items.is_empty() {
+                                log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
+                            }
 
                             // If the bottom of the timeline (the last event) is visible, then we should
                             // set the timeline to live mode.
