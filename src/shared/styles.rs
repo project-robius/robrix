@@ -25,6 +25,7 @@ live_design! {
         // height_factor: 1.5,
     }
 
+    TYPING_NOTICE_TEXT_COLOR = #121570
 
     MESSAGE_FONT_SIZE = 11
     MESSAGE_TEXT_COLOR = #x444
