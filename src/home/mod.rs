@@ -8,7 +8,6 @@ pub mod rooms_list;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
 pub mod welcome_screen;
-pub mod emoji;
 pub mod room_reaction_list;
 
 pub fn live_design(cx: &mut Cx) {
@@ -20,6 +19,5 @@ pub fn live_design(cx: &mut Cx) {
     main_content::live_design(cx);
     spaces_dock::live_design(cx);
     welcome_screen::live_design(cx);
-    emoji::live_design(cx);
     room_reaction_list::live_design(cx);
 }
