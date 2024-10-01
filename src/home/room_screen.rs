@@ -14,9 +14,7 @@ use matrix_sdk::{
             },
             MediaSource,
         },
-        matrix_uri::MatrixId,
-        uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId,
-        OwnedRoomId, RoomId, UserId,
+        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
     OwnedServerName,
 };
@@ -27,7 +25,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::main_content::MainContentWidgetRefExt, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -782,7 +780,6 @@ live_design! {
                     reply_preview_content = <ReplyPreviewContent> { }
                 }
 
-
                 // Below that, display user typing notice
                 typing_notice = <View> {
                     visible: false
@@ -799,15 +796,13 @@ live_design! {
                         align: {x: 0.0, y: 0.5},
                         padding: {left: 5.0}
                         draw_text: {
-                            color: #121570,
+                            color: (TYPING_NOTICE_TEXT_COLOR),
                             text_style: <REGULAR_TEXT>{font_size: 9}
                         }
                         text: "Someone is typing..."
                     }
 
                     typing_animation = <TypingAnimation> {}
-
-                    // TODO: add a bouncing/moving ellipsis animation after the list of typing users.
                 }
 
                 // Below that, display a view that holds the message input bar and send button.
@@ -937,15 +932,12 @@ live_design! {
 /// A simple deref wrapper around the `RoomScreen` widget that enables us to handle its events.
 #[derive(Live, LiveHook, Widget)]
 struct RoomScreen {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 
     /// The room ID of the currently-shown room.
-    #[rust]
-    room_id: Option<OwnedRoomId>,
+    #[rust] room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room .
-    #[rust]
-    room_name: String,
+    #[rust]     room_name: String,
     /// The UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
@@ -1033,18 +1025,12 @@ impl Widget for RoomScreen {
         if let Event::Signal = event {
             let portal_list = self.portal_list(id!(list));
             let curr_first_id = portal_list.first_id();
-            let Some(tl) = self.tl_state.as_mut() else {
-                return;
-            };
+            let Some(tl) = self.tl_state.as_mut() else { return };
 
             let mut done_loading = false;
             while let Ok(update) = tl.update_receiver.try_recv() {
                 match update {
-                    TimelineUpdate::NewItems {
-                        items,
-                        changed_indices,
-                        clear_cache,
-                    } => {
+                    TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
                         if items.is_empty() {
                             if !tl.items.is_empty() {
                                 log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
@@ -1078,22 +1064,15 @@ impl Widget for RoomScreen {
 
                         if items.len() == tl.items.len() {
                             // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
-                        } else if curr_first_id > items.len() {
+                        }
+                        else if curr_first_id > items.len() {
                             log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, items.len());
                             portal_list.set_first_id_and_scroll(items.len().saturating_sub(1), 0.0);
                             portal_list.set_tail_range(true);
-                        } else if let Some((
-                            curr_item_idx,
-                            new_item_idx,
-                            new_item_scroll,
-                            _event_id,
-                        )) = find_new_item_matching_current_item(
-                            cx,
-                            &portal_list,
-                            curr_first_id,
-                            &tl.items,
-                            &items,
-                        ) {
+                        }
+                        else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
+                            find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &items)
+                        {
                             if curr_item_idx != new_item_idx {
                                 log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                                 portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
@@ -1132,39 +1111,27 @@ impl Widget for RoomScreen {
                         
                     }
                     TimelineUpdate::TimelineStartReached => {
-                        log!(
-                            "Timeline::handle_event(): timeline start reached for room {}",
-                            tl.room_id
-                        );
+                        log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
                         tl.fully_paginated = true;
                         done_loading = true;
                     }
                     TimelineUpdate::PaginationIdle => {
                         done_loading = true;
                     }
-                    TimelineUpdate::EventDetailsFetched {
-                        event_id: _event_id,
-                        result: _result,
-                    } => {
-                        if let Err(_e) = _result {
-                            error!("Failed to fetch details fetched for event {_event_id} in room {}. Error: {_e:?}", tl.room_id);
+                    TimelineUpdate::EventDetailsFetched {event_id, result } => {
+                        if let Err(_e) = result {
+                            error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
                         }
                         // Here, to be most efficient, we could redraw only the updated event,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
                     TimelineUpdate::RoomMembersFetched => {
-                        log!(
-                            "Timeline::handle_event(): room members fetched for room {}",
-                            tl.room_id
-                        );
+                        log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
                     TimelineUpdate::MediaFetched => {
-                        log!(
-                            "Timeline::handle_event(): media fetched for room {}",
-                            tl.room_id
-                        );
+                        log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                         // Here, to be most efficient, we could redraw only the media items in the timeline,
                         // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                     }
@@ -1188,26 +1155,18 @@ impl Widget for RoomScreen {
                         let is_typing = !users.is_empty();
                         self.view.view(id!(typing_notice)).set_visible(is_typing);
                         self.view.label(id!(typing_label)).set_text(&typing_text);
-
+                        let typing_animation = self.view.typing_animation(id!(typing_animation));
                         if is_typing {
-                            self.view
-                                .typing_animation(id!(typing_animation))
-                                .animate(cx);
+                            typing_animation.animate(cx);
                         } else {
-                            self.view
-                                .typing_animation(id!(typing_animation))
-                                .stop_animation();
+                            typing_animation.stop_animation();
                         }
                     }
                 }
             }
 
             if done_loading {
-                log!(
-                    "TODO: hide topspace loading animation for room {}",
-                    tl.room_id
-                );
-
+                log!("TODO: hide topspace loading animation for room {}", tl.room_id);
                 // TODO FIXME: hide TopSpace loading animation, set it to invisible.
             }
 
@@ -1243,9 +1202,7 @@ impl Widget for RoomScreen {
                         };
                         let tl_idx = item_id as usize;
 
-                        if let Some(details) = tl
-                            .items
-                            .get(tl_idx)
+                        if let Some(details) = tl.items.get(tl_idx)
                             .and_then(|item| item.as_event())
                             .and_then(|event| event.content().as_message())
                             .and_then(|message| message.in_reply_to())
@@ -1253,20 +1210,17 @@ impl Widget for RoomScreen {
                             // Attempt to find the index of replied-to message on the timeline.
                             // Start from the current item's index (`tl_idx`)and search backwards,
                             // since we know the replied-to message must come before the current item.
-                            let replied_to_msg_tl_index = tl
-                                .items
+                            let replied_to_msg_tl_index = tl.items
                                 .focus()
                                 .narrow(..tl_idx)
                                 .into_iter()
-                                .rposition(|i| {
-                                    i.as_event()
-                                        .and_then(|e| e.event_id())
-                                        .is_some_and(|ev_id| ev_id == details.event_id)
-                                });
+                                .rposition(|i| i.as_event()
+                                    .and_then(|e| e.event_id())
+                                    .is_some_and(|ev_id| ev_id == details.event_id)
+                                );
 
                             if let Some(index) = replied_to_msg_tl_index {
-                                let distance =
-                                    (index as isize - portal_list.first_id() as isize).abs() as f64;
+                                let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
                                 let base_speed = 10.0;
                                 // apply a scaling based on the distance
                                 let scaled_speed = base_speed * (distance * distance);
@@ -1276,9 +1230,9 @@ impl Widget for RoomScreen {
                                 //       appear beneath the top of the viewport.
                                 portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
                                 // start highlight animation.
-                                tl.message_highlight_animation_state =
-                                    MessageHighlightAnimationState::Pending { item_id: index };
-
+                                tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                    item_id: index
+                                };
                                 self.redraw(cx);
                             } else {
                                 log!("TODO: the replied-to message was not yet available in the timeline.");
@@ -1290,12 +1244,8 @@ impl Widget for RoomScreen {
 
                 // Handle the highlight animation.
                 let portal_list = self.portal_list(id!(list));
-                let Some(tl) = self.tl_state.as_mut() else {
-                    return;
-                };
-                if let MessageHighlightAnimationState::Pending { item_id } =
-                    tl.message_highlight_animation_state
-                {
+                let Some(tl) = self.tl_state.as_mut() else { return };
+                if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
                             widget_uid,
@@ -1309,23 +1259,16 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle message reply action
-                if let TimelineAction::MessageReply(message_to_reply_to) =
-                    action.as_widget_action().cast()
-                {
+                if let TimelineAction::MessageReply(message_to_reply_to) = action.as_widget_action().cast() {
                     if let Ok(replied_to_info) = message_to_reply_to.replied_to_info() {
                         self.show_replying_to(cx, (message_to_reply_to, replied_to_info));
                     } else {
-                        error!(
-                            "Failed to get replied-to info for message {:?}",
-                            message_to_reply_to
-                        );
+                        error!("Failed to get replied-to info for message {:?}", message_to_reply_to);
                     }
                 }
 
                 // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) =
-                    action.as_widget_action().cast()
-                {
+                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     self.show_user_profile(
                         cx,
                         &pane,
@@ -1346,17 +1289,11 @@ impl Widget for RoomScreen {
                                 if self.room_id.as_ref() == Some(room_id) {
                                     return true;
                                 }
-                                if let Some(_known_room) =
-                                    get_client().and_then(|c| c.get_room(room_id))
-                                {
+                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                                     log!("TODO: jump to known room {}", room_id);
                                 } else {
-                                    log!(
-                                        "TODO: fetch and display room preview for room {}",
-                                        room_id
-                                    );
+                                    log!("TODO: fetch and display room preview for room {}", room_id);
                                 }
-
                                 true
                             }
                             MatrixId::RoomAlias(room_alias) => {
@@ -1445,10 +1382,9 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
-                        replied_to: self
-                            .tl_state
-                            .as_mut()
-                            .and_then(|tl| tl.replying_to.take().map(|(_, rep)| rep)),
+                        replied_to: self.tl_state.as_mut().and_then(
+                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
+                        ),
                         // TODO: support attaching mentions, etc.
                     });
 
@@ -1576,28 +1512,24 @@ impl Widget for RoomScreen {
                                 &RedactedMessageEventMarker,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::MembershipChange(membership_change) => {
-                                populate_small_state_event(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    membership_change,
-                                    item_drawn_status,
-                                )
-                            }
-                            TimelineItemContent::ProfileChange(profile_change) => {
-                                populate_small_state_event(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    room_id,
-                                    event_tl_item,
-                                    profile_change,
-                                    item_drawn_status,
-                                )
-                            }
+                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
+                                cx,
+                                list,
+                                item_id,
+                                room_id,
+                                event_tl_item,
+                                membership_change,
+                                item_drawn_status,
+                            ),
+                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
+                                cx,
+                                list,
+                                item_id,
+                                room_id,
+                                event_tl_item,
+                                profile_change,
+                                item_drawn_status,
+                            ),
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
                                 list,
@@ -1608,16 +1540,14 @@ impl Widget for RoomScreen {
                                 item_drawn_status,
                             ),
                             unhandled => {
-                                let item =
-                                    list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
-                                item.label(id!(content))
-                                    .set_text(&format!("[TODO] {:?}", unhandled));
+                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
-                        },
+                        }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
                             let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
-                            let text = unix_time_millis_to_datetime(millis)
+                            let text = unix_time_millis_to_datetime(&millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
@@ -1632,14 +1562,10 @@ impl Widget for RoomScreen {
 
                     // Now that we've drawn the item, add its index to the set of drawn items.
                     if item_new_draw_status.content_drawn {
-                        tl_state
-                            .content_drawn_since_last_update
-                            .insert(tl_idx..tl_idx + 1);
+                        tl_state.content_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
                     }
                     if item_new_draw_status.profile_drawn {
-                        tl_state
-                            .profile_drawn_since_last_update
-                            .insert(tl_idx..tl_idx + 1);
+                        tl_state.profile_drawn_since_last_update.insert(tl_idx..tl_idx + 1);
                     }
                     item
                 };
@@ -1667,7 +1593,11 @@ impl RoomScreen {
 
     /// Shows a preview of the given event that the user is currently replying to
     /// above the message input bar.
-    fn show_replying_to(&mut self, cx: &mut Cx, replying_to: (EventTimelineItem, RepliedToInfo)) {
+    fn show_replying_to(
+        &mut self,
+        cx: &mut Cx,
+        replying_to: (EventTimelineItem, RepliedToInfo),
+    ) {
         let replying_preview_view = self.view(id!(replying_preview));
         let (replying_preview_username, _) = set_avatar_and_get_username(
             cx,
@@ -1714,13 +1644,10 @@ impl RoomScreen {
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
-        let room_id = self
-            .room_id
-            .clone()
+        let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-        assert!(
-            // just an optional sanity check
-            self.tl_state.is_none(),
+        // just an optional sanity check
+        assert!(self.tl_state.is_none(),
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
@@ -1747,13 +1674,17 @@ impl RoomScreen {
                 read_event_hashmap: HashMap::new(),
                 marked_fully_read_queue: HashMap::new(),
             };
+            (new_tl_state, true)
+        };
 
         // Subscribe to typing notices, but hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(false);
-        submit_async_request(MatrixRequest::SubscribeToTypingNotices {
-            room_id: room_id.clone(),
-            subscribe: true,
-        });
+        submit_async_request(
+            MatrixRequest::SubscribeToTypingNotices {
+                room_id: room_id.clone(),
+                subscribe: true,
+            }
+        );
 
         // kick off a back pagination request for this room
         if !tl_state.fully_paginated {
@@ -1801,10 +1732,7 @@ impl RoomScreen {
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
-            error!(
-                "Timeline::save_state(): skipping due to missing state, room {:?}",
-                self.room_id
-            );
+            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
             return;
         };
 
@@ -1813,19 +1741,18 @@ impl RoomScreen {
         let message_input_box = self.text_input(id!(message_input));
         let state = SavedState {
             first_index_and_scroll: Some((first_index, portal_list.scroll_position())),
-            first_event_id: tl.items.get(first_index).and_then(|item| {
-                item.as_event()
+            first_event_id: tl.items
+                .get(first_index)
+                .and_then(|item| item
+                    .as_event()
                     .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-            }),
+                ),
             message_input_state: message_input_box.save_state(),
             replying_to: tl.replying_to.clone(),
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES
-            .lock()
-            .unwrap()
-            .insert(tl.room_id.clone(), tl);
+        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
     }
 
     /// Restores the previously-saved visual UI state of this room.
@@ -1878,9 +1805,7 @@ impl RoomScreen {
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
     pub fn set_displayed_room(&self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
-        let Some(mut room_screen) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut room_screen) = self.borrow_mut() else { return };
         room_screen.set_displayed_room(cx, room_name, room_id);
     }
 }
@@ -2027,9 +1952,7 @@ struct ItemIndexScroll {
 
 #[derive(Default, Debug)]
 enum MessageHighlightAnimationState {
-    Pending {
-        item_id: usize,
-    },
+    Pending { item_id: usize },
     #[default]
     Off,
 }
@@ -2071,8 +1994,9 @@ fn find_new_item_matching_current_item(
 ) -> Option<(usize, usize, f64, OwnedEventId)> {
     let mut curr_item_focus = curr_items.focus();
     let mut idx_curr = starting_at_curr_idx;
-    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> =
-        Vec::with_capacity(portal_list.visible_items());
+    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> = Vec::with_capacity(
+        portal_list.visible_items()
+    );
 
     // Find all items with real event IDs that are currently visible in the portal list.
     // TODO: if this is slow, we could limit it to 3-5 events at the most.
@@ -2161,8 +2085,7 @@ fn populate_message_view(
             TimelineItemContent::Message(_prev_msg) => {
                 let prev_msg_sender = prev_event_tl_item.sender();
                 prev_msg_sender == event_tl_item.sender()
-                    && ts_millis
-                        .0
+                    && ts_millis.0
                         .checked_sub(prev_event_tl_item.timestamp().0)
                         .map_or(false, |d| d < uint!(600000)) // 10 mins in millis
             }
@@ -2182,7 +2105,10 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                populate_text_message_content(&item.html_or_plaintext(id!(content.message)), text);
+                populate_text_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    text,
+                );
                 let is_reply_fully_drawn = draw_replied_to_message(
                     cx,
                     &item.view(id!(replied_to_message)),
@@ -2229,9 +2155,7 @@ fn populate_message_view(
             }
         }
         other => {
-            let (item, existed) = list
-                .item_with_existed(cx, item_id, live_id!(Message))
-                .unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message)).unwrap();
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2817,27 +2741,17 @@ fn set_avatar_and_get_username(
         .unwrap_or_else(|| sender_user_id.to_string());
 
     // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt
-        .and_then(|data| {
-            avatar
-                .show_image(
-                    Some((
-                        sender_user_id.to_owned(),
-                        username_opt.clone(),
-                        room_id.to_owned(),
-                        data.clone(),
-                    )),
-                    |img| utils::load_png_or_jpg(&img, cx, &data),
-                )
-                .ok()
-        })
-        .unwrap_or_else(|| {
-            avatar.show_text(
-                Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
-                &username,
-            )
-        });
-
+    avatar_img_data_opt.and_then(|data|
+        avatar.show_image(
+            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
+            |img| utils::load_png_or_jpg(&img, cx, &data)
+        )
+        .ok()
+    )
+    .unwrap_or_else(|| avatar.show_text(
+        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
+        &username,
+    ));
     (username, profile_drawn)
 }
 

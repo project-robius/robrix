@@ -3,25 +3,18 @@ use makepad_widgets::*;
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
-
     import crate::shared::styles::*;
-    import crate::landing::model_card::ModelCard;
 
-    ANIMATION_SPEED = 0.33
+    ANIMATION_DURATION = 0.65
 
     // 1. Set the width and height to the same value.
     // 2. Set the radius to half of the width/height.
-    TypingSign = <CircleView> {
-        width: 4
-        height: 4
+    EllipsisDot = <CircleView> {
+        width: 3
+        height: 3
         draw_bg: {
-            radius: 2.0
-            fn get_color(self) -> vec4 {
-                let top_color = #121570;
-                let bottom_color = #A4E0EF;
-                let gradient_ratio = self.pos.y;
-                return mix(top_color, bottom_color, gradient_ratio);
-            }
+            radius: 1.5
+            color: (TYPING_NOTICE_TEXT_COLOR)
         }
     }
 
@@ -30,16 +23,15 @@ live_design! {
         height: Fit,
 
         flow: Down,
-        spacing: 10,
         align: {x: 0.0, y: 0.5},
-
+        
         content = <View> {
             width: Fit,
             height: Fit,
-            spacing: 10,
-            circle1 = <TypingSign> {}
-            circle2 = <TypingSign> {}
-            circle3 = <TypingSign> {}
+            spacing: 2,
+            circle1 = <EllipsisDot> {}
+            circle2 = <EllipsisDot> {}
+            circle3 = <EllipsisDot> {}
         }
 
         animator: {
@@ -47,13 +39,13 @@ live_design! {
                 default: down,
                 down = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
                     apply: {content = { circle1 = { margin: {top: 10.0} }}}
                 }
                 up = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
-                    apply: {content = { circle1 = { margin: {top: 0.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
+                    apply: {content = { circle1 = { margin: {top: 3.0} }}}
                 }
             }
 
@@ -61,13 +53,13 @@ live_design! {
                 default: down,
                 down = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
                     apply: {content = { circle2 = { margin: {top: 10.0} }}}
                 }
                 up = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
-                    apply: {content = { circle2 = { margin: {top: 0.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
+                    apply: {content = { circle2 = { margin: {top: 3.0} }}}
                 }
             }
 
@@ -75,13 +67,13 @@ live_design! {
                 default: down,
                 down = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
                     apply: {content = { circle3 = { margin: {top: 10.0} }}}
                 }
                 up = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
-                    apply: {content = { circle3 = { margin: {top: 0.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
+                    apply: {content = { circle3 = { margin: {top: 3.0} }}}
                 }
             }
         }
@@ -90,17 +82,29 @@ live_design! {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct TypingAnimation {
-    #[deref]
-    view: View,
+    #[deref] view: View,
+    #[animator] animator: Animator,
 
-    #[animator]
-    animator: Animator,
+    #[live(0.65)] animation_duration: f64,
+    #[rust] timer: Timer,
+    #[rust] current_animated_dot: CurrentAnimatedDot,
+}
 
-    #[rust]
-    timer: Timer,
-
-    #[rust]
-    current_animated_circle: usize,
+#[derive(Copy, Clone, Default)]
+enum CurrentAnimatedDot {
+    #[default]
+    Dot1,
+    Dot2,
+    Dot3,
+}
+impl CurrentAnimatedDot {
+    fn next(&self) -> Self {
+        match self {
+            Self::Dot1 => Self::Dot2,
+            Self::Dot2 => Self::Dot3,
+            Self::Dot3 => Self::Dot1,
+        }
+    }
 }
 
 impl Widget for TypingAnimation {
@@ -122,41 +126,37 @@ impl Widget for TypingAnimation {
 
 impl TypingAnimation {
     pub fn update_animation(&mut self, cx: &mut Cx) {
-        // log!("update animation -----");
-        self.current_animated_circle = (self.current_animated_circle + 1) % 3;
+        self.current_animated_dot = self.current_animated_dot.next();
 
-        match self.current_animated_circle {
-            0 => {
+        match self.current_animated_dot {
+            CurrentAnimatedDot::Dot1 => {
                 self.animator_play(cx, id!(circle1.up));
                 self.animator_play(cx, id!(circle3.down));
             }
-            1 => {
+            CurrentAnimatedDot::Dot2 => {
                 self.animator_play(cx, id!(circle1.down));
                 self.animator_play(cx, id!(circle2.up));
             }
-            2 => {
+            CurrentAnimatedDot::Dot3 => {
                 self.animator_play(cx, id!(circle2.down));
                 self.animator_play(cx, id!(circle3.up));
             }
-            _ => unreachable!(),
         };
 
-        self.timer = cx.start_timeout(0.33 * 0.5);
+        self.timer = cx.start_timeout(self.animation_duration * 0.5);
     }
 }
 
 impl TypingAnimationRef {
-    pub fn animate(&mut self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.update_animation(cx);
+    pub fn animate(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.update_animation(cx);
+        }
     }
 
-    pub fn stop_animation(&mut self) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.timer = Timer::default();
+    pub fn stop_animation(&self) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.timer = Timer::default();
+        }
     }
 }
