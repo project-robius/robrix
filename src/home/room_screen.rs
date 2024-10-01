@@ -24,9 +24,8 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}, home::room_reaction_list::*
 };
-use crate::home::room_reaction_list::*;
 use rangemap::RangeSet;
 
 live_design! {
@@ -415,7 +414,11 @@ live_design! {
                 // }
 
                 message_annotations = <MessageAnnotations> {}
-                reaction_list = <ReactionList>{width: Fill, height: Fit, margin: {top: (5.0)}}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
 
             message_menu = <MessageMenu> {}
@@ -2006,7 +2009,8 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+                
+                draw_reactions(cx, &item, event_tl_item.reactions(),room_id, event_tl_item.event_id(), item_id);
                 // We're done drawing the message content, so mark it as fully drawn
                 // *if and only if* the reply preview was also fully drawn.
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
@@ -2031,7 +2035,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+                draw_reactions(cx, &item, event_tl_item.reactions(),room_id, event_tl_item.event_id(), item_id);
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
@@ -2059,7 +2063,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+                draw_reactions(cx, &item, event_tl_item.reactions(), room_id, event_tl_item.event_id(),item_id);
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
             }
@@ -2300,6 +2304,8 @@ fn draw_reactions(
     _cx: &mut Cx2d,
     message_item: &WidgetRef,
     reactions: &ReactionsByKeyBySender,
+    room_id: &RoomId,
+    event_id: Option<&EventId>,
     id: usize,
 ) {
     const DRAW_ITEM_ID_REACTION: bool = false;
@@ -2327,7 +2333,10 @@ fn draw_reactions(
         label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
         text_to_display_vec.push((text_to_display.to_string(),count));
     }
-    message_item.reaction_list(id!(content.reaction_list)).set_list(text_to_display_vec);
+    if let Some(event_id) = event_id{
+        message_item.reaction_list(id!(content.reaction_list))
+            .set_list(text_to_display_vec, room_id.to_owned(), event_id.to_owned());
+    }
     // Debugging: draw the item ID as a reaction
     if DRAW_ITEM_ID_REACTION {
         label_text = format!("{label_text}<i>ID: {}</i>", id);

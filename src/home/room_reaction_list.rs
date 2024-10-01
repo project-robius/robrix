@@ -1,11 +1,16 @@
 use makepad_widgets::*;
-use makepad_math::*;
+use matrix_sdk::ruma::{
+    events::relation::Annotation,
+    OwnedEventId, OwnedRoomId,
+};
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
+
 live_design ! { 
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
     import crate::shared::styles::*;
-    COLOR_PRIMARY_DARKER = #454343
+    COLOR_BUTTON_DARKER = #454343
     ReactionList = {{ReactionList}} { 
         item: <Button> {
             width: Fit,
@@ -20,8 +25,8 @@ live_design ! {
                 
             },
             draw_bg: {
-                instance color: (COLOR_PRIMARY_DARKER)
-                instance color_hover: #A
+                instance color: (COLOR_BUTTON_DARKER)
+                instance color_hover: #fef65b
                 instance border_width: 0.0
                 instance border_color: #D0D5DD
                 instance radius: 3.0
@@ -70,6 +75,7 @@ live_design ! {
         }
     }
 }
+
 #[derive(Live, Widget)] pub struct ReactionList { 
     #[redraw] #[rust] 
     area: Area, 
@@ -78,9 +84,11 @@ live_design ! {
     #[layout] layout: Layout, 
     #[walk] walk: Walk, 
     #[rust] pub list: Vec<(String,usize)>, 
+    #[rust] pub room_id: Option<OwnedRoomId>,
+    #[rust] pub event_id: Option<OwnedEventId>,
 }
 impl Widget for ReactionList { 
-    fn draw_walk(& mut self, cx:&mut Cx2d, _scope:&mut Scope, walk: Walk) -> DrawStep { 
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep { 
         cx.begin_turtle(walk, self.layout);
         let rect = cx.turtle().rect();
         let width: f64 = rect.size.x - 50.0;
@@ -91,11 +99,10 @@ impl Widget for ReactionList {
                 WidgetRef::new_from_ptr(cx, self.item).as_button() 
             });
             target.set_text(&format!("{} {}",emoji,count));
-            target.draw_all(cx,&mut Scope::empty());
-            
+            target.draw_all(cx, scope);
             let used = cx.turtle().used();
             acc_width = used.x;
-            if acc_width > width{
+            if acc_width > width {
                 cx.turtle_new_line();
                 target.redraw(cx);
                 let used = cx.turtle().used();
@@ -111,21 +118,43 @@ impl Widget for ReactionList {
         self.children.retain_visible();
         DrawStep::done() 
     }
-    fn handle_event(& mut self, cx:&mut Cx, event:&Event, scope:&mut Scope) { 
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) { 
+        let Some(room_id) = &self.room_id else { return };
+        let Some(event_id) = &self.event_id else { return };
         self.children.iter().enumerate()
         .for_each(|(_index,(_id, widget_ref)) | { 
             widget_ref.handle_event(cx, event, scope);
+            match event {
+                Event::Actions(actions) => {
+                    if widget_ref.clicked(&actions) {
+                        let text = widget_ref.text().clone();
+                        let mut reaction_string_arr:Vec<&str> = text.split(" ").collect();
+                        reaction_string_arr.pop();                        
+                        let reaction_string = reaction_string_arr.join(" ");
+                        if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
+                            submit_async_request(MatrixRequest::ToggleReaction{
+                                room_id: room_id.clone(),
+                                annotation: Annotation::new(event_id.clone(), key.as_str().to_string())
+                            });
+                        }              
+                    }
+                }
+                _ => { }
+            }
         });
     } 
 } 
 impl LiveHook for ReactionList { 
-    fn before_apply(& mut self, cx:&mut Cx, apply:&mut Apply, index: usize, nodes:&[LiveNode]) {        
+    fn before_apply(&mut self, cx: &mut Cx, apply:&mut Apply, index: usize, nodes: &[LiveNode]) {        
     } 
-} 
+}
+
 impl ReactionListRef { 
-    pub fn set_list(& mut self, looper: Vec<(String,usize)>) { 
+    pub fn set_list(&mut self, looper: Vec<(String,usize)>, room_id: OwnedRoomId, event_id: OwnedEventId) { 
         if let Some(mut instance) = self.borrow_mut() { 
             instance.list = looper;
+            instance.event_id = Some(event_id);
+            instance.room_id = Some(room_id);
         } 
-    } 
+    }
 }

@@ -6,7 +6,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::session::get_login_types::v3::LoginType, events::{room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
+        api::client::session::get_login_types::v3::LoginType, events::{relation::Annotation, room::{message::{ForwardThread, RoomMessageEventContent}, MediaSource}, FullStateEventContent, StateEventType}, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UInt, UserId
     }, sliding_sync::http::request::ListFilters, Client, Room, SlidingSyncList, SlidingSyncMode
 };
 use matrix_sdk_ui::{timeline::{AnyOtherFullStateEventContent, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, Timeline};
@@ -235,6 +235,10 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
+    ToggleReaction{
+        room_id: OwnedRoomId,
+        annotation: Annotation
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -589,7 +593,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     };
                     room_info.timeline.clone()
                 };
-
+                
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
@@ -605,6 +609,23 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         }
                     }
                     SignalToUI::set_ui_signal();
+                });
+            },
+            MatrixRequest::ToggleReaction { room_id,annotation }=>{
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for send message request {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let _send_message_task = Handle::current().spawn(async move {
+                    log!("Toggle Reaction to room {room_id}: ...");
+                    match timeline.toggle_reaction(&annotation).await {
+                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id}."),
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id}"),
+                    }
                 });
             }
 
