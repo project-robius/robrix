@@ -50,7 +50,7 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-        type_loading::TypeLoadingWidgetExt,
+        typing_animation::TypingAnimationWidgetExt,
     },
     sliding_sync::{
         get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest,
@@ -71,7 +71,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
-    import crate::shared::type_loading::TypeLoading;
+    import crate::shared::typing_animation::TypingAnimation;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -812,8 +812,6 @@ live_design! {
                         color: #e8f4ff,
                     }
 
-                    type_loading = <TypeLoading> {}
-
                     typing_label = <Label> {
                         align: {x: 0.0, y: 0.5},
                         padding: {left: 5.0}
@@ -823,6 +821,8 @@ live_design! {
                         }
                         text: "Someone is typing..."
                     }
+
+                    typing_animation = <TypingAnimation> {}
 
                     // TODO: add a bouncing/moving ellipsis animation after the list of typing users.
                 }
@@ -1116,14 +1116,14 @@ impl Widget for RoomScreen {
                     TimelineUpdate::TypingUsers { users } => {
                         let typing_text = match users.as_slice() {
                             [] => String::new(),
-                            [user] => format!("{user} is typing..."),
-                            [user1, user2] => format!("{user1} and {user2} are typing..."),
+                            [user] => format!("{user} is typing "),
+                            [user1, user2] => format!("{user1} and {user2} are typing "),
                             [user1, user2, others @ ..] => {
                                 if others.len() > 1 {
-                                    format!("{user1}, {user2}, and {} are typing...", &others[0])
+                                    format!("{user1}, {user2}, and {} are typing ", &others[0])
                                 } else {
                                     format!(
-                                        "{user1}, {user2}, and {} others are typing...",
+                                        "{user1}, {user2}, and {} others are typing ",
                                         others.len()
                                     )
                                 }
@@ -1134,9 +1134,13 @@ impl Widget for RoomScreen {
                         self.view.label(id!(typing_label)).set_text(&typing_text);
 
                         if is_typing {
-                            self.view.type_loading(id!(type_loading)).animate(cx);
+                            self.view
+                                .typing_animation(id!(typing_animation))
+                                .animate(cx);
                         } else {
-                            self.view.type_loading(id!(type_loading)).stop_animation();
+                            self.view
+                                .typing_animation(id!(typing_animation))
+                                .stop_animation();
                         }
                     }
                 }

@@ -9,11 +9,13 @@ live_design! {
 
     ANIMATION_SPEED = 0.33
 
+    // 1. Set the width and height to the same value.
+    // 2. Set the radius to half of the width/height.
     TypingSign = <CircleView> {
-        width: 8
-        height: 10
+        width: 4
+        height: 4
         draw_bg: {
-            radius: 10.0
+            radius: 2.0
             fn get_color(self) -> vec4 {
                 let top_color = #121570;
                 let bottom_color = #A4E0EF;
@@ -23,7 +25,7 @@ live_design! {
         }
     }
 
-    TypeLoading = {{TypeLoading}} {
+    TypingAnimation = {{TypingAnimation}} {
         width: Fit,
         height: Fit,
 
@@ -42,44 +44,44 @@ live_design! {
 
         animator: {
             circle1 = {
-                default: start,
-                start = {
+                default: down,
+                down = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED)}}
-                    apply: {content = { circle1 = { draw_bg: {radius: 1.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    apply: {content = { circle1 = { margin: {top: 10.0} }}}
                 }
-                run = {
+                up = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED)}}
-                    apply: {content = { circle1 = { draw_bg: {radius: 14.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    apply: {content = { circle1 = { margin: {top: 0.0} }}}
                 }
             }
 
             circle2 = {
-                default: start,
-                start = {
+                default: down,
+                down = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED)}}
-                    apply: {content = { circle2 = { draw_bg: {radius: 1.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    apply: {content = { circle2 = { margin: {top: 10.0} }}}
                 }
-                run = {
+                up = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED)}}
-                    apply: {content = { circle2 = { draw_bg: {radius: 14.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    apply: {content = { circle2 = { margin: {top: 0.0} }}}
                 }
             }
 
             circle3 = {
-                default: start,
-                start = {
+                default: down,
+                down = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED)}}
-                    apply: {content = { circle3 = { draw_bg: {radius: 1.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    apply: {content = { circle3 = { margin: {top: 10.0} }}}
                 }
-                run = {
+                up = {
                     redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_SPEED)}}
-                    apply: {content = { circle3 = { draw_bg: {radius: 14.0} }}}
+                    from: {all: Forward {duration: (ANIMATION_SPEED * 0.5)}}
+                    apply: {content = { circle3 = { margin: {top: 0.0} }}}
                 }
             }
         }
@@ -87,7 +89,7 @@ live_design! {
 }
 
 #[derive(Live, LiveHook, Widget)]
-pub struct TypeLoading {
+pub struct TypingAnimation {
     #[deref]
     view: View,
 
@@ -101,7 +103,7 @@ pub struct TypeLoading {
     current_animated_circle: usize,
 }
 
-impl Widget for TypeLoading {
+impl Widget for TypingAnimation {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.timer.is_event(event).is_some() {
             self.update_animation(cx);
@@ -118,32 +120,32 @@ impl Widget for TypeLoading {
     }
 }
 
-impl TypeLoading {
+impl TypingAnimation {
     pub fn update_animation(&mut self, cx: &mut Cx) {
-        log!("update animation -----");
+        // log!("update animation -----");
         self.current_animated_circle = (self.current_animated_circle + 1) % 3;
 
         match self.current_animated_circle {
             0 => {
-                self.animator_play(cx, id!(circle1.run));
-                self.animator_play(cx, id!(circle3.start));
+                self.animator_play(cx, id!(circle1.up));
+                self.animator_play(cx, id!(circle3.down));
             }
             1 => {
-                self.animator_play(cx, id!(circle1.start));
-                self.animator_play(cx, id!(circle2.run));
+                self.animator_play(cx, id!(circle1.down));
+                self.animator_play(cx, id!(circle2.up));
             }
             2 => {
-                self.animator_play(cx, id!(circle2.start));
-                self.animator_play(cx, id!(circle3.run));
+                self.animator_play(cx, id!(circle2.down));
+                self.animator_play(cx, id!(circle3.up));
             }
             _ => unreachable!(),
         };
 
-        self.timer = cx.start_timeout(0.33);
+        self.timer = cx.start_timeout(0.33 * 0.5);
     }
 }
 
-impl TypeLoadingRef {
+impl TypingAnimationRef {
     pub fn animate(&mut self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
