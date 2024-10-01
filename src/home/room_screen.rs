@@ -40,7 +40,6 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
-    import crate::home::emoji::*;
     import crate::home::room_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -408,7 +407,7 @@ live_design! {
                     text: "<Username not available>"
                 }
                 message = <HtmlOrPlaintext> { }
-                
+
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
@@ -2337,6 +2336,7 @@ fn draw_reactions(
         message_item.reaction_list(id!(content.reaction_list))
             .set_list(text_to_display_vec, room_id.to_owned(), event_id.to_owned());
     }
+
     // Debugging: draw the item ID as a reaction
     if DRAW_ITEM_ID_REACTION {
         label_text = format!("{label_text}<i>ID: {}</i>", id);
