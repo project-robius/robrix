@@ -88,7 +88,7 @@ pub fn relative_format(millis: &MilliSecondsSinceUnixEpoch) -> Option<String> {
     let datetime = unix_time_millis_to_datetime(millis)?;
 
     // Calculate the time difference between now and the given timestamp
-    let now = Local::now(); 
+    let now = Local::now();
     let duration = now - datetime;
 
     // Handle different time ranges and format accordingly
@@ -109,7 +109,7 @@ pub fn relative_format(millis: &MilliSecondsSinceUnixEpoch) -> Option<String> {
     } else if duration < Duration::weeks(1) {
         Some(format!("{}", datetime.format("%A"))) // Day of the week (e.g., "Tuesday")
     } else {
-        Some(format!("{}", datetime.format("%d/%m/%y"))) // "DD/MM/YY" format for older messages
+        Some(format!("{}", datetime.format("%F"))) // "YYYY-MM-DD" format for older messages
     }
 }
 

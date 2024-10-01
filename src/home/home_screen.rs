@@ -37,11 +37,11 @@ live_design! {
             }
             width: Fill, height: Fill
             flow: Down
-            padding: {top: 40.}
 
             <NavigationWrapper> {
                 view_stack = <StackNavigation> {
                     root_view = {
+                        padding: {top: 40.}
                         flow: Down
                         width: Fill, height: Fill
                         sidebar = <RoomsSideBar> {}

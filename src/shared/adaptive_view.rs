@@ -143,7 +143,9 @@ impl LiveHook for AdaptiveView {
         }
     }
 
-    fn after_apply_from_doc(&mut self, cx:&mut Cx) {
+    fn after_apply_from(&mut self, cx: &mut Cx, apply: &mut Apply) {
+        // Do not override the current selector if we are updating from the doc
+        if let ApplyFrom::UpdateFromDoc {..} = apply.from { return };
         self.set_default_variant_selector(cx);
     }
     

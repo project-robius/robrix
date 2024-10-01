@@ -1655,6 +1655,8 @@ impl RoomScreen {
             (new_tl_state, true)
         };
 
+        // Subscribe to typing notices, but hide the typing notice view initially.
+        self.view(id!(typing_notice)).set_visible(false);
         submit_async_request(
             MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
@@ -1763,8 +1765,6 @@ impl RoomScreen {
         } else {
             self.clear_replying_to();
         }
-
-        // TODO: FIXME: we need to actually re-draw the replying_preview view here.
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
