@@ -930,20 +930,20 @@ struct RoomScreen {
 }
 
 impl RoomScreen{
-    fn send_user_read_receipts_based_on_scroll_pos(&mut self, cx:&mut Cx, actions:&Vec<Box<dyn ActionTrait + Send>>){
+    fn send_user_read_receipts_based_on_scroll_pos(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+    ) {
+        let portal_list = self.portal_list(id!(list));
         //stopped scrolling
-        if self.portal_list(id!(list)).scrolled(actions) {
+        if portal_list.scrolled(actions) {
             return;
         }
-        let portal_list = self.portal_list(id!(list));
         let first_index = portal_list.first_id();
         
-        let Some(tl_state) = self.tl_state.as_mut() else {
-            return;
-        };
-        let Some(room_id) = self.room_id.as_ref() else {
-            return;
-        };
+        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(room_id) = self.room_id.as_ref() else { return };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {  
@@ -953,12 +953,15 @@ impl RoomScreen{
                 if first_index > *index {
                     // Store visible event messages with current time into a hashmap
                     let mut read_receipt_event = None;
-                    for r in first_index..first_index+portal_list.visible_items() + 1 {
+                    for r in first_index .. (first_index + portal_list.visible_items() + 1) {
                         if let Some(v) = tl_state.items.get(r) {
-                            if let Some(Some(e)) = v.as_event().and_then(|f| Some(f.event_id())) {
+                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
                                 read_receipt_event = Some(e.to_owned());
                                 if !tl_state.read_event_hashmap.contains_key(&e.to_string()) {
-                                    tl_state.read_event_hashmap.insert(e.to_string(), (room_id.clone(),e.to_owned(),time_now,false));
+                                    tl_state.read_event_hashmap.insert(
+                                        e.to_string(),
+                                        (room_id.clone(), e.to_owned(), time_now, false),
+                                    );
                                 }
                             }
                         }
@@ -970,10 +973,10 @@ impl RoomScreen{
                     // Implements sending fully read receipts when message is scrolled out of first row
                     for r in *index..first_index {
                         if let Some(v) = tl_state.items.get(r).clone() {
-                            if let Some(Some(e)) = v.as_event().and_then(|f| Some(f.event_id())) {
+                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
                                 let mut to_remove = vec![];
-                                for (event_id_string,(_,event_id )) in &tl_state.marked_fully_read_queue {
-                                    if &e.to_owned() == event_id{
+                                for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
+                                    if e == event_id {
                                         fully_read_receipt_event = Some(event_id.clone());
                                         to_remove.push(event_id_string.clone());
                                     }
@@ -990,14 +993,12 @@ impl RoomScreen{
                 }
                 *index = first_index;
             }
-        }else{
+        } else {
             tl_state.prev_first_index = Some(first_index);
         }
-        
-        
-       
     }
 }
+
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -1145,7 +1146,7 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            self.send_user_read_receipts_based_on_scroll_pos(cx,actions);
+            self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().cast() {
@@ -1400,19 +1401,20 @@ impl Widget for RoomScreen {
                 });
             }
         }
-        // mark events as fully read after displayed for 5 seconds
+
+        // Mark events as fully read after they have been displayed on screen for 5 seconds.
         if self.fully_read_timer.is_event(event).is_some() {
-            
-            if let (Some(ref mut tl_state),Some(ref room_id))= (&mut self.tl_state,&self.room_id){
-                for (k,(room,event,start,ref mut moved_to_queue)) in &mut tl_state.read_event_hashmap{
-                    if start.elapsed()>std::time::Duration::new(5,0) && !*moved_to_queue{
-                        tl_state.marked_fully_read_queue.insert(k.clone(),(room.clone(),event.clone()));
+            if let (Some(ref mut tl_state), Some(ref _room_id)) = (&mut self.tl_state, &self.room_id) {
+                for (k, (room, event, start, ref mut moved_to_queue)) in &mut tl_state.read_event_hashmap {
+                    if start.elapsed() > std::time::Duration::new(5, 0) && !*moved_to_queue{
+                        tl_state.marked_fully_read_queue.insert(k.clone(), (room.clone(), event.clone()));
                         *moved_to_queue = true;
                     }
                 }
             }
             cx.stop_timer(self.fully_read_timer);
         }
+
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -1649,8 +1651,8 @@ impl RoomScreen {
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 prev_first_index: None,
-                read_event_hashmap:HashMap::new(),
-                marked_fully_read_queue:HashMap::new(),
+                read_event_hashmap: HashMap::new(),
+                marked_fully_read_queue: HashMap::new(),
             };
             (new_tl_state, true)
         };
@@ -1905,8 +1907,8 @@ struct TimelineUiState {
     message_highlight_animation_state: MessageHighlightAnimationState,
 
     prev_first_index: Option<usize>,
-    read_event_hashmap: HashMap<String,(OwnedRoomId,OwnedEventId,Instant,bool)>,
-    marked_fully_read_queue: HashMap<String,(OwnedRoomId,OwnedEventId)>,
+    read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
+    marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events

@@ -620,7 +620,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
             MatrixRequest::ReadReceipt { room_id, event_id }=>{
                 let timeline = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
                         continue;
@@ -629,15 +629,15 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 };
                 let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(()) => log!("Sent read receipt to room {room_id}, {event_id}"),
-                        Err(_e) => error!("Failed to send read receipt to room {room_id}, {event_id}; error: {_e:?}"),
+                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
+                        Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
                 });
             },
 
             MatrixRequest::FullyReadReceipt { room_id, event_id }=>{
                 let timeline = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
@@ -647,8 +647,8 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                 let _send_frr_task = Handle::current().spawn(async move {
                     let receipt = Receipts::new().fully_read_marker(event_id.clone());
                     match timeline.send_multiple_receipts(receipt).await {
-                        Ok(()) => log!("Sent fully read receipt to room {room_id}, {event_id}"),
-                        Err(_e) => error!("Failed to send fully read receipt to room {room_id}, {event_id}; error: {_e:?}"),
+                        Ok(()) => log!("Sent fully read receipt to room {room_id}, event {event_id}"),
+                        Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
             }    
