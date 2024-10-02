@@ -93,9 +93,9 @@ pub fn relative_format(millis: &MilliSecondsSinceUnixEpoch) -> Option<String> {
 
     // Handle different time ranges and format accordingly
     if duration < Duration::seconds(60) {
-        Some("Just now".to_string())
+        Some("Now".to_string())
     } else if duration < Duration::minutes(60) {
-        let minutes_text = if duration.num_minutes() == 1 { "minute" } else { "minutes" };
+        let minutes_text = if duration.num_minutes() == 1 { "min" } else { "mins" };
         Some(format!("{} {} ago", duration.num_minutes(), minutes_text))
     } else if duration < Duration::hours(24) && now.date_naive() == datetime.date_naive() {
         Some(format!("{}", datetime.format("%H:%M"))) // "HH:MM" format for today
