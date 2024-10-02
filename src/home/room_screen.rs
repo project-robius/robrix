@@ -1566,7 +1566,7 @@ impl RoomScreen {
             // TODO FIXME: hide TopSpace loading animation, set it to invisible.
         }
         if num_updates > 0 {
-            log!("!!!!!!!!!!!!!!! Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
+            // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
         }
     }
