@@ -1173,7 +1173,6 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().cast() {
@@ -1181,16 +1180,13 @@ impl Widget for RoomScreen {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
-                        let tl_idx = item_id as usize;
-                        if let Some(tl_item) = tl.items.get(tl_idx) {
-                            if let Some(tl_event_item) = tl_item.as_event() {
-                                // TODO: this is ugly, but i couldnt find a clean way of making the Message
-                                // dispatch the action itself, it would need access to the timeline state or data
-                                cx.widget_action(
-                                    widget_uid,
-                                    &scope.path,
-                                    TimelineAction::MessageReply(tl_event_item.clone()),
-                                );
+
+                        if let Some(event_tl_item) = tl.items
+                            .get(item_id)
+                            .and_then(|tl_item| tl_item.as_event().cloned())
+                        {
+                            if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
+                                self.show_replying_to(cx, (event_tl_item, replied_to_info));
                             }
                         }
                     }
@@ -1248,15 +1244,6 @@ impl Widget for RoomScreen {
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
                         // Adjust the scrolled-to item's position to be slightly beneath the top of the viewport.
                         // portal_list.set_first_id_and_scroll(portal_list.first_id(), 15.0);
-                    }
-                }
-
-                // Handle message reply action
-                if let TimelineAction::MessageReply(message_to_reply_to) = action.as_widget_action().cast() {
-                    if let Ok(replied_to_info) = message_to_reply_to.replied_to_info() {
-                        self.show_replying_to(cx, (message_to_reply_to, replied_to_info));
-                    } else {
-                        error!("Failed to get replied-to info for message {:?}", message_to_reply_to);
                     }
                 }
 
@@ -1351,6 +1338,9 @@ impl Widget for RoomScreen {
                     }
                 }
             }
+
+            // Handle sending any read receipts for the current logged-in user.
+            self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
 
             // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(&actions) {
@@ -1803,11 +1793,6 @@ impl RoomScreenRef {
     }
 }
 
-#[derive(Clone, DefaultNone, Debug)]
-pub enum TimelineAction {
-    MessageReply(EventTimelineItem),
-    None,
-}
 
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
@@ -2183,6 +2168,7 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
+    // Set the Message widget's metatdata for reply-handling purposes.
     item.as_message().set_data(
         event_tl_item.can_be_replied_to(),
         item_id,
