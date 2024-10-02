@@ -1,8 +1,6 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::{
-    events::relation::Annotation,
-    OwnedEventId, OwnedRoomId,
-};
+use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk_ui::timeline::ReactionsByKeyBySender;
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 live_design ! { 
@@ -85,7 +83,7 @@ live_design ! {
     #[walk] walk: Walk, 
     #[rust] pub list: Vec<(String,usize)>, 
     #[rust] pub room_id: Option<OwnedRoomId>,
-    #[rust] pub event_id: Option<OwnedEventId>,
+    #[rust] pub unique_id: Option<String>,
 }
 impl Widget for ReactionList { 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep { 
@@ -118,9 +116,9 @@ impl Widget for ReactionList {
         self.children.retain_visible();
         DrawStep::done() 
     }
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) { 
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let Some(room_id) = &self.room_id else { return };
-        let Some(event_id) = &self.event_id else { return };
+        let Some(unique_id) = &self.unique_id else { return };
         self.children.iter().enumerate()
         .for_each(|(_index,(_id, widget_ref)) | { 
             widget_ref.handle_event(cx, event, scope);
@@ -132,9 +130,10 @@ impl Widget for ReactionList {
                         reaction_string_arr.pop();                        
                         let reaction_string = reaction_string_arr.join(" ");
                         if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
-                            submit_async_request(MatrixRequest::ToggleReaction{
+                            submit_async_request(MatrixRequest::ToggleReaction {
                                 room_id: room_id.clone(),
-                                annotation: Annotation::new(event_id.clone(), key.as_str().to_string())
+                                unique_id: unique_id.clone(),
+                                reaction_key: key.as_str().to_string()
                             });
                         }              
                     }
@@ -150,11 +149,22 @@ impl LiveHook for ReactionList {
 }
 
 impl ReactionListRef { 
-    pub fn set_list(&mut self, looper: Vec<(String,usize)>, room_id: OwnedRoomId, event_id: OwnedEventId) { 
-        if let Some(mut instance) = self.borrow_mut() { 
-            instance.list = looper;
-            instance.event_id = Some(event_id);
+    pub fn set_list(&mut self, looper: &ReactionsByKeyBySender, room_id: OwnedRoomId, unique_id: &str) { 
+        if let Some(mut instance) = self.borrow_mut() {
+            let mut text_to_display_vec = Vec::with_capacity(looper.len());
+            for (reaction_raw, reaction_senders) in looper.iter() {
+                // Just take the first char of the emoji, which ignores any variant selectors.
+                let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
+                let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
+                let text_to_display = emojis::get(reaction_str)
+                    .and_then(|e| e.shortcode())
+                    .unwrap_or(reaction_raw);
+                let count = reaction_senders.len();
+                text_to_display_vec.push((text_to_display.to_string(),count));
+            }
+            instance.list = text_to_display_vec;
             instance.room_id = Some(room_id);
+            instance.unique_id = Some(unique_id.to_string());
         } 
     }
 }

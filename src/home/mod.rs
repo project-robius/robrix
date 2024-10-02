@@ -8,7 +8,7 @@ pub mod rooms_list;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
 pub mod welcome_screen;
-pub mod room_reaction_list;
+pub mod event_reaction;
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
@@ -19,5 +19,5 @@ pub fn live_design(cx: &mut Cx) {
     main_content::live_design(cx);
     spaces_dock::live_design(cx);
     welcome_screen::live_design(cx);
-    room_reaction_list::live_design(cx);
+    event_reaction::live_design(cx);
 }

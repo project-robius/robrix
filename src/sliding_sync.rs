@@ -256,18 +256,19 @@ pub enum MatrixRequest {
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
-    ReadReceipt{
+    ReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
-    FullyReadReceipt{
+    FullyReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
-    ToggleReaction{
+    ToggleReaction {
         room_id: OwnedRoomId,
-        annotation: Annotation
+        unique_id: String,
+        reaction_key: String,
     }
 }
 
@@ -675,20 +676,21 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     }
                 });
             },
-            MatrixRequest::ToggleReaction { room_id,annotation }=>{
+            MatrixRequest::ToggleReaction { room_id, unique_id, reaction_key } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
-                        log!("BUG: room info not found for send message request {room_id}");
+                        log!("BUG: room info not found for send toggle reaction {room_id}");
                         continue;
                     };
                     room_info.timeline.clone()
                 };
+                
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Toggle Reaction to room {room_id}: ...");
-                    match timeline.toggle_reaction(annotation.event_id.as_str(),&annotation.key).await {
+                    match timeline.toggle_reaction(&unique_id, &reaction_key).await {
                         Ok(_send_handle) => log!("Sent toggle reaction to room {room_id}."),
-                        Err(_e) => error!("Failed to send toggle reaction to room {room_id}"),
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id}; error: {_e:?}"),
                     }
                 });
             }

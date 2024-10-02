@@ -39,8 +39,8 @@ use crate::{
     },
     sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest},
     utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    home::event_reaction::ReactionListWidgetRefExt
 };
-use crate::home::room_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
 live_design! {
@@ -55,7 +55,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
-    import crate::home::room_reaction_list::*;
+    import crate::home::event_reaction::*;
     import crate::shared::typing_animation::TypingAnimation;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -282,28 +282,6 @@ live_design! {
         }
     }
 
-    // An optional view used to show reactions beneath a message.
-    MessageAnnotations = <View> {
-        visible: false,
-        width: Fill,
-        height: Fit,
-        padding: {top: 5.0}
-
-        html_content = <RobrixHtml> {
-            width: Fill,
-            height: Fit,
-            padding: { bottom: 5.0, top: 0.0 },
-            font_size: 10.5,
-            font_color: (REACTION_TEXT_COLOR),
-            draw_normal:      { color: (REACTION_TEXT_COLOR) },
-            draw_italic:      { color: (REACTION_TEXT_COLOR) },
-            draw_bold:        { color: (REACTION_TEXT_COLOR) },
-            draw_bold_italic: { color: (REACTION_TEXT_COLOR) },
-            draw_fixed:       { color: (REACTION_TEXT_COLOR) },
-            body: ""
-        }
-        
-    }
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -430,7 +408,6 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
-                message_annotations = <MessageAnnotations> {}
                 reaction_list = <ReactionList> {
                     width: Fill, 
                     height: Fit, 
@@ -475,7 +452,11 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
         }
     }
@@ -490,7 +471,11 @@ live_design! {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
                 }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
         }
     }
@@ -505,7 +490,11 @@ live_design! {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
                 }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
         }
     }
@@ -1506,6 +1495,7 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
+                                    timeline_item.unique_id(),
                                     event_tl_item,
                                     message,
                                     prev_event,
@@ -2078,6 +2068,7 @@ fn populate_message_view(
     list: &mut PortalList,
     item_id: usize,
     room_id: &RoomId,
+    unique_id: &str,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2127,7 +2118,9 @@ fn populate_message_view(
                     event_tl_item.event_id(),
                 );
                 
-                draw_reactions(cx, &item, event_tl_item.reactions(),room_id, event_tl_item.event_id(), item_id);
+                item.reaction_list(id!(content.reaction_list))
+                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
+                
                 // We're done drawing the message content, so mark it as fully drawn
                 // *if and only if* the reply preview was also fully drawn.
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
@@ -2152,7 +2145,9 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(),room_id, event_tl_item.event_id(), item_id);
+                item.reaction_list(id!(content.reaction_list))
+                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
+                
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
@@ -2181,7 +2176,10 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                draw_reactions(cx, &item, event_tl_item.reactions(), room_id, event_tl_item.event_id(),item_id);
+                
+                item.reaction_list(id!(content.reaction_list))
+                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
+                
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
             }
@@ -2422,55 +2420,6 @@ fn populate_preview_of_timeline_item(
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
         .format_with(sender_username);
     widget_out.show_html(html);
-}
-
-/// Draws the reactions beneath the given `message_item`.
-fn draw_reactions(
-    _cx: &mut Cx2d,
-    message_item: &WidgetRef,
-    reactions: &ReactionsByKeyBySender,
-    room_id: &RoomId,
-    event_id: Option<&EventId>,
-    id: usize,
-) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
-    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-        return;
-    }
-
-    // The message annotaions view is invisible by default, so we must set it to visible
-    // now that we know there are reactions to show.
-    message_item
-        .view(id!(content.message_annotations))
-        .set_visible(true);
-
-    let mut label_text = String::new();
-    let mut text_to_display_vec = vec![];
-    for (reaction_raw, reaction_senders) in reactions.iter() {
-        // Just take the first char of the emoji, which ignores any variant selectors.
-        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-        let text_to_display = emojis::get(reaction_str)
-            .and_then(|e| e.shortcode())
-            .unwrap_or(reaction_raw);
-        let count = reaction_senders.len();
-        // log!("Found reaction {:?} with count {}", text_to_display, count);
-        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
-        text_to_display_vec.push((text_to_display.to_string(),count));
-    }
-    if let Some(event_id) = event_id{
-        message_item.reaction_list(id!(content.reaction_list))
-            .set_list(text_to_display_vec, room_id.to_owned(), event_id.to_owned());
-    }
-
-    // Debugging: draw the item ID as a reaction
-    if DRAW_ITEM_ID_REACTION {
-        label_text = format!("{label_text}<i>ID: {}</i>", id);
-    }
-    // commented to use reaction list instead
-    // let html_reaction_view = message_item.html(id!(message_annotations.html_content));
-    // html_reaction_view.set_text(&label_text);
-
 }
 
 /// A trait for abstracting over the different types of timeline events
