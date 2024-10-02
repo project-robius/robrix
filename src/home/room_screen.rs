@@ -1024,152 +1024,7 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            let portal_list = self.portal_list(id!(list));
-            let curr_first_id = portal_list.first_id();
-            let Some(tl) = self.tl_state.as_mut() else { return };
-
-            let mut done_loading = false;
-            while let Ok(update) = tl.update_receiver.try_recv() {
-                match update {
-                    TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        if items.is_empty() {
-                            if !tl.items.is_empty() {
-                                log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
-                            }
-
-                            // If the bottom of the timeline (the last event) is visible, then we should
-                            // set the timeline to live mode.
-                            // If the bottom of the timelien is *not* visible, then we should
-                            // set the timeline to Focused mode.
-
-                            // TODO: Save the event IDs of the top 3 items before we apply this update,
-                            //       which indicates this timeline is in the process of being restored,
-                            //       such that we can jump back to that position later after applying this update.
-
-                            // TODO: here we need to re-build the timeline via TimelineBuilder
-                            //       and set the TimelineFocus to one of the above-saved event IDs.
-
-                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode
-                            //       can be changed after creation, but I do not see any methods to actually do that.
-                            //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
-                            //
-                            //       As such, we probably need to create a new async request enum variant
-                            //       that tells the background async task to build a new timeline
-                            //       (either in live mode or focused mode around one or more events)
-                            //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
-                        }
-
-                        // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
-                        //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                        //       any index that comes before (is less than) the above `curr_first_id`.
-
-                        if items.len() == tl.items.len() {
-                            // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
-                        }
-                        else if curr_first_id > items.len() {
-                            log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, items.len());
-                            portal_list.set_first_id_and_scroll(items.len().saturating_sub(1), 0.0);
-                            portal_list.set_tail_range(true);
-                        }
-                        else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                            find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &items)
-                        {
-                            if curr_item_idx != new_item_idx {
-                                log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
-                                portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
-                                tl.prev_first_index = Some(new_item_idx);
-                                cx.stop_timer(self.fully_read_timer);
-                            }
-                        }
-                        // TODO: after an (un)ignore user event, all timelines are cleared.
-                        //       To handle this, we must remember one or more currently-visible events across multiple updates
-                        //       such that we can jump back to the correct (current) position after enough updates have been received
-                        //       to restore the timeline to its previous position of at least one of the previously-existing events
-                        //       having also been found in the new items.
-                        //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
-                        //
-                        // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
-                        //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
-                        //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
-                        //     break;
-                        // }
-                        else {
-                            warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
-                        }
-
-                        if clear_cache {
-                            tl.content_drawn_since_last_update.clear();
-                            tl.profile_drawn_since_last_update.clear();
-                            tl.fully_paginated = false;
-                        } else {
-                            tl.content_drawn_since_last_update.remove(changed_indices.clone());
-                            tl.profile_drawn_since_last_update.remove(changed_indices.clone());
-                            // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
-                        }
-                        tl.items = items;
-                        
-                    }
-                    TimelineUpdate::TimelineStartReached => {
-                        log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
-                        tl.fully_paginated = true;
-                        done_loading = true;
-                    }
-                    TimelineUpdate::PaginationIdle => {
-                        done_loading = true;
-                    }
-                    TimelineUpdate::EventDetailsFetched {event_id, result } => {
-                        if let Err(_e) = result {
-                            error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
-                        }
-                        // Here, to be most efficient, we could redraw only the updated event,
-                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    }
-                    TimelineUpdate::RoomMembersFetched => {
-                        log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
-                        // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
-                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    }
-                    TimelineUpdate::MediaFetched => {
-                        log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
-                        // Here, to be most efficient, we could redraw only the media items in the timeline,
-                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    }
-
-                    TimelineUpdate::TypingUsers { users } => {
-                        let typing_text = match users.as_slice() {
-                            [] => String::new(),
-                            [user] => format!("{user} is typing "),
-                            [user1, user2] => format!("{user1} and {user2} are typing "),
-                            [user1, user2, others @ ..] => {
-                                if others.len() > 1 {
-                                    format!("{user1}, {user2}, and {} are typing ", &others[0])
-                                } else {
-                                    format!(
-                                        "{user1}, {user2}, and {} others are typing ",
-                                        others.len()
-                                    )
-                                }
-                            }
-                        };
-                        let is_typing = !users.is_empty();
-                        self.view.view(id!(typing_notice)).set_visible(is_typing);
-                        self.view.label(id!(typing_label)).set_text(&typing_text);
-                        let typing_animation = self.view.typing_animation(id!(typing_animation));
-                        if is_typing {
-                            typing_animation.animate(cx);
-                        } else {
-                            typing_animation.stop_animation();
-                        }
-                    }
-                }
-            }
-
-            if done_loading {
-                log!("TODO: hide topspace loading animation for room {}", tl.room_id);
-                // TODO FIXME: hide TopSpace loading animation, set it to invisible.
-            }
-
-            self.redraw(cx);
+            self.process_timeline_updates(cx);
         }
 
         if let Event::Actions(actions) = event {
@@ -1561,6 +1416,161 @@ impl Widget for RoomScreen {
 }
 
 impl RoomScreen {
+    /// Processes all pending background updates to the currently-shown timeline.
+    ///
+    /// Redraws this RoomScreen view if any updates were applied.
+    fn process_timeline_updates(&mut self, cx: &mut Cx) {
+        let portal_list = self.portal_list(id!(list));
+        let curr_first_id = portal_list.first_id();
+        let Some(tl) = self.tl_state.as_mut() else { return };
+
+        let mut done_loading = false;
+        let mut num_updates = 0;
+        while let Ok(update) = tl.update_receiver.try_recv() {
+            num_updates += 1;
+            match update {
+                TimelineUpdate::NewItems { new_items, changed_indices, clear_cache } => {
+                    if new_items.is_empty() {
+                        if !tl.items.is_empty() {
+                            log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                        }
+
+                        // If the bottom of the timeline (the last event) is visible, then we should
+                        // set the timeline to live mode.
+                        // If the bottom of the timeline is *not* visible, then we should
+                        // set the timeline to Focused mode.
+
+                        // TODO: Save the event IDs of the top 3 items before we apply this update,
+                        //       which indicates this timeline is in the process of being restored,
+                        //       such that we can jump back to that position later after applying this update.
+
+                        // TODO: here we need to re-build the timeline via TimelineBuilder
+                        //       and set the TimelineFocus to one of the above-saved event IDs.
+
+                        // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode
+                        //       can be changed after creation, but I do not see any methods to actually do that.
+                        //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
+                        //
+                        //       As such, we probably need to create a new async request enum variant
+                        //       that tells the background async task to build a new timeline
+                        //       (either in live mode or focused mode around one or more events)
+                        //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
+                    }
+
+                    // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
+                    //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
+                    //       any index that comes before (is less than) the above `curr_first_id`.
+
+                    if new_items.len() == tl.items.len() {
+                        // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
+                    }
+                    else if curr_first_id > new_items.len() {
+                        log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
+                        portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
+                        portal_list.set_tail_range(true);
+                    }
+                    else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
+                        find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
+                    {
+                        if curr_item_idx != new_item_idx {
+                            log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
+                            portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
+                            tl.prev_first_index = Some(new_item_idx);
+                            cx.stop_timer(self.fully_read_timer);
+                        }
+                    }
+                    // TODO: after an (un)ignore user event, all timelines are cleared.
+                    //       To handle this, we must remember one or more currently-visible events across multiple updates
+                    //       such that we can jump back to the correct (current) position after enough updates have been received
+                    //       to restore the timeline to its previous position of at least one of the previously-existing events
+                    //       having also been found in the new items.
+                    //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
+                    //
+                    // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
+                    //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
+                    //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
+                    //     break;
+                    // }
+                    else {
+                        warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                    }
+
+                    if clear_cache {
+                        tl.content_drawn_since_last_update.clear();
+                        tl.profile_drawn_since_last_update.clear();
+                        tl.fully_paginated = false;
+                    } else {
+                        tl.content_drawn_since_last_update.remove(changed_indices.clone());
+                        tl.profile_drawn_since_last_update.remove(changed_indices.clone());
+                        // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
+                    }
+                    tl.items = new_items;
+                }
+                TimelineUpdate::TimelineStartReached => {
+                    log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
+                    tl.fully_paginated = true;
+                    done_loading = true;
+                }
+                TimelineUpdate::PaginationIdle => {
+                    done_loading = true;
+                }
+                TimelineUpdate::EventDetailsFetched {event_id, result } => {
+                    if let Err(_e) = result {
+                        error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
+                    }
+                    // Here, to be most efficient, we could redraw only the updated event,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+                TimelineUpdate::RoomMembersFetched => {
+                    log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
+                    // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+                TimelineUpdate::MediaFetched => {
+                    log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
+                    // Here, to be most efficient, we could redraw only the media items in the timeline,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+
+                TimelineUpdate::TypingUsers { users } => {
+                    let typing_text = match users.as_slice() {
+                        [] => String::new(),
+                        [user] => format!("{user} is typing "),
+                        [user1, user2] => format!("{user1} and {user2} are typing "),
+                        [user1, user2, others @ ..] => {
+                            if others.len() > 1 {
+                                format!("{user1}, {user2}, and {} are typing ", &others[0])
+                            } else {
+                                format!(
+                                    "{user1}, {user2}, and {} others are typing ",
+                                    others.len()
+                                )
+                            }
+                        }
+                    };
+                    let is_typing = !users.is_empty();
+                    self.view.view(id!(typing_notice)).set_visible(is_typing);
+                    self.view.label(id!(typing_label)).set_text(&typing_text);
+                    let typing_animation = self.view.typing_animation(id!(typing_animation));
+                    if is_typing {
+                        typing_animation.animate(cx);
+                    } else {
+                        typing_animation.stop_animation();
+                    }
+                }
+            }
+        }
+
+        if done_loading {
+            log!("TODO: hide topspace loading animation for room {}", tl.room_id);
+            // TODO FIXME: hide TopSpace loading animation, set it to invisible.
+        }
+        if num_updates > 0 {
+            // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
+            self.redraw(cx);
+        }
+    }
+
     /// Shows the user profile sliding pane with the given avatar info.
     fn show_user_profile(
         &mut self,
@@ -1692,9 +1702,16 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
-        // As the final step , store the tl_state for this room into the Timeline widget,
+        // As the final step, store the tl_state for this room into the Timeline widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);
+
+        // Now we can process any background updates and redraw the timeline.
+        if first_time_showing_room {
+            self.process_timeline_updates(cx);
+        }
+    
+        self.redraw(cx);
     }
 
     /// Invoke this when this timeline is being hidden or no longer being shown,
@@ -1788,8 +1805,8 @@ impl RoomScreen {
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
     pub fn set_displayed_room(&self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
-        let Some(mut room_screen) = self.borrow_mut() else { return };
-        room_screen.set_displayed_room(cx, room_name, room_id);
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_displayed_room(cx, room_name, room_id);
     }
 }
 
@@ -1800,7 +1817,7 @@ pub enum TimelineUpdate {
     /// The content of a room's timeline was updated in the background.
     NewItems {
         /// The entire list of timeline items (events) for a room.
-        items: Vector<Arc<TimelineItem>>,
+        new_items: Vector<Arc<TimelineItem>>,
         /// The range of indices in the `items` list that have been changed in this update
         /// and thus must be removed from any caches of drawn items in the timeline.
         /// Any items outside of this range are assumed to be unchanged and need not be redrawn.

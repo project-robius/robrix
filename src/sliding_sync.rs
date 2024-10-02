@@ -1210,7 +1210,7 @@ async fn timeline_subscriber_handler(
     log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
     sender.send(TimelineUpdate::NewItems {
-        items: timeline_items.clone(),
+        new_items: timeline_items.clone(),
         changed_indices: usize::MIN..usize::MAX,
         clear_cache: true,
     }).expect("Error: timeline update sender couldn't send update with initial items!");
@@ -1339,7 +1339,7 @@ async fn timeline_subscriber_handler(
                 log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
             }
             sender.send(TimelineUpdate::NewItems {
-                items: timeline_items.clone(),
+                new_items: timeline_items.clone(),
                 changed_indices,
                 clear_cache,
             }).expect("Error: timeline update sender couldn't send update with new items!");
