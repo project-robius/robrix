@@ -214,6 +214,7 @@ live_design! {
 
         // A reply preview with a vertical bar drawn in the background.
         replied_to_message_content = <ReplyPreviewContent> {
+            cursor: Hand
             show_bg: true
             draw_bg: {
                 instance vertical_bar_color: (USERNAME_TEXT_COLOR)
@@ -361,7 +362,6 @@ live_design! {
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
             flow: Right
-            cursor: Hand
             margin: { bottom: 5.0, top: 10.0 }
             replied_to_message_content = {
                 margin: { left: 29 }
@@ -636,10 +636,11 @@ live_design! {
         flow: Overlay,
 
         list = <PortalList> {
-            auto_tail: true, // set to `true` to lock the view to the last item.
             height: Fill,
             width: Fill
             flow: Down
+
+            auto_tail: true, // set to `true` to lock the view to the last item.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
@@ -1193,48 +1194,42 @@ impl Widget for RoomScreen {
                             }
                         }
                     }
-                    MessageAction::ReplyPreviewClicked(item_id) => {
+                    MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
                         let mut portal_list = self.portal_list(id!(list));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
-                        let tl_idx = item_id as usize;
+                        let tl_idx = reply_message_item_id as usize;
 
-                        if let Some(details) = tl.items.get(tl_idx)
-                            .and_then(|item| item.as_event())
-                            .and_then(|event| event.content().as_message())
-                            .and_then(|message| message.in_reply_to())
-                        {
-                            // Attempt to find the index of replied-to message on the timeline.
-                            // Start from the current item's index (`tl_idx`)and search backwards,
-                            // since we know the replied-to message must come before the current item.
-                            let replied_to_msg_tl_index = tl.items
-                                .focus()
-                                .narrow(..tl_idx)
-                                .into_iter()
-                                .rposition(|i| i.as_event()
-                                    .and_then(|e| e.event_id())
-                                    .is_some_and(|ev_id| ev_id == details.event_id)
-                                );
+                        // Attempt to find the index of replied-to message on the timeline.
+                        // Start from the current item's index (`tl_idx`)and search backwards,
+                        // since we know the replied-to message must come before the current item.
+                        let replied_to_msg_tl_index = tl.items
+                            .focus()
+                            .narrow(..tl_idx)
+                            .into_iter()
+                            .rposition(|i| i.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == &replied_to_event)
+                            );
 
-                            if let Some(index) = replied_to_msg_tl_index {
-                                let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-                                let base_speed = 10.0;
-                                // apply a scaling based on the distance
-                                let scaled_speed = base_speed * (distance * distance);
-                                // Scroll to the message right before the replied-to message.
-                                // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
-                                //       so that we can scroll to the replied-to message and have it
-                                //       appear beneath the top of the viewport.
-                                portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
-                                // start highlight animation.
-                                tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                                    item_id: index
-                                };
-                                self.redraw(cx);
-                            } else {
-                                log!("TODO: the replied-to message was not yet available in the timeline.");
-                            }
+                        if let Some(index) = replied_to_msg_tl_index {
+                            let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
+                            let base_speed = 10.0;
+                            // apply a scaling based on the distance
+                            let scaled_speed = base_speed * (distance * distance);
+                            // Scroll to the message right before the replied-to message.
+                            // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                            //       so that we can scroll to the replied-to message and have it
+                            //       appear beneath the top of the viewport.
+                            portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
+                            // start highlight animation.
+                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                item_id: index
+                            };
+                            self.redraw(cx);
+                        } else {
+                            log!("TODO: the replied-to message was not yet available in the timeline.");
                         }
                     }
                     _ => {}
@@ -2107,17 +2102,7 @@ fn populate_message_view(
                     &item.html_or_plaintext(id!(content.message)),
                     text,
                 );
-                let is_reply_fully_drawn = draw_replied_to_message(
-                    cx,
-                    &item.view(id!(replied_to_message)),
-                    room_id,
-                    message,
-                    event_tl_item.event_id(),
-                );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
-                // We're done drawing the message content, so mark it as fully drawn
-                // *if and only if* the reply preview was also fully drawn.
-                new_drawn_status.content_drawn = is_reply_fully_drawn;
+                new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }
@@ -2131,24 +2116,13 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(
-                    cx,
-                    &item.view(id!(replied_to_message)),
-                    room_id,
-                    message,
-                    event_tl_item.event_id(),
-                );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
                     image,
                     media_cache,
                 );
-                // Mark the content as fully drawn if *both* the image content
-                // *and* the reply preview were fully drawn.
-                new_drawn_status.content_drawn = is_image_fully_drawn && is_reply_fully_drawn;
+                new_drawn_status.content_drawn = is_image_fully_drawn;
                 (item, false)
             }
         }
@@ -2160,20 +2134,29 @@ fn populate_message_view(
                 let kind = other.msgtype();
                 item.label(id!(content.message))
                     .set_text(&format!("[TODO {kind:?}] {}", other.body()));
-                // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(
-                    cx,
-                    &item.view(id!(replied_to_message)),
-                    room_id,
-                    message,
-                    event_tl_item.event_id(),
-                );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
-                new_drawn_status.content_drawn = is_reply_fully_drawn;
+                new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }
     };
+
+    let mut replied_to_event_id = None;
+
+    // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
+    if !used_cached_item {
+        draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
+            cx,
+            &item.view(id!(replied_to_message)),
+            room_id,
+            message,
+            event_tl_item.event_id(),
+        );
+        replied_to_event_id = replied_to_ev_id;
+        // The content is only considered to be fully drawn if the logic above marked it as such
+        // *and* if the reply preview was also fully drawn.
+        new_drawn_status.content_drawn &= is_reply_fully_drawn;
+    }
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
     let skip_draw_profile =
@@ -2195,15 +2178,16 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = profile_drawn;
     }
 
-    // TODO: This feels weird to do here, but the message widget needs to keep the
-    // id for sending events. and whether it can be replied to or not. Maybe handle this better.
-    item.as_message()
-        .set_data(event_tl_item.can_be_replied_to(), item_id);
-
-    // If we've previously drawn the item content, skip redrawing the timestamp and annotations.
+    // If we've previously drawn the item content, skip all other steps.
     if used_cached_item && item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
         return (item, new_drawn_status);
     }
+
+    item.as_message().set_data(
+        event_tl_item.can_be_replied_to(),
+        item_id,
+        replied_to_event_id,
+    );
 
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
@@ -2319,12 +2303,15 @@ fn draw_replied_to_message(
     room_id: &RoomId,
     message: &timeline::Message,
     message_event_id: Option<&EventId>,
-) -> bool {
+) -> (bool, Option<OwnedEventId>) {
     let fully_drawn: bool;
     let show_reply: bool;
+    let mut replied_to_event_id = None;
 
     if let Some(in_reply_to_details) = message.in_reply_to() {
+        replied_to_event_id = Some(in_reply_to_details.event_id.to_owned());
         show_reply = true;
+
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
@@ -2393,7 +2380,7 @@ fn draw_replied_to_message(
     }
 
     replied_to_message_view.set_visible(show_reply);
-    fully_drawn
+    (fully_drawn, replied_to_event_id)
 }
 
 fn populate_preview_of_timeline_item(
@@ -2762,26 +2749,36 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
     }
 }
 
+/// Actions that can be performed on a message.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum MessageAction {
+    /// The user clicked the reply button on the message,
+    /// indicating that they want to reply to this message.
     MessageReply(usize),
-    ReplyPreviewClicked(usize),
+    /// The user clicked the inline reply preview above a message
+    /// indicating that they want to jump upwards to the replied-to message shown in the preview.
+    ReplyPreviewClicked {
+        /// The item ID (in the timeline PortalList) of the reply message
+        /// that the user clicked the reply preview above.
+        reply_message_item_id: usize,
+        /// The event ID of the replied-to message (the target of the reply).
+        replied_to_event: OwnedEventId,
+    },
+    /// The message with the given item ID should be highlighted.
     MessageHighlight(usize),
     None,
 }
 
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
-    #[deref]
-    view: View,
-    #[rust(false)]
-    hovered: bool,
-    #[rust]
-    can_be_replied_to: bool,
-    #[rust]
-    item_id: usize,
-    #[animator]
-    animator: Animator,
+    #[deref] view: View,
+    #[animator] animator: Animator,
+    #[rust(false)] hovered: bool,
+
+    #[rust] can_be_replied_to: bool,
+    #[rust] item_id: usize,
+    /// The event ID of the message that this message is replying to, if any.
+    #[rust] replied_to_event_id: Option<OwnedEventId>,
 }
 
 impl Widget for Message {
@@ -2810,11 +2807,18 @@ impl Widget for Message {
 
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                    MessageAction::ReplyPreviewClicked(self.item_id),
-                );
+                if let Some(ref replied_to_event) = self.replied_to_event_id {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        MessageAction::ReplyPreviewClicked {
+                            reply_message_item_id: self.item_id,
+                            replied_to_event: replied_to_event.to_owned(),
+                        },
+                    );
+                } else {
+                    error!("BUG: reply preview clicked for message {} with no replied-to event!", self.item_id);
+                }
             }
         }
 
@@ -2860,17 +2864,27 @@ impl Widget for Message {
 }
 
 impl Message {
-    fn set_data(&mut self, can_be_replied_to: bool, item_id: usize) {
+    fn set_data(
+        &mut self,
+        can_be_replied_to: bool,
+        item_id: usize,
+        replied_to_event_id: Option<OwnedEventId>,
+    ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
+        self.replied_to_event_id = replied_to_event_id;
     }
 }
 
 impl MessageRef {
-    fn set_data(&mut self, can_be_replied_to: bool, item_id: usize) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
+    fn set_data(
+        &self,
+        can_be_replied_to: bool,
+        item_id: usize,
+        replied_to_event_id: Option<OwnedEventId>,
+    ) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id);
         };
-        inner.set_data(can_be_replied_to, item_id);
     }
 }
