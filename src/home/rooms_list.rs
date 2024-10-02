@@ -3,6 +3,8 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
+
 use super::room_preview::RoomPreviewAction;
 
 live_design! {
@@ -134,6 +136,11 @@ pub struct RoomPreviewEntry {
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
+    /// Whether this room has been paginated at least once.
+    /// We pre-paginate visible rooms at least once in order to
+    /// be able to display the latest message in the room preview,
+    /// and to have something to immediately show when a user first opens a room.
+    pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
 }
@@ -272,7 +279,7 @@ impl Widget for RoomsList {
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
         let count = self.all_rooms.len();
-        let last_item_id = count;
+        let status_label_id = count;
 
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
@@ -280,13 +287,35 @@ impl Widget for RoomsList {
             let portal_list_ref = list_item.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
-            // Add 1 again for the status label at the bottom.
-            list.set_item_range(cx, 0, last_item_id + 1);
+            // Add 1 for the status label at the bottom.
+            list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
+
+                // Draw the room preview for each room.
+                let item = if let Some(room_info) = self.all_rooms.get_mut(item_id) {
+                    let item = list.item(cx, item_id, live_id!(room_preview)).unwrap();
+                    self.rooms_list_map.insert(item.widget_uid().0, item_id);
+                    room_info.is_selected = self.current_active_room_index == Some(item_id);
+
+                    // Paginate the room if it hasn't been paginated yet.
+                    if !room_info.has_been_paginated {
+                        room_info.has_been_paginated = true;
+                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                            room_id: room_info.room_id.clone(),
+                            num_events: 50,
+                            forwards: false,
+                        });
+                    }
+
+                    // Pass the room info through Scope down to the RoomPreview widget.
+                    scope = Scope::with_props(&*room_info);
+
+                    item
+                }
                 // Draw the status label as the bottom entry.
-                let item = if item_id == last_item_id {
+                else if item_id == status_label_id {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
@@ -295,22 +324,8 @@ impl Widget for RoomsList {
                     item
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
-                else if item_id > last_item_id {
-                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
-                }
                 else {
-                    let item_template = live_id!(room_preview);
-
-                    let item = list.item(cx, item_id, item_template).unwrap();
-                    let index_of_room = item_id as usize;
-                    self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
-                    
-                    let room_info = &mut self.all_rooms[index_of_room];
-                    room_info.is_selected = self.current_active_room_index == Some(item_id);
-                    // Pass down the room info to the RoomPreview widget.
-                    scope = Scope::with_props(&*room_info);
-
-                    item
+                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
                 };
 
                 item.draw_all(cx, &mut scope);
