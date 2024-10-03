@@ -220,6 +220,7 @@ live_design! {
 
         // A reply preview with a vertical bar drawn in the background.
         replied_to_message_content = <ReplyPreviewContent> {
+            cursor: Hand
             show_bg: true
             draw_bg: {
                 instance vertical_bar_color: (USERNAME_TEXT_COLOR)
@@ -346,7 +347,6 @@ live_design! {
         // A preview of the earlier message that this message was in reply to.
         replied_to_message = <RepliedToMessage> {
             flow: Right
-            cursor: Hand
             margin: { bottom: 5.0, top: 10.0 }
             replied_to_message_content = {
                 margin: { left: 29 }
@@ -637,10 +637,11 @@ live_design! {
         flow: Overlay,
 
         list = <PortalList> {
-            auto_tail: true, // set to `true` to lock the view to the last item.
             height: Fill,
             width: Fill
             flow: Down
+
+            auto_tail: true, // set to `true` to lock the view to the last item.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
@@ -1024,156 +1025,10 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            let portal_list = self.portal_list(id!(list));
-            let curr_first_id = portal_list.first_id();
-            let Some(tl) = self.tl_state.as_mut() else { return };
-
-            let mut done_loading = false;
-            while let Ok(update) = tl.update_receiver.try_recv() {
-                match update {
-                    TimelineUpdate::NewItems { items, changed_indices, clear_cache } => {
-                        if items.is_empty() {
-                            if !tl.items.is_empty() {
-                                log!("Timeline::handle_event(): timeline was cleared for room {}", tl.room_id);
-                            }
-
-                            // If the bottom of the timeline (the last event) is visible, then we should
-                            // set the timeline to live mode.
-                            // If the bottom of the timelien is *not* visible, then we should
-                            // set the timeline to Focused mode.
-
-                            // TODO: Save the event IDs of the top 3 items before we apply this update,
-                            //       which indicates this timeline is in the process of being restored,
-                            //       such that we can jump back to that position later after applying this update.
-
-                            // TODO: here we need to re-build the timeline via TimelineBuilder
-                            //       and set the TimelineFocus to one of the above-saved event IDs.
-
-                            // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode
-                            //       can be changed after creation, but I do not see any methods to actually do that.
-                            //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
-                            //
-                            //       As such, we probably need to create a new async request enum variant
-                            //       that tells the background async task to build a new timeline
-                            //       (either in live mode or focused mode around one or more events)
-                            //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
-                        }
-
-                        // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
-                        //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
-                        //       any index that comes before (is less than) the above `curr_first_id`.
-
-                        if items.len() == tl.items.len() {
-                            // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
-                        }
-                        else if curr_first_id > items.len() {
-                            log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, items.len());
-                            portal_list.set_first_id_and_scroll(items.len().saturating_sub(1), 0.0);
-                            portal_list.set_tail_range(true);
-                        }
-                        else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                            find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &items)
-                        {
-                            if curr_item_idx != new_item_idx {
-                                log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
-                                portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
-                                tl.prev_first_index = Some(new_item_idx);
-                                cx.stop_timer(self.fully_read_timer);
-                            }
-                        }
-                        // TODO: after an (un)ignore user event, all timelines are cleared.
-                        //       To handle this, we must remember one or more currently-visible events across multiple updates
-                        //       such that we can jump back to the correct (current) position after enough updates have been received
-                        //       to restore the timeline to its previous position of at least one of the previously-existing events
-                        //       having also been found in the new items.
-                        //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
-                        //
-                        // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
-                        //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
-                        //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
-                        //     break;
-                        // }
-                        else {
-                            warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
-                        }
-
-                        if clear_cache {
-                            tl.content_drawn_since_last_update.clear();
-                            tl.profile_drawn_since_last_update.clear();
-                            tl.fully_paginated = false;
-                        } else {
-                            tl.content_drawn_since_last_update.remove(changed_indices.clone());
-                            tl.profile_drawn_since_last_update.remove(changed_indices.clone());
-                            // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
-                        }
-                        tl.items = items;
-                        
-                    }
-                    TimelineUpdate::TimelineStartReached => {
-                        log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
-                        tl.fully_paginated = true;
-                        done_loading = true;
-                    }
-                    TimelineUpdate::PaginationIdle => {
-                        done_loading = true;
-                    }
-                    TimelineUpdate::EventDetailsFetched {event_id, result } => {
-                        if let Err(_e) = result {
-                            error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
-                        }
-                        // Here, to be most efficient, we could redraw only the updated event,
-                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    }
-                    TimelineUpdate::RoomMembersFetched => {
-                        log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
-                        // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
-                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    }
-                    TimelineUpdate::MediaFetched => {
-                        log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
-                        // Here, to be most efficient, we could redraw only the media items in the timeline,
-                        // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    }
-
-                    TimelineUpdate::TypingUsers { users } => {
-                        let typing_text = match users.as_slice() {
-                            [] => String::new(),
-                            [user] => format!("{user} is typing "),
-                            [user1, user2] => format!("{user1} and {user2} are typing "),
-                            [user1, user2, others @ ..] => {
-                                if others.len() > 1 {
-                                    format!("{user1}, {user2}, and {} are typing ", &others[0])
-                                } else {
-                                    format!(
-                                        "{user1}, {user2}, and {} others are typing ",
-                                        others.len()
-                                    )
-                                }
-                            }
-                        };
-                        let is_typing = !users.is_empty();
-                        self.view.view(id!(typing_notice)).set_visible(is_typing);
-                        self.view.label(id!(typing_label)).set_text(&typing_text);
-                        let typing_animation = self.view.typing_animation(id!(typing_animation));
-                        if is_typing {
-                            typing_animation.animate(cx);
-                        } else {
-                            typing_animation.stop_animation();
-                        }
-                    }
-                }
-            }
-
-            if done_loading {
-                log!("TODO: hide topspace loading animation for room {}", tl.room_id);
-                // TODO FIXME: hide TopSpace loading animation, set it to invisible.
-            }
-
-            self.redraw(cx);
+            self.process_timeline_updates(cx);
         }
 
         if let Event::Actions(actions) = event {
-            self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().cast() {
@@ -1181,61 +1036,52 @@ impl Widget for RoomScreen {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
-                        let tl_idx = item_id as usize;
-                        if let Some(tl_item) = tl.items.get(tl_idx) {
-                            if let Some(tl_event_item) = tl_item.as_event() {
-                                // TODO: this is ugly, but i couldnt find a clean way of making the Message
-                                // dispatch the action itself, it would need access to the timeline state or data
-                                cx.widget_action(
-                                    widget_uid,
-                                    &scope.path,
-                                    TimelineAction::MessageReply(tl_event_item.clone()),
-                                );
+
+                        if let Some(event_tl_item) = tl.items
+                            .get(item_id)
+                            .and_then(|tl_item| tl_item.as_event().cloned())
+                        {
+                            if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
+                                self.show_replying_to(cx, (event_tl_item, replied_to_info));
                             }
                         }
                     }
-                    MessageAction::ReplyPreviewClicked(item_id) => {
+                    MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
                         let mut portal_list = self.portal_list(id!(list));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
-                        let tl_idx = item_id as usize;
+                        let tl_idx = reply_message_item_id as usize;
 
-                        if let Some(details) = tl.items.get(tl_idx)
-                            .and_then(|item| item.as_event())
-                            .and_then(|event| event.content().as_message())
-                            .and_then(|message| message.in_reply_to())
-                        {
-                            // Attempt to find the index of replied-to message on the timeline.
-                            // Start from the current item's index (`tl_idx`)and search backwards,
-                            // since we know the replied-to message must come before the current item.
-                            let replied_to_msg_tl_index = tl.items
-                                .focus()
-                                .narrow(..tl_idx)
-                                .into_iter()
-                                .rposition(|i| i.as_event()
-                                    .and_then(|e| e.event_id())
-                                    .is_some_and(|ev_id| ev_id == details.event_id)
-                                );
+                        // Attempt to find the index of replied-to message on the timeline.
+                        // Start from the current item's index (`tl_idx`)and search backwards,
+                        // since we know the replied-to message must come before the current item.
+                        let replied_to_msg_tl_index = tl.items
+                            .focus()
+                            .narrow(..tl_idx)
+                            .into_iter()
+                            .rposition(|i| i.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == &replied_to_event)
+                            );
 
-                            if let Some(index) = replied_to_msg_tl_index {
-                                let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-                                let base_speed = 10.0;
-                                // apply a scaling based on the distance
-                                let scaled_speed = base_speed * (distance * distance);
-                                // Scroll to the message right before the replied-to message.
-                                // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
-                                //       so that we can scroll to the replied-to message and have it
-                                //       appear beneath the top of the viewport.
-                                portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
-                                // start highlight animation.
-                                tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                                    item_id: index
-                                };
-                                self.redraw(cx);
-                            } else {
-                                log!("TODO: the replied-to message was not yet available in the timeline.");
-                            }
+                        if let Some(index) = replied_to_msg_tl_index {
+                            let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
+                            let base_speed = 10.0;
+                            // apply a scaling based on the distance
+                            let scaled_speed = base_speed * (distance * distance);
+                            // Scroll to the message right before the replied-to message.
+                            // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                            //       so that we can scroll to the replied-to message and have it
+                            //       appear beneath the top of the viewport.
+                            portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
+                            // start highlight animation.
+                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                                item_id: index
+                            };
+                            self.redraw(cx);
+                        } else {
+                            log!("TODO: the replied-to message was not yet available in the timeline.");
                         }
                     }
                     _ => {}
@@ -1254,15 +1100,6 @@ impl Widget for RoomScreen {
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
                         // Adjust the scrolled-to item's position to be slightly beneath the top of the viewport.
                         // portal_list.set_first_id_and_scroll(portal_list.first_id(), 15.0);
-                    }
-                }
-
-                // Handle message reply action
-                if let TimelineAction::MessageReply(message_to_reply_to) = action.as_widget_action().cast() {
-                    if let Ok(replied_to_info) = message_to_reply_to.replied_to_info() {
-                        self.show_replying_to(cx, (message_to_reply_to, replied_to_info));
-                    } else {
-                        error!("Failed to get replied-to info for message {:?}", message_to_reply_to);
                     }
                 }
 
@@ -1357,6 +1194,9 @@ impl Widget for RoomScreen {
                     }
                 }
             }
+
+            // Handle sending any read receipts for the current logged-in user.
+            self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
 
             // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(&actions) {
@@ -1578,6 +1418,161 @@ impl Widget for RoomScreen {
 }
 
 impl RoomScreen {
+    /// Processes all pending background updates to the currently-shown timeline.
+    ///
+    /// Redraws this RoomScreen view if any updates were applied.
+    fn process_timeline_updates(&mut self, cx: &mut Cx) {
+        let portal_list = self.portal_list(id!(list));
+        let curr_first_id = portal_list.first_id();
+        let Some(tl) = self.tl_state.as_mut() else { return };
+
+        let mut done_loading = false;
+        let mut num_updates = 0;
+        while let Ok(update) = tl.update_receiver.try_recv() {
+            num_updates += 1;
+            match update {
+                TimelineUpdate::NewItems { new_items, changed_indices, clear_cache } => {
+                    if new_items.is_empty() {
+                        if !tl.items.is_empty() {
+                            log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                        }
+
+                        // If the bottom of the timeline (the last event) is visible, then we should
+                        // set the timeline to live mode.
+                        // If the bottom of the timeline is *not* visible, then we should
+                        // set the timeline to Focused mode.
+
+                        // TODO: Save the event IDs of the top 3 items before we apply this update,
+                        //       which indicates this timeline is in the process of being restored,
+                        //       such that we can jump back to that position later after applying this update.
+
+                        // TODO: here we need to re-build the timeline via TimelineBuilder
+                        //       and set the TimelineFocus to one of the above-saved event IDs.
+
+                        // TODO: the docs for `TimelineBuilder::with_focus()` claim that the timeline's focus mode
+                        //       can be changed after creation, but I do not see any methods to actually do that.
+                        //       <https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_ui/timeline/struct.TimelineBuilder.html#method.with_focus>
+                        //
+                        //       As such, we probably need to create a new async request enum variant
+                        //       that tells the background async task to build a new timeline
+                        //       (either in live mode or focused mode around one or more events)
+                        //       and then replaces the existing timeline in ALL_ROOMS_INFO with the new one.
+                    }
+
+                    // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
+                    //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
+                    //       any index that comes before (is less than) the above `curr_first_id`.
+
+                    if new_items.len() == tl.items.len() {
+                        // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
+                    }
+                    else if curr_first_id > new_items.len() {
+                        log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
+                        portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
+                        portal_list.set_tail_range(true);
+                    }
+                    else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
+                        find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
+                    {
+                        if curr_item_idx != new_item_idx {
+                            log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
+                            portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
+                            tl.prev_first_index = Some(new_item_idx);
+                            cx.stop_timer(self.fully_read_timer);
+                        }
+                    }
+                    // TODO: after an (un)ignore user event, all timelines are cleared.
+                    //       To handle this, we must remember one or more currently-visible events across multiple updates
+                    //       such that we can jump back to the correct (current) position after enough updates have been received
+                    //       to restore the timeline to its previous position of at least one of the previously-existing events
+                    //       having also been found in the new items.
+                    //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
+                    //
+                    // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
+                    //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
+                    //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
+                    //     break;
+                    // }
+                    else {
+                        warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                    }
+
+                    if clear_cache {
+                        tl.content_drawn_since_last_update.clear();
+                        tl.profile_drawn_since_last_update.clear();
+                        tl.fully_paginated = false;
+                    } else {
+                        tl.content_drawn_since_last_update.remove(changed_indices.clone());
+                        tl.profile_drawn_since_last_update.remove(changed_indices.clone());
+                        // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
+                    }
+                    tl.items = new_items;
+                }
+                TimelineUpdate::TimelineStartReached => {
+                    log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
+                    tl.fully_paginated = true;
+                    done_loading = true;
+                }
+                TimelineUpdate::PaginationIdle => {
+                    done_loading = true;
+                }
+                TimelineUpdate::EventDetailsFetched {event_id, result } => {
+                    if let Err(_e) = result {
+                        error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
+                    }
+                    // Here, to be most efficient, we could redraw only the updated event,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+                TimelineUpdate::RoomMembersFetched => {
+                    log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
+                    // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+                TimelineUpdate::MediaFetched => {
+                    log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
+                    // Here, to be most efficient, we could redraw only the media items in the timeline,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                }
+
+                TimelineUpdate::TypingUsers { users } => {
+                    let typing_text = match users.as_slice() {
+                        [] => String::new(),
+                        [user] => format!("{user} is typing "),
+                        [user1, user2] => format!("{user1} and {user2} are typing "),
+                        [user1, user2, others @ ..] => {
+                            if others.len() > 1 {
+                                format!("{user1}, {user2}, and {} are typing ", &others[0])
+                            } else {
+                                format!(
+                                    "{user1}, {user2}, and {} others are typing ",
+                                    others.len()
+                                )
+                            }
+                        }
+                    };
+                    let is_typing = !users.is_empty();
+                    self.view.view(id!(typing_notice)).set_visible(is_typing);
+                    self.view.label(id!(typing_label)).set_text(&typing_text);
+                    let typing_animation = self.view.typing_animation(id!(typing_animation));
+                    if is_typing {
+                        typing_animation.animate(cx);
+                    } else {
+                        typing_animation.stop_animation();
+                    }
+                }
+            }
+        }
+
+        if done_loading {
+            log!("TODO: hide topspace loading animation for room {}", tl.room_id);
+            // TODO FIXME: hide TopSpace loading animation, set it to invisible.
+        }
+        if num_updates > 0 {
+            // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
+            self.redraw(cx);
+        }
+    }
+
     /// Shows the user profile sliding pane with the given avatar info.
     fn show_user_profile(
         &mut self,
@@ -1709,9 +1704,16 @@ impl RoomScreen {
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
-        // As the final step , store the tl_state for this room into the Timeline widget,
+        // As the final step, store the tl_state for this room into the Timeline widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);
+
+        // Now we can process any background updates and redraw the timeline.
+        if first_time_showing_room {
+            self.process_timeline_updates(cx);
+        }
+    
+        self.redraw(cx);
     }
 
     /// Invoke this when this timeline is being hidden or no longer being shown,
@@ -1805,16 +1807,11 @@ impl RoomScreen {
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
     pub fn set_displayed_room(&self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
-        let Some(mut room_screen) = self.borrow_mut() else { return };
-        room_screen.set_displayed_room(cx, room_name, room_id);
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_displayed_room(cx, room_name, room_id);
     }
 }
 
-#[derive(Clone, DefaultNone, Debug)]
-pub enum TimelineAction {
-    MessageReply(EventTimelineItem),
-    None,
-}
 
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
@@ -1822,7 +1819,7 @@ pub enum TimelineUpdate {
     /// The content of a room's timeline was updated in the background.
     NewItems {
         /// The entire list of timeline items (events) for a room.
-        items: Vector<Arc<TimelineItem>>,
+        new_items: Vector<Arc<TimelineItem>>,
         /// The range of indices in the `items` list that have been changed in this update
         /// and thus must be removed from any caches of drawn items in the timeline.
         /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
@@ -2117,10 +2114,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                
-                item.reaction_list(id!(content.reaction_list))
-                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
-                
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 // We're done drawing the message content, so mark it as fully drawn
                 // *if and only if* the reply preview was also fully drawn.
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
@@ -2145,18 +2139,14 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                item.reaction_list(id!(content.reaction_list))
-                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
-                
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
                     image,
                     media_cache,
                 );
-                // Mark the content as fully drawn if *both* the image content
-                // *and* the reply preview were fully drawn.
-                new_drawn_status.content_drawn = is_image_fully_drawn && is_reply_fully_drawn;
+                new_drawn_status.content_drawn = is_image_fully_drawn;
                 (item, false)
             }
         }
@@ -2176,10 +2166,7 @@ fn populate_message_view(
                     message,
                     event_tl_item.event_id(),
                 );
-                
-                item.reaction_list(id!(content.reaction_list))
-                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
-                
+                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 new_drawn_status.content_drawn = is_reply_fully_drawn;
                 (item, false)
             }
@@ -2206,15 +2193,17 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = profile_drawn;
     }
 
-    // TODO: This feels weird to do here, but the message widget needs to keep the
-    // id for sending events. and whether it can be replied to or not. Maybe handle this better.
-    item.as_message()
-        .set_data(event_tl_item.can_be_replied_to(), item_id);
-
-    // If we've previously drawn the item content, skip redrawing the timestamp and annotations.
+    // If we've previously drawn the item content, skip all other steps.
     if used_cached_item && item_drawn_status.content_drawn && item_drawn_status.profile_drawn {
         return (item, new_drawn_status);
     }
+
+    // Set the Message widget's metatdata for reply-handling purposes.
+    item.as_message().set_data(
+        event_tl_item.can_be_replied_to(),
+        item_id,
+        replied_to_event_id,
+    );
 
     // Set the timestamp.
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
@@ -2330,12 +2319,15 @@ fn draw_replied_to_message(
     room_id: &RoomId,
     message: &timeline::Message,
     message_event_id: Option<&EventId>,
-) -> bool {
+) -> (bool, Option<OwnedEventId>) {
     let fully_drawn: bool;
     let show_reply: bool;
+    let mut replied_to_event_id = None;
 
     if let Some(in_reply_to_details) = message.in_reply_to() {
+        replied_to_event_id = Some(in_reply_to_details.event_id.to_owned());
         show_reply = true;
+
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
@@ -2404,7 +2396,7 @@ fn draw_replied_to_message(
     }
 
     replied_to_message_view.set_visible(show_reply);
-    fully_drawn
+    (fully_drawn, replied_to_event_id)
 }
 
 fn populate_preview_of_timeline_item(
@@ -2733,26 +2725,36 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
     }
 }
 
+/// Actions that can be performed on a message.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum MessageAction {
+    /// The user clicked the reply button on the message,
+    /// indicating that they want to reply to this message.
     MessageReply(usize),
-    ReplyPreviewClicked(usize),
+    /// The user clicked the inline reply preview above a message
+    /// indicating that they want to jump upwards to the replied-to message shown in the preview.
+    ReplyPreviewClicked {
+        /// The item ID (in the timeline PortalList) of the reply message
+        /// that the user clicked the reply preview above.
+        reply_message_item_id: usize,
+        /// The event ID of the replied-to message (the target of the reply).
+        replied_to_event: OwnedEventId,
+    },
+    /// The message with the given item ID should be highlighted.
     MessageHighlight(usize),
     None,
 }
 
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
-    #[deref]
-    view: View,
-    #[rust(false)]
-    hovered: bool,
-    #[rust]
-    can_be_replied_to: bool,
-    #[rust]
-    item_id: usize,
-    #[animator]
-    animator: Animator,
+    #[deref] view: View,
+    #[animator] animator: Animator,
+    #[rust(false)] hovered: bool,
+
+    #[rust] can_be_replied_to: bool,
+    #[rust] item_id: usize,
+    /// The event ID of the message that this message is replying to, if any.
+    #[rust] replied_to_event_id: Option<OwnedEventId>,
 }
 
 impl Widget for Message {
@@ -2781,11 +2783,18 @@ impl Widget for Message {
 
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                    MessageAction::ReplyPreviewClicked(self.item_id),
-                );
+                if let Some(ref replied_to_event) = self.replied_to_event_id {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        MessageAction::ReplyPreviewClicked {
+                            reply_message_item_id: self.item_id,
+                            replied_to_event: replied_to_event.to_owned(),
+                        },
+                    );
+                } else {
+                    error!("BUG: reply preview clicked for message {} with no replied-to event!", self.item_id);
+                }
             }
         }
 
@@ -2831,17 +2840,27 @@ impl Widget for Message {
 }
 
 impl Message {
-    fn set_data(&mut self, can_be_replied_to: bool, item_id: usize) {
+    fn set_data(
+        &mut self,
+        can_be_replied_to: bool,
+        item_id: usize,
+        replied_to_event_id: Option<OwnedEventId>,
+    ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
+        self.replied_to_event_id = replied_to_event_id;
     }
 }
 
 impl MessageRef {
-    fn set_data(&mut self, can_be_replied_to: bool, item_id: usize) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
+    fn set_data(
+        &self,
+        can_be_replied_to: bool,
+        item_id: usize,
+        replied_to_event_id: Option<OwnedEventId>,
+    ) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id);
         };
-        inner.set_data(can_be_replied_to, item_id);
     }
 }

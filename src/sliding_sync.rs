@@ -1116,6 +1116,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
+        has_been_paginated: false,
         is_selected: false,
     }));
 
@@ -1232,7 +1233,7 @@ async fn timeline_subscriber_handler(
     log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
     sender.send(TimelineUpdate::NewItems {
-        items: timeline_items.clone(),
+        new_items: timeline_items.clone(),
         changed_indices: usize::MIN..usize::MAX,
         clear_cache: true,
     }).expect("Error: timeline update sender couldn't send update with initial items!");
@@ -1361,7 +1362,7 @@ async fn timeline_subscriber_handler(
                 log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
             }
             sender.send(TimelineUpdate::NewItems {
-                items: timeline_items.clone(),
+                new_items: timeline_items.clone(),
                 changed_indices,
                 clear_cache,
             }).expect("Error: timeline update sender couldn't send update with new items!");
