@@ -1,14 +1,10 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
-use std::{
-    path::PathBuf,
-};
+use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::log;
 use matrix_sdk::{
-    matrix_auth::MatrixSession,
-    ruma::{OwnedUserId, UserId},
-    Client,
+    matrix_auth::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
 };
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -112,7 +108,8 @@ pub async fn restore_session(
     let client = Client::builder()
         .server_name_or_homeserver_url(client_session.homeserver)
         .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
-        .simplified_sliding_sync(false)
+        .sliding_sync_version_builder(VersionBuilder::DiscoverNative)
+        .handle_refresh_tokens()
         .build()
         .await?;
 

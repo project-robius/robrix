@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedRoomId, MilliSecondsSinceUnixEpoch};
+use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
+
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 use super::room_preview::RoomPreviewAction;
 
@@ -35,7 +37,7 @@ live_design! {
                 color: (MESSAGE_TEXT_COLOR),
                 text_style: <REGULAR_TEXT>{}
             }
-            text: "Loading joined rooms..."
+            text: "Loading rooms..."
         }
     }
 
@@ -66,8 +68,15 @@ live_design! {
 /// (which is called from background async tasks that receive updates from the matrix server),
 /// and then dequeued by the `RoomsList` widget's `handle_event` function.
 pub enum RoomsListUpdate {
+    /// No rooms have been loaded yet.
+    NotLoaded,
+    /// Some rooms were loaded, and the server optionally told us
+    /// the max number of rooms that will ever be loaded.
+    LoadedRooms{ max_rooms: Option<u32> },
     /// Add a new room to the list of all rooms.
     AddRoom(RoomPreviewEntry),
+    /// Clear all rooms in the list of all rooms.
+    ClearRooms,
     /// Update the latest event content and timestamp for the given room.
     UpdateLatestEvent {
         room_id: OwnedRoomId,
@@ -86,7 +95,6 @@ pub enum RoomsListUpdate {
         avatar: RoomPreviewAvatar,
     },
     /// Remove the given room from the list of all rooms.
-    #[allow(unused)]
     RemoveRoom(OwnedRoomId),
     /// Update the status label at the bottom of the list of all rooms.
     Status {
@@ -117,10 +125,10 @@ pub enum RoomListAction {
     None,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct RoomPreviewEntry {
     /// The matrix ID of this room.
-    pub room_id: Option<OwnedRoomId>,
+    pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
     /// The timestamp and Html text content of the latest message in this room.
@@ -128,6 +136,11 @@ pub struct RoomPreviewEntry {
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
+    /// Whether this room has been paginated at least once.
+    /// We pre-paginate visible rooms at least once in order to
+    /// be able to display the latest message in the room preview,
+    /// and to have something to immediately show when a user first opens a room.
+    pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
 }
@@ -149,6 +162,8 @@ pub struct RoomsList {
     #[deref] view: View,
 
     /// The list of all known rooms and their cached preview info.
+    //
+    // TODO: change this into a hashmap keyed by room ID.
     #[rust] all_rooms: Vec<RoomPreviewEntry>,
     /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `all_rooms` vector.
     #[rust] rooms_list_map: HashMap<u64, usize>,
@@ -156,6 +171,18 @@ pub struct RoomsList {
     #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
+    /// The maximum number of rooms that will ever be loaded.
+    #[rust] max_known_rooms: Option<u32>,
+}
+
+impl RoomsList {
+    fn update_status_rooms_count(&mut self) {
+        self.status = if let Some(max_rooms) = self.max_known_rooms {
+            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
+        } else {
+            format!("Loaded {} rooms.", self.all_rooms.len())
+        };
+    }
 }
 
 impl Widget for RoomsList {
@@ -170,32 +197,42 @@ impl Widget for RoomsList {
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
                             room.avatar = avatar;
                         } else {
                             error!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
                     RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
                             room.latest = Some((timestamp, latest_message_text));
                         } else {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
                             room.room_name = Some(new_room_name);
                         } else {
                             error!("Error: couldn't find room {room_id} to update room name");
                         }
                     }
                     RoomsListUpdate::RemoveRoom(room_id) => {
-                        if let Some(idx) = self.all_rooms.iter().position(|r| r.room_id.as_ref() == Some(&room_id)) {
+                        if let Some(idx) = self.all_rooms.iter().position(|r| &r.room_id == &room_id) {
                             self.all_rooms.remove(idx);
                         } else {
                             error!("Error: couldn't find room {room_id} to remove room");
                         }
+                    }
+                    RoomsListUpdate::ClearRooms => {
+                        self.all_rooms.clear();
+                    }
+                    RoomsListUpdate::NotLoaded => {
+                        self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                    }
+                    RoomsListUpdate::LoadedRooms { max_rooms } => {
+                        self.max_known_rooms = max_rooms;
+                        self.update_status_rooms_count();
                     }
                     RoomsListUpdate::Status { status } => {
                         self.status = status;
@@ -226,7 +263,7 @@ impl Widget for RoomsList {
                         &scope.path,
                         RoomListAction::Selected {
                             room_index,
-                            room_id: room_details.room_id.clone().unwrap(),
+                            room_id: room_details.room_id.to_owned(),
                             room_name: room_details.room_name.clone(),
                         }
                     );
@@ -242,7 +279,7 @@ impl Widget for RoomsList {
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
 
         let count = self.all_rooms.len();
-        let last_item_id = count;
+        let status_label_id = count;
 
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
@@ -250,45 +287,45 @@ impl Widget for RoomsList {
             let portal_list_ref = list_item.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
-            // Add 1 again for the status label at the bottom.
-            list.set_item_range(cx, 0, last_item_id + 1);
+            // Add 1 for the status label at the bottom.
+            list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
-                // Draw the status label as the bottom entry.
-                let item = if item_id == last_item_id {
-                    let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
-                    if count > 0 {
-                        let text = format!("Found {count} joined rooms.");
-                        item.as_view().apply_over(cx, live!{
-                            height: 80.0,
-                            label = { text: (text) }
-                        });
-                    } else {
-                        item.as_view().apply_over(cx, live!{
-                            height: Fit,
-                            label = { text: (&self.status) }
+
+                // Draw the room preview for each room.
+                let item = if let Some(room_info) = self.all_rooms.get_mut(item_id) {
+                    let item = list.item(cx, item_id, live_id!(room_preview)).unwrap();
+                    self.rooms_list_map.insert(item.widget_uid().0, item_id);
+                    room_info.is_selected = self.current_active_room_index == Some(item_id);
+
+                    // Paginate the room if it hasn't been paginated yet.
+                    if !room_info.has_been_paginated {
+                        room_info.has_been_paginated = true;
+                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                            room_id: room_info.room_id.clone(),
+                            num_events: 50,
+                            forwards: false,
                         });
                     }
-                    item
-                }
-                // Draw a filler entry to take up space at the bottom of the portal list.
-                else if item_id > last_item_id {
-                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
-                }
-                else {
-                    let item_template = live_id!(room_preview);
 
-                    let item = list.item(cx, item_id, item_template).unwrap();
-                    let index_of_room = item_id as usize;
-                    self.rooms_list_map.insert(item.widget_uid().0, index_of_room);
-                    
-                    let room_info = &mut self.all_rooms[index_of_room];
-                    room_info.is_selected = self.current_active_room_index == Some(item_id);
-                    // Pass down the room info to the RoomPreview widget.
+                    // Pass the room info through Scope down to the RoomPreview widget.
                     scope = Scope::with_props(&*room_info);
 
                     item
+                }
+                // Draw the status label as the bottom entry.
+                else if item_id == status_label_id {
+                    let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
+                    item.as_view().apply_over(cx, live!{
+                        height: Fit,
+                        label = { text: (&self.status) }
+                    });
+                    item
+                }
+                // Draw a filler entry to take up space at the bottom of the portal list.
+                else {
+                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
                 };
 
                 item.draw_all(cx, &mut scope);
