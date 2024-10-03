@@ -2107,17 +2107,7 @@ fn populate_message_view(
                     &item.html_or_plaintext(id!(content.message)),
                     text,
                 );
-                let is_reply_fully_drawn = draw_replied_to_message(
-                    cx,
-                    &item.view(id!(replied_to_message)),
-                    room_id,
-                    message,
-                    event_tl_item.event_id(),
-                );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
-                // We're done drawing the message content, so mark it as fully drawn
-                // *if and only if* the reply preview was also fully drawn.
-                new_drawn_status.content_drawn = is_reply_fully_drawn;
+                new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }
@@ -2131,15 +2121,6 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(
-                    cx,
-                    &item.view(id!(replied_to_message)),
-                    room_id,
-                    message,
-                    event_tl_item.event_id(),
-                );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
@@ -2158,20 +2139,30 @@ fn populate_message_view(
                 let kind = other.msgtype();
                 item.label(id!(content.message))
                     .set_text(&format!("[TODO {kind:?}] {}", other.body()));
-                // Draw the ReplyPreview and reactions, if any are present.
-                let is_reply_fully_drawn = draw_replied_to_message(
-                    cx,
-                    &item.view(id!(replied_to_message)),
-                    room_id,
-                    message,
-                    event_tl_item.event_id(),
-                );
-                draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
-                new_drawn_status.content_drawn = is_reply_fully_drawn;
+                new_drawn_status.content_drawn = true;
                 (item, false)
             }
         }
     };
+
+    let mut replied_to_event_id = None;
+
+    // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
+    if !used_cached_item {
+        item.reaction_list(id!(content.reaction_list))
+                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
+        let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
+            cx,
+            &item.view(id!(replied_to_message)),
+            room_id,
+            message,
+            event_tl_item.event_id(),
+        );
+        replied_to_event_id = replied_to_ev_id;
+        // The content is only considered to be fully drawn if the logic above marked it as such
+        // *and* if the reply preview was also fully drawn.
+        new_drawn_status.content_drawn &= is_reply_fully_drawn;
+    }
 
     // If `used_cached_item` is false, we should always redraw the profile, even if profile_drawn is true.
     let skip_draw_profile =
