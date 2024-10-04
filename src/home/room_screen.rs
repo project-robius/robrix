@@ -19,7 +19,7 @@ use matrix_sdk::{
     OwnedServerName,
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo,
+    self, EventTimelineItem, MemberProfileChange, Profile, RepliedToInfo,
     RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind,
     VirtualTimelineItem,
 };
@@ -2150,7 +2150,7 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list))
-                    .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
+            .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
