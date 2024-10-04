@@ -967,9 +967,9 @@ impl RoomScreen{
                 if first_index > *index {
                     cx.stop_timer(self.fully_read_timer);
                     self.fully_read_timer = cx.start_interval(5.0);
-                    let index_to_send_read = first_index + portal_list.visible_items();
-                    if let Some(event_id) = tl_state.items.get(index_to_send_read)
-                        .and_then(|f|f.as_event()).and_then(|f|f.event_id()) {
+                    if let Some(event_id) = tl_state.items.get(first_index + portal_list.visible_items())
+                            .and_then(|f| f.as_event() )
+                            .and_then(|f| f.event_id() ) {
                         submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
                         tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
