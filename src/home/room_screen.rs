@@ -2083,7 +2083,6 @@ fn populate_message_view(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let receipts = event_tl_item.read_receipts();
-    //#123
     
     let mut new_drawn_status = item_drawn_status;
 
