@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
-use crate::shared::avatar::{Avatar};
+use crate::shared::avatar::Avatar;
 live_design!{
     import makepad_draw::shader::std::*;
     import crate::shared::avatar::*;
@@ -72,7 +72,7 @@ impl Widget for Sequencer {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, Layout::default());        
         let button = self.button;
-        for (i,name) in self.read_receipts.iter().enumerate(){
+        for (i, name) in self.read_receipts.iter().enumerate(){
             if i>4{
                 break
             }
@@ -106,7 +106,7 @@ impl SequencerRef {
     }
     pub fn set_read_receipts(&mut self,cx:&mut Cx , room_id: OwnedRoomId, read_user_id:Vec<OwnedUserId>){
         if let Some(mut inner) = self.borrow_mut() {
-            inner.read_receipts = read_user_id.iter().map(|f|f.to_string().chars().nth(1).unwrap().to_string()).collect();
+            inner.read_receipts = read_user_id.iter().map(| f | f.to_string().chars().nth(1).unwrap().to_string()).collect();
         }
     }
     pub fn hover_in(&self, actions:&Actions)->Option<Rect>{

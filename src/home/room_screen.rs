@@ -426,7 +426,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-            sequencer = <Sequencer> {width: 40, height: 30, margin: {top: (12.0)},hover_actions_enabled:true}
+            sequencer = <Sequencer> {width: 40, height: 30, margin: { top: (12.0)}, hover_actions_enabled:true}
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -1031,18 +1031,16 @@ impl Widget for RoomScreen {
         if let Event::Actions(actions) = event {
             let portal_list = self.portal_list(id!(list));
             let mut tooltip = self.tooltip(id!(tooltip));
-            for (_,wr) in portal_list.items_with_actions(actions).iter(){
+            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.sequencer(id!(sequencer));
                 let num_seen = seq.get_read_receipts().len();
                 if let Some(rect) = seq.hover_in(actions){
-                    tooltip.show_with_options(cx, rect.pos, &format!("{} seen",num_seen));
+                    tooltip.show_with_options(cx, rect.pos, &format!("{} seen", num_seen));
                 }
                 if seq.hover_out(&actions) {
                     tooltip.hide(cx);
                 }
-            }
-           
-     
+            });     
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().cast() {
@@ -2115,11 +2113,11 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
-            let mut read_receipts =vec![];
-            for (ower_user_id,_) in receipts.iter(){
+            let mut read_receipts = vec![];
+            for (ower_user_id, _) in receipts.iter() {
                 read_receipts.push(ower_user_id.clone());
             }
-            item.sequencer(id!(sequencer)).set_read_receipts(cx,room_id.to_owned(),read_receipts);
+            item.sequencer(id!(sequencer)).set_read_receipts(cx, room_id.to_owned(), read_receipts);
             
             if existed && item_drawn_status.content_drawn {
                 (item, true)
