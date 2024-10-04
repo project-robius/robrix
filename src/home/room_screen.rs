@@ -962,49 +962,16 @@ impl RoomScreen{
         let Some(room_id) = self.room_id.as_ref() else { return };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
-            if *index != first_index {  
+            if *index != first_index {
                 // scroll changed         
-                self.fully_read_timer = cx.start_interval(5.0);
-                let time_now = std::time::Instant::now();
                 if first_index > *index {
-                    // Store visible event messages with current time into a hashmap
-                    let mut read_receipt_event = None;
-                    for r in first_index .. (first_index + portal_list.visible_items() + 1) {
-                        if let Some(v) = tl_state.items.get(r) {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                read_receipt_event = Some(e.to_owned());
-                                if !tl_state.read_event_hashmap.contains_key(&e.to_string()) {
-                                    tl_state.read_event_hashmap.insert(
-                                        e.to_string(),
-                                        (room_id.clone(), e.to_owned(), time_now, false),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    if let Some(event_id) = read_receipt_event {
-                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id });
-                    }
-                    let mut fully_read_receipt_event = None;
-                    // Implements sending fully read receipts when message is scrolled out of first row
-                    for r in *index..first_index {
-                        if let Some(v) = tl_state.items.get(r).clone() {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                let mut to_remove = vec![];
-                                for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
-                                    if e == event_id {
-                                        fully_read_receipt_event = Some(event_id.clone());
-                                        to_remove.push(event_id_string.clone());
-                                    }
-                                }
-                                for r in to_remove {
-                                    tl_state.marked_fully_read_queue.remove(&r);
-                                }
-                            }
-                        }
-                    }
-                    if let Some(event_id) = fully_read_receipt_event {
-                        submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone()});
+                    cx.stop_timer(self.fully_read_timer);
+                    self.fully_read_timer = cx.start_interval(5.0);
+                    let index_to_send_read = first_index + portal_list.visible_items();
+                    if let Some(event_id) = tl_state.items.get(index_to_send_read)
+                        .and_then(|f|f.as_event()).and_then(|f|f.event_id()) {
+                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
+                        tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
                 }
                 *index = first_index;
@@ -1264,13 +1231,9 @@ impl Widget for RoomScreen {
 
         // Mark events as fully read after they have been displayed on screen for 5 seconds.
         if self.fully_read_timer.is_event(event).is_some() {
-            if let (Some(ref mut tl_state), Some(ref _room_id)) = (&mut self.tl_state, &self.room_id) {
-                for (k, (room, event, start, ref mut moved_to_queue)) in &mut tl_state.read_event_hashmap {
-                    if start.elapsed() > std::time::Duration::new(5, 0) && !*moved_to_queue{
-                        tl_state.marked_fully_read_queue.insert(k.clone(), (room.clone(), event.clone()));
-                        *moved_to_queue = true;
-                    }
-                }
+            if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
+                let Some(last_displayed_event) = &tl_state.last_displayed_event else { return };
+                submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_displayed_event.clone()});
             }
             cx.stop_timer(self.fully_read_timer);
         }
@@ -1664,8 +1627,7 @@ impl RoomScreen {
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 prev_first_index: None,
-                read_event_hashmap: HashMap::new(),
-                marked_fully_read_queue: HashMap::new(),
+                last_displayed_event: None,
             };
             (new_tl_state, true)
         };
@@ -1918,8 +1880,7 @@ struct TimelineUiState {
     message_highlight_animation_state: MessageHighlightAnimationState,
 
     prev_first_index: Option<usize>,
-    read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
-    marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
+    last_displayed_event: Option<OwnedEventId>,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
