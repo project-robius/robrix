@@ -1,7 +1,11 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::home::rooms_list::RoomListAction;
+use crate::{
+    home::rooms_list::RoomListAction,
+    verification::VerificationAction,
+    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -103,7 +107,19 @@ live_design! {
             pass: {clear_color: #2A}
 
             body = {
-                home_screen = <HomeScreen> {}
+                // A wrapper view for showing top-level app modals/dialogs/popups
+                <View> {
+                    width: Fill, height: Fill,
+                    flow: Overlay,
+
+                    home_screen = <HomeScreen> {}
+
+                    verification_modal = <Modal> {
+                        content: {
+                            verification_modal_inner = <VerificationModal> {}
+                        }
+                    }
+                }
             } // end of body
         }
     }
@@ -128,6 +144,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
     }
@@ -168,7 +185,24 @@ impl MatchEvent for App {
                     );
                     self.ui.redraw(cx);
                 }
-                _ => (),
+                RoomListAction::None => { }
+            }
+
+            // TODO FIXME: need to add a cast_ref() method to WidgetAction
+            //             that doesn't require the action to be clonable.
+            match action.as_widget_action().cast() {
+                VerificationAction::RequestReceived { request, response_sender } => {
+                    log!("Received a new verification request: {:?}", request);
+                    self.ui.verification_modal(id!(verification_modal_inner))
+                        .initialize_with_data(request, response_sender);
+                    self.ui.modal(id!(verification_modal)).open(cx);
+                }
+                // other verification actions are handled by the verification modal itself.
+                _ => { }
+            }
+
+            if let VerificationModalAction::Close = action.as_widget_action().cast() {
+                self.ui.modal(id!(verification_modal)).close(cx);
             }
         }
     }
@@ -222,3 +256,4 @@ pub struct SelectedRoom {
     pub id: OwnedRoomId,
     pub name: Option<String>,
 }
+

@@ -10,6 +10,8 @@ pub mod persistent_state;
 pub mod home;
 /// User profile info and a user profile sliding pane.
 mod profile;
+/// A modal/dialog popup for interactive verification of users/devices.
+mod verification_modal;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.
@@ -20,6 +22,7 @@ mod event_preview;
 pub mod sliding_sync;
 pub mod avatar_cache;
 pub mod media_cache;
+pub mod verification;
 
 pub mod utils;
 pub mod temp_storage;

@@ -1,6 +1,12 @@
 use makepad_widgets::*;
 
 live_design! {
+
+    ICON_BLOCK_USER  = dep("crate://self/resources/icons/forbidden.svg")
+    ICON_CHECKMARK   = dep("crate://self/resources/icons/checkmark.svg")
+    ICON_CLOSE       = dep("crate://self/resources/icons/close.svg")
+
+
     TITLE_TEXT = {
         font_size: (13),
         font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
@@ -62,6 +68,7 @@ live_design! {
     COLOR_DIVIDER_DARK = #x00000044
 
     COLOR_DANGER_RED = #xDC0005
+    COLOR_ACCEPT_GREEN = #x138808
 
     COLOR_PRIMARY = #ffffff
     COLOR_PRIMARY_DARKER = #fefefe
