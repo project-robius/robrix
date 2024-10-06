@@ -1,7 +1,8 @@
+use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{error, log, Cx, DefaultNone};
+use makepad_widgets::{Cx, DefaultNone, log};
 use matrix_sdk::{
-    config::SyncSettings, crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::verification::{
+    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::verification::{
         SasState, SasVerification, Verification, VerificationRequest,
         VerificationRequestState,
     }, ruma::{
@@ -54,11 +55,16 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
         }
     );
 
+    // This doesn't seem to be necessary, as we do receive verification requests
+    // without this block. 
+    // The sliding sync service must be handling the synchronization already.
+    //
+    /*
     Handle::current().spawn(async move {
         client.sync(SyncSettings::new()).await
             .expect("Client sync loop failed");
     });
-
+    */
 }
 
 
@@ -96,13 +102,12 @@ async fn sas_verification_handler(
     // Accept the SAS verification with both default methods: emoji and decimal.
     if let Err(e) = sas.accept().await {
         log!("Error accepting SAS verification request: {:?}", e);
-        Cx::post_action(VerificationAction::RequestAcceptError(e));
+        Cx::post_action(VerificationAction::RequestAcceptError(Arc::new(e)));
         return;
     }
 
     // A little trick to allow us to move the response_receiver into the async block below.
     let mut receiver_opt = Some(response_receiver);
-
     while let Some(state) = stream.next().await {
         match state {
             SasState::Created { .. }
@@ -114,39 +119,32 @@ async fn sas_verification_handler(
 
             SasState::KeysExchanged { emojis, decimals } => {
                 Cx::post_action(VerificationAction::KeysExchanged { emojis, decimals });
-                let Some(mut receiver) = receiver_opt.take() else {
-                    error!("BUG: SasState::KeysExchanged occurred more than once!");
-                    let _ = sas.cancel().await;
-                    Cx::post_action(
-                        VerificationAction::RequestCancelError(
-                            matrix_sdk::Error::Io(std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                "BUG: SasState::KeysExchanged occurred more than once!",
-                            ))
-                        )
-                    );
-                    return;
-                };
-                let sas2 = sas.clone();
-                Handle::current().spawn(async move {
-                    log!("Waiting for user to confirm SAS verification keys...");
-                    match receiver.recv().await {
-                        Some(VerificationUserResponse::Accept) => {
-                            log!("User confirmed SAS verification keys");
-                            if let Err(e) = sas2.confirm().await {
-                                log!("Failed to confirm SAS verification keys; error: {:?}", e);
-                                Cx::post_action(VerificationAction::SasConfirmationError(e));
+                if let Some(mut receiver) = receiver_opt.take() {
+                    let sas2 = sas.clone();
+                    Handle::current().spawn(async move {
+                        log!("Waiting for user to confirm SAS verification keys...");
+                        match receiver.recv().await {
+                            Some(VerificationUserResponse::Accept) => {
+                                log!("User confirmed SAS verification keys");
+                                if let Err(e) = sas2.confirm().await {
+                                    log!("Failed to confirm SAS verification keys; error: {:?}", e);
+                                    Cx::post_action(VerificationAction::SasConfirmationError(Arc::new(e)));
+                                }
+                                // If successful, SAS verification will now transition to the Confirmed state,
+                                // which will be sent to the main UI thread in the `SasState::Confirmed` match arm below.
                             }
-                            // If successful, SAS verification will now transition to the Confirmed state,
-                            // which will be sent to the main UI thread in the `SasState::Confirmed` match arm below.
+                            Some(VerificationUserResponse::Cancel) | None => {
+                                log!("User did not confirm SAS verification keys");
+                                let _ = sas2.cancel().await;
+                            }
                         }
-                        Some(VerificationUserResponse::Cancel) | None => {
-                            log!("User did not confirm SAS verification keys");
-                            let _ = sas2.cancel().await;
-                        }
-                    }
-
-                });
+                    });
+                } else {
+                    // Receiving a second `KeysExchanged` state indicates that the other device
+                    // confirmed their keys match the ones we have *before* we confirmed them.
+                    log!("The other side confirmed that the displayed keys matched.");
+                };
+                
             }
 
             SasState::Confirmed => Cx::post_action(VerificationAction::SasConfirmed),
@@ -164,8 +162,10 @@ async fn sas_verification_handler(
                     device.local_trust_state()
                 );
                 log!("[Post-verification] {}", dump_devices(sas.other_device().user_id(), &client).await);
-                // No need to send a specific action here, the VerificationRequestState stream loop 
-                // will handle the Done state and send a RequestCompleted action.
+                // We go ahead and send the RequestCompleted action here,
+                // because it is not guaranteed that the VerificationRequestState stream loop 
+                // will receive an update an enter the `Done` state.
+                Cx::post_action(VerificationAction::RequestCompleted);
                 break;
             }
             SasState::Cancelled(cancel_info) => {
@@ -182,10 +182,12 @@ async fn request_verification_handler(client: Client, request: VerificationReque
     log!("Received a verification request in room {:?}: {:?}", request.room_id(), request.state());
     let (sender, mut response_receiver) = tokio::sync::mpsc::unbounded_channel::<VerificationUserResponse>();
     Cx::post_action(
-        VerificationAction::RequestReceived {
-            request: request.clone(),
-            response_sender: sender.clone(),
-        }
+        VerificationAction::RequestReceived(
+            VerificationRequestActionState {
+                request: request.clone(),
+                response_sender: sender.clone(),
+            }
+        )
     );
 
     let mut stream = request.changes();
@@ -199,14 +201,14 @@ async fn request_verification_handler(client: Client, request: VerificationReque
                 // Fall through to the stream loop below.
             }
             Err(e) => {
-                Cx::post_action(VerificationAction::RequestAcceptError(e));
+                Cx::post_action(VerificationAction::RequestAcceptError(Arc::new(e)));
                 return;
             }
         }
         Some(VerificationUserResponse::Cancel) | None => match request.cancel().await {
             Ok(()) => { } // response will be sent in the stream loop below
             Err(e) => {
-                Cx::post_action(VerificationAction::RequestCancelError(e));
+                Cx::post_action(VerificationAction::RequestCancelError(Arc::new(e)));
                 return;
             }
         }
@@ -245,13 +247,10 @@ async fn request_verification_handler(client: Client, request: VerificationReque
 
 
 /// Actions related to verification that should be handled by the top-level app context.
-#[derive(Debug, DefaultNone)]
+#[derive(Clone, Debug, DefaultNone)]
 pub enum VerificationAction {
     /// Informs the main UI thread that a verification request has been received.
-    RequestReceived {
-        request: VerificationRequest,
-        response_sender: UnboundedSender<VerificationUserResponse>,
-    },
+    RequestReceived(VerificationRequestActionState),
     /// Informs the main UI thread that a verification request was cancelled successfully.
     RequestCancelled(CancelInfo),
     /// Informs the main UI thread that a verification request was accepted successfully.
@@ -260,9 +259,9 @@ pub enum VerificationAction {
     /// to wait for the verification to proceed to the next step.
     RequestAccepted,
     /// Informs the main UI thread that an error occurred while accepting a verification request.
-    RequestAcceptError(matrix_sdk::Error),
+    RequestAcceptError(Arc<matrix_sdk::Error>),
     /// Informs the main UI thread that an error occurred while cancelling a verification request.
-    RequestCancelError(matrix_sdk::Error),
+    RequestCancelError(Arc<matrix_sdk::Error>),
     /// Informs the main UI thread that a verification request transitioned to an unsupported method.
     RequestTransitionedToUnsupportedMethod(Verification),
     /// Informs the main UI thread that the given SAS verification protocols
@@ -281,10 +280,21 @@ pub enum VerificationAction {
     /// and that we're just waiting for the other side to confirm too.
     SasConfirmed,
     /// Informs the main UI thread that an error occurred while confirming SAS verification keys.
-    SasConfirmationError(matrix_sdk::Error),
+    SasConfirmationError(Arc<matrix_sdk::Error>),
     /// Informs the main UI thread that a verification request has been fully completed.
     RequestCompleted,
     None,
+}
+
+/// The state included in a verification request action.
+/// 
+/// This is passed from the background async task to the main UI thread,
+/// where it is extracted from the `VerificationAction` and then stored
+/// in the `VerificationModal`` widget.
+#[derive(Clone, Debug)]
+pub struct VerificationRequestActionState {
+    pub request: VerificationRequest,
+    pub response_sender: UnboundedSender<VerificationUserResponse>,
 }
 
 /// Responses that the user can make to a verification request,

@@ -9,24 +9,24 @@ live_design! {
 
     TITLE_TEXT = {
         font_size: (13),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     REGULAR_TEXT = {
         font_size: (10),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     TEXT_SUB = {
         font_size: (8),
         height_factor: 1.5,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     USERNAME_FONT_SIZE = 11
     USERNAME_TEXT_COLOR = #x2
     USERNAME_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Bold.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-SemiBold.ttf")}
         font_size: (USERNAME_FONT_SIZE),
         // height_factor: 1.5,
     }
@@ -40,7 +40,7 @@ live_design! {
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
     MESSAGE_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
         font_size: (MESSAGE_FONT_SIZE),
         height_factor: (MESSAGE_TEXT_HEIGHT_FACTOR),
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
@@ -51,7 +51,7 @@ live_design! {
     SMALL_STATE_FONT_SIZE = 9.0
     SMALL_STATE_TEXT_COLOR = #x888
     SMALL_STATE_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
         font_size: (SMALL_STATE_FONT_SIZE),
         height_factor: 1.3,
     }
@@ -59,7 +59,7 @@ live_design! {
     TIMESTAMP_FONT_SIZE = 8.5
     TIMESTAMP_TEXT_COLOR = #x999
     TIMESTAMP_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
         font_size: (TIMESTAMP_FONT_SIZE),
     }
 

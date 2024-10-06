@@ -1,8 +1,7 @@
 use makepad_widgets::*;
-use matrix_sdk::encryption::verification::{Verification, VerificationRequest};
-use tokio::sync::mpsc::UnboundedSender;
+use matrix_sdk::encryption::verification::Verification;
 
-use crate::verification::{VerificationAction, VerificationUserResponse};
+use crate::verification::{VerificationAction, VerificationRequestActionState, VerificationUserResponse};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -10,7 +9,7 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
-    import crate::shared::widgets::MolyButton;
+    import crate::shared::icon_button::RobrixIconButton;
 
     VerificationModal = {{VerificationModal}} {
         width: Fit
@@ -26,7 +25,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 3
+                radius: 3.0
             }
 
             <View> {
@@ -135,16 +134,11 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct VerificationModal {
     #[deref] view: View,
-    #[rust] state: Option<VerificationModalState>,
+    #[rust] state: Option<VerificationRequestActionState>,
     /// Whether the modal is in a "final" state,
     /// meaning that the verification process has ended
     /// and that any further interaction with it should close the modal.
     #[rust(false)] is_final: bool,
-}
-
-struct VerificationModalState {
-    request: VerificationRequest,
-    response_sender: UnboundedSender<VerificationUserResponse>,
 }
 
 #[derive(Clone, Debug, DefaultNone)]
@@ -172,7 +166,6 @@ impl WidgetMatchEvent for VerificationModal {
 
         if cancel_button.clicked(actions)
             || self.button(id!(close_button)).clicked(actions)
-            || actions.iter().find(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed))).is_some()
         {
             if let Some(state) = self.state.as_ref() {
                 let _ = state.response_sender.send(VerificationUserResponse::Cancel);
@@ -180,6 +173,14 @@ impl WidgetMatchEvent for VerificationModal {
             cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
             self.reset_state();
         }
+
+        if actions.iter().find(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed))).is_some() {
+            // The modal was dismissed by clicking outside of it, so we do NOT need
+            // to emit a `VerificationModalAction::Close` action, as that would cause
+            // an infinite action feedback loop.
+            self.reset_state();
+        }
+
 
         if self.button(id!(accept_button)).clicked(actions) {
             if self.is_final {
@@ -192,131 +193,138 @@ impl WidgetMatchEvent for VerificationModal {
             }
         }
 
+        let mut needs_redraw = false;
         for action in actions {
-            match action.as_widget_action().cast() {
-                VerificationAction::None => { }
-            
-                VerificationAction::RequestReceived { request, response_sender } => {
-                    log!("Shouldn't happen - received a redundant verification request: {:?}", request);
-                }
+            // `VerificationAction`s come from a background thread, so they are NOT widget actions.
+            // Therefore, we cannot use `as_widget_action().cast()` to match them.
+            if let Some(verification_action) = action.downcast_ref::<VerificationAction>() {
+                match verification_action {
+                    VerificationAction::RequestCancelled(cancel_info) => {
+                        self.label(id!(prompt)).set_text(
+                            &format!("Verification request was cancelled: {}", cancel_info.reason())
+                        );
+                        accept_button.set_enabled(true);
+                        accept_button.set_text("Ok");
+                        cancel_button.set_visible(false);
+                        self.is_final = true;
+                    }
 
-                VerificationAction::RequestCancelled(cancel_info) => {
-                    self.label(id!(prompt)).set_text(
-                        &format!("Verification request was cancelled: {}", cancel_info.reason())
-                    );
-                    accept_button.set_enabled(true);
-                    accept_button.set_text("Ok");
-                    cancel_button.set_visible(false);
-                    self.is_final = true;
-                }
+                    VerificationAction::RequestAccepted => {
+                        self.label(id!(prompt)).set_text(
+                            "You successfully accepted the verification request.\n\n\
+                            Waiting for the other device to agree on verification methods..."
+                        );
+                        accept_button.set_enabled(false);
+                        accept_button.set_text("Waiting...");
+                        cancel_button.set_text("Cancel");
+                        cancel_button.set_enabled(true);
+                        cancel_button.set_visible(true);
+                    }
 
-                VerificationAction::RequestAccepted => {
-                    self.label(id!(prompt)).set_text(
-                        "You successfully accepted the verification request.\n\n\
-                        Waiting for the other device to agree on verification methods..."
-                    );
-                    accept_button.set_enabled(false);
-                    accept_button.set_text("Waiting...");
-                    cancel_button.set_text("Cancel");
-                    cancel_button.set_enabled(true);
-                    cancel_button.set_visible(true);
-                }
+                    VerificationAction::RequestAcceptError(error) => {
+                        self.label(id!(prompt)).set_text(&format!(
+                            "Error accepting verification request: {}\n\n\
+                            Please try the verification process again.",
+                            error,
+                        ));
+                        accept_button.set_enabled(true);
+                        accept_button.set_text("Ok");
+                        cancel_button.set_visible(false);
+                        self.is_final = true;
+                    }
 
-                VerificationAction::RequestAcceptError(error) => {
-                    self.label(id!(prompt)).set_text(&format!(
-                        "Error accepting verification request: {}\n\n\
-                        Please try the verification process again.",
-                        error,
-                    ));
-                    accept_button.set_enabled(true);
-                    accept_button.set_text("Ok");
-                    cancel_button.set_visible(false);
-                    self.is_final = true;
-                }
+                    VerificationAction::RequestCancelError(error) => {
+                        self.label(id!(prompt)).set_text(
+                            &format!("Error cancelling verification request: {}.", error)
+                        );
+                        accept_button.set_enabled(true);
+                        accept_button.set_text("Ok");
+                        cancel_button.set_visible(false);
+                        self.is_final = true;
+                    }
 
-                VerificationAction::RequestCancelError(error) => {
-                    self.label(id!(prompt)).set_text(
-                        &format!("Error cancelling verification request: {}.", error)
-                    );
-                    accept_button.set_enabled(true);
-                    accept_button.set_text("Ok");
-                    cancel_button.set_visible(false);
-                    self.is_final = true;
-                }
+                    VerificationAction::RequestTransitionedToUnsupportedMethod(method) => {
+                        self.label(id!(prompt)).set_text(
+                            &format!(
+                                "Verification request transitioned to unsupported method: {}\n\nPlease try the verification process again.",
+                                match method {
+                                    Verification::SasV1(_) => "Short Authentication String",
+                                    // Verification::QrV1(_) => "QR Code",
+                                    _other => "Unknown",
+                                },
+                            )
+                        );
+                        accept_button.set_enabled(true);
+                        accept_button.set_text("Ok");
+                        cancel_button.set_visible(false);
+                        self.is_final = true;
+                    }
 
-                VerificationAction::RequestTransitionedToUnsupportedMethod(method) => {
-                    self.label(id!(prompt)).set_text(
-                        &format!(
-                            "Verification request transitioned to unsupported method: {}\n\nPlease try the verification process again.",
-                            match method {
-                                Verification::SasV1(_) => "Short Authentication String",
-                                // Verification::QrV1(_) => "QR Code",
-                                other => "Unknown",
-                            },
-                        )
-                    );
-                    accept_button.set_enabled(true);
-                    accept_button.set_text("Ok");
-                    cancel_button.set_visible(false);
-                    self.is_final = true;
-                }
+                    VerificationAction::SasAccepted(_accepted_protocols) => {
+                        self.label(id!(prompt)).set_text(&format!(
+                            "Both sides have accepted the same verification method(s).\n\n\
+                            Waiting for both devices to exchange keys..."
+                        ));
+                        accept_button.set_enabled(false);
+                        accept_button.set_text("Waiting...");
+                        cancel_button.set_text("Cancel");
+                        cancel_button.set_enabled(true);
+                        cancel_button.set_visible(true);
+                    }
 
-                VerificationAction::SasAccepted(accepted_protocols) => {
-                    self.label(id!(prompt)).set_text(&format!(
-                        "Both sides have accepted the same verification method(s).\n\n\
-                        Waiting for both devices to exchange keys..."
-                    ));
-                    accept_button.set_enabled(false);
-                    accept_button.set_text("Waiting...");
-                    cancel_button.set_text("Cancel");
-                    cancel_button.set_enabled(true);
-                    cancel_button.set_visible(true);
-                }
+                    VerificationAction::KeysExchanged { emojis, decimals } => {
+                        self.label(id!(prompt)).set_text(&format!(
+                            "Keys have been exchanged. Please verify the following:\n\n\
+                            - Emojis: {:?}\n\
+                            - Decimals: {:?}\n\n\
+                            Do these keys match?",
+                            emojis, decimals
+                        ));
+                        accept_button.set_enabled(true);
+                        accept_button.set_text("Yes");
+                        cancel_button.set_text("No");
+                        cancel_button.set_enabled(true);
+                        cancel_button.set_visible(true);
+                    }
 
-                VerificationAction::KeysExchanged { emojis, decimals } => {
-                    self.label(id!(prompt)).set_text(&format!(
-                        "Keys have been exchanged. Please verify the following:\n\n\
-                        - Emojis: {:?}\n\
-                        - Decimals: {:?}\n\n\
-                        Do these keys match?",
-                        emojis, decimals
-                    ));
-                    accept_button.set_enabled(true);
-                    accept_button.set_text("Yes");
-                    cancel_button.set_text("No");
-                    cancel_button.set_enabled(true);
-                    cancel_button.set_visible(true);
-                }
+                    VerificationAction::SasConfirmed => {
+                        self.label(id!(prompt)).set_text(
+                            "You successfully confirmed the Short Auth Strings.\n\n\
+                            Waiting for the other device to confirm..."
+                        );
+                        accept_button.set_enabled(false);
+                        accept_button.set_text("Waiting...");
+                        cancel_button.set_text("Cancel");
+                        cancel_button.set_enabled(true);
+                        cancel_button.set_visible(true);
+                    }
 
-                VerificationAction::SasConfirmed => {
-                    self.label(id!(prompt)).set_text(
-                        "You successfully confirmed the Short Auth Strings.\n\n\
-                        Waiting for the other device to confirm..."
-                    );
-                    accept_button.set_enabled(false);
-                    accept_button.set_text("Waiting...");
-                    cancel_button.set_text("Cancel");
-                    cancel_button.set_enabled(true);
-                    cancel_button.set_visible(true);
-                }
+                    VerificationAction::SasConfirmationError(error) => {
+                        self.label(id!(prompt)).set_text(
+                            &format!("Error confirming keys: {}\n\nPlease try the verification process again.", error)
+                        );
+                        accept_button.set_text("Ok");
+                        accept_button.set_enabled(true);
+                        cancel_button.set_visible(false);
+                        self.is_final = true;
+                    }
 
-                VerificationAction::SasConfirmationError(error) => {
-                    self.label(id!(prompt)).set_text(
-                        &format!("Error confirming keys: {}\n\nPlease try the verification process again.", error)
-                    );
-                    accept_button.set_text("Ok");
-                    accept_button.set_enabled(true);
-                    cancel_button.set_visible(false);
-                    self.is_final = true;
+                    VerificationAction::RequestCompleted => {
+                        self.label(id!(prompt)).set_text("Verification completed successfully!");
+                        accept_button.set_text("Ok");
+                        accept_button.set_enabled(true);
+                        cancel_button.set_visible(false);
+                        self.is_final = true;
+                    }
+                    _ => { }
                 }
-
-                VerificationAction::RequestCompleted => {
-                    self.label(id!(prompt)).set_text("Verification completed successfully!");
-                    accept_button.set_text("Ok");
-                    accept_button.set_enabled(true);
-                    cancel_button.set_visible(false);
-                }
+                // If we received a `VerificationAction`, we need to redraw the modal content.
+                needs_redraw = true;
             }
+        }
+
+        if needs_redraw {
+            self.redraw(cx);
         }
     }
 }
@@ -326,42 +334,44 @@ impl VerificationModal {
         self.state = None;
         self.is_final = false;
     }
+
+    fn initialize_with_data(&mut self, state: VerificationRequestActionState) {
+        log!("Initializing verification modal with state: {:?}", state);
+        let request = &state.request;
+        let prompt_text = if request.is_self_verification() {
+            format!("Do you wish to verify your own device?")
+        } else {
+            if let Some(room_id) = request.room_id() {
+                format!("Do you wish to verify user {} in room {}?",
+                    request.other_user_id(),
+                    room_id,
+                )
+            } else {
+                format!("Do you wish to verify user {}?",
+                    request.other_user_id()
+                )
+            }
+        };
+        self.label(id!(prompt)).set_text(&prompt_text);
+
+        let accept_button = self.button(id!(accept_button));
+        let cancel_button = self.button(id!(cancel_button));
+        accept_button.set_text("Yes");
+        accept_button.set_enabled(true);
+        accept_button.set_visible(true);
+        cancel_button.set_text("Cancel");
+        cancel_button.set_enabled(true);
+        cancel_button.set_visible(true);
+
+        self.state = Some(state);
+        self.is_final = false;
+    }
 }
 
 impl VerificationModalRef {
-    pub fn initialize_with_data(
-        &self,
-        request: VerificationRequest,
-        response_sender: UnboundedSender<VerificationUserResponse>,
-    ) {
+    pub fn initialize_with_data(&self, state: VerificationRequestActionState) {
         if let Some(mut inner) = self.borrow_mut() {
-            let prompt_text = if request.is_self_verification() {
-                format!("Do you wish to verify your own device?")
-            } else {
-                if let Some(room_id) = request.room_id() {
-                    format!("Do you wish to verify user {} in room {}?",
-                        request.other_user_id(),
-                        room_id,
-                    )
-                } else {
-                    format!("Do you wish to verify user {}?",
-                        request.other_user_id()
-                    )
-                }
-            };
-            self.label(id!(prompt)).set_text(&prompt_text);
-
-            let accept_button = self.button(id!(accept_button));
-            let cancel_button = self.button(id!(cancel_button));
-            accept_button.set_text("Yes");
-            accept_button.set_enabled(true);
-            accept_button.set_visible(true);
-            cancel_button.set_text("Cancel");
-            cancel_button.set_enabled(true);
-            cancel_button.set_visible(true);
-
-            inner.state = Some(VerificationModalState { request, response_sender });
-            inner.is_final = false;
+            inner.initialize_with_data(state);
         }
     }
 }

@@ -13,10 +13,11 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
-    import crate::shared::clickable_view::ClickableView
-    import crate::home::home_screen::HomeScreen
-    import crate::home::room_screen::RoomScreen
-    import crate::profile::my_profile_screen::MyProfileScreen
+    import crate::shared::clickable_view::ClickableView;
+    import crate::home::home_screen::HomeScreen;
+    import crate::home::room_screen::RoomScreen;
+    import crate::profile::my_profile_screen::MyProfileScreen;
+    import crate::verification_modal::VerificationModal;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -188,13 +189,12 @@ impl MatchEvent for App {
                 RoomListAction::None => { }
             }
 
-            // TODO FIXME: need to add a cast_ref() method to WidgetAction
-            //             that doesn't require the action to be clonable.
-            match action.as_widget_action().cast() {
-                VerificationAction::RequestReceived { request, response_sender } => {
-                    log!("Received a new verification request: {:?}", request);
+            // `VerificationAction`s come from a background thread, so they are NOT widget actions.
+            // Therefore, we cannot use `as_widget_action().cast()` to match them.
+            match action.downcast_ref() {
+                Some(VerificationAction::RequestReceived(state)) => {
                     self.ui.verification_modal(id!(verification_modal_inner))
-                        .initialize_with_data(request, response_sender);
+                        .initialize_with_data(state.clone());
                     self.ui.modal(id!(verification_modal)).open(cx);
                 }
                 // other verification actions are handled by the verification modal itself.

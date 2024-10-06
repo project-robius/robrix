@@ -1219,7 +1219,9 @@ async fn timeline_subscriber_handler(
         new_items: timeline_items.clone(),
         changed_indices: usize::MIN..usize::MAX,
         clear_cache: true,
-    }).expect("Error: timeline update sender couldn't send update with initial items!");
+    }).unwrap_or_else(
+        |_e| panic!("Error: timeline update sender couldn't send update to room {room_id} with initial items!")
+    );
 
     let mut latest_event = timeline.latest_event().await;
 
