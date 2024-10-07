@@ -335,7 +335,7 @@ impl Widget for RoomsList {
                     item
                 }
                 // Draw the status label as the bottom entry.
-                else if item_id == status_label_id {
+                else if item_id == status_label_id && self.room_type == "room" {
                     let item = list.item(cx, item_id, live_id!(status_label));
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
