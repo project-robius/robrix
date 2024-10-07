@@ -149,7 +149,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         log!("Logged in successfully? {:?}", client.logged_in());
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Logged in as {}. Loading rooms...", &cli.username),
-        },false);
+        }, false);
         if let Err(e) = persistent_state::save_session(
             &client,
             client_session,
@@ -160,7 +160,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     } else {
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
-        },false);
+        }, false);
         bail!("Failed to login as {}: {login_result:?}", &cli.username)
     }
 }
@@ -715,7 +715,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             error!("Error: main async loop task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
-                            },false);
+                            }, false);
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -732,7 +732,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             error!("Error: async worker task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
-                            },false);
+                            }, false);
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1112,9 +1112,9 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         room_name,
         has_been_paginated: false,
         is_selected: false,
-    }),is_direct);
+    }), is_direct);
 
-    spawn_fetch_room_avatar(room.inner_room().clone(),is_direct);
+    spawn_fetch_room_avatar(room.inner_room().clone(), is_direct);
 
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
