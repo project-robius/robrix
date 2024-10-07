@@ -180,11 +180,14 @@ pub struct RoomsList {
     #[rust] max_known_rooms: Option<u32>,
     #[live] room_type: String
 }
-
+pub struct TotalLoadedRoomsCount(u32);
 impl RoomsList {
-    fn update_status_rooms_count(&mut self) {
+    fn update_status_rooms_count(&mut self, cx: &mut Cx) {
+        let total_loaded_rooms_count = if cx.has_global::<TotalLoadedRoomsCount>() {
+            cx.get_global::<TotalLoadedRoomsCount>().0
+        } else { 0 };
         self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
+            format!("Loaded {} of {} total rooms.", total_loaded_rooms_count, max_rooms)
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
@@ -206,6 +209,11 @@ impl Widget for RoomsList {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        if cx.has_global::<TotalLoadedRoomsCount>() {
+                            cx.get_global::<TotalLoadedRoomsCount>().0 += 1;
+                        } else {
+                            cx.set_global(TotalLoadedRoomsCount(1));
+                        }
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
@@ -244,7 +252,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
-                        self.update_status_rooms_count();
+                        self.update_status_rooms_count(cx);
                     }
                     RoomsListUpdate::Status { status } => {
                         self.status = status;
@@ -327,7 +335,7 @@ impl Widget for RoomsList {
                     item
                 }
                 // Draw the status label as the bottom entry.
-                else if item_id == status_label_id {
+                else if item_id == status_label_id && self.room_type == "room" {
                     let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
                     item.as_view().apply_over(cx, live!{
                         height: Fit,

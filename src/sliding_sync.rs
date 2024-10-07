@@ -1203,9 +1203,11 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
             match state {
                 RoomListLoadingState::NotLoaded => {
                     enqueue_rooms_list_update(RoomsListUpdate::NotLoaded, false);
+                    enqueue_rooms_list_update(RoomsListUpdate::NotLoaded, true);
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
                     enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms }, false);
+                    enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms }, true);
                 }
             }
         }
