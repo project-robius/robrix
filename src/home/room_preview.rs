@@ -50,16 +50,16 @@ live_design! {
         latest_message = <HtmlOrPlaintext> {
             padding: {top: 3.0}
             html_view = { html = {
-                font_size: 9.3, line_spacing: 1.,
-                draw_normal:      { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_italic:      { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
+                font_size: 9.3,
+                draw_normal:      { text_style: { font_size: 9.3 } },
+                draw_italic:      { text_style: { font_size: 9.3 } },
+                draw_bold:        { text_style: { font_size: 9.3 } },
+                draw_bold_italic: { text_style: { font_size: 9.3 } },
+                draw_fixed:       { text_style: { font_size: 9.3 } },
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
-                    text_style: { font_size: 9.5, line_spacing: 1. },
+                    text_style: { font_size: 9.5 },
                 }
                 text: "[Loading latest message]"
             } }

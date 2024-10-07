@@ -315,7 +315,7 @@ impl Widget for RoomsList {
 
                 // Draw the room preview for each room.
                 let item = if let Some(room_info) = self.all_rooms.get_mut(item_id) {
-                    let item = list.item(cx, item_id, live_id!(room_preview)).unwrap();
+                    let item = list.item(cx, item_id, live_id!(room_preview));
                     self.rooms_list_map.insert(item.widget_uid().0, item_id);
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
 
@@ -335,8 +335,8 @@ impl Widget for RoomsList {
                     item
                 }
                 // Draw the status label as the bottom entry.
-                else if item_id == status_label_id && self.room_type == "room" {
-                    let item = list.item(cx, item_id, live_id!(status_label)).unwrap();
+                else if item_id == status_label_id {
+                    let item = list.item(cx, item_id, live_id!(status_label));
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
                         label = { text: (&self.status) }
@@ -345,7 +345,7 @@ impl Widget for RoomsList {
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
                 else {
-                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
+                    list.item(cx, item_id, live_id!(bottom_filler))
                 };
 
                 item.draw_all(cx, &mut scope);
