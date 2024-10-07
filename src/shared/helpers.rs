@@ -17,9 +17,10 @@ live_design! {
 
     LineH = <RoundedView> {
         width: Fill,
-        height: 2,
+        height: 2.0,
         margin: 0.0,
         padding: 0.0, spacing: 0.0
+        show_bg: true
         draw_bg: {color: (COLOR_DIVIDER)}
     }
 

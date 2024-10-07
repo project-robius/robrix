@@ -281,7 +281,7 @@ pub fn text_preview_of_other_state(
                 HistoryVisibility::Shared => "joined users, for all of time.",
                 HistoryVisibility::WorldReadable | _ => "anyone for all time.",
             };
-            Some(format!("set this room's history to be visible by {}.", visibility))
+            Some(format!("set this room's history to be visible by {}", visibility))
         }
         AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
             Some(match content.join_rule {

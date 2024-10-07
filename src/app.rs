@@ -1,4 +1,11 @@
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedRoomId;
+
+use crate::{
+    home::rooms_list::RoomListAction,
+    verification::VerificationAction,
+    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -6,10 +13,11 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
-    import crate::shared::clickable_view::ClickableView
-    import crate::home::home_screen::HomeScreen
-    import crate::home::room_screen::RoomScreen
-    import crate::profile::my_profile_screen::MyProfileScreen
+    import crate::shared::clickable_view::ClickableView;
+    import crate::home::home_screen::HomeScreen;
+    import crate::home::room_screen::RoomScreen;
+    import crate::profile::my_profile_screen::MyProfileScreen;
+    import crate::verification_modal::VerificationModal;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -100,7 +108,19 @@ live_design! {
             pass: {clear_color: #2A}
 
             body = {
-                <HomeScreen> {}
+                // A wrapper view for showing top-level app modals/dialogs/popups
+                <View> {
+                    width: Fill, height: Fill,
+                    flow: Overlay,
+
+                    home_screen = <HomeScreen> {}
+
+                    verification_modal = <Modal> {
+                        content: {
+                            verification_modal_inner = <VerificationModal> {}
+                        }
+                    }
+                }
             } // end of body
         }
     }
@@ -112,6 +132,9 @@ app_main!(App);
 pub struct App {
     #[live]
     ui: WidgetRef,
+
+    #[rust]
+    app_state: AppState,
 }
 
 impl LiveRegister for App {
@@ -122,6 +145,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
     }
@@ -131,9 +155,58 @@ impl LiveHook for App { }
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, _cx: &mut Cx) {
+        // Initialize the project directory here from the main UI thread
+        // such that background threads/tasks will be able to can access it.
+        let _app_data_dir = crate::app_data_dir();
+        log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
+
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        for action in actions {
+            match action.as_widget_action().cast() {
+                // A room has been selected, update the app state and navigate to the main content view.
+                RoomListAction::Selected {
+                    room_id,
+                    room_index: _,
+                    room_name,
+                } => {
+                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
+                        id: room_id.clone(),
+                        name: room_name.clone(),
+                    });
+
+                    let widget_uid = self.ui.widget_uid();
+                    cx.widget_action(
+                        widget_uid,
+                        &Scope::default().path,
+                        StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                    );
+                    self.ui.redraw(cx);
+                }
+                RoomListAction::None => { }
+            }
+
+            // `VerificationAction`s come from a background thread, so they are NOT widget actions.
+            // Therefore, we cannot use `as_widget_action().cast()` to match them.
+            match action.downcast_ref() {
+                Some(VerificationAction::RequestReceived(state)) => {
+                    self.ui.verification_modal(id!(verification_modal_inner))
+                        .initialize_with_data(state.clone());
+                    self.ui.modal(id!(verification_modal)).open(cx);
+                }
+                // other verification actions are handled by the verification modal itself.
+                _ => { }
+            }
+
+            if let VerificationModalAction::Close = action.as_widget_action().cast() {
+                self.ui.modal(id!(verification_modal)).close(cx);
+            }
+        }
+    }
+
     /*
     fn handle_shutdown(&mut self, _cx: &mut Cx) {
         log!("App::handle_shutdown()");
@@ -163,6 +236,24 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
-        self.ui.handle_event(cx, event, &mut Scope::empty());
+        let scope = &mut Scope::with_data(&mut self.app_state);
+        self.ui.handle_event(cx, event, scope);
     }
 }
+
+#[derive(Default, Debug)]
+pub struct AppState {
+    pub rooms_panel: RoomsPanelState,
+}
+
+#[derive(Default, Debug)]
+pub struct RoomsPanelState {
+    pub selected_room: Option<SelectedRoom>,
+}
+
+#[derive(Debug)]
+pub struct SelectedRoom {
+    pub id: OwnedRoomId,
+    pub name: Option<String>,
+}
+

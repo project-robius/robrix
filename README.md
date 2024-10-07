@@ -3,13 +3,12 @@
 [![Robrix Matrix Chat](https://img.shields.io/matrix/robius-robrix%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Robrix%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius-robrix:matrix.org)
 [![Project Robius Matrix Chat](https://img.shields.io/matrix/robius-general%3Amatrix.org?server_fqdn=matrix.org&style=flat&logo=matrix&label=Project%20Robius%20Matrix%20Chat&color=B7410E)](https://matrix.to/#/#robius:matrix.org)
 
-Robrix is a Matrix chat client written in Rust to demonstrate the functionality of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust.
+Robrix is a Matrix chat client written in Rust to demonstrate the functionality of [Project Robius](https://github.com/project-robius), a framework for multi-platform application development in Rust. Robrix is written using the [Makepad UI toolkit](https://github.com/makepad/makepad/).
 
 ▶️  [Click here to see the Robrix project tracker!](https://github.com/orgs/project-robius/projects/4/)
 
+> [!NOTE]
 > ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
->
-> Note that only the first "Rooms" tab of the UI is in use.
 
 Check out our most recent talks and presentations for more info:
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
@@ -34,14 +33,18 @@ The following table shows which host systems can currently be used to build Robr
 
 ## Building and Running
 
-First, [install Rust](https://www.rust-lang.org/tools/install).
+1. First, [install Rust](https://www.rust-lang.org/tools/install).
 
-Then, install the required native libraries. For example, on Linux:
-```sh
-sudo apt-get install libsqlite3-dev libssl-dev
-```
+2. If you're building on **Linux** or **WSL** on Windows, install the required dependencies. Otherwise, proceed to step 3.
+   * `openssl`, `clang`/`libclang`, `binfmt`, `Xcursor`/`X11`, `asound`/`pulse`.
+   
+   On a Debian-like Linux distro (e.g., Ubuntu), run the following:
+   ```sh
+   sudo apt-get update
+   sudo apt-get install libssl-dev libsqlite3-dev pkg-config llvm clang libclang-dev binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
+   ```
 
-Then, on a standard desktop platform (macOS, Linux, Windows), simply run:
+3. Then, build and run Robrix (you can optionally add `--release` after `run`):
 ```sh
 cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
 ```
@@ -50,6 +53,7 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
     * Note the usage of **single quotes** (not double quotes), which will prevent your shell from treating certain symbols as globs/regex patterns.
     * If you created your Matrix account using a third-party Single Sign On (SSO) like a Google account, you can set a standard password by using [Element's password reset form](https://app.element.io/#/forgot_password).
 * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
+   * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
 
 
 ### Building Robrix for Android
@@ -104,7 +108,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
-- [ ] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
+- [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
 - [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
@@ -120,7 +124,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
-- [ ] Persistence of app state to disk: https://github.com/project-robius/robrix/issues/112
+- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
+- [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
 
 ## Known problems/issues

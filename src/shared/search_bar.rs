@@ -8,7 +8,7 @@ live_design! {
     import crate::shared::styles::*;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
-    COLOR_TEXT_INPUT_IDLE = #d8d8d8
+
 
     SearchBar = <RoundedView> {
         width: Fill,
@@ -41,17 +41,17 @@ live_design! {
 
         input = <TextInput> {
             width: Fill,
-            height: Fit,
+            height: 30.,
 
             empty_message: "Search"
 
-            draw_label: {
+            draw_text: {
                 text_style: { font_size: 10 },
                 fn get_color(self) -> vec4 {
                     return (COLOR_TEXT_INPUT_IDLE);
                 }
             }
-    
+
             // TODO find a way to override colors
             draw_cursor: {
                 instance focus: 0.0
@@ -69,7 +69,7 @@ live_design! {
                     return sdf.result
                 }
             }
-    
+
             // TODO find a way to override colors
             draw_selection: {
                 instance hover: 0.0
@@ -88,22 +88,22 @@ live_design! {
                     return sdf.result
                 }
             }
-    
+
             draw_bg: {
                 color: (COLOR_PRIMARY)
                 instance radius: 0.0
                 instance border_width: 0.0
                 instance border_color: #3
                 instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-    
+
                 fn get_color(self) -> vec4 {
                     return self.color
                 }
-    
+
                 fn get_border_color(self) -> vec4 {
                     return self.border_color
                 }
-    
+
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                     sdf.box(
