@@ -9,8 +9,7 @@ use matrix_sdk::{
     ruma::{
         events::room::{
             message::{
-                ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent,
-                TextMessageEventContent,
+                FormattedBody, ImageMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
         },
@@ -2087,7 +2086,8 @@ fn populate_message_view(
     };
 
     let (item, used_cached_item) = match message.msgtype() {
-        MessageType::Text(text) => {
+        MessageType::Text(TextMessageEventContent { body, formatted, .. })
+        | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -2099,7 +2099,8 @@ fn populate_message_view(
             } else {
                 populate_text_message_content(
                     &item.html_or_plaintext(id!(content.message)),
-                    text,
+                    &body,
+                    formatted.as_ref(),
                 );
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -2204,19 +2205,18 @@ fn populate_message_view(
     (item, new_drawn_status)
 }
 
-/// Draws the Html or plaintext body of the given message `text` into the `message_content_widget`.
+/// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
 fn populate_text_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
-    text_content: &TextMessageEventContent,
+    body: &str,
+    formatted_body: Option<&FormattedBody>,
 ) {
-    if let Some(formatted_body) = text_content
-        .formatted
-        .as_ref()
+    if let Some(formatted_body) = formatted_body
         .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
     {
         message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
     } else {
-        match utils::linkify(&text_content.body) {
+        match utils::linkify(body) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
         }
@@ -2389,8 +2389,12 @@ fn populate_preview_of_timeline_item(
     sender_username: &str,
 ) {
     if let TimelineItemContent::Message(m) = timeline_item_content {
-        if let MessageType::Text(text) = m.msgtype() {
-            return populate_text_message_content(widget_out, text);
+        match m.msgtype() {
+            MessageType::Text(TextMessageEventContent { body, formatted, .. })
+            | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+                return populate_text_message_content(widget_out, &body, formatted.as_ref());
+            }
+            _ => { } // fall through to the general case for all timeline items below.
         }
     }
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
