@@ -65,13 +65,13 @@ live_design! {
 
     TEXT_SUB = {
         font_size: (10),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     TEXT_P = {
         font_size: (12),
         height_factor: 1.65,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     COLOR_BG = #xfff8ee
@@ -262,7 +262,7 @@ live_design! {
         draw_bg: {
             border_width: 0.0,
             border_color: #000,
-            radius: 2
+            radius: 2.0
         }
 
         reply_button = <IconButton> {
@@ -560,20 +560,18 @@ live_design! {
     DayDivider = <View> {
         width: Fill,
         height: Fit,
-        margin: 0.0,
+        margin: {top: 7.0, bottom: 7.0}
         flow: Right,
-        padding: 0.0,
+        padding: {left: 7.0, right: 7.0},
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
         left_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
 
         date = <Label> {
             padding: {left: 7.0, right: 7.0}
-            margin: {bottom: 10.0, top: 10.0}
             draw_text: {
                 text_style: <TEXT_SUB> {},
                 color: (COLOR_DIVIDER_DARK)
@@ -582,7 +580,6 @@ live_design! {
         }
 
         right_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
     }
@@ -1313,7 +1310,7 @@ impl Widget for RoomScreen {
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
-                        list.item(cx, item_id, live_id!(Empty)).unwrap();
+                        list.item(cx, item_id, live_id!(Empty));
                         continue;
                     };
 
@@ -1378,13 +1375,13 @@ impl Widget for RoomScreen {
                                 item_drawn_status,
                             ),
                             unhandled => {
-                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                let item = list.item(cx, item_id, live_id!(SmallStateEvent));
                                 item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
+                            let item = list.item(cx, item_id, live_id!(DayDivider));
                             let text = unix_time_millis_to_datetime(&millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
@@ -1393,7 +1390,7 @@ impl Widget for RoomScreen {
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            let item = list.item(cx, item_id, live_id!(ReadMarker)).unwrap();
+                            let item = list.item(cx, item_id, live_id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                     };
@@ -2096,7 +2093,7 @@ fn populate_message_view(
             } else {
                 live_id!(Message)
             };
-            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2114,7 +2111,7 @@ fn populate_message_view(
             } else {
                 live_id!(ImageMessage)
             };
-            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2129,7 +2126,7 @@ fn populate_message_view(
             }
         }
         other => {
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message)).unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2513,7 +2510,7 @@ impl SmallStateEventContent for timeline::OtherState {
             new_drawn_status.content_drawn = true;
             item
         } else {
-            let item = list.item(cx, item_id, live_id!(Empty)).unwrap();
+            let item = list.item(cx, item_id, live_id!(Empty));
             new_drawn_status = ItemDrawnStatus::new();
             item
         };
@@ -2555,7 +2552,7 @@ impl SmallStateEventContent for RoomMembershipChange {
         let Some(preview) = text_preview_of_room_membership_change(self) else {
             // Don't actually display anything for nonexistent/unimportant membership changes.
             return (
-                list.item(cx, item_id, live_id!(Empty)).unwrap(),
+                list.item(cx, item_id, live_id!(Empty)),
                 ItemDrawnStatus::new(),
             );
         };
@@ -2582,9 +2579,7 @@ fn populate_small_state_event(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list
-        .item_with_existed(cx, item_id, live_id!(SmallStateEvent))
-        .unwrap();
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
 
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
