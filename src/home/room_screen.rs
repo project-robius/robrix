@@ -17,6 +17,9 @@ use matrix_sdk::{
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
     OwnedServerName,
+    sync::UnreadNotificationsCount,
+    Room,
+    Client,
 };
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo,
@@ -37,6 +40,8 @@ use crate::{
     sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
+
+use crate::persistent_state::restore_session;
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -662,36 +667,49 @@ live_design! {
             jump_to_bottom_button = <IconButton> {
                 width: 50, height: 50,
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-                // draw a circular background for the button
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} },
                 draw_bg: {
                     instance background_color: #edededee,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x)
+                        sdf.circle(c.x, c.x, c.x);
                         sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
                 }
             }
-        },
 
             // Badge overlay for unread messages
             unread_message_badge = <View> {
-            width: 20, height: 20,
-            align: {x: 1.0, y: -1.0}, // Position at the top-right of the button
-            margin: {top: -5.0, right: -5.0}, // Slightly overlap the button
-            draw_bg: {
-                instance background_color: #FF0000FF, // Red badge background
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x);
-                    sdf.fill_keep(self.background_color);
-                    return sdf.result;
+                width: 20, height: 20,
+                align: {x: 1.0, y: -1.0},
+                margin: {top: -5.0, right: -5.0},
+                visible: false,
+
+                draw_bg: {
+                    instance background_color: #FF0000FF,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result;
+                    }
                 }
-            },
+
+                // Text to display the unread message count
+                label = <Label> {
+                    width: Fill,
+                    height: Fill,
+                    text: "0",
+                    align: {x: 0.5, y: 0.5},
+                    draw_text: {
+                        instance color: #ffffff,
+                        text_style: {font_size: 12.0},
+                    }
+                }
+            }
         }
     }
 
@@ -956,9 +974,11 @@ struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+    /// The Matrix SDK client (optional until initialized).
+    #[rust] client: Option<Client>,
 }
 
-impl RoomScreen{
+impl RoomScreen {
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
         cx: &mut Cx,
@@ -1026,6 +1046,92 @@ impl RoomScreen{
             tl_state.prev_first_index = Some(first_index);
         }
     }
+
+    async fn ensure_client_initialized(&mut self) -> anyhow::Result<()> {
+        if self.client.is_none() {
+            match restore_session(None).await {
+                Ok((client, _sync_token)) => {
+                    self.client = Some(client);
+                    log!("Client restored successfully");
+                    Ok(())
+                }
+                Err(e) => {
+                    log!("Failed to restore client session: {:?}", e);
+                    Err(e)
+                }
+            }
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn update_unread_notifications(&mut self) {
+        // Ensure the client is initialized
+        if let Err(e) = self.ensure_client_initialized().await {
+            log!("Error initializing client: {:?}", e);
+            return;
+        }
+
+        if let Some(client) = &self.client {
+            if let Some(room_id) = &self.room_id {
+                if let Some(room) = client.get_room(room_id) {
+                    if let Ok(unread_notifications) = room.unread_notifications().await {
+                        let unread_count = unread_notifications.notification_count;
+
+                        if unread_count > 0 {
+                            self.view(id!(unread_message_badge))
+                                .set_text(&format!("{}", unread_count))
+                                .set_visible(true);
+                        
+                            let portal_list = self.portal_list(id!(timeline.list));
+                            if !portal_list.is_at_end() {
+                                self.view(id!(jump_to_bottom_button)).set_visible(true);
+                            }
+                        } else {
+                            self.view(id!(unread_message_badge)).set_visible(false);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_jump_to_bottom_visibility(&mut self, cx: &mut Cx, actions: &ActionsBuf) {
+        let portal_list = self.portal_list(id!(timeline.list));
+        let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+
+        if portal_list.scrolled(actions) {
+            // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
+            if portal_list.is_at_end() {
+                jump_to_bottom_view.set_visible(false);
+                self.view(id!(unread_message_badge)).set_visible(false);
+            } else {
+                jump_to_bottom_view.set_visible(true);
+            }
+        }
+
+        const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
+        const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
+        if self.button(id!(jump_to_bottom_button)).clicked(actions) {
+            portal_list.smooth_scroll_to_end(
+                cx,
+                SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
+                SCROLL_TO_BOTTOM_SPEED,
+            );
+            jump_to_bottom_view.set_visible(false);
+            self.redraw(cx);
+            self.view(id!(unread_message_badge)).set_visible(false);
+        }
+    }
+
+    fn clone_for_async(&self) -> RoomScreen {
+        RoomScreen {
+            client: self.client.clone(),
+            room_id: self.room_id.clone(),
+            view: self.view.clone(),
+            ..self.clone()
+        }
+    }
 }
 
 impl Widget for RoomScreen {
@@ -1034,11 +1140,19 @@ impl Widget for RoomScreen {
         let widget_uid = self.widget_uid();
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
 
-        // Currently, a Signal event is only used to tell this widget
-        // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             self.process_timeline_updates(cx);
+            // Update unread notifications in the background
+            let mut room_screen = self.clone_for_async();
+            tokio::spawn(async move {
+                if let Err(e) = room_screen.update_unread_notifications().await {
+                    log!("Failed to update unread notifications: {:?}", e);
+                }
+            });
         }
+
+        self.handle_jump_to_bottom_visibility(cx, actions);
+        self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
 
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -1204,29 +1318,7 @@ impl Widget for RoomScreen {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
                         }
                     }
-                }
-                
-                if let Some(timeline_update) = action.downcast_ref::<TimelineUpdate>() {
-                    if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
-                        if let Some(mut tl_state) = timeline.tl_state.borrow_mut() {
-                            match timeline_update {
-                                TimelineUpdate::NewItems { items, ..} => {
-                                    let portal_list = self.portal_list(id!(timeline.list));
-                                    if !portal_list.is_at_end() {
-                                        tl_state.unread_messages = true;
-                                        self.view(id!(jump_to_bottom_button)).set_visible(true);
-                                        self.view(id!(unread_message_badge)).set_visible(true);
-                                    } else {
-                                        tl_state.unread_messages = false;
-                                        self.view(id!(jump_to_bottom_button)).set_visible(false);
-                                        self.view(id!(unread_message_badge)).set_visible(false);
-                                    }
-                                },
-                                _ => {},
-                            }
-                        }
-                    }
-                }
+                }  
             }
 
             // Handle sending any read receipts for the current logged-in user.
@@ -1263,40 +1355,6 @@ impl Widget for RoomScreen {
 
                     self.clear_replying_to();
                     msg_input_widget.set_text_and_redraw(cx, "");
-                }
-            }
-
-            // Handle the jump to bottom button: update its visibility, and handle clicks.
-            {
-                let mut portal_list = self.portal_list(id!(timeline.list));
-                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
-                if portal_list.scrolled(&actions) {
-                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
-                    if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
-                        if let Some(mut tl_state) = timeline.tl_state.borrow_mut() {
-                            tl_state.unread_messages = !portal_list.is_at_end();
-                        }
-                    }
-                    self.view(id!(unread_message_badge)).set_visible(!portal_list.is_at_end());
-                }
-
-                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
-                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                    portal_list.smooth_scroll_to_end(
-                        cx,
-                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
-                        SCROLL_TO_BOTTOM_SPEED,
-                    );
-                    jump_to_bottom_view.set_visible(false);
-                    if let Some(mut timeline) = self.timeline(id!(timeline)).borrow_mut() {
-                        if let Some(mut tl_state) = timeline.tl_state.borrow_mut() {
-                            tl_state.unread_messages = false;
-                        }
-                    }
-                    self.view(id!(unread_message_badge)).set_visible(false);
-                    self.redraw(cx);
                 }
             }
 
