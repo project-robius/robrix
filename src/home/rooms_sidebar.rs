@@ -1,4 +1,10 @@
 use makepad_widgets::*;
+use std::sync::RwLock;
+
+static ALL_ROOMS_COUNT: RwLock<u32> = RwLock::new(0);
+pub fn apply_all_rooms_count(count: u32) {
+    *ALL_ROOMS_COUNT.write().unwrap() = count
+}
 
 live_design! {
     import makepad_widgets::base::*;
@@ -10,6 +16,8 @@ live_design! {
     import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
+    import crate::home::rooms_list::PeopleList;
+
     import crate::shared::cached_widget::CachedWidget;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
@@ -106,50 +114,57 @@ live_design! {
                 }
             }
         }
-        <Label> {
+        all_rooms_count = <Label> {
+            text: "None"
+            draw_text: {
+                color: #x0
+                text_style: <TITLE_TEXT>{}
+            }
+        }
+        home = <Label> {
             text: "Home"
             draw_text: {
                 color: #x0
                 text_style: <TITLE_TEXT>{}
             }
         }
-        <View> {
-            flow: Down, spacing: 20
-            padding: {top: 20}
-            width: Fill, height: Fit
-            <CollapsableTitle> {
-                title = {
-                    text: "People"
-                    draw_text: {
-                        color: (COLOR_TEXT_IDLE)
-                    }
+
+        <CollapsableTitle> {
+            title = {
+                text: "Rooms"
+                draw_text: {
+                    color: #666666
                 }
             }
-            <CollapsableTitle> {
-                title = {
-                    text: "Channels"
-                    draw_text: {
-                        color: (COLOR_TEXT_IDLE)
-                    }
-                }
+            collapse_icon = {
+                draw_icon: { rotation_angle: 0. }
             }
-            <CollapsableTitle> {
-                title = {
-                    text: "Rooms"
-                    draw_text: {
-                        color: #666666
-                    }
-                }
-                collapse_icon = {
-                    draw_icon: { rotation_angle: 0. }
-                }
-                add_icon = {
-                    visible: true
-                }
+            add_icon = {
+                visible: true
             }
         }
+
         <CachedWidget> {
             rooms_list = <RoomsList> {}
+        }
+
+        <CollapsableTitle> {
+            title = {
+                text: "People"
+                draw_text: {
+                    color: #666666
+                }
+            }
+            collapse_icon = {
+                draw_icon: { rotation_angle: 0. }
+            }
+            add_icon = {
+                visible: true
+            }
+        }
+
+        <CachedWidget> {
+            people_list = <PeopleList> {}
         }
     }
 
@@ -163,7 +178,7 @@ live_design! {
             padding: {top: 17., left: 17., right: 17.}
             flow: Down, spacing: 7
             width: Fill, height: Fill
-        }        
+        }
     }
 }
 
@@ -175,10 +190,24 @@ pub struct RoomsView {
 
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for RoomsView {
+    fn match_event(&mut self, cx: &mut Cx, event: &Event) {
+        match event {
+            Event::Background => {}
+            Event::BackPressed => {}
+            _ => self.view.label(id!(all_rooms_count)).set_text_and_redraw(
+                cx,
+                &format!("{} total valid rooms", *ALL_ROOMS_COUNT.read().unwrap()),
+            ),
+        }
     }
 }
