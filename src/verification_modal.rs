@@ -15,11 +15,11 @@ live_design! {
         width: Fit
         height: Fit
 
-        wrapper = <RoundedView> {
+        <RoundedView> {
             flow: Down
             width: 600
             height: Fit
-            padding: {top: 44, right: 30 bottom: 30 left: 50}
+            padding: {top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10
 
             show_bg: true
@@ -28,43 +28,19 @@ live_design! {
                 radius: 3.0
             }
 
-            <View> {
+            title = <View> {
                 width: Fill,
                 height: Fit,
                 flow: Right
+                padding: {top: 0, bottom: 40}
+                align: {x: 0.5, y: 0.0}
 
-                padding: {top: 8, bottom: 20}
-
-                title = <View> {
-                    width: Fit,
-                    height: Fit,
-
-                    <Label> {
-                        text: "Verification Request"
-                        draw_text: {
-                            text_style: <TITLE_TEXT>{font_size: 13},
-                            color: #000
-                        }
+                <Label> {
+                    text: "Verification Request"
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{font_size: 13},
+                        color: #000
                     }
-                }
-
-                filler_x = <View> {width: Fill, height: Fit}
-
-                // The "X" close button on the top right corner.
-                close_button = <RobrixIconButton> {
-                    width: Fit,
-                    height: Fit,
-                    align: {x: 1.0, y: 0.0},
-                    margin: 7,
-                    padding: 15,
-
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
-                    }
-                    icon_walk: {width: 14, height: 14}
                 }
             }
 
@@ -78,7 +54,7 @@ live_design! {
                     width: Fill
                     draw_text: {
                         text_style: <REGULAR_TEXT>{
-                            font_size: 10,
+                            font_size: 11.5,
                             height_factor: 1.3
                         },
                         color: #000
@@ -86,13 +62,14 @@ live_design! {
                     }
                 }
 
-                actions = <View> {
+                <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {x: 1.0, y: 0.5}
                     spacing: 20
 
                     cancel_button = <RobrixIconButton> {
+                        padding: {left: 15, right: 15}
                         draw_icon: {
                             svg_file: (ICON_BLOCK_USER)
                             color: (COLOR_DANGER_RED),
@@ -110,6 +87,7 @@ live_design! {
                     }
 
                     accept_button = <RobrixIconButton> {
+                        padding: {left: 15, right: 15}
                         draw_icon: {
                             svg_file: (ICON_CHECKMARK)
                             color: (COLOR_ACCEPT_GREEN),
@@ -164,25 +142,27 @@ impl WidgetMatchEvent for VerificationModal {
         let accept_button = self.button(id!(accept_button));
         let cancel_button = self.button(id!(cancel_button));
 
-        if cancel_button.clicked(actions)
-            || self.button(id!(close_button)).clicked(actions)
-        {
+        let cancel_button_clicked = cancel_button.clicked(actions);
+        let modal_dismissed = actions
+            .iter()
+            .find(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
+            .is_some();
+
+        if cancel_button_clicked || modal_dismissed {
             if let Some(state) = self.state.as_ref() {
                 let _ = state.response_sender.send(VerificationUserResponse::Cancel);
             }
-            cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
             self.reset_state();
-        }
 
-        if actions.iter().find(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed))).is_some() {
-            // The modal was dismissed by clicking outside of it, so we do NOT need
-            // to emit a `VerificationModalAction::Close` action, as that would cause
+            // If the modal was dismissed by clicking outside of it, we MUST NOT emit
+            // a `VerificationModalAction::Close` action, as that would cause
             // an infinite action feedback loop.
-            self.reset_state();
+            if !modal_dismissed {
+                cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
+            }
         }
 
-
-        if self.button(id!(accept_button)).clicked(actions) {
+        if accept_button.clicked(actions) {
             if self.is_final {
                 cx.widget_action(widget_uid, &scope.path, VerificationModalAction::Close);
                 self.reset_state();
@@ -273,13 +253,22 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::KeysExchanged { emojis, decimals } => {
-                        self.label(id!(prompt)).set_text(&format!(
-                            "Keys have been exchanged. Please verify the following:\n\n\
-                            - Emojis: {:?}\n\
-                            - Decimals: {:?}\n\n\
-                            Do these keys match?",
-                            emojis, decimals
-                        ));
+                        let text = if let Some(emoji_list) = emojis {
+                            format!(
+                                "Keys have been exchanged. Please verify the following emoji:\
+                                \n   {}\n\n\
+                                Do these emoji keys match?",
+                                emoji_list.emojis.iter().map(|em| em.description).collect::<Vec<_>>().join("\n   ")
+                            )
+                        } else {
+                            format!(
+                                "Keys have been exchanged. Please verify the following numbers:\n\
+                                \n   {}\n   {}\n   {}\n\n\
+                                Do these number keys match?",
+                                decimals.0, decimals.1, decimals.2,
+                            )
+                        };
+                        self.label(id!(prompt)).set_text(&text);;
                         accept_button.set_enabled(true);
                         accept_button.set_text("Yes");
                         cancel_button.set_text("No");
@@ -289,7 +278,7 @@ impl WidgetMatchEvent for VerificationModal {
 
                     VerificationAction::SasConfirmed => {
                         self.label(id!(prompt)).set_text(
-                            "You successfully confirmed the Short Auth Strings.\n\n\
+                            "You successfully confirmed the Short Auth String keys.\n\n\
                             Waiting for the other device to confirm..."
                         );
                         accept_button.set_enabled(false);
@@ -301,7 +290,7 @@ impl WidgetMatchEvent for VerificationModal {
 
                     VerificationAction::SasConfirmationError(error) => {
                         self.label(id!(prompt)).set_text(
-                            &format!("Error confirming keys: {}\n\nPlease try the verification process again.", error)
+                            &format!("Error confirming keys: {}\n\nPlease retry the verification process.", error)
                         );
                         accept_button.set_text("Ok");
                         accept_button.set_enabled(true);

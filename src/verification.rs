@@ -170,8 +170,10 @@ async fn sas_verification_handler(
             }
             SasState::Cancelled(cancel_info) => {
                 log!("SAS verification has been cancelled, reason: {}", cancel_info.reason());
-                // No need to send a specific action here, the VerificationRequestState stream loop 
-                // will handle the Cancelled state and send a RequestCancelled action.
+                // We go ahead and send the RequestCancelled action here,
+                // because it is not guaranteed that the VerificationRequestState stream loop 
+                // will receive an update an enter the `Cancelled` state.
+                Cx::post_action(VerificationAction::RequestCancelled(cancel_info));
                 break;
             }
         }
