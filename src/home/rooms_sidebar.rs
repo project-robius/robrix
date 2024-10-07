@@ -125,6 +125,11 @@ live_design! {
                     }
                 }
             }
+            
+            <RoomsList> {
+                room_type: "people"
+            }
+            
             <CollapsableTitle> {
                 title = {
                     text: "Channels"
@@ -149,7 +154,9 @@ live_design! {
             }
         }
         <CachedWidget> {
-            rooms_list = <RoomsList> {}
+            rooms_list = <RoomsList> {
+                room_type: "room"
+            }
         }
     }
 

@@ -103,11 +103,16 @@ pub enum RoomsListUpdate {
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
+static PENDING_IS_DIRECT_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
 
 /// Enqueue a new room update for the list of all rooms
 /// and signals the UI that a new update is available to be handled.
-pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
-    PENDING_ROOM_UPDATES.push(update);
+pub fn enqueue_rooms_list_update(update: RoomsListUpdate, is_direct: bool) {
+    if is_direct {
+        PENDING_IS_DIRECT_ROOM_UPDATES.push(update);
+    } else {
+        PENDING_ROOM_UPDATES.push(update);
+    }
     SignalToUI::set_ui_signal();
 }
 
@@ -173,6 +178,7 @@ pub struct RoomsList {
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
+    #[live] room_type: String
 }
 
 impl RoomsList {
@@ -189,8 +195,14 @@ impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it.
         {
+            
+            let queue = if self.room_type == "people"{
+                &PENDING_IS_DIRECT_ROOM_UPDATES
+            } else {
+                &PENDING_ROOM_UPDATES
+            };
             let mut num_updates: usize = 0;
-            while let Some(update) = PENDING_ROOM_UPDATES.pop() {
+            while let Some(update) = queue.pop() {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {

@@ -149,7 +149,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         log!("Logged in successfully? {:?}", client.logged_in());
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Logged in as {}. Loading rooms...", &cli.username),
-        });
+        },false);
         if let Err(e) = persistent_state::save_session(
             &client,
             client_session,
@@ -160,7 +160,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     } else {
         enqueue_rooms_list_update(RoomsListUpdate::Status {
             status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
-        });
+        },false);
         bail!("Failed to login as {}: {login_result:?}", &cli.username)
     }
 }
@@ -715,7 +715,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             error!("Error: main async loop task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
-                            });
+                            },false);
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -732,7 +732,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             error!("Error: async worker task ended:\n\t{e:?}");
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
-                            });
+                            },false);
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -882,12 +882,12 @@ async fn async_main_loop() -> Result<()> {
             status: String::from("Error: missing username and password in 'login.toml' file. \
                 Please provide a valid username and password in 'login.toml' and rebuild the app."
             ),
-        });
+        }, false);
         loop { } // nothing else we can do right now
     };
     enqueue_rooms_list_update(RoomsListUpdate::Status {
         status: format!("Logging in as {}...", &cli.username)
-    });
+    }, false);
 
     let specified_username: Option<OwnedUserId> = cli.username.to_string().try_into().ok()
         .or_else(|| {
@@ -950,7 +950,9 @@ async fn async_main_loop() -> Result<()> {
                     // TODO: we probably need to remove each room individually to kill off
                     //       all of the async tasks associated with them (i.e., the timeline subscriber).
                     //       Or, better yet, implement the drop handler for RoomInfo to do so.
-                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
+                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms , false);
+                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms , true);
+
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
@@ -965,13 +967,15 @@ async fn async_main_loop() -> Result<()> {
                 VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
                     if let Some(room) = all_known_rooms.pop_front() {
-                        remove_room(room);
+                        let is_direct = room.is_direct().await.unwrap_or(false);
+                        remove_room(room, is_direct);
                     }
                 }
                 VectorDiff::PopBack => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopBack"); }
                     if let Some(room) = all_known_rooms.pop_back() {
-                        remove_room(room);
+                        let is_direct = room.is_direct().await.unwrap_or(false);
+                        remove_room(room, is_direct);
                     }
                 }
                 VectorDiff::Insert { index, value: new_room } => {
@@ -988,7 +992,8 @@ async fn async_main_loop() -> Result<()> {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {index}"); }
                     if index < all_known_rooms.len() {
                         let room = all_known_rooms.remove(index);
-                        remove_room(room);
+                        let is_direct = room.is_direct().await.unwrap_or(false);
+                        remove_room(room, is_direct);
                     } else {
                         error!("BUG: room_list: diff Remove index {index} out of bounds, len {}", all_known_rooms.len());
                     }
@@ -997,7 +1002,8 @@ async fn async_main_loop() -> Result<()> {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Truncate to {length}"); }
                     while all_known_rooms.len() > length {
                         if let Some(room) = all_known_rooms.pop_back() {
-                            remove_room(room);
+                            let is_direct = room.is_direct().await.unwrap_or(false);
+                            remove_room(room, is_direct);
                         }
                     }
                     all_known_rooms.truncate(length); // sanity check
@@ -1010,7 +1016,9 @@ async fn async_main_loop() -> Result<()> {
                     // TODO: we probably need to remove each room individually to kill off
                     //       all of the async tasks associated with them (i.e., the timeline subscriber).
                     //       Or, better yet, implement the drop handler for RoomInfo to do so.
-                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
+                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms, false);
+                    enqueue_rooms_list_update(RoomsListUpdate::ClearRooms, true);
+
                     for room in &all_known_rooms {
                         add_new_room(&room).await?;
                     }
@@ -1030,11 +1038,18 @@ async fn update_room(_room: &room_list_service::Room) -> matrix_sdk::Result<()> 
 
 
 /// Invoked when the room list service has received an update to remove an existing room.
-fn remove_room(room: room_list_service::Room) {
+fn remove_room(room: room_list_service::Room, is_direct: bool) {
     ALL_ROOM_INFO.lock().unwrap().remove(room.room_id());
-    enqueue_rooms_list_update(
-        RoomsListUpdate::RemoveRoom(room.room_id().to_owned())
-    );
+    if is_direct {
+        enqueue_rooms_list_update(
+            RoomsListUpdate::RemoveRoom(room.room_id().to_owned()), true
+        );
+    } else {
+        enqueue_rooms_list_update(
+            RoomsListUpdate::RemoveRoom(room.room_id().to_owned()), false
+        );
+    }
+   
     // TODO: we probably need to kill all of the async tasks associated
     //       with this room (i.e., the timeline subscriber. etc).
     //       Or, better yet, implement `RoomInfo::drop()` to do so.
@@ -1086,7 +1101,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
                 .format_with(sender_username),
         )
     });
-
+    let is_direct = room.is_direct().await.unwrap_or(false);
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
         room_id: room_id.clone(),
         latest,
@@ -1095,9 +1110,9 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         room_name,
         has_been_paginated: false,
         is_selected: false,
-    }));
+    }),is_direct);
 
-    spawn_fetch_room_avatar(room.inner_room().clone());
+    spawn_fetch_room_avatar(room.inner_room().clone(),is_direct);
 
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
@@ -1187,10 +1202,10 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
             log!("Received a room list loading state update: {state:?}");
             match state {
                 RoomListLoadingState::NotLoaded => {
-                    enqueue_rooms_list_update(RoomsListUpdate::NotLoaded);
+                    enqueue_rooms_list_update(RoomsListUpdate::NotLoaded, false);
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
-                    enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms });
+                    enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms }, false);
                 }
             }
         }
@@ -1216,7 +1231,7 @@ async fn timeline_subscriber_handler(
     }).expect("Error: timeline update sender couldn't send update with initial items!");
 
     let mut latest_event = timeline.latest_event().await;
-
+    let is_direct = room.is_direct().await.unwrap_or(false);
     while let Some(batch) = subscriber.next().await {
         let mut num_updates = 0;
         // For now we always requery the latest event, but this can be better optimized.
@@ -1350,10 +1365,10 @@ async fn timeline_subscriber_handler(
             // Update the latest event for this room.
             if let Some(new_latest) = new_latest_event {
                 if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                    let room_avatar_changed = update_latest_event(&room_id, &new_latest);
+                    let room_avatar_changed = update_latest_event(&room_id, is_direct, &new_latest);
                     latest_event = Some(new_latest);
                     if room_avatar_changed {
-                        spawn_fetch_room_avatar(room.clone());
+                        spawn_fetch_room_avatar(room.clone(), is_direct);
                     }
                 }
             }
@@ -1370,6 +1385,7 @@ async fn timeline_subscriber_handler(
 /// and should also be updated.
 fn update_latest_event(
     room_id: &RoomId,
+    is_direct: bool,
     event_tl_item: &EventTimelineItem,
 ) -> bool {
     let mut room_avatar_changed = false;
@@ -1401,7 +1417,7 @@ fn update_latest_event(
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: room_id.to_owned(),
                     new_room_name: content.name.clone(),
-                });
+                }, is_direct);
             }
             AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                 room_avatar_changed = true;
@@ -1414,13 +1430,13 @@ fn update_latest_event(
         room_id: room_id.to_owned(),
         timestamp: event_tl_item.timestamp(),
         latest_message_text,
-    });
+    }, is_direct);
     room_avatar_changed
 }
 
 
 /// Spawn a new async task to fetch the room's new avatar.
-fn spawn_fetch_room_avatar(room: Room) {
+fn spawn_fetch_room_avatar(room: Room, is_direct: bool) {
     let room_id = room.room_id().to_owned();
     let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
     Handle::current().spawn(async move {
@@ -1428,7 +1444,7 @@ fn spawn_fetch_room_avatar(room: Room) {
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
-        });
+        }, is_direct);
     });
 }
 
