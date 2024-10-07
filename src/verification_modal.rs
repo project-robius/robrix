@@ -268,7 +268,7 @@ impl WidgetMatchEvent for VerificationModal {
                                 decimals.0, decimals.1, decimals.2,
                             )
                         };
-                        self.label(id!(prompt)).set_text(&text);;
+                        self.label(id!(prompt)).set_text(&text);
                         accept_button.set_enabled(true);
                         accept_button.set_text("Yes");
                         cancel_button.set_text("No");
