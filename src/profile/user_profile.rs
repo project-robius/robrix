@@ -31,6 +31,7 @@ impl AvatarState {
     }
 
     /// Returns the avatar URI, if in the `Known` state and it exists.
+    #[allow(unused)]
     pub fn uri(&self) -> Option<&OwnedMxcUri> {
         if let AvatarState::Known(Some(uri)) = self {
             Some(uri)
@@ -99,6 +100,7 @@ live_design! {
     import crate::shared::helpers::*;
     import crate::shared::styles::*;
     import crate::shared::avatar::*;
+    import crate::shared::icon_button::*;
 
     // Copied from Moxin
     FadeView = <CachedView> {
@@ -112,98 +114,6 @@ live_design! {
         }
     }
 
-    // Copied from Moxin
-    //
-    // Customized button widget, based on the RoundedView shaders with some modifications
-    // which is a better fit with our application UI design
-    UserProfileActionButton = <Button> {
-        width: Fit,
-        height: Fit,
-        spacing: 10,
-        padding: {top: 10, bottom: 10, left: 8, right: 15}
-
-        draw_bg: {
-            instance color: (COLOR_PRIMARY)
-            instance color_hover: #A
-            instance border_width: 0.0
-            instance border_color: #D0D5DD
-            instance radius: 3.0
-
-            fn get_color(self) -> vec4 {
-                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.border_width,
-                    self.border_width,
-                    self.rect_size.x - (self.border_width * 2.0),
-                    self.rect_size.y - (self.border_width * 2.0),
-                    max(1.0, self.radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.border_color, self.border_width)
-                }
-                return sdf.result;
-            }
-        }
-
-        draw_icon: {
-            instance color: #000
-            instance color_hover: #000
-            uniform rotation_angle: 0.0,
-
-            fn get_color(self) -> vec4 {
-                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-            }
-
-            // Support rotation of the icon
-            fn clip_and_transform_vertex(self, rect_pos: vec2, rect_size: vec2) -> vec4 {
-                let clipped: vec2 = clamp(
-                    self.geom_pos * rect_size + rect_pos,
-                    self.draw_clip.xy,
-                    self.draw_clip.zw
-                )
-                self.pos = (clipped - rect_pos) / rect_size
-
-                // Calculate the texture coordinates based on the rotation angle
-                let angle_rad = self.rotation_angle * 3.14159265359 / 180.0;
-                let cos_angle = cos(angle_rad);
-                let sin_angle = sin(angle_rad);
-                let rot_matrix = mat2(
-                    cos_angle, -sin_angle,
-                    sin_angle, cos_angle
-                );
-                self.tex_coord1 = mix(
-                    self.icon_t1.xy,
-                    self.icon_t2.xy,
-                    (rot_matrix * (self.pos.xy - vec2(0.5))) + vec2(0.5)
-                );
-
-                return self.camera_projection * (self.camera_view * (self.view_transform * vec4(
-                    clipped.x,
-                    clipped.y,
-                    self.draw_depth + self.draw_zbias,
-                    1.
-                )))
-            }
-        }
-        icon_walk: {width: 16, height: 16}
-
-        draw_text: {
-            text_style: <REGULAR_TEXT>{font_size: 10},
-            color: #000
-            fn get_color(self) -> vec4 {
-                return self.color;
-            }
-        }
-    }
-
-
-    ICON_BLOCK_USER  = dep("crate://self/resources/icons/forbidden.svg")
-    ICON_CLOSE       = dep("crate://self/resources/icons/close.svg")
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
     ICON_COPY        = dep("crate://self/resources/icons/copy.svg")
     ICON_JUMP        = dep("crate://self/resources/icons/go_back.svg")
@@ -318,7 +228,7 @@ live_design! {
                 text: "Actions"
             }
 
-            direct_message_button = <UserProfileActionButton> {
+            direct_message_button = <RobrixIconButton> {
                 // TODO: support this button. Once this is implemented, uncomment the line in draw_walk()
                 enabled: false,
                 draw_icon: {
@@ -328,7 +238,7 @@ live_design! {
                 text: "Direct Message"
             }
 
-            copy_link_to_user_button = <UserProfileActionButton> {
+            copy_link_to_user_button = <RobrixIconButton> {
                 draw_icon: {
                     svg_file: (ICON_COPY)
                 }
@@ -336,7 +246,7 @@ live_design! {
                 text: "Copy Link to User"
             }
 
-            jump_to_read_receipt_button = <UserProfileActionButton> {
+            jump_to_read_receipt_button = <RobrixIconButton> {
                 enabled: false, // TODO: support this button
                 draw_icon: {
                     svg_file: (ICON_JUMP)
@@ -345,7 +255,7 @@ live_design! {
                 text: "Jump to Read Receipt"
             }
 
-            ignore_user_button = <UserProfileActionButton> {
+            ignore_user_button = <RobrixIconButton> {
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
                     color: (COLOR_DANGER_RED),
@@ -391,7 +301,7 @@ live_design! {
             user_profile_view = <UserProfileView> { }
 
             // The "X" close button on the top left
-            close_button = <UserProfileActionButton> {
+            close_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
                 align: {x: 0.0, y: 0.0},
