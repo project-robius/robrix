@@ -1259,7 +1259,7 @@ impl Widget for RoomScreen {
             // Handle the add location button being clicked.
             if self.button(id!(location_button)).clicked(&actions) {
                 log!("Add location button clicked; requesting current location...");
-                if let Err(_e) = init_location_subscriber() {
+                if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
                 }
                 self.show_location_preview(cx);

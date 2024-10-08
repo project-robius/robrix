@@ -59,9 +59,9 @@ impl robius_location::Handler for LocationHandler {
 
 fn location_request_loop(
     request_receiver: Receiver<LocationRequest>,
+    mut manager: ManagerWrapper,
 ) -> Result<(), robius_location::Error> {
-    let mut manager = Manager::new(LocationHandler)?;
-    manager.request_authorization(Access::Foreground, Accuracy::Precise)?;
+    
     manager.update_once()?;
 
     while let Ok(request) = request_receiver.recv() {
@@ -110,14 +110,35 @@ pub fn request_location_update(request: LocationRequest) {
 /// It is okay to call this function multiple times, as it will only re-initialize
 /// the location subscriber thread if it has not been initialized yet
 /// or if it has died and needs to be restarted.
-pub fn init_location_subscriber() -> Result<(), robius_location::Error> {
+///
+/// This function requires passing in a reference to `Cx`,
+/// which isn't used, but acts as a guarantee that this function
+/// must only be called by the main UI thread.
+pub fn init_location_subscriber(_cx: &mut Cx) -> Result<(), robius_location::Error> {
     let mut lrs = LOCATION_REQUEST_SENDER.lock().unwrap();
     if lrs.is_some() {
         log!("Location subscriber already initialized.");
         return Ok(());
     }
+    let mut manager = ManagerWrapper(Manager::new(LocationHandler)?);
+    manager.request_authorization(Access::Foreground, Accuracy::Precise)?;
     let (request_sender, request_receiver) = mpsc::channel::<LocationRequest>();
     *lrs = Some(request_sender);
-    std::thread::spawn(|| location_request_loop(request_receiver));
+    std::thread::spawn(|| location_request_loop(request_receiver, manager));
     Ok(())
+}
+
+struct ManagerWrapper(Manager);
+unsafe impl Send for ManagerWrapper {}
+unsafe impl Sync for ManagerWrapper {}
+impl std::ops::Deref for ManagerWrapper {
+    type Target = Manager;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for ManagerWrapper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
