@@ -24,6 +24,7 @@ robius-use-makepad = "0.1.0"
 robius-open = "0.1.0"
 ## A fork of the `directories` crate that adds support for Android by using our `robius-android-env` crate.
 robius-directories = { git = "https://github.com/project-robius/robius-directories", branch = "robius"}
+robius-location = { git = "https://github.com/project-robius/robius-location" }
 
 anyhow = "1.0"
 chrono = "0.4"

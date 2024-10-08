@@ -24,7 +24,7 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -32,8 +32,7 @@ use crate::{
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    },
-    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -60,6 +59,7 @@ live_design! {
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
+    ICO_LOCATION_POI = dep("crate://self/resources/icons/location_poi.svg")
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     TEXT_SUB = {
@@ -728,9 +728,6 @@ live_design! {
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
 
-
-
-
                 // Below that, display an optional preview of the message that the user
                 // is currently drafting a replied to.
                 replying_preview = <View> {
@@ -777,7 +774,7 @@ live_design! {
                     reply_preview_content = <ReplyPreviewContent> { }
                 }
 
-                // Below that, display user typing notice
+                // Below that, display a typing notice when other users in the room are typing.
                 typing_notice = <View> {
                     visible: false
                     width: Fill
@@ -802,6 +799,70 @@ live_design! {
                     typing_animation = <TypingAnimation> {}
                 }
 
+                // Below that, display a preview of the current location that a user is about to share.
+                location_preview = <View> {
+                    visible: false
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    padding: 0.0
+
+                    show_bg: true,
+                    draw_bg: {
+                        color: #EEEEEE,
+                    }
+
+                    <View> {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
+                        align: {y: 0.5}
+
+                        <Label> {
+                            draw_text: {
+                                wrap: Ellipsis,
+                                color: (MESSAGE_TEXT_COLOR),
+                                text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.0 },
+                            }
+                            text: "Share location to this room:"
+                        }
+
+                        filler = <View> {width: Fill, height: Fill}
+
+                        // TODO: Fix style
+                        cancel_location_button = <IconButton> {
+                            width: Fit,
+                            height: Fit,
+
+                            draw_icon: {
+                                svg_file: (ICO_CLOSE),
+                                fn get_color(self) -> vec4 {
+                                   return (COLOR_META)
+                                }
+                            }
+                            icon_walk: {width: 12, height: 12}
+                        }
+                    }
+
+                    <View> {
+                        width: Fill
+                        height: Fit
+                        flow: Down
+
+                        location_label = <Label> {
+                            align: {x: 0.0, y: 0.5},
+                            padding: {left: 5.0}
+                            draw_text: {
+                                wrap: Word,
+                                color: (MESSAGE_TEXT_COLOR),
+                                text_style: <MESSAGE_TEXT_STYLE>{},
+                            }
+                            text: "Fetching current location..."
+                        }
+                    }
+                }
+
                 // Below that, display a view that holds the message input bar and send button.
                 <View> {
                     width: Fill, height: Fit
@@ -809,6 +870,12 @@ live_design! {
                     show_bg: true,
                     draw_bg: {
                         color: (COLOR_PRIMARY)
+                    }
+
+                    location_button = <IconButton> {
+                        draw_icon: {svg_file: (ICO_LOCATION_POI)},
+                        icon_walk: {width: 18.0, height: Fit},
+                        text: "LOC",
                     }
 
                     message_input = <TextInput> {
@@ -896,16 +963,6 @@ live_design! {
                             }
                         }
                     }
-
-                    // <Image> {
-                    //     source: (IMG_SMILEY_FACE_BW),
-                    //     width: 36., height: 36.
-                    // }
-
-                    // <Image> {
-                    //     source: (IMG_PLUS),
-                    //     width: 36., height: 36.
-                    // }
 
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
@@ -1196,6 +1253,21 @@ impl Widget for RoomScreen {
             // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(&actions) {
                 self.clear_replying_to();
+                self.redraw(cx);
+            }
+
+            // Handle the add location button being clicked.
+            if self.button(id!(location_button)).clicked(&actions) {
+                log!("Add location button clicked; requesting current location...");
+                if let Err(_e) = init_location_subscriber() {
+                    error!("Failed to initialize location subscriber");
+                }
+                self.show_location_preview(cx);
+            }
+
+            // Handle the cancel location button being clicked.
+            if self.button(id!(cancel_location_button)).clicked(&actions) {
+                self.clear_location_preview();
                 self.redraw(cx);
             }
 
@@ -1630,6 +1702,31 @@ impl RoomScreen {
         }
     }
 
+    fn show_location_preview(&mut self, cx: &mut Cx) {
+        request_location_update(LocationRequest::UpdateOnce);
+        let text = if let Some(loc) = get_latest_location() {
+            format!("Current location: {},{}, time: {:?}",
+                loc.coordinates.latitude, loc.coordinates.longitude, loc.time,
+            )
+        } else {
+            format!("Current location is not yet available.")
+        };
+        self.label(id!(location_label)).set_text(&text);
+        self.view(id!(location_preview)).set_visible(true);
+        
+        // TODO: gray out / disable the message input box while the location preview is shown.
+        // TODO: gray out / disable the send message button while the current location isn't known.
+        self.redraw(cx);
+    }
+
+    /// Clears (and makes invisible) the location preview.
+    fn clear_location_preview(&mut self) {
+        self.view(id!(location_preview)).set_visible(false);
+        if let Some(tl) = self.tl_state.as_mut() {
+            tl.sharing_location = None;
+        }
+    }
+
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
@@ -1657,6 +1754,7 @@ impl RoomScreen {
                 update_receiver,
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 replying_to: None,
+                sharing_location: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 prev_first_index: None,
@@ -1899,6 +1997,9 @@ struct TimelineUiState {
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
+
+    /// Info about the user's current location sharing status in this room.
+    sharing_location: Option<LocationUpdate>,
 
     /// The states relevant to the UI display of this timeline that are saved upon
     /// a `Hide` action and restored upon a `Show` action.
