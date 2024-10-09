@@ -147,8 +147,9 @@ resources = [
 ]
 
 ## We then build the entire Robrix project and set the `MAKEPAD_PACKAGE_DIR` env var to the proper value.
-## * For macOS app bundles, this should be set to `./` because the default working directory
-##   for macOS app bundles is the `Contents/Resources/` directory, which is already where the resources are.
+## * For macOS app bundles, this should be set to `.` because we set the `apple_bundle` cfg option
+##   for Makepad, which causes Makepad to look for resources in the `Contents/Resources/` directory,
+##   which is where the resources are located for an Apple app bundle (`.app` and `.dmg`).
 ## * For Debian `.deb` packages, this should be set to `/usr/lib/<main-binary-name>`,
 ##   which is currently `/usr/lib/robrix`.
 ##   This is the directory in which `dpkg` copies app resource files to when installing the `.deb` package.
