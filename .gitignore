@@ -1,6 +1,9 @@
+## Cargo generated directory
 /target
-.vscode
+## cargo-packager generated directory
+/dist
 
+.vscode
 .DS_Store
 
 ## Temp hack to support login on mobile platforms.
