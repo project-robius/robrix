@@ -1,6 +1,7 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{log, warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, RoomId, UserId}};
+use matrix_sdk_ui::timeline::Profile;
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
 use crate::profile::user_profile::AvatarState;
@@ -195,6 +196,20 @@ pub fn get_user_profile(_cx: &mut Cx, user_id: &UserId) -> Option<UserProfile> {
     USER_PROFILE_CACHE.with_borrow(|cache| {
         cache.get(user_id).map(|entry| entry.user_profile.clone())
     })
+}
+
+#[allow(unused)]
+pub fn set_user_profile(_cx: &mut Cx, user_id: &UserId, username: String, avatar_state: AvatarState) {
+    USER_PROFILE_CACHE.with_borrow_mut(|cache| {
+        cache.entry(user_id.to_owned()).or_insert(UserProfileCacheEntry{
+            user_profile: UserProfile{
+                user_id: user_id.to_owned(),
+                username: Some(username),
+                avatar_state: avatar_state
+            },
+            room_members: BTreeMap::new()
+        });
+    });
 }
 
 /// Returns a clone of the cached user profile for the given user ID

@@ -25,17 +25,15 @@ use matrix_sdk_ui::timeline::{
 };
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::room_read_receipt::*, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
-        user_profile_cache,
+        user_profile_cache::{self, set_user_profile},
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt},
+        avatar::{Avatar, AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    },
-    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
-    home::room_read_receipt::*
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1033,8 +1031,9 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.sequencer(id!(sequencer));
-                let num_seen = seq.get_read_receipts().len();
-                if let Some(rect) = seq.hover_in(actions){
+                // let num_seen = seq.get_read_receipts().len();
+                let num_seen = seq.len();
+                if let Some(rect) = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, rect.pos, &format!("{} seen", num_seen));
                 }
                 if seq.hover_out(&actions) {
@@ -1605,12 +1604,14 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
+        let avatar_ref = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar));
+        let Some(ref mut avatar)  = avatar_ref.borrow_mut() else { return };
         let (replying_preview_username, _) = set_avatar_and_get_username(
             cx,
-            replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
+            avatar,
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
-            replying_to.0.sender_profile(),
+            Some(replying_to.0.sender_profile()),
             replying_to.0.event_id(),
         );
 
@@ -2083,7 +2084,6 @@ fn populate_message_view(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let receipts = event_tl_item.read_receipts();
-    
     let mut new_drawn_status = item_drawn_status;
 
     let ts_millis = event_tl_item.timestamp();
@@ -2112,12 +2112,17 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
-            let mut read_receipts = vec![];
-            for (ower_user_id, _) in receipts.iter() {
-                read_receipts.push(ower_user_id.clone());
+            item.sequencer(id!(sequencer)).set_range(cx, receipts.len());
+            let seq = item.sequencer(id!(sequencer));
+            let mut receipt_iter = receipts.iter();
+            if let Some(ref mut v)= seq.borrow_mut() {
+                for avatar in v.iter_mut() {
+                    if let Some((user, r)) = receipt_iter.next() {
+                        set_avatar_and_get_username(cx, avatar, room_id, user, None, event_tl_item.event_id());
+                    }
+                }
             }
-            item.sequencer(id!(sequencer)).set_read_receipts(cx, room_id.to_owned(), read_receipts);
-            
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2189,14 +2194,19 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let (username, profile_drawn) = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(profile.avatar)),
-            room_id,
-            event_tl_item.sender(),
-            event_tl_item.sender_profile(),
-            event_tl_item.event_id(),
-        );
+        let avatar_ref = item.avatar(id!(profile.avatar));
+        let (username, profile_drawn) = if let Some(ref mut avatar)  = avatar_ref.borrow_mut() {
+            set_avatar_and_get_username(
+                cx,
+                avatar,
+                room_id,
+                event_tl_item.sender(),
+                Some(event_tl_item.sender_profile()),
+                event_tl_item.event_id(),
+            )
+        } else {
+            (String::from(""), false )
+        };
         item.label(id!(content.username)).set_text(&username);
         new_drawn_status.profile_drawn = profile_drawn;
     }
@@ -2338,13 +2348,15 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
+                let avatar_ref = replied_to_message_view
+                .avatar(id!(replied_to_message_content.reply_preview_avatar));
+                let Some(ref mut avatar)  = avatar_ref.borrow_mut() else { return (show_reply, replied_to_event_id) };
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
-                    replied_to_message_view
-                        .avatar(id!(replied_to_message_content.reply_preview_avatar)),
+                    avatar,
                     room_id,
                     replied_to_event.sender(),
-                    replied_to_event.sender_profile(),
+                    Some(replied_to_event.sender_profile()),
                     Some(in_reply_to_details.event_id.as_ref()),
                 );
 
@@ -2624,14 +2636,20 @@ fn populate_small_state_event(
 
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
-        let (username, profile_drawn) = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(avatar)),
-            room_id,
-            event_tl_item.sender(),
-            event_tl_item.sender_profile(),
-            event_tl_item.event_id(),
-        );
+        let avatar_ref = item.avatar(id!(avatar));
+        let (username, profile_drawn) = if let Some(ref mut avatar ) = avatar_ref.borrow_mut() {
+             set_avatar_and_get_username(
+                cx,
+                avatar,
+                room_id,
+                event_tl_item.sender(),
+                Some(event_tl_item.sender_profile()),
+                event_tl_item.event_id(),
+            )
+        } else {
+            (event_tl_item.sender().to_string(),false)
+        };
+        
         // Draw the timestamp as part of the profile.
         set_timestamp(
             &item,
@@ -2695,20 +2713,36 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
 ///    (for purposes of caching it to avoid future redraws).
 fn set_avatar_and_get_username(
     cx: &mut Cx,
-    avatar: AvatarRef,
+    avatar: &mut Avatar,
     room_id: &RoomId,
     sender_user_id: &UserId,
-    sender_profile: &TimelineDetails<Profile>,
+    sender_profile_opt: Option<&TimelineDetails<Profile>>,
     event_id: Option<&EventId>,
 ) -> (String, bool) {
+    // let sender_profile_opt = if sender_profile_opt.is_none() {
+    //     user_profile_cache::get_user_profile(cx, sender_user_id).and_then(|f| 
+    //         Some(TimelineDetails::Ready(Profile{
+    //             display_name: Some(f.displayable_name().to_string()),
+    //             display_name_ambiguous: false,
+    //             avatar_url: if let AvatarState::Known(uri) = f.avatar_state {
+    //                 uri
+    //             } else {None}
+    //         }))
+    //     )
+    // } else { sender_profile_opt.map(|f|f.clone()) };
+    // let Some(sender_profile) = sender_profile_opt else { 
+    //     return (String::from(""), false) 
+    // };
     // Get the display name and avatar URL from the sender's profile, if available,
     // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let (username_opt, avatar_state) = match sender_profile {
-        TimelineDetails::Ready(profile) => (
+    let (username_opt, avatar_state) = match sender_profile_opt {
+        Some(TimelineDetails::Ready(profile)) => {
+            
+            (
             profile.display_name.clone(),
             AvatarState::Known(profile.avatar_url.clone()),
-        ),
-        not_ready => {
+        )},
+        Some(not_ready) => {
             if matches!(not_ready, TimelineDetails::Unavailable) {
                 if let Some(event_id) = event_id {
                     submit_async_request(MatrixRequest::FetchDetailsForEvent {
@@ -2730,10 +2764,18 @@ fn set_avatar_and_get_username(
                     .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
             })
             .unwrap_or((None, AvatarState::Unknown))
+        },
+        None => {
+            if let Some(user_profile) = user_profile_cache::get_user_profile(cx, sender_user_id) {
+                (user_profile.username,user_profile.avatar_state)
+            } else {
+                (None, AvatarState::Unknown)
+            }
         }
     };
 
-    let (avatar_img_data_opt, profile_drawn) = match avatar_state {
+
+    let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
         AvatarState::Loaded(data) => (Some(data), true),
         AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
             AvatarCacheEntry::Loaded(data) => (Some(data), true),
@@ -2748,15 +2790,17 @@ fn set_avatar_and_get_username(
     let username = username_opt
         .clone()
         .unwrap_or_else(|| sender_user_id.to_string());
+    
 
     // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt.and_then(|data|
+    avatar_img_data_opt.and_then(|data| {
+        set_user_profile(cx, sender_user_id, username.clone(), AvatarState::Loaded(data.clone()));
         avatar.show_image(
             Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
             |img| utils::load_png_or_jpg(&img, cx, &data)
         )
         .ok()
-    )
+    })
     .unwrap_or_else(|| avatar.show_text(
         Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
         &username,
