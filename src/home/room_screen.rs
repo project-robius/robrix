@@ -27,9 +27,9 @@ use matrix_sdk_ui::timeline::{
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::room_read_receipt::*, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
-        user_profile_cache::{self, set_user_profile},
+        user_profile_cache,
     }, shared::{
-        avatar::{Avatar, AvatarRef, AvatarWidgetRefExt},
+        avatar::{Avatar, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
@@ -424,7 +424,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-            sequencer = <Sequencer> {width: 40, height: 30, margin: { top: (12.0)}, hover_actions_enabled:true}
+            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (12.0)}, hover_actions_enabled:true}
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -1030,8 +1030,7 @@ impl Widget for RoomScreen {
             let portal_list = self.portal_list(id!(list));
             let mut tooltip = self.tooltip(id!(tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
-                let seq = wr.sequencer(id!(sequencer));
-                // let num_seen = seq.get_read_receipts().len();
+                let seq = wr.avatar_row(id!(avatar_row));
                 let num_seen = seq.len();
                 if let Some(rect) = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, rect.pos, &format!("{} seen", num_seen));
@@ -2112,8 +2111,8 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
-            item.sequencer(id!(sequencer)).set_range(cx, receipts.len());
-            let seq = item.sequencer(id!(sequencer));
+            item.avatar_row(id!(avatar_row)).set_range(cx, receipts.len());
+            let seq = item.avatar_row(id!(avatar_row));
             let mut receipt_iter = receipts.iter();
             if let Some(ref mut v)= seq.borrow_mut() {
                 for avatar in v.iter_mut() {
@@ -2719,29 +2718,14 @@ fn set_avatar_and_get_username(
     sender_profile_opt: Option<&TimelineDetails<Profile>>,
     event_id: Option<&EventId>,
 ) -> (String, bool) {
-    // let sender_profile_opt = if sender_profile_opt.is_none() {
-    //     user_profile_cache::get_user_profile(cx, sender_user_id).and_then(|f| 
-    //         Some(TimelineDetails::Ready(Profile{
-    //             display_name: Some(f.displayable_name().to_string()),
-    //             display_name_ambiguous: false,
-    //             avatar_url: if let AvatarState::Known(uri) = f.avatar_state {
-    //                 uri
-    //             } else {None}
-    //         }))
-    //     )
-    // } else { sender_profile_opt.map(|f|f.clone()) };
-    // let Some(sender_profile) = sender_profile_opt else { 
-    //     return (String::from(""), false) 
-    // };
     // Get the display name and avatar URL from the sender's profile, if available,
     // or if the profile isn't ready, fall back to qeurying our user profile cache.
+    let mut taken_from_cache = false;
     let (username_opt, avatar_state) = match sender_profile_opt {
-        Some(TimelineDetails::Ready(profile)) => {
-            
-            (
+        Some(TimelineDetails::Ready(profile)) => (
             profile.display_name.clone(),
             AvatarState::Known(profile.avatar_url.clone()),
-        )},
+        ),
         Some(not_ready) => {
             if matches!(not_ready, TimelineDetails::Unavailable) {
                 if let Some(event_id) = event_id {
@@ -2752,28 +2736,35 @@ fn set_avatar_and_get_username(
                 }
             }
             // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, sender_user_id, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-            })
+            user_profile_cache::with_user_profile(
+                cx,
+                sender_user_id,
+                |profile, room_members| {
+                    room_members
+                        .get(room_id)
+                        .map(|rm| {
+                            (
+                                rm.display_name().map(|n| n.to_owned()),
+                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            (profile.username.clone(), profile.avatar_state.clone())
+                        })
+                },
+            )
             .unwrap_or((None, AvatarState::Unknown))
-        },
+        }
         None => {
-            if let Some(user_profile) = user_profile_cache::get_user_profile(cx, sender_user_id) {
-                (user_profile.username,user_profile.avatar_state)
+            if let Some(user_profile) = user_profile_cache::get_user_profile(cx, sender_user_id)
+            {
+                taken_from_cache = true;
+                (user_profile.username, user_profile.avatar_state)
             } else {
                 (None, AvatarState::Unknown)
             }
         }
     };
-
 
     let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
         AvatarState::Loaded(data) => (Some(data), true),
@@ -2790,21 +2781,36 @@ fn set_avatar_and_get_username(
     let username = username_opt
         .clone()
         .unwrap_or_else(|| sender_user_id.to_string());
-    
 
     // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt.and_then(|data| {
-        set_user_profile(cx, sender_user_id, username.clone(), AvatarState::Loaded(data.clone()));
-        avatar.show_image(
-            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
-            |img| utils::load_png_or_jpg(&img, cx, &data)
-        )
-        .ok()
-    })
-    .unwrap_or_else(|| avatar.show_text(
-        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
-        &username,
-    ));
+    avatar_img_data_opt
+        .and_then(|data| {
+            if !taken_from_cache {
+                user_profile_cache::set_user_profile(
+                    cx,
+                    sender_user_id,
+                    username.clone(),
+                    AvatarState::Loaded(data.clone()),
+                );
+            }
+            avatar
+                .show_image(
+                    Some((
+                        sender_user_id.to_owned(),
+                        username_opt.clone(),
+                        room_id.to_owned(),
+                        data.clone(),
+                    )),
+                    |img| utils::load_png_or_jpg(&img, cx, &data),
+                )
+                .ok()
+        })
+        .unwrap_or_else(|| {
+            avatar.show_text(
+                Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
+                &username,
+            )
+        });
     (username, profile_drawn)
 }
 
