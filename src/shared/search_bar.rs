@@ -8,9 +8,9 @@ live_design! {
     import crate::shared::styles::*;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
+    ICON_CLOSE = dep("crate://self/resources/icons/close.svg")
 
-
-    SearchBar = <RoundedView> {
+    SearchBar = {{SearchBar}}<RoundedView> {
         width: Fill,
         height: Fit,
 
@@ -121,5 +121,130 @@ live_design! {
                 }
             }
         }
+
+        clear_button = <Button> {
+            height: Fit,
+            height: Fit,
+
+            visible: false
+
+            draw_bg: {
+                instance color: #0000
+                instance color_hover: #fff
+                instance border_width: 1.0
+                instance border_color: #0000
+                instance border_color_hover: #fff
+                instance radius: 2.5
+
+                fn get_color(self) -> vec4 {
+                    return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+                }
+
+                fn get_border_color(self) -> vec4 {
+                    return mix(self.border_color, mix(self.border_color, self.border_color_hover, 0.2), self.hover)
+                }
+
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        self.border_width,
+                        self.border_width,
+                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.y - (self.border_width * 2.0),
+                        max(1.0, self.radius)
+                    )
+                    sdf.fill_keep(self.get_color())
+                    if self.border_width > 0.0 {
+                        sdf.stroke(self.get_border_color(), self.border_width)
+                    }
+                    return sdf.result;
+                }
+            }
+
+            draw_icon: {
+                svg_file: (ICON_CLOSE),
+                fn get_color(self) -> vec4 {
+                    return (COLOR_TEXT_INPUT_IDLE);
+                }
+            }
+
+            icon_walk: { width: 8, height: 8 }
+        }
     }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct SearchBar {
+    #[deref] view: View,
+
+    #[rust]
+    search_timer: Timer,
+
+    #[live(0.3)]
+    search_debounce_time: f64,
+}
+
+#[derive(Clone, DefaultNone, Debug)]
+pub enum SearchBarAction {
+    Search(String),
+    None,
+}
+
+impl Widget for SearchBar {
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
+
+        if self.search_timer.is_event(event).is_some() {
+            self.search_timer = Timer::default();
+
+            let input = self.text_input(id!(input));
+            let keywords = input.text();
+            // We don't to handle the keywords is empty, if keywords is empty pass to child weiget.
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                SearchBarAction::Search(keywords)
+            );
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+
+        let input = self.view.text_input(id!(input));
+        let clear_button = self.view.button(id!(clear_button));
+
+        if input.text().is_empty() {
+            clear_button.set_visible(false);
+        } else {
+            clear_button.set_visible(true);
+        }
+
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+}
+
+impl WidgetMatchEvent for SearchBar {
+
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
+
+        let uid = self.widget_uid();
+        let input = self.text_input(id!(input));
+        let clear_button = self.button(id!(clear_button));
+
+        if clear_button.clicked(actions) {
+            input.set_text("");
+            clear_button.set_visible(false);
+            cx.widget_action(uid, &scope.path, SearchBarAction::Search("".to_string()));
+        }
+
+        if let Some(_) = input.changed(actions) {
+            cx.stop_timer(self.search_timer);
+            self.search_timer = cx.start_timeout(self.search_debounce_time);
+        }
+
+    }
+
 }

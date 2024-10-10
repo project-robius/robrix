@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::shared::search_bar::SearchBarAction;
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -8,6 +10,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::adaptive_view::AdaptiveView;
+    import crate::shared::search_bar::SearchBar;
 
     import crate::home::rooms_list::RoomsList;
     import crate::shared::cached_widget::CachedWidget;
@@ -106,6 +109,13 @@ live_design! {
                 }
             }
         }
+
+        <SearchBar> {
+            input = {
+                empty_message: "Please enter room name, alias or id..."
+            }
+        }
+
         <Label> {
             text: "Home"
             draw_text: {
@@ -173,12 +183,61 @@ pub struct RoomsView {
     view: View,
 }
 
+/// The filter options for the rooms view.
+#[derive(Debug, Clone)]
+pub enum RoomsSideBarFilter {
+    People,
+    Channels,
+    Rooms,
+}
+
+#[derive(Debug, Clone, DefaultNone)]
+pub enum RoomsViewAction {
+    Filter {
+        value: String,
+        filter: RoomsSideBarFilter,
+    },
+    None
+}
+
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for RoomsView {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+
+        for action in actions {
+            if let SearchBarAction::Search(value) = action.as_widget_action().cast() {
+
+                log!("[Rooms Sidebar Search Value]: {}", value);
+
+                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
+                        value: value.clone(),
+                        filter: RoomsSideBarFilter::Rooms,
+                    },
+                );
+
+                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
+                        value: value.clone(),
+                        filter: RoomsSideBarFilter::People,
+                    },
+                );
+
+                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
+                        value: value.clone(),
+                        filter: RoomsSideBarFilter::Channels,
+                    },
+                );
+            }
+        }
     }
 }
