@@ -697,6 +697,8 @@ live_design! {
         }
 
         <Label> {
+            width: Fill,
+            height: Fit,
             draw_text: {
                 wrap: Word,
                 color: (MESSAGE_TEXT_COLOR),
@@ -706,6 +708,8 @@ live_design! {
         }
 
         location_label = <Label> {
+            width: Fill,
+            height: Fit,
             align: {x: 0.0, y: 0.5},
             padding: {left: 5.0}
             draw_text: {
@@ -2978,10 +2982,11 @@ impl Widget for LocationPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let text = match self.coords {
             Some(Ok(c)) => {
-                // format!("Current location: {},{}\n   Timestamp: {:?}",
-                //     c.latitude, c.longitude, self.timestamp,
-                // )
-                format!("Current location: {},{}", c.latitude, c.longitude)
+                // if let Some(st) = self.timestamp {
+                //     format!("Current location: {:.6},{:.6}\n   Timestamp: {:?}", c.latitude, c.longitude, st)
+                // } else {
+                    format!("Current location: {:.6},{:.6}", c.latitude, c.longitude)
+                // }
             }
             Some(Err(e)) => format!("Error getting location: {e:?}"),
             None => format!("Current location is not yet available."),
