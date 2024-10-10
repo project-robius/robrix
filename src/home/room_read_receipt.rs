@@ -57,8 +57,11 @@ impl Widget for Sequencer {
         let uid = self.widget_uid();
         for button in self.buttons.iter_mut() {
             match button.hit(cx, event, self.area){
-                Hit::FingerHoverIn(_) => {
-                    let rect = self.area.rect(cx);
+                Hit::FingerHoverIn(finger_event) => {
+                    let rect = Rect{
+                        pos: finger_event.abs,
+                        size:DVec2::new()
+                    };
                     cx.widget_action(uid, &scope.path, SequencerAction::HoverIn(rect));
                 }
                 Hit::FingerHoverOut(_) => {
