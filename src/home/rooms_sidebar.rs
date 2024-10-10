@@ -157,7 +157,7 @@ live_design! {
         Desktop = <RoomsView> {
             padding: {top: 20., left: 10., right: 10.}
             flow: Down, spacing: 10
-            width: 280, height: Fill
+            width: Fill, height: Fill
         },
         Mobile = <RoomsView> {
             padding: {top: 17., left: 17., right: 17.}

@@ -690,27 +690,6 @@ live_design! {
         }
         flow: Down, spacing: 0.0
 
-
-        tab_title = <View> {
-            width: Fit, height: Fit,
-            align: {x: 0.0, y: 0.5},
-            margin: {top: 10.0}
-            padding: 10.
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_PRIMARY)
-            }
-            room_name = <Label> {
-                draw_text: {
-                    color: #4
-                    text_style: {
-                        font_size: 10.
-                    }
-                }
-            }
-        }
-
-
         <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -928,7 +907,7 @@ live_design! {
 
 /// A simple deref wrapper around the `RoomScreen` widget that enables us to handle its events.
 #[derive(Live, LiveHook, Widget)]
-struct RoomScreen {
+pub struct RoomScreen {
     #[deref] view: View,
 
     /// The room ID of the currently-shown room.
@@ -939,6 +918,14 @@ struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+}
+
+impl Drop for RoomScreen {
+    fn drop(&mut self) {
+        // Make sure to return the room state back to TIMELINE_STATES, so that other RoomScreen instances can access it.
+        // RoomScreen is dropped whenever a tab is closed or the app is resized to a different AdaptiveView layout.
+        self.save_state();
+    }
 }
 
 impl RoomScreen{
@@ -1100,15 +1087,20 @@ impl Widget for RoomScreen {
 
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
-                    self.show_user_profile(
-                        cx,
-                        &pane,
-                        UserProfilePaneInfo {
-                            profile_and_room_id,
-                            room_name: self.room_name.clone(),
-                            room_member: None,
-                        },
-                    );
+                    // Only show the user profile in room that this avatar belongs to
+                    if let Some(room_id) = self.room_id.as_ref() {
+                        if profile_and_room_id.room_id == *room_id {
+                            self.show_user_profile(
+                                cx,
+                                &pane,
+                                UserProfilePaneInfo {
+                                    profile_and_room_id,
+                                    room_name: self.room_name.clone(),
+                                    room_member: None,
+                                },
+                            );
+                        }
+                    }
                 }
 
                 // Handle a link being clicked.
