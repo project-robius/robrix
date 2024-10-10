@@ -125,6 +125,17 @@ live_design! {
                     }
                 }
             }
+        }
+        <CachedWidget> {
+            people_list = <RoomsList> {
+                width: Fill, height: 75
+                room_type: "people"
+            }
+        }
+        <View> {
+            flow: Down, spacing: 20
+            padding: {top: 20},
+            width: Fill, height: Fit
             <CollapsableTitle> {
                 title = {
                     text: "Channels"
@@ -149,7 +160,10 @@ live_design! {
             }
         }
         <CachedWidget> {
-            rooms_list = <RoomsList> {}
+            height: Fit,
+            rooms_list = <RoomsList> {
+                room_type: "room"
+            }
         }
     }
 

@@ -103,11 +103,16 @@ pub enum RoomsListUpdate {
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
+static PENDING_IS_DIRECT_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
 
 /// Enqueue a new room update for the list of all rooms
 /// and signals the UI that a new update is available to be handled.
-pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
-    PENDING_ROOM_UPDATES.push(update);
+pub fn enqueue_rooms_list_update(update: RoomsListUpdate, is_direct: bool) {
+    if is_direct {
+        PENDING_IS_DIRECT_ROOM_UPDATES.push(update);
+    } else {
+        PENDING_ROOM_UPDATES.push(update);
+    }
     SignalToUI::set_ui_signal();
 }
 
@@ -173,12 +178,16 @@ pub struct RoomsList {
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
+    #[live] room_type: String
 }
-
+pub struct TotalLoadedRoomsCount(u32);
 impl RoomsList {
-    fn update_status_rooms_count(&mut self) {
+    fn update_status_rooms_count(&mut self, cx: &mut Cx) {
+        let total_loaded_rooms_count = if cx.has_global::<TotalLoadedRoomsCount>() {
+            cx.get_global::<TotalLoadedRoomsCount>().0
+        } else { 0 };
         self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
+            format!("Loaded {} of {} total rooms.", total_loaded_rooms_count, max_rooms)
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
@@ -189,11 +198,22 @@ impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it.
         {
+            
+            let queue = if self.room_type == "people"{
+                &PENDING_IS_DIRECT_ROOM_UPDATES
+            } else {
+                &PENDING_ROOM_UPDATES
+            };
             let mut num_updates: usize = 0;
-            while let Some(update) = PENDING_ROOM_UPDATES.pop() {
+            while let Some(update) = queue.pop() {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        if cx.has_global::<TotalLoadedRoomsCount>() {
+                            cx.get_global::<TotalLoadedRoomsCount>().0 += 1;
+                        } else {
+                            cx.set_global(TotalLoadedRoomsCount(1));
+                        }
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
@@ -232,7 +252,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
-                        self.update_status_rooms_count();
+                        self.update_status_rooms_count(cx);
                     }
                     RoomsListUpdate::Status { status } => {
                         self.status = status;
@@ -315,7 +335,7 @@ impl Widget for RoomsList {
                     item
                 }
                 // Draw the status label as the bottom entry.
-                else if item_id == status_label_id {
+                else if item_id == status_label_id && self.room_type == "room" {
                     let item = list.item(cx, item_id, live_id!(status_label));
                     item.as_view().apply_over(cx, live!{
                         height: Fit,
