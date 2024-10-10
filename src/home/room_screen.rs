@@ -656,26 +656,56 @@ live_design! {
             flow: Down,
             align: {x: 1.0, y: 1.0},
             margin: {right: 15.0, bottom: 15.0},
-            visible: false,
+            visible: true,
 
             jump_to_bottom_button = <IconButton> {
                 width: 50, height: 50,
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-                // draw a circular background for the button
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} },
                 draw_bg: {
                     instance background_color: #edededee,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x)
+                        sdf.circle(c.x, c.x, c.x);
                         sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
                 }
             }
-        }
 
+            // Badge overlay for unread messages
+            unread_message_badge = <View> {
+                width: 20, height: 20,
+                margin: {top: -10.0, right: 15.0},
+                visible: true,
+                show_bg: true,
+                draw_bg: {
+                    instance background_color: (#5D5E5E)
+        
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result;
+                    }
+                }
+
+                // Text to display the unread message count
+                label = <Label> {
+                    width: Fill,
+                    height: Fill,
+                    text: "0",
+                    margin: {top: 4.0, left: 5.0},
+                    draw_text:{
+                        color: #ffffff,
+                        wrap: Ellipsis,
+                        text_style: <USERNAME_TEXT_STYLE>{ font_size: 8. }
+                    }
+                }
+            }
+        }
     }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
@@ -948,6 +978,8 @@ impl RoomScreen{
         actions: &ActionsBuf,
     ) {
         let portal_list = self.portal_list(id!(list));
+        let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+
         //stopped scrolling
         if portal_list.scrolled(actions) {
             return;
@@ -1001,6 +1033,13 @@ impl RoomScreen{
                     }
                     if let Some(event_id) = fully_read_receipt_event {
                         submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone()});
+                        // Clear the unread message badge number count when send fully read receipt
+                        // Temporary hack
+                        // -TODO integrate and calculate the leftover message after PR 172 is merged.
+                        let unread_message_badge = jump_to_bottom_view.view(id!(unread_message_badge));
+                        unread_message_badge.label(id!(label)).set_text("");
+                        unread_message_badge.set_visible(false);
+
                     }
                 }
                 *index = first_index;
@@ -1417,6 +1456,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx) {
         let portal_list = self.portal_list(id!(list));
+        let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
@@ -1501,6 +1541,20 @@ impl RoomScreen {
                         // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
+                    // Set number of unread messages to unread_notification_badge
+                    if let Some(room_id) = &self.room_id {
+                        if let Some(num_unread) = get_client()
+                        .and_then(|c| c.get_room(room_id)).map(|room| room.num_unread_messages()) {
+                            let unread_message_badge = jump_to_bottom_view.view(id!(unread_message_badge));
+                            if num_unread > 0 {
+                                unread_message_badge.label(id!(label)).set_text(&format!("{}",num_unread));
+                                unread_message_badge.set_visible(true);
+                            } else {
+                                unread_message_badge.set_visible(false);
+                            }
+                        }
+                    }
+                    
                 }
                 TimelineUpdate::TimelineStartReached => {
                     log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
