@@ -8,7 +8,10 @@ use robius_location::{Access, Accuracy, Coordinates, Location, Manager};
 /// The action emitted upon every location update.
 #[derive(Copy, Clone, Debug)]
 pub enum LocationAction {
+    /// The location handler received a new location update.
     Update(LocationUpdate),
+    /// The location handler encountered an error.
+    Error(robius_location::Error),
     None
 }
 
@@ -47,12 +50,14 @@ impl robius_location::Handler for LocationHandler {
             }
             Err(e) => {
                 error!("Error getting coordinates from location update: {e:?}");
+                Cx::post_action(LocationAction::Error(e));
             }
         }
     }
 
     fn error(&self, e: robius_location::Error) {
         error!("Got error in location handler: {e:?}");
+        Cx::post_action(LocationAction::Error(e));
     }
 }
 
@@ -120,8 +125,10 @@ pub fn init_location_subscriber(_cx: &mut Cx) -> Result<(), robius_location::Err
         log!("Location subscriber already initialized.");
         return Ok(());
     }
-    let mut manager = ManagerWrapper(Manager::new(LocationHandler)?);
+    let manager = ManagerWrapper(Manager::new(LocationHandler)?);
     manager.request_authorization(Access::Foreground, Accuracy::Precise)?;
+    let _ = manager.update_once();
+
     let (request_sender, request_receiver) = mpsc::channel::<LocationRequest>();
     *lrs = Some(request_sender);
     std::thread::spawn(|| location_request_loop(request_receiver, manager));

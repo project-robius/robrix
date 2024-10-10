@@ -176,6 +176,8 @@ section = "utils"
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
 frameworks = [ ]
+info_plist_path = "./packaging/Info.plist"
+entitlements = "./packaging/Entitlements.plist"
 signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
 
 
