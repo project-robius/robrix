@@ -691,7 +691,7 @@ live_design! {
 
         show_bg: true,
         draw_bg: {
-            color: #EEEEEE,
+            color: #xF0F5FF,
         }
 
         <Label> {
