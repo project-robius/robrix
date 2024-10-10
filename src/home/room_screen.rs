@@ -9,8 +9,7 @@ use matrix_sdk::{
     ruma::{
         events::room::{
             message::{
-                ImageMessageEventContent, MessageFormat, MessageType, RoomMessageEventContent,
-                TextMessageEventContent,
+                FormattedBody, ImageMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
         },
@@ -65,13 +64,13 @@ live_design! {
 
     TEXT_SUB = {
         font_size: (10),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     TEXT_P = {
         font_size: (12),
         height_factor: 1.65,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     COLOR_BG = #xfff8ee
@@ -261,7 +260,7 @@ live_design! {
         draw_bg: {
             border_width: 0.0,
             border_color: #000,
-            radius: 2
+            radius: 2.0
         }
 
         reply_button = <IconButton> {
@@ -559,20 +558,18 @@ live_design! {
     DayDivider = <View> {
         width: Fill,
         height: Fit,
-        margin: 0.0,
+        margin: {top: 7.0, bottom: 7.0}
         flow: Right,
-        padding: 0.0,
+        padding: {left: 7.0, right: 7.0},
         spacing: 0.0,
         align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
         left_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
 
         date = <Label> {
             padding: {left: 7.0, right: 7.0}
-            margin: {bottom: 10.0, top: 10.0}
             draw_text: {
                 text_style: <TEXT_SUB> {},
                 color: (COLOR_DIVIDER_DARK)
@@ -581,7 +578,6 @@ live_design! {
         }
 
         right_line = <LineH> {
-            margin: {top: 10.0, bottom: 10.0}
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
     }
@@ -1324,7 +1320,7 @@ impl Widget for RoomScreen {
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
-                        list.item(cx, item_id, live_id!(Empty)).unwrap();
+                        list.item(cx, item_id, live_id!(Empty));
                         continue;
                     };
 
@@ -1389,13 +1385,13 @@ impl Widget for RoomScreen {
                                 item_drawn_status,
                             ),
                             unhandled => {
-                                let item = list.item(cx, item_id, live_id!(SmallStateEvent)).unwrap();
+                                let item = list.item(cx, item_id, live_id!(SmallStateEvent));
                                 item.label(id!(content)).set_text(&format!("[TODO] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DayDivider)).unwrap();
+                            let item = list.item(cx, item_id, live_id!(DayDivider));
                             let text = unix_time_millis_to_datetime(&millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
@@ -1404,7 +1400,7 @@ impl Widget for RoomScreen {
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            let item = list.item(cx, item_id, live_id!(ReadMarker)).unwrap();
+                            let item = list.item(cx, item_id, live_id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
                     };
@@ -2104,7 +2100,8 @@ fn populate_message_view(
     };
 
     let (item, used_cached_item) = match message.msgtype() {
-        MessageType::Text(text) => {
+        MessageType::Text(TextMessageEventContent { body, formatted, .. })
+        | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -2127,7 +2124,8 @@ fn populate_message_view(
             } else {
                 populate_text_message_content(
                     &item.html_or_plaintext(id!(content.message)),
-                    text,
+                    &body,
+                    formatted.as_ref(),
                 );
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -2139,7 +2137,7 @@ fn populate_message_view(
             } else {
                 live_id!(ImageMessage)
             };
-            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2154,7 +2152,7 @@ fn populate_message_view(
             }
         }
         other => {
-            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message)).unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2237,19 +2235,18 @@ fn populate_message_view(
     (item, new_drawn_status)
 }
 
-/// Draws the Html or plaintext body of the given message `text` into the `message_content_widget`.
+/// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
 fn populate_text_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
-    text_content: &TextMessageEventContent,
+    body: &str,
+    formatted_body: Option<&FormattedBody>,
 ) {
-    if let Some(formatted_body) = text_content
-        .formatted
-        .as_ref()
+    if let Some(formatted_body) = formatted_body
         .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
     {
         message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
     } else {
-        match utils::linkify(&text_content.body) {
+        match utils::linkify(body) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
         }
@@ -2424,8 +2421,12 @@ fn populate_preview_of_timeline_item(
     sender_username: &str,
 ) {
     if let TimelineItemContent::Message(m) = timeline_item_content {
-        if let MessageType::Text(text) = m.msgtype() {
-            return populate_text_message_content(widget_out, text);
+        match m.msgtype() {
+            MessageType::Text(TextMessageEventContent { body, formatted, .. })
+            | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+                return populate_text_message_content(widget_out, &body, formatted.as_ref());
+            }
+            _ => { } // fall through to the general case for all timeline items below.
         }
     }
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
@@ -2545,7 +2546,7 @@ impl SmallStateEventContent for timeline::OtherState {
             new_drawn_status.content_drawn = true;
             item
         } else {
-            let item = list.item(cx, item_id, live_id!(Empty)).unwrap();
+            let item = list.item(cx, item_id, live_id!(Empty));
             new_drawn_status = ItemDrawnStatus::new();
             item
         };
@@ -2587,7 +2588,7 @@ impl SmallStateEventContent for RoomMembershipChange {
         let Some(preview) = text_preview_of_room_membership_change(self) else {
             // Don't actually display anything for nonexistent/unimportant membership changes.
             return (
-                list.item(cx, item_id, live_id!(Empty)).unwrap(),
+                list.item(cx, item_id, live_id!(Empty)),
                 ItemDrawnStatus::new(),
             );
         };
@@ -2614,9 +2615,7 @@ fn populate_small_state_event(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list
-        .item_with_existed(cx, item_id, live_id!(SmallStateEvent))
-        .unwrap();
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
 
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.

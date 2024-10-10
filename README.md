@@ -108,7 +108,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
-- [ ] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
+- [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
 - [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
@@ -124,7 +124,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
-- [ ] Persistence of app state to disk: https://github.com/project-robius/robrix/issues/112
+- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
+- [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
 
 ## Known problems/issues
