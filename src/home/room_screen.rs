@@ -37,6 +37,8 @@ use crate::{
 };
 use rangemap::RangeSet;
 
+const GEO_URI_SCHEME: &str = "geo:";
+
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
@@ -886,7 +888,9 @@ live_design! {
                 // Below that, display a view that holds the message input bar and send button.
                 <View> {
                     width: Fill, height: Fit
-                    flow: Right, align: {y: 1.0}, padding: 10.
+                    flow: Right,
+                    align: {y: 0.5},
+                    padding: 10.
                     show_bg: true,
                     draw_bg: {
                         color: (COLOR_PRIMARY)
@@ -894,7 +898,7 @@ live_design! {
 
                     location_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5, bottom: -5}},
+                        icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5}},
                         text: "",
                     }
 
@@ -1289,7 +1293,7 @@ impl Widget for RoomScreen {
             if self.button(id!(location_preview.send_location_button)).clicked(&actions) {
                 let location_preview = self.location_preview(id!(location_preview));
                 if let Some((coords, _system_time_opt)) = location_preview.get_current_data() {
-                    let geo_uri = format!("geo:{},{}", coords.latitude, coords.longitude);
+                    let geo_uri = format!("{}{},{}", GEO_URI_SCHEME, coords.latitude, coords.longitude);
                     let message = RoomMessageEventContent::new(
                         MessageType::Location(
                             LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
@@ -2243,6 +2247,24 @@ fn populate_message_view(
                 (item, false)
             }
         }
+        MessageType::Location(location) => {
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let is_location_fully_drawn = populate_location_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    location,
+                );
+                new_drawn_status.content_drawn = is_location_fully_drawn;
+                (item, false)
+            }
+        }
         other => {
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
             if existed && item_drawn_status.content_drawn {
@@ -2405,6 +2427,45 @@ fn populate_image_message_content(
             true
         }
     }
+}
+
+/// Draws the given location message's content into the `message_content_widget`.
+///
+/// Returns whether the location message content was fully drawn.
+fn populate_location_message_content(
+    message_content_widget: &HtmlOrPlaintextRef,
+    location: &LocationMessageEventContent,
+) -> bool {
+    let coords = location.geo_uri
+        .get(GEO_URI_SCHEME.len() ..)
+        .and_then(|s| {
+            let mut iter = s.split(',');
+            if let (Some(lat), Some(long)) = (iter.next(), iter.next()) {
+                Some((lat, long))
+            } else {
+                None
+            }
+        });
+    if let Some((lat, long)) = coords {
+        let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
+        let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
+        let html_body = format!(
+            "Location: {short_lat},{short_long}\
+            <p><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></p>\
+            <p><a href=\"https://www.google.com/maps/search/?api=1&amp;query={lat},{long}\">Open in Google Maps</a></p>\
+            <p><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></p>",
+        );
+        message_content_widget.show_html(html_body);
+    } else {
+        message_content_widget.show_html(
+            format!("<i>[Location invalid]</i> {}", location.body)
+        );
+    }
+
+    // Currently we do not fetch location thumbnail previews, so we consider this as fully drawn.
+    // In the future, when we do support this, we'll return false until the thumbnail is fetched,
+    // at which point we can return true.
+    true
 }
 
 /// Draws a ReplyPreview above the given `message` if it was in-reply to another message.
@@ -2916,9 +2977,12 @@ impl Widget for LocationPreview {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let text = match self.coords {
-            Some(Ok(c)) => format!("Current location: {},{}\n   Timestamp: {:?}",
-                c.latitude, c.longitude, self.timestamp,
-            ),
+            Some(Ok(c)) => {
+                // format!("Current location: {},{}\n   Timestamp: {:?}",
+                //     c.latitude, c.longitude, self.timestamp,
+                // )
+                format!("Current location: {},{}", c.latitude, c.longitude)
+            }
             Some(Err(e)) => format!("Error getting location: {e:?}"),
             None => format!("Current location is not yet available."),
         };
