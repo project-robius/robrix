@@ -2107,7 +2107,7 @@ fn populate_message_view(
             } else {
                 live_id!(Message)
             };
-            let (item, existed) = list.item_with_existed(cx, item_id, template).unwrap();
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
             item.avatar_row(id!(avatar_row)).set_range(cx, receipts.len());
             let seq = item.avatar_row(id!(avatar_row));
             let mut receipt_iter = receipts.iter();
