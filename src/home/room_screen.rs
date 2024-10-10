@@ -2687,8 +2687,9 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
 /// Sets the given avatar and returns a displayable username based on the
 /// given profile and user ID of the sender of the event with the given event ID.
 ///
-/// If the sender profile is not ready, this function will submit an async request
-/// to fetch the sender profile from the server, but only if the event ID is `Some`.
+/// If the user profile is not ready, this function will submit an async request
+/// to fetch the user profile from the server, but only if the event ID is `Some`.
+/// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
 ///
 /// This function will always choose a nice, displayable username and avatar.
 ///
@@ -2713,14 +2714,14 @@ fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: &mut Avatar,
     room_id: &RoomId,
-    sender_user_id: &UserId,
-    sender_profile_opt: Option<&TimelineDetails<Profile>>,
+    avatar_user_id: &UserId,
+    avatar_profile_opt: Option<&TimelineDetails<Profile>>,
     event_id: Option<&EventId>,
 ) -> (String, bool) {
-    // Get the display name and avatar URL from the sender's profile, if available,
+    // Get the display name and avatar URL from the user's profile, if available,
     // or if the profile isn't ready, fall back to qeurying our user profile cache.
     let mut taken_from_cache = false;
-    let (username_opt, avatar_state) = match sender_profile_opt {
+    let (username_opt, avatar_state) = match avatar_profile_opt {
         Some(TimelineDetails::Ready(profile)) => (
             profile.display_name.clone(),
             AvatarState::Known(profile.avatar_url.clone()),
@@ -2737,7 +2738,7 @@ fn set_avatar_and_get_username(
             // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
             user_profile_cache::with_user_profile(
                 cx,
-                sender_user_id,
+                avatar_user_id,
                 |profile, room_members| {
                     room_members
                         .get(room_id)
@@ -2755,7 +2756,7 @@ fn set_avatar_and_get_username(
             .unwrap_or((None, AvatarState::Unknown))
         }
         None => {
-            if let Some(user_profile) = user_profile_cache::get_user_profile(cx, sender_user_id)
+            if let Some(user_profile) = user_profile_cache::get_user_profile(cx, avatar_user_id)
             {
                 taken_from_cache = true;
                 (user_profile.username, user_profile.avatar_state)
@@ -2779,7 +2780,7 @@ fn set_avatar_and_get_username(
     // Set sender to the display name if available, otherwise the user id.
     let username = username_opt
         .clone()
-        .unwrap_or_else(|| sender_user_id.to_string());
+        .unwrap_or_else(|| avatar_user_id.to_string());
 
     // Set the sender's avatar image, or use the username if no image is available.
     avatar_img_data_opt
@@ -2787,7 +2788,7 @@ fn set_avatar_and_get_username(
             if !taken_from_cache {
                 user_profile_cache::set_user_profile(
                     cx,
-                    sender_user_id,
+                    avatar_user_id,
                     username.clone(),
                     AvatarState::Loaded(data.clone()),
                 );
@@ -2795,7 +2796,7 @@ fn set_avatar_and_get_username(
             avatar
                 .show_image(
                     Some((
-                        sender_user_id.to_owned(),
+                        avatar_user_id.to_owned(),
                         username_opt.clone(),
                         room_id.to_owned(),
                         data.clone(),
@@ -2806,7 +2807,7 @@ fn set_avatar_and_get_username(
         })
         .unwrap_or_else(|| {
             avatar.show_text(
-                Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
+                Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned())),
                 &username,
             )
         });
