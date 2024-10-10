@@ -4,6 +4,7 @@ pub mod home_screen;
 pub mod main_content;
 pub mod room_preview;
 pub mod room_screen;
+pub mod room_read_receipt;
 pub mod rooms_list;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
@@ -14,6 +15,7 @@ pub fn live_design(cx: &mut Cx) {
     rooms_list::live_design(cx);
     room_preview::live_design(cx);
     room_screen::live_design(cx);
+    room_read_receipt::live_design(cx);
     rooms_sidebar::live_design(cx);
     main_content::live_design(cx);
     spaces_dock::live_design(cx);
