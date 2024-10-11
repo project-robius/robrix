@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::rooms_list::RoomListAction,
+    home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomListAction},
     verification::VerificationAction,
     verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
 };
@@ -13,9 +13,7 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
-    import crate::shared::clickable_view::ClickableView;
     import crate::home::home_screen::HomeScreen;
-    import crate::home::room_screen::RoomScreen;
     import crate::profile::my_profile_screen::MyProfileScreen;
     import crate::verification_modal::VerificationModal;
 
@@ -187,6 +185,19 @@ impl MatchEvent for App {
                     self.ui.redraw(cx);
                 }
                 RoomListAction::None => { }
+            }
+
+            match action.as_widget_action().cast() {
+                RoomsPanelAction::RoomFocused(room_id) => {
+                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
+                        id: room_id.clone(),
+                        name: None
+                    });
+                }
+                RoomsPanelAction::FocusNone => {
+                    self.app_state.rooms_panel.selected_room = None;
+                }
+                _ => { }
             }
 
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
