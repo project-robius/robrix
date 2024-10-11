@@ -2,9 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::rooms_list::RoomListAction,
-    verification::VerificationAction,
-    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+    home::rooms_list::RoomListAction, login::login_screen::LoginAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -18,6 +16,7 @@ live_design! {
     import crate::home::room_screen::RoomScreen;
     import crate::profile::my_profile_screen::MyProfileScreen;
     import crate::verification_modal::VerificationModal;
+    import crate::login::login_screen::LoginScreen;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -102,6 +101,12 @@ live_design! {
         }
     }
 
+    // StackNavigationView without header
+    SimpleStackNavigationView = <StackNavigationView> {
+        header = <View> {width: 0, height: 0}
+        margin: 0
+    }
+
     App = {{App}} {
         ui: <Window> {
             window: {inner_size: vec2(1280, 800)},
@@ -113,7 +118,16 @@ live_design! {
                     width: Fill, height: Fill,
                     flow: Overlay,
 
-                    home_screen = <HomeScreen> {}
+                    navigation = <StackNavigation> {
+                        root_view = {
+                            login_screen = <LoginScreen> {}
+                        }
+                        stack_navigation_view_home_screen = <SimpleStackNavigationView> {
+                            body = {
+                                home_screen = <HomeScreen> {}
+                            }
+                        }
+                    }
 
                     verification_modal = <Modal> {
                         content: {
@@ -148,6 +162,7 @@ impl LiveRegister for App {
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
+        crate::login::live_design(cx);
     }
 }
 
@@ -166,6 +181,14 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            match action.as_widget_action().cast() {
+                LoginAction::LoginSuccess => {
+                    let mut navigation = self.ui.stack_navigation(id!(navigation));
+                    navigation.show_stack_view_by_id(live_id!(stack_navigation_view_home_screen), cx)
+                }
+                LoginAction::None => { }
+            }
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
@@ -244,6 +267,7 @@ impl AppMain for App {
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    pub login_state: bool,
 }
 
 #[derive(Default, Debug)]

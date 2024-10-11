@@ -6,6 +6,8 @@ pub use makepad_widgets;
 pub mod app;
 pub mod persistent_state;
 
+/// Login screen
+pub mod login;
 /// Core UI content: the main home screen (rooms list), room screen.
 pub mod home;
 /// User profile info and a user profile sliding pane.
