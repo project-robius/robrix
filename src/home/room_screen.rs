@@ -61,6 +61,7 @@ live_design! {
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
+    ICO_JUMP_TO_TOP = dep("crate://self/resources/icon_jump_to_top.svg")
 
     TEXT_SUB = {
         font_size: (10),
