@@ -48,6 +48,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
+    import crate::shared::icon_button::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
 
@@ -654,15 +655,16 @@ live_design! {
         jump_to_bottom_view = <View> {
             width: Fill,
             height: Fill,
-            flow: Down,
+            flow: Overlay,
             align: {x: 1.0, y: 1.0},
-            margin: {right: 15.0, bottom: 15.0},
+            margin: {right: 15.0, bottom: 0},
             visible: false,
-
-            jump_to_bottom_button = <IconButton> {
+            jump_button = <RobrixIconButton> {
                 width: 50, height: 50,
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                padding: 15,
+                margin: {bottom : 20}
+                icon_walk: {width: 20, height: 10, margin: {top: 0, right: 100} }
                 // draw a circular background for the button
                 draw_bg: {
                     instance background_color: #edededee,
@@ -674,13 +676,53 @@ live_design! {
                         return sdf.result
                     }
                 }
+                draw_icon: {
+                    instance color: #000
+                    instance color_hover: #000
+                    // 180.0: point upwards
+                    uniform rotation_angle: 180.0,
+                }
+                animator: {
+                    jump_button = {
+                        default: down
+                        down = {
+                            redraw: true,
+                            from: { all: Forward {duration: 2.0} }
+                            ease: ExpDecay {d1: 0.80, d2: 0.97}
+                            apply: { draw_icon: {rotation_angle: 0.0} }
+                        }
+                        up = {
+                            redraw: true,
+                            from: { all: Forward {duration: 0.5} }
+                            ease: ExpDecay {d1: 0.80, d2: 0.97}
+                            apply: { draw_icon: {rotation_angle: 180.0} }
+                        }
+                    }
+                }
             }
-
+            // Badge overlay for unread messages
+            unread_notification_badge = <View> {
+                width: 12, height: 12,
+                abs_pos: vec2(-20.0, 85.0)
+                visible: false,
+                show_bg: true,
+                draw_bg: {
+                    instance background_color: (#58DC6C)
+        
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result;
+                    }
+                }
+            }
             // Badge overlay for unread messages
             unread_message_badge = <View> {
                 width: 20, height: 20,
-                margin: {top: -10.0, right: 15.0},
-                visible: true,
+                abs_pos: vec2(-15.0, 135.0)
+                visible: false,
                 show_bg: true,
                 draw_bg: {
                     instance background_color: (#5D5E5E)
@@ -1279,14 +1321,16 @@ impl Widget for RoomScreen {
 
                 const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
                 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                    portal_list.smooth_scroll_to_end(
+  
+                if let Some(ref mut but) = self.button(id!(jump_button)).borrow_mut() {
+                    if but.clicked(&actions) {
+                        portal_list.smooth_scroll_to_end(
                         cx,
                         SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
                         SCROLL_TO_BOTTOM_SPEED,
-                    );
-                    jump_to_bottom_view.set_visible(false);
-                    self.redraw(cx);
+                        );
+                        jump_to_bottom_view.set_visible(false);
+                    }
                 }
             }
 
@@ -1545,12 +1589,18 @@ impl RoomScreen {
                     tl.items = new_items;
                     // Set number of unread messages to unread_notification_badge
                     if let Some(room_id) = &self.room_id {
-                        if let Some(num_unread) = get_client()
+                        if let Some(num_unread)= get_client()
                         .and_then(|c| c.get_room(room_id)).map(|room| room.num_unread_messages()) {
+                            println!("num_unread {:?}", num_unread);
+                            let unread_notifications_badge = jump_to_bottom_view.view(id!(unread_notifications_badge));
                             let unread_message_badge = jump_to_bottom_view.view(id!(unread_message_badge));
                             if num_unread > 0 {
                                 unread_message_badge.label(id!(label)).set_text(&format!("{}",num_unread));
                                 unread_message_badge.set_visible(true);
+                                unread_notifications_badge.set_visible(false);
+                                if let Some(ref mut but) = jump_to_bottom_view.button(id!(jump_button)).borrow_mut() {
+                                    but.animator_play(cx, id!(jump_button.down));
+                                }
                             } else {
                                 unread_message_badge.set_visible(false);
                             }
