@@ -43,7 +43,7 @@ use crate::{
     }, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, utils::MEDIA_THUMBNAIL_FORMAT
+    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
 
@@ -934,6 +934,8 @@ async fn async_main_loop() -> Result<()> {
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
+    add_verification_event_handlers_and_sync_client(client.clone());
+
     // Listen for updates to the ignored user list.
     handle_ignore_user_list_subscriber(client.clone());
 
@@ -1155,6 +1157,7 @@ async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserI
 
 fn handle_ignore_user_list_subscriber(client: Client) {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
+    log!("Initial ignored-user list is: {:?}", subscriber.get());
     Handle::current().spawn(async move {
         let mut first_update = true;
         while let Some(ignore_list) = subscriber.next().await {
@@ -1190,6 +1193,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
+    log!("Initial sync service state is {:?}", subscriber.get());
     Handle::current().spawn(async move {
         while let Some(state) = subscriber.next().await {
             log!("Received a sync service state update: {state:?}");
@@ -1205,6 +1209,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
+    log!("Initial room list loading state is {:?}", loading_state.get());
     Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
             log!("Received a room list loading state update: {state:?}");
@@ -1219,6 +1224,7 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
         }
     });
 }
+
 
 const LOG_TIMELINE_DIFFS: bool = false;
 
@@ -1236,7 +1242,9 @@ async fn timeline_subscriber_handler(
         new_items: timeline_items.clone(),
         changed_indices: usize::MIN..usize::MAX,
         clear_cache: true,
-    }).expect("Error: timeline update sender couldn't send update with initial items!");
+    }).unwrap_or_else(
+        |_e| panic!("Error: timeline update sender couldn't send update to room {room_id} with initial items!")
+    );
 
     let mut latest_event = timeline.latest_event().await;
 

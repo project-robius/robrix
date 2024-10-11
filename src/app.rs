@@ -1,7 +1,11 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::home::rooms_list::RoomListAction;
+use crate::{
+    home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomListAction},
+    verification::VerificationAction,
+    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -9,10 +13,9 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
-    import crate::shared::clickable_view::ClickableView
-    import crate::home::home_screen::HomeScreen
-    import crate::home::room_screen::RoomScreen
-    import crate::profile::my_profile_screen::MyProfileScreen
+    import crate::home::home_screen::HomeScreen;
+    import crate::profile::my_profile_screen::MyProfileScreen;
+    import crate::verification_modal::VerificationModal;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -103,7 +106,19 @@ live_design! {
             pass: {clear_color: #2A}
 
             body = {
-                home_screen = <HomeScreen> {}
+                // A wrapper view for showing top-level app modals/dialogs/popups
+                <View> {
+                    width: Fill, height: Fill,
+                    flow: Overlay,
+
+                    home_screen = <HomeScreen> {}
+
+                    verification_modal = <Modal> {
+                        content: {
+                            verification_modal_inner = <VerificationModal> {}
+                        }
+                    }
+                }
             } // end of body
         }
     }
@@ -128,6 +143,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
     }
@@ -168,7 +184,36 @@ impl MatchEvent for App {
                     );
                     self.ui.redraw(cx);
                 }
-                _ => (),
+                RoomListAction::None => { }
+            }
+
+            match action.as_widget_action().cast() {
+                RoomsPanelAction::RoomFocused(room_id) => {
+                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
+                        id: room_id.clone(),
+                        name: None
+                    });
+                }
+                RoomsPanelAction::FocusNone => {
+                    self.app_state.rooms_panel.selected_room = None;
+                }
+                _ => { }
+            }
+
+            // `VerificationAction`s come from a background thread, so they are NOT widget actions.
+            // Therefore, we cannot use `as_widget_action().cast()` to match them.
+            match action.downcast_ref() {
+                Some(VerificationAction::RequestReceived(state)) => {
+                    self.ui.verification_modal(id!(verification_modal_inner))
+                        .initialize_with_data(state.clone());
+                    self.ui.modal(id!(verification_modal)).open(cx);
+                }
+                // other verification actions are handled by the verification modal itself.
+                _ => { }
+            }
+
+            if let VerificationModalAction::Close = action.as_widget_action().cast() {
+                self.ui.modal(id!(verification_modal)).close(cx);
             }
         }
     }
@@ -222,3 +267,4 @@ pub struct SelectedRoom {
     pub id: OwnedRoomId,
     pub name: Option<String>,
 }
+
