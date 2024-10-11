@@ -1003,9 +1003,12 @@ pub struct RoomScreen {
 
 impl Drop for RoomScreen {
     fn drop(&mut self) {
-        // Make sure to return the room state back to TIMELINE_STATES, so that other RoomScreen instances can access it.
-        // RoomScreen is dropped whenever a tab is closed or the app is resized to a different AdaptiveView layout.
-        self.save_state();
+        // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
+        // back to to `TIMELINE_STATES`, which ensures that its UI state(s) are not lost
+        // and that other RoomScreen instances can show this room in the future.
+        // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
+        // when a Tab is closed or the app is resized to a different AdaptiveView layout.
+        self.hide_timeline();
     }
 }
 
@@ -1820,8 +1823,7 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
-    /// Invoke this when this timeline is being hidden or no longer being shown,
-    /// e.g., when the user navigates away from this timeline.
+    /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
         if let Some(room_id) = self.room_id.clone() {
             self.save_state();
