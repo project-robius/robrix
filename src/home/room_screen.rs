@@ -1268,8 +1268,9 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle sending any read receipts for the current logged-in user.
+            // Set visibility of loading message banner based of pagination logic
             self.send_pagination_request_based_on_scroll_pos(cx, actions);
+            // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
 
             // Handle the cancel reply button being clicked.
