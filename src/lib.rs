@@ -28,6 +28,7 @@ pub mod verification;
 
 pub mod utils;
 pub mod temp_storage;
+pub mod location;
 
 
 pub const APP_QUALIFIER: &str = "org";

@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest}};
 
 use super::room_preview::RoomPreviewAction;
 
@@ -167,6 +167,8 @@ pub struct RoomsList {
     #[rust] all_rooms: Vec<RoomPreviewEntry>,
     /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `all_rooms` vector.
     #[rust] rooms_list_map: HashMap<u64, usize>,
+    /// Maps the OwnedRoomId to the index of the room in the `all_rooms` vector.
+    #[rust] rooms_list_owned_room_id_map: HashMap<OwnedRoomId, usize>,
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
     /// The index of the currently selected room
@@ -194,6 +196,8 @@ impl Widget for RoomsList {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        let room_index = self.all_rooms.len();
+                        self.rooms_list_owned_room_id_map.insert(room.room_id.clone(), room_index);
                         self.all_rooms.push(room);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
@@ -277,6 +281,15 @@ impl Widget for RoomsList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
 
         // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
+        let app_state = scope.data.get_mut::<AppState>().unwrap();
+        // Override the current active room index if the app state has a different selected room
+        if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
+            if let Some(room_index) = self.rooms_list_owned_room_id_map.get(&room.id) {
+                self.current_active_room_index = Some(*room_index);
+            }
+        } else {
+            self.current_active_room_index = None;
+        }
 
         let count = self.all_rooms.len();
         let status_label_id = count;

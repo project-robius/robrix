@@ -37,11 +37,11 @@ The following table shows which host systems can currently be used to build Robr
 
 2. If you're building on **Linux** or **WSL** on Windows, install the required dependencies. Otherwise, proceed to step 3.
    * `openssl`, `clang`/`libclang`, `binfmt`, `Xcursor`/`X11`, `asound`/`pulse`.
-   
+
    On a Debian-like Linux distro (e.g., Ubuntu), run the following:
    ```sh
    sudo apt-get update
-   sudo apt-get install libssl-dev libsqlite3-dev pkg-config llvm clang libclang-dev binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
+   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
 3. Then, build and run Robrix (you can optionally add `--release` after `run`):
@@ -78,7 +78,7 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
         * API version 33 or higher is required, which is Android 13 and up.
 
 
-## Feature status tracker 
+## Feature status tracker
 
 These are generally sorted in order of priority. If you're interested in helping out with anything here, please reach out via a GitHub issue or on our Robius matrix channel.
 
@@ -93,7 +93,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
 - [x] Stable positioning of events during simple timeline update
 - [x] Stable positioning of events during complex/multi-part timeline update
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103 
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
