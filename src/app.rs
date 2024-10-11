@@ -281,7 +281,6 @@ impl AppMain for App {
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
-    pub login_state: bool,
 }
 
 #[derive(Default, Debug)]
