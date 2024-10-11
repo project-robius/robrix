@@ -124,39 +124,12 @@ live_design! {
 
         clear_button = <Button> {
             height: Fit,
-            height: Fit,
-
             visible: false
 
             draw_bg: {
-                instance color: #0000
-                instance color_hover: #fff
-                instance border_width: 1.0
-                instance border_color: #0000
-                instance border_color_hover: #fff
-                instance radius: 2.5
-
-                fn get_color(self) -> vec4 {
-                    return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-                }
-
-                fn get_border_color(self) -> vec4 {
-                    return mix(self.border_color, mix(self.border_color, self.border_color_hover, 0.2), self.hover)
-                }
-
                 fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                    sdf.box(
-                        self.border_width,
-                        self.border_width,
-                        self.rect_size.x - (self.border_width * 2.0),
-                        self.rect_size.y - (self.border_width * 2.0),
-                        max(1.0, self.radius)
-                    )
-                    sdf.fill_keep(self.get_color())
-                    if self.border_width > 0.0 {
-                        sdf.stroke(self.get_border_color(), self.border_width)
-                    }
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    sdf.box(0., 0., self.rect_size.x, self.rect_size.y, 0);
                     return sdf.result;
                 }
             }
@@ -215,9 +188,7 @@ impl Widget for SearchBar {
         let input = self.view.text_input(id!(input));
         let clear_button = self.view.button(id!(clear_button));
 
-        if input.text().is_empty() {
-            clear_button.set_visible(false);
-        } else {
+        if !input.text().is_empty() {
             clear_button.set_visible(true);
         }
 

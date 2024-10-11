@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
+use matrix_sdk::{room, ruma::{api::client::filter, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId}};
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest}};
 
-use super::{room_preview::RoomPreviewAction, rooms_sidebar::{RoomsSideBarFilter, RoomsViewAction}};
+use super::{room_preview::RoomPreviewAction, rooms_sidebar::{RoomsSideBarFilter, RoomsSideBarAction}};
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -148,35 +148,6 @@ pub struct RoomPreviewEntry {
     pub is_selected: bool,
 }
 
-/// The possible conditions to filter the list of all rooms.
-#[derive(Debug, Default)]
-pub enum RoomsFilterCondition {
-    /// Match all conditions(apart from 'Empty'), the search value needs to be provided.
-    All,
-    /// Filter by room id.
-    RoomId,
-    /// Filter by room name.
-    RoomName,
-    /// Filter by room cannonical alias.
-    RoomCannonicalAlias,
-    /// Filter by room alternative aliases.
-    RoomAltAliases,
-    /// No filter condition, show all rooms, if search value is '' or not provided, we don't filter.
-    #[default]
-    Empty,
-    // If business logic needs, more filter condition can be added here, e.g.,
-    // by room owner, by room members, by room version, by user's custom tag etc.
-    // ...
-}
-#[derive(Debug, Default)]
-pub enum RoomsFilterType {
-    /// Match any part of the search string.
-    Fuzzy,
-    /// Match the exact value of the search string.
-    #[default]
-    Precise,
-}
-
 #[derive(Debug)]
 pub enum RoomPreviewAvatar {
     Text(String),
@@ -204,23 +175,21 @@ pub struct RoomsList {
     #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
-    /// The search value to filter the list of all rooms.
-    #[rust] search_value: String,
     /// The list of indices of the currently filtered rooms.
     #[rust] current_filtered_rooms_indices: Vec<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
 }
 
-impl RoomsList {
-    fn update_status_rooms_count(&mut self) {
-        self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
-        } else {
-            format!("Loaded {} rooms.", self.all_rooms.len())
-        };
-    }
+#[derive(Debug)]
+pub enum RoomsFilterCondition {
+    All,
+    /// Filter by room name.
+    RoomName,
+    /// Filter by room alias, either the cannonical alias or any of the alternative aliases.
+    RoomAlias,
 }
+
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -327,21 +296,11 @@ impl Widget for RoomsList {
             self.current_active_room_index = None;
         }
 
-        // let count = self.current_filtered_rooms_indices.len();
-
-        let mut count = self.all_rooms.len();
-
-        if !self.current_filtered_rooms_indices.is_empty() {
-            count = self.current_filtered_rooms_indices.len();
-        } else if !self.search_value.is_empty() {
-            count = 0;
-            self.status = "No rooms found.".to_string();
-        }
-
-
-
-        let last_item_id = count;
         let count = self.all_rooms.len();
+        // if !self.current_filtered_rooms_indices.is_empty() {
+        //     count = self.current_filtered_rooms_indices.len();
+        // }
+
         let status_label_id = count;
 
         // Start the actual drawing procedure.
@@ -355,30 +314,7 @@ impl Widget for RoomsList {
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
-                // Draw the status label as the bottom entry.
-                let item = if item_id == last_item_id {
-                    let item: WidgetRef = list.item(cx, item_id, live_id!(status_label)).unwrap();
-                    if count > 0 {
-                        let text = format!("Found {count} joined rooms.");
-                        item.as_view().apply_over(cx, live!{
-                            height: 80.0,
-                            label = { text: (text) }
-                        });
-                    } else {
-                        item.as_view().apply_over(cx, live!{
-                            height: Fit,
-                            label = { text: (&self.status) }
-                        });
-                    }
-                    item
-                }
-                // Draw a filler entry to take up space at the bottom of the portal list.
-                else if item_id > last_item_id {
-                    list.item(cx, item_id, live_id!(bottom_filler)).unwrap()
-                }
-                else {
-                // Pass down the room info to the RoomPreview widget.
-                let item_id = self.current_filtered_rooms_indices.get(item_id).cloned().unwrap_or(item_id);
+
                 // Draw the room preview for each room.
                 let item = if let Some(room_info) = self.all_rooms.get_mut(item_id) {
                     let item = list.item(cx, item_id, live_id!(room_preview));
@@ -426,115 +362,95 @@ impl Widget for RoomsList {
 impl WidgetMatchEvent for RoomsList {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+        // Handle any actions on this widget, e.g., a user filtering the list of rooms.
         for action in actions {
-            match action.as_widget_action().cast() {
-                RoomsViewAction::Filter { value, filter } => {
-                    // we only handle the filter action for the rooms view
-                    if let RoomsSideBarFilter::Rooms = filter {
-                        // we only filter the rooms list if the value is not empty
-
-                        if self.all_rooms.is_empty() {
-                            self.status = "You did't have any rooms.".to_string();
-                        } else {
-                            if value.is_empty() {
-                                self.current_filtered_rooms_indices = (0..self.all_rooms.len()).collect();
-                            } else {
-
-                                self.search_value = value.clone();
-
-                                let indices = self.filter_rooms(
-                                    &value,
-                                    RoomsFilterCondition::All,
-                                    RoomsFilterType::Fuzzy
-                                );
-
-                                if indices.is_empty() {
-                                    self.status = "No rooms found.".to_string();
-                                    self.current_filtered_rooms_indices = Vec::new();
-                                } else {
-                                    self.current_filtered_rooms_indices = indices;
-                                }
-                            }
-                        }
-
-                        self.redraw(cx);
+            // Handle the filter action for the rooms view.
+            if let RoomsSideBarAction::Filter {
+                value,
+                filter_type
+            } = action.as_widget_action().cast() {
+                // we only handle the filter action for the rooms view
+                if let RoomsSideBarFilter::Rooms = filter_type {
+                    if value.is_empty() {
+                        self.current_filtered_rooms_indices = (0..self.all_rooms.len()).collect();
+                    } else {
+                        let value = value.trim().to_lowercase();
+                        // We only filter by room name for now.
+                        let filtered_rooms_index = self.filter_rooms(&value, RoomsFilterCondition::RoomName);
+                        log!("Filtering rooms by room name: {:?}", filtered_rooms_index);
+                        self.current_filtered_rooms_indices = filtered_rooms_index;
                     }
+
+                    self.redraw(cx);
                 }
-                _ => (),
             }
         }
     }
 }
 
 impl RoomsList {
-    /// Filter the list of all rooms based on the given conditions and filter string.
-    pub fn filter_rooms(&self, value: &str, filter_condition: RoomsFilterCondition, filter_type: RoomsFilterType) -> Vec<usize>{
-        self.filter_all(value, filter_condition, filter_type)
+    fn update_status_rooms_count(&mut self) {
+        self.status = if let Some(max_rooms) = self.max_known_rooms {
+            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
+        } else {
+            format!("Loaded {} rooms.", self.all_rooms.len())
+        };
     }
 
-    /// Filter the list of all rooms by room ID.
-    pub fn filter_by_room_id(&self, filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        self.filter_all(value, RoomsFilterCondition::RoomId, filter_type)
+    pub fn filter_rooms(&self, keywords: &str, filter_condition: RoomsFilterCondition) -> Vec<usize> {
+
+        let filtered_rooms_indices = match filter_condition {
+            RoomsFilterCondition::All => todo!(),
+            RoomsFilterCondition::RoomName => self.filter_rooms_by_room_name(keywords),
+            RoomsFilterCondition::RoomAlias => self.filter_rooms_by_room_alias(keywords),
+        };
+
+        filtered_rooms_indices
     }
 
-    /// Filter the list of all rooms by room name.
-    pub fn filter_by_room_name(&self, filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        self.filter_all(value, RoomsFilterCondition::RoomName, filter_type)
-    }
+    /// Filter rooms by room name.
+    pub fn filter_rooms_by_room_name(&self, keywords: &str) -> Vec<usize> {
+        let mut filtered_rooms_indices = Vec::new();
 
-    /// Filter the list of all rooms by room cannonical alias.
-    pub fn filter_by_room_cannonical_alias(&self,filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        self.filter_all(value, RoomsFilterCondition::RoomCannonicalAlias, filter_type)
-    }
-
-    /// Filter the list of all rooms by room alternative aliases.
-    pub fn filter_by_room_alt_aliases(&self,filter_type: RoomsFilterType, value: &str) -> Vec<usize> {
-        self.filter_all(value, RoomsFilterCondition::RoomAltAliases, filter_type)
-    }
-
-    /// The main filtering function that filters the list of all rooms based on the given conditions and filter string.
-    fn filter_all(&self, value: &str, filter_condition: RoomsFilterCondition, _filter_type: RoomsFilterType) -> Vec<usize> {
-        let mut filtered_rooms_index = Vec::new();
-
-        for (index, room) in self.all_rooms.iter().enumerate() {
-            //prepare the room fields for filtering
-            let room_id = room.room_id.as_ref().map(|id| id.as_str()).unwrap_or("").to_lowercase();
-            let room_name = room.room_name.as_ref().map(|name| name.as_str()).unwrap_or("").to_lowercase();
-            let room_cannonical_alias = room.cannonical_alias.as_ref().map(|alias| alias.as_str()).unwrap_or("").to_lowercase();
-            let room_alt_aliases = room.alt_aliases.iter().map(|alias| alias.as_str()).collect::<Vec<&str>>().join(" ").to_lowercase();
-            let filter_value = value.trim().to_lowercase();
-
-            let is_match = match filter_condition {
-                RoomsFilterCondition::All => {
-                    room_id.contains(&filter_value) ||
-                    room_name.contains(&filter_value) ||
-                    room_cannonical_alias.contains(&filter_value) ||
-                    room_alt_aliases.contains(&filter_value)
+        self
+        .all_rooms
+        .iter()
+        .enumerate()
+        .for_each(|(index, room_info)| {
+            if let Some(room_name) = &room_info.room_name {
+                if room_name.to_lowercase().contains(&keywords) {
+                    filtered_rooms_indices.push(index);
                 }
-                RoomsFilterCondition::RoomId => {
-                    room_id.contains(&filter_value)
-                }
-                RoomsFilterCondition::RoomName => {
-                    room_name.contains(&filter_value)
-                }
-                RoomsFilterCondition::RoomCannonicalAlias => {
-                    room_cannonical_alias.contains(&filter_value)
-                }
-                RoomsFilterCondition::RoomAltAliases => {
-                    room_alt_aliases.contains(&filter_value)
-                }
-                RoomsFilterCondition::Empty => {
-                    true
-                }
-            };
-
-            if is_match {
-                filtered_rooms_index.push(index);
             }
-        }
+        });
 
-        // maybe sort the filtered_rooms_index here, e.g., by room name, by room id, by room latest message, etc.
+        filtered_rooms_indices
+    }
 
-        filtered_rooms_index
+    /// Filter rooms by room alias, either the cannonical alias or any of the alternative aliases.
+    pub fn filter_rooms_by_room_alias(&self, keywords: &str) -> Vec<usize> {
+        let mut filtered_rooms_indices = Vec::new();
+
+        self
+        .all_rooms
+        .iter()
+        .enumerate()
+        .for_each(|(index, room_info)| {
+
+            if let Some(cannonical_alias) = &room_info.cannonical_alias {
+                if cannonical_alias.to_string().to_lowercase().contains(&keywords) {
+                    filtered_rooms_indices.push(index);
+                }
+            } else {
+                room_info.alt_aliases.iter().for_each(|alias| {
+                    if alias.to_string().to_lowercase().contains(&keywords) {
+                        filtered_rooms_indices.push(index);
+                    }
+                });
+            }
+
+        });
+
+        filtered_rooms_indices
     }
 }

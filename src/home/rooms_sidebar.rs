@@ -110,12 +110,6 @@ live_design! {
             }
         }
 
-        <SearchBar> {
-            input = {
-                empty_message: "Please enter room name, alias or id..."
-            }
-        }
-
         <Label> {
             text: "Home"
             draw_text: {
@@ -123,6 +117,13 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
+
+        <SearchBar> {
+            input = {
+                empty_message: "Room name, alias, or id ..."
+            }
+        }
+
         <View> {
             flow: Down, spacing: 20
             padding: {top: 20}
@@ -186,16 +187,17 @@ pub struct RoomsView {
 /// The filter options for the rooms view.
 #[derive(Debug, Clone)]
 pub enum RoomsSideBarFilter {
+    /// Filter room
     People,
-    Channels,
+    /// Filter channels
     Rooms,
 }
 
 #[derive(Debug, Clone, DefaultNone)]
-pub enum RoomsViewAction {
+pub enum RoomsSideBarAction {
     Filter {
         value: String,
-        filter: RoomsSideBarFilter,
+        filter_type: RoomsSideBarFilter,
     },
     None
 }
@@ -216,27 +218,20 @@ impl WidgetMatchEvent for RoomsView {
         let widget_uid = self.widget_uid();
 
         for action in actions {
-            if let SearchBarAction::Search(value) = action.as_widget_action().cast() {
+            if let SearchBarAction::Search(keywords) = action.as_widget_action().cast() {
 
-                log!("[Rooms Sidebar Search Value]: {}", value);
-
-                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
-                        value: value.clone(),
-                        filter: RoomsSideBarFilter::Rooms,
+                cx.widget_action(widget_uid, &scope.path, RoomsSideBarAction::Filter {
+                        value: keywords.clone(),
+                        filter_type: RoomsSideBarFilter::Rooms,
                     },
                 );
 
-                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
-                        value: value.clone(),
-                        filter: RoomsSideBarFilter::People,
+                cx.widget_action(widget_uid, &scope.path, RoomsSideBarAction::Filter {
+                        value: keywords.clone(),
+                        filter_type: RoomsSideBarFilter::People,
                     },
                 );
 
-                cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Filter {
-                        value: value.clone(),
-                        filter: RoomsSideBarFilter::Channels,
-                    },
-                );
             }
         }
     }
