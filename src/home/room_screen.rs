@@ -734,6 +734,8 @@ live_design! {
             }
 
             send_location_button = <RobrixIconButton> {
+                // disabled by default; will be enabled upon receiving valid location update.
+                enabled: false,
                 padding: {left: 15, right: 15}
                 draw_icon: {
                     svg_file: (ICO_SEND)
