@@ -64,18 +64,11 @@ live_design! {
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
-    
+
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
-    TEXT_SUB = {
+    TEXT_SUB = <THEME_FONT_REGULAR>{
         font_size: (10),
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
-    }
-
-    TEXT_P = {
-        font_size: (12),
-        height_factor: 1.65,
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
     }
 
     COLOR_BG = #xfff8ee
@@ -1028,13 +1021,13 @@ impl RoomScreen{
             return;
         }
         let first_index = portal_list.first_id();
-        
+
         let Some(tl_state) = self.tl_state.as_mut() else { return };
         let Some(room_id) = self.room_id.as_ref() else { return };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
-            if *index != first_index {  
-                // scroll changed         
+            if *index != first_index {
+                // scroll changed
                 self.fully_read_timer = cx.start_interval(5.0);
                 let time_now = std::time::Instant::now();
                 if first_index > *index {
@@ -1823,7 +1816,7 @@ impl RoomScreen {
         if first_time_showing_room {
             self.process_timeline_updates(cx);
         }
-    
+
         self.redraw(cx);
     }
 
