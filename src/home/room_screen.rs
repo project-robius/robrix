@@ -656,18 +656,19 @@ live_design! {
             flow: Down,
             align: {x: 1.0, y: 1.0},
             margin: {right: 15.0, bottom: 15.0},
-            visible: true,
+            visible: false,
 
             jump_to_bottom_button = <IconButton> {
                 width: 50, height: 50,
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} },
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                // draw a circular background for the button
                 draw_bg: {
                     instance background_color: #edededee,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x);
+                        sdf.circle(c.x, c.x, c.x)
                         sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
