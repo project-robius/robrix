@@ -18,15 +18,8 @@ live_design! {
     }
 
     TEXT_SUB = <THEME_FONT_REGULAR>{
-        font_size: (8),
-        height_factor: 1.5,
+        font_size: (10),
     }
-
-    TEXT_P = <THEME_FONT_REGULAR>{
-        font_size: (12),
-        height_factor: 1.65,
-    }
-
 
     USERNAME_FONT_SIZE = 11
     USERNAME_TEXT_COLOR = #x2
@@ -53,9 +46,7 @@ live_design! {
 
     SMALL_STATE_FONT_SIZE = 9.0
     SMALL_STATE_TEXT_COLOR = #x888
-    SMALL_STATE_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")},
-        font2: { path: dep("crate://makepad-widgets/resources/LXGWWenKaiRegular.ttf") },
+    SMALL_STATE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (SMALL_STATE_FONT_SIZE),
         height_factor: 1.3,
     }

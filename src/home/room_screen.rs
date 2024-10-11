@@ -67,10 +67,6 @@ live_design! {
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
-    TEXT_SUB = <THEME_FONT_REGULAR>{
-        font_size: (10),
-    }
-
     COLOR_BG = #xfff8ee
     COLOR_BRAND = #x5
     COLOR_BRAND_HOVER = #x3
