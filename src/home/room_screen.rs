@@ -1169,18 +1169,16 @@ impl Widget for RoomScreen {
                 // Handle the action that requests to show the user profile sliding pane.
                 if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
                     // Only show the user profile in room that this avatar belongs to
-                    if let Some(room_id) = self.room_id.as_ref() {
-                        if profile_and_room_id.room_id == *room_id {
-                            self.show_user_profile(
-                                cx,
-                                &pane,
-                                UserProfilePaneInfo {
-                                    profile_and_room_id,
-                                    room_name: self.room_name.clone(),
-                                    room_member: None,
-                                },
-                            );
-                        }
+                    if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
+                        self.show_user_profile(
+                            cx,
+                            &pane,
+                            UserProfilePaneInfo {
+                                profile_and_room_id,
+                                room_name: self.room_name.clone(),
+                                room_member: None,
+                            },
+                        );
                     }
                 }
 
