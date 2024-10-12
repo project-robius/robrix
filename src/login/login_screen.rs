@@ -102,6 +102,7 @@ live_design! {
     }
 
     LoginScreen = {{LoginScreen}} {
+        width: Fit, height: Fit
         show_bg: true,
         draw_bg: {
             color: (COLOR_PRIMARY)
@@ -244,12 +245,12 @@ impl Widget for LoginScreen {
                 if user_id.is_empty() || password.is_empty() {
                     status_label.set_text("Please enter both User ID and Password.");
                 } else {
+                    status_label.set_text("Waiting for login response...");
                     submit_async_request(MatrixRequest::Login(LoginRequest {
                         user_id,
                         password,
                         homeserver: homeserver.is_empty().not().then(|| homeserver),
                     }));
-                    status_label.set_text("Waiting for login response...");
                 }
                 needs_redraw = true;
             }

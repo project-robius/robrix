@@ -887,7 +887,7 @@ async fn async_main_loop(
     let cli_parse_result = Cli::try_parse();
     log!("CLI parsing succeeded? {}", cli_parse_result.is_ok());
     let wait_for_login = most_recent_user_id.is_none()
-        || cli_parse_result.as_ref().map_or(false, |cli| cli.login_screen);
+        || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login");
     log!("Waiting for login? {}", wait_for_login);
 
     let new_login_opt = if !wait_for_login {

@@ -102,14 +102,6 @@ live_design! {
         }
     }
 
-    // StackNavigationView without header
-    SimpleStackNavigationView = <StackNavigationView> {
-        header = <View> {}
-        body = {
-            margin: 0
-        }
-    }
-
     App = {{App}} {
         ui: <Window> {
             window: {inner_size: vec2(1280, 800)},
@@ -121,14 +113,20 @@ live_design! {
                     width: Fill, height: Fill,
                     flow: Overlay,
 
-                    navigation = <StackNavigation> {
-                        root_view = {
-                            login_screen = <LoginScreen> {}
-                        }
-                        stack_navigation_view_home_screen = <SimpleStackNavigationView> {
-                            body = {
-                                home_screen = <HomeScreen> {}
+                    home_screen = <HomeScreen> {}
+
+                    login_modal = <Modal> {
+                        bg_view: {
+                            show_bg: true,
+                            draw_bg: {
+                                color: #f
+                                fn pixel(self) -> vec4 {
+                                    return vec4(1.0, 1.0, 1.0, 0.0)
+                                }
                             }
+                        }
+                        content: {
+                            login_modal_inner = <LoginScreen> {}
                         }
                     }
 
@@ -149,6 +147,8 @@ app_main!(App);
 pub struct App {
     #[live]
     ui: WidgetRef,
+
+    #[rust(true)] show_login: bool,
 
     #[rust]
     app_state: AppState,
@@ -172,7 +172,7 @@ impl LiveRegister for App {
 impl LiveHook for App { }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
+    fn handle_startup(&mut self, cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
@@ -183,22 +183,10 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        self.ui.stack_navigation(id!(navigation))
-            .handle_stack_view_actions(cx, actions);
-
         for action in actions {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                cx.widget_action(
-                    self.ui.widget_uid(),
-                    &Scope::default().path,
-                    StackNavigationAction::NavigateTo(live_id!(stack_navigation_view_home_screen)), 
-                );
-                // Try to trigger the home_screen to redraw or handle events.
-                self.ui.view(id!(home_screen)).redraw(cx);
-                SignalToUI::set_ui_signal();
-
-                // let mut navigation = self.ui.stack_navigation(id!(navigation));
-                // navigation.show_stack_view_by_id(live_id!(stack_navigation_view_home_screen), cx);
+                log!("Received LoginAction::LoginSuccess, closing login modal.");
+                self.ui.modal(id!(login_modal)).close(cx);
                 self.ui.redraw(cx);
             }
 
@@ -283,6 +271,12 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if self.show_login {
+            log!("showing login modal");
+            self.ui.modal(id!(login_modal)).open(cx);
+            self.show_login = false;
+        }
+
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
