@@ -12,7 +12,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::icon_button::*;
 
-    IMG_APP_LOGO = dep("crate://self/packaging/robrix_logo_alpha.png")
+    IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
 
     LoginTextInput = <TextInput> {
         width: Fill, height: Fit, margin: 0
@@ -113,8 +113,8 @@ live_design! {
             width: Fit, height: Fit
             flow: Down
             align: {x: 0.5, y: 0.5}
-            padding: 50
-            spacing: 20.0
+            padding: 30
+            spacing: 15.0
 
             show_bg: true,
             draw_bg: {
@@ -138,19 +138,19 @@ live_design! {
             }
 
             user_id_input = <LoginTextInput> {
-                width: 300, height: 40
+                width: 250, height: 40
                 empty_message: "User ID"
             }
 
             password_input = <LoginTextInput> {
-                width: 300, height: 40
+                width: 250, height: 40
                 empty_message: "Password"
                 // password: true
             }
 
             homeserver_input = <LoginTextInput> {
-                width: 300, height: 40
-                margin: {bottom: -15}
+                width: 250, height: 40
+                margin: {bottom: -10}
                 empty_message: "matrix.org"
             }
             <Label> {
@@ -163,7 +163,7 @@ live_design! {
             }
 
             login_button = <RobrixIconButton> {
-                width: 300, height: 40
+                width: 250, height: 40
                 margin: {top: 15}
                 draw_bg: {
                     color: (COLOR_SELECTED_PRIMARY)
@@ -176,7 +176,7 @@ live_design! {
             }
 
             status_label = <Label> {
-                width: 300, height: Fit
+                width: 250, height: Fit
                 padding: {left: 5, right: 5}
                 draw_text: {
                     color: (MESSAGE_TEXT_COLOR)
