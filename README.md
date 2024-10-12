@@ -89,8 +89,8 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Fetch user profiles (displayable names)
 - [x] Fetch and display user profile avatars
 - [x] Backwards pagination (upon viewing a room timeline)
-- [ ] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
-- [ ] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
+- [x] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
+- [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
 - [x] Stable positioning of events during simple timeline update
 - [x] Stable positioning of events during complex/multi-part timeline update
 - [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
@@ -129,6 +129,5 @@ These are generally sorted in order of priority. If you're interested in helping
 
 
 ## Known problems/issues
- - URLs do not wrap properly; that is a Makepad-side problem.
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained
