@@ -1,4 +1,8 @@
+use std::ops::Not;
+
 use makepad_widgets::*;
+
+use crate::sliding_sync::{submit_async_request, LoginRequest, MatrixRequest};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -124,16 +128,17 @@ live_design! {
 
             title = <Label> {
                 width: Fit, height: Fit
+                margin: { bottom: 10 }
                 draw_text: {
                     color: (COLOR_TEXT)
-                        text_style: <TITLE_TEXT>{font_size: 16.0}
+                    text_style: <TITLE_TEXT>{font_size: 16.0}
                 }
                 text: "Login to Robrix"
             }
 
-            username_input = <LoginTextInput> {
+            user_id_input = <LoginTextInput> {
                 width: 300, height: 40
-                empty_message: "Username"
+                empty_message: "User ID"
             }
 
             password_input = <LoginTextInput> {
@@ -142,87 +147,142 @@ live_design! {
                 // password: true
             }
 
-            login_button = <RobrixIconButton > {
+            homeserver_input = <LoginTextInput> {
                 width: 300, height: 40
+                margin: {bottom: -15}
+                empty_message: "matrix.org"
+            }
+            <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    color: #x8c8c8c
+                    text_style: <REGULAR_TEXT>{font_size: 9}
+                }
+                text: "Homeserver (optional)"
+            }
+
+            login_button = <RobrixIconButton> {
+                width: 300, height: 40
+                margin: {top: 15}
+                draw_bg: {
+                    color: (COLOR_SELECTED_PRIMARY)
+                }
                 draw_text: {
                     color: (COLOR_PRIMARY)
                     text_style: <REGULAR_TEXT> {}
                 }
+                text: "Login"
+            }
 
+            status_label = <Label> {
+                width: 300, height: Fit
+                padding: {left: 5, right: 5}
+                draw_text: {
+                    color: (MESSAGE_TEXT_COLOR)
+                    text_style: <REGULAR_TEXT> {}
+                }
+                text: ""
+            }
+
+            <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    color: #x6c6c6c
+                    text_style: <REGULAR_TEXT>{}
+                }
+                text: "Don't have an account?"
+            }
+            signup_button = <Button> {
+                width: Fit, height: Fit
+                margin: {top: -5}
+                draw_text: {
+                    // color: (MESSAGE_TEXT_COLOR)
+                    fn get_color(self) -> vec4 {
+                        return MESSAGE_TEXT_COLOR
+                    }
+                    text_style: <REGULAR_TEXT>{}
+                }
                 draw_bg: {
-                    color: (COLOR_SELECTED_PRIMARY)
+                    bodybottom: #DDDDDD
                 }
-                    text: "Login"
-            }
 
-            error_message = <Label> {
-                width: 300, height: Fit
-                draw_text: {
-                    color: (COLOR_DANGER_RED)
-                    text_style: <REGULAR_TEXT> {}
-                }
-                text: ""
-            }
-
-            success_message = <Label> {
-                width: 300, height: Fit
-                draw_text: {
-                    color: (COLOR_ACCEPT_GREEN)
-                    text_style: <REGULAR_TEXT> {}
-                }
-                text: ""
+                text: "Sign up here"
             }
         }
     }
 }
 
+static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
+
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
-
         self.view.handle_event(cx, event, scope);
 
-        let password_input = self.view.text_input(id!(password_input));
-        let error_message_label = self.view.label(id!(error_message));
-        let success_message_label = self.view.label(id!(success_message));
+        let status_label = self.view.label(id!(status_label));
         let login_button = self.view.button(id!(login_button));
+        let signup_button = self.view.button(id!(signup_button));
+        let user_id_input = self.view.text_input(id!(user_id_input));
+        let password_input = self.view.text_input(id!(password_input));
+        let homeserver_input = self.view.text_input(id!(homeserver_input));
 
-        let username = self.view.text_input(id!(username_input)).text();
-        let password = self.view.text_input(id!(password_input)).text();
+        let mut needs_redraw = false;
 
         if let Event::Actions(actions) = event {
-            if login_button.clicked(actions) {
-                if username.is_empty() || password.is_empty() {
-                    error_message_label.set_text("Please enter both username and password.");
-                } else {
-                    // TODO: Implement actual login logic
-                    let mut login_successful = false;
-
-                    if password == "aa" {login_successful = true}
-
-                    if login_successful {
-                        cx.widget_action(
-                            widget_uid,
-                            &scope.path,
-                            LoginAction::LoginSuccess,
-                        );
-                        error_message_label.set_text("");
-                        success_message_label.set_text("Login successful!");
-                    } else {
-                        password_input.set_text("");
-                        error_message_label.set_text("Incorrect username or password.");
-                    }
-
-
-                }
-                self.redraw(cx);
+            if signup_button.clicked(actions) {
+                let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
             }
+
+            if login_button.clicked(actions) {
+                let user_id = user_id_input.text();
+                let password = password_input.text();
+                let homeserver = homeserver_input.text();
+                if user_id.is_empty() || password.is_empty() {
+                    status_label.set_text("Please enter both User ID and Password.");
+                } else {
+                    submit_async_request(MatrixRequest::Login(LoginRequest {
+                        user_id,
+                        password,
+                        homeserver: homeserver.is_empty().not().then(|| homeserver),
+                    }));
+                    status_label.set_text("Waiting for login response...");
+                }
+                needs_redraw = true;
+            }
+
+            for action in actions {
+                match action.downcast_ref() {
+                    Some(LoginAction::AutofillInfo { .. }) => {
+                        todo!("set user_id, password, and homeserver inputs");
+                    }
+                    Some(LoginAction::Status(status)) => {
+                        status_label.set_text(status);
+                        needs_redraw = true;
+                    }
+                    Some(LoginAction::LoginSuccess) => {
+                        // The other real action of showing the main screen
+                        // is handled by the main app, not by this login screen.
+                        user_id_input.set_text("");
+                        password_input.set_text("");
+                        homeserver_input.set_text("");
+                        status_label.set_text("Login successful!");
+                        needs_redraw = true;
+                    }
+                    Some(LoginAction::LoginFailure(error)) => {
+                        status_label.set_text(error);
+                        needs_redraw = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if needs_redraw {
+            self.redraw(cx);
         }
     }
 
@@ -231,8 +291,23 @@ impl Widget for LoginScreen {
     }
 }
 
+/// Actions sent to or from the login screen.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LoginAction {
-    None,
+    /// A positive response from the backend Matrix task to the login screen.
+    ///
+    /// This is not handled by the login screen itself, but by the main app.
     LoginSuccess,
+    /// A negative response from the backend Matrix task to the login screen.
+    LoginFailure(String),
+    /// A status message to display to the user.
+    Status(String),
+    /// Login credentials that should be filled into the login screen,
+    /// which get sent from the main function that parses CLI arguments.
+    AutofillInfo {
+        user_id: String,
+        password: String,
+        homeserver: Option<String>,
+    },
+    None,
 }

@@ -183,13 +183,23 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        self.ui.stack_navigation(id!(navigation))
+            .handle_stack_view_actions(cx, actions);
+
         for action in actions {
-            match action.as_widget_action().cast() {
-                LoginAction::LoginSuccess => {
-                    let mut navigation = self.ui.stack_navigation(id!(navigation));
-                    navigation.show_stack_view_by_id(live_id!(stack_navigation_view_home_screen), cx)
-                }
-                LoginAction::None => { }
+            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    StackNavigationAction::NavigateTo(live_id!(stack_navigation_view_home_screen)), 
+                );
+                // Try to trigger the home_screen to redraw or handle events.
+                self.ui.view(id!(home_screen)).redraw(cx);
+                SignalToUI::set_ui_signal();
+
+                // let mut navigation = self.ui.stack_navigation(id!(navigation));
+                // navigation.show_stack_view_by_id(live_id!(stack_navigation_view_home_screen), cx);
+                self.ui.redraw(cx);
             }
 
             match action.as_widget_action().cast() {
