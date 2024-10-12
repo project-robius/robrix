@@ -64,19 +64,8 @@ live_design! {
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
-    
+
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
-
-    TEXT_SUB = {
-        font_size: (10),
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
-    }
-
-    TEXT_P = {
-        font_size: (12),
-        height_factor: 1.65,
-        font: {path: dep("crate://makepad-widgets/resources/IBMPlexSans-Text.ttf")}
-    }
 
     COLOR_BG = #xfff8ee
     COLOR_BRAND = #x5
@@ -746,6 +735,8 @@ live_design! {
             }
 
             send_location_button = <RobrixIconButton> {
+                // disabled by default; will be enabled upon receiving valid location update.
+                enabled: false,
                 padding: {left: 15, right: 15}
                 draw_icon: {
                     svg_file: (ICO_SEND)
@@ -1036,13 +1027,13 @@ impl RoomScreen{
             return;
         }
         let first_index = portal_list.first_id();
-        
+
         let Some(tl_state) = self.tl_state.as_mut() else { return };
         let Some(room_id) = self.room_id.as_ref() else { return };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
-            if *index != first_index {  
-                // scroll changed         
+            if *index != first_index {
+                // scroll changed
                 self.fully_read_timer = cx.start_interval(5.0);
                 let time_now = std::time::Instant::now();
                 if first_index > *index {
@@ -1276,6 +1267,8 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Set visibility of loading message banner based of pagination logic
+            self.send_pagination_request_based_on_scroll_pos(cx, actions);
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions);
 
@@ -1548,6 +1541,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx) {
         let portal_list = self.portal_list(id!(list));
+        let top_space = self.view(id!(top_space));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
@@ -1633,14 +1627,14 @@ impl RoomScreen {
                         // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
+                    done_loading = true;
                 }
                 TimelineUpdate::TimelineStartReached => {
                     log!("Timeline::handle_event(): timeline start reached for room {}", tl.room_id);
                     tl.fully_paginated = true;
-                    done_loading = true;
                 }
                 TimelineUpdate::PaginationIdle => {
-                    done_loading = true;
+                    top_space.set_visible(true);
                 }
                 TimelineUpdate::EventDetailsFetched {event_id, result } => {
                     if let Err(_e) = result {
@@ -1686,8 +1680,7 @@ impl RoomScreen {
         }
 
         if done_loading {
-            log!("TODO: hide topspace loading animation for room {}", tl.room_id);
-            // TODO FIXME: hide TopSpace loading animation, set it to invisible.
+            top_space.set_visible(false);
         }
         if num_updates > 0 {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
@@ -1847,7 +1840,7 @@ impl RoomScreen {
         if first_time_showing_room {
             self.process_timeline_updates(cx);
         }
-    
+
         self.redraw(cx);
     }
 
@@ -1936,6 +1929,25 @@ impl RoomScreen {
         self.room_id = Some(room_id);
         self.show_timeline(cx);
         self.label(id!(room_name)).set_text(&self.room_name);
+    }
+    
+    /// Send Pagination Request when the scroll position is at the top 
+    fn send_pagination_request_based_on_scroll_pos(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+    ) {
+        let portal_list = self.portal_list(id!(list));
+        //stopped scrolling and when scroll position is at top
+        if portal_list.scrolled(actions) {
+            return;
+        }
+        
+        let Some(room_id) = self.room_id.as_ref() else { return };
+        if  portal_list.scroll_position() == 0.0 {
+            submit_async_request(MatrixRequest::PaginateRoomTimeline { room_id: room_id.clone(), num_events: 50, forwards: false});
+        }
+        
     }
     /// Start Typing Notice animation that fades away
     pub fn start_typing_notice_animation(&mut self, cx: &mut Cx) {

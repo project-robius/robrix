@@ -3096,7 +3096,7 @@ dependencies = [
 [[package]]
 name = "robius-location"
 version = "0.1.0"
-source = "git+https://github.com/project-robius/robius-location#d47bd115f50247b98787efc72236dc65ab9c53bc"
+source = "git+https://github.com/project-robius/robius-location#befe4f9b1d0bde0ba210af3b94aed809fc51525f"
 dependencies = [
  "android-build",
  "cfg-if",
