@@ -18,7 +18,7 @@ use matrix_sdk::{
     OwnedServerName,
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo,
+    self, EventTimelineItem, MemberProfileChange, Profile, RepliedToInfo,
     RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind,
     VirtualTimelineItem,
 };
@@ -33,7 +33,8 @@ use crate::{
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    home::event_reaction::ReactionListWidgetRefExt
 };
 use rangemap::RangeSet;
 
@@ -51,6 +52,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
+    import crate::home::event_reaction::*;
     import crate::shared::typing_animation::TypingAnimation;
     import crate::shared::icon_button::RobrixIconButton;
 
@@ -270,27 +272,6 @@ live_design! {
         }
     }
 
-    // An optional view used to show reactions beneath a message.
-    MessageAnnotations = <View> {
-        visible: false,
-        width: Fill,
-        height: Fit,
-        padding: {top: 5.0}
-
-        html_content = <RobrixHtml> {
-            width: Fill,
-            height: Fit,
-            padding: { bottom: 5.0, top: 0.0 },
-            font_size: 10.5,
-            font_color: (REACTION_TEXT_COLOR),
-            draw_normal:      { color: (REACTION_TEXT_COLOR) },
-            draw_italic:      { color: (REACTION_TEXT_COLOR) },
-            draw_bold:        { color: (REACTION_TEXT_COLOR) },
-            draw_bold_italic: { color: (REACTION_TEXT_COLOR) },
-            draw_fixed:       { color: (REACTION_TEXT_COLOR) },
-            body: ""
-        }
-    }
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -416,7 +397,11 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
 
             message_menu = <MessageMenu> {}
@@ -456,7 +441,11 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
         }
     }
@@ -471,7 +460,11 @@ live_design! {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
                 }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
         }
     }
@@ -486,7 +479,11 @@ live_design! {
                     width: Fill, height: 300,
                     image_view = { image = { fit: Horizontal } }
                 }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> {
+                    width: Fill, 
+                    height: Fit, 
+                    margin: {top: (5.0)}
+                }
             }
         }
     }
@@ -1367,6 +1364,7 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
+                                    timeline_item.unique_id(),
                                     event_tl_item,
                                     message,
                                     prev_event,
@@ -2216,6 +2214,7 @@ fn populate_message_view(
     list: &mut PortalList,
     item_id: usize,
     room_id: &RoomId,
+    unique_id: &str,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2319,7 +2318,8 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        item.reaction_list(id!(content.reaction_list))
+            .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -2614,46 +2614,6 @@ fn populate_preview_of_timeline_item(
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
         .format_with(sender_username);
     widget_out.show_html(html);
-}
-
-/// Draws the reactions beneath the given `message_item`.
-fn draw_reactions(
-    _cx: &mut Cx2d,
-    message_item: &WidgetRef,
-    reactions: &ReactionsByKeyBySender,
-    id: usize,
-) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
-    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-        return;
-    }
-
-    // The message annotaions view is invisible by default, so we must set it to visible
-    // now that we know there are reactions to show.
-    message_item
-        .view(id!(content.message_annotations))
-        .set_visible(true);
-
-    let mut label_text = String::new();
-    for (reaction_raw, reaction_senders) in reactions.iter() {
-        // Just take the first char of the emoji, which ignores any variant selectors.
-        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-        let text_to_display = emojis::get(reaction_str)
-            .and_then(|e| e.shortcode())
-            .unwrap_or(reaction_raw);
-        let count = reaction_senders.len();
-        // log!("Found reaction {:?} with count {}", text_to_display, count);
-        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
-    }
-
-    // Debugging: draw the item ID as a reaction
-    if DRAW_ITEM_ID_REACTION {
-        label_text = format!("{label_text}<i>ID: {}</i>", id);
-    }
-
-    let html_reaction_view = message_item.html(id!(message_annotations.html_content));
-    html_reaction_view.set_text(&label_text);
 }
 
 /// A trait for abstracting over the different types of timeline events

@@ -12,7 +12,7 @@ use matrix_sdk::{
     ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
         events::{
-            receipt::ReceiptThread, room::{
+            receipt::ReceiptThread, relation::Annotation, room::{
                 message::{ForwardThread, RoomMessageEventContent},
                 MediaSource,
             }, FullStateEventContent
@@ -270,14 +270,19 @@ pub enum MatrixRequest {
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
-    ReadReceipt{
+    ReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
-    FullyReadReceipt{
+    FullyReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
+    },
+    ToggleReaction {
+        room_id: OwnedRoomId,
+        unique_id: String,
+        reaction_key: String,
     }
 }
 
@@ -632,8 +637,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     }
                     SignalToUI::set_ui_signal();
                 });
-            }
-
+            },
             MatrixRequest::ReadReceipt { room_id, event_id }=>{
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -667,7 +671,26 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            },
+            MatrixRequest::ToggleReaction { room_id, unique_id, reaction_key } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for send toggle reaction {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                
+                let _send_message_task = Handle::current().spawn(async move {
+                    log!("Toggle Reaction to room {room_id}: ...");
+                    match timeline.toggle_reaction(&unique_id, &reaction_key).await {
+                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id}."),
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id}; error: {_e:?}"),
+                    }
+                });
+            }
+
         }
     }
 
