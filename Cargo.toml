@@ -17,14 +17,15 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "apple_bundle_resource_path" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "portal_list_ref_immut_self" }
 
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.0"
-robius-open = "0.1.0"
+robius-open = "0.1.1"
 ## A fork of the `directories` crate that adds support for Android by using our `robius-android-env` crate.
 robius-directories = { git = "https://github.com/project-robius/robius-directories", branch = "robius"}
+robius-location = { git = "https://github.com/project-robius/robius-location" }
 
 anyhow = "1.0"
 chrono = "0.4"
@@ -175,6 +176,8 @@ section = "utils"
 [package.metadata.packager.macos]
 minimum_system_version = "11.0"
 frameworks = [ ]
+info_plist_path = "./packaging/Info.plist"
+entitlements = "./packaging/Entitlements.plist"
 signing_identity = "Developer ID Application: AppChef Inc. (SFVQ5V48GD)"
 
 
