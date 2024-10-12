@@ -76,7 +76,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-    TYPING_NOTICE_ANIMATION_DURATION = 1
+    TYPING_NOTICE_ANIMATION_DURATION = 0.75
 
     FillerY = <View> {width: Fill}
 
@@ -984,13 +984,13 @@ live_design! {
                 default: default,
                 default = {
                     redraw: true,
-                    from: { all: Forward { duration: (0) } }
-                    apply: {  chat = { keyboard = {typing_notice = { align:{ y: 0}}} } }
+                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
+                    apply: {  chat = { keyboard = {typing_notice = { height: 30}} } }
                 }
                 collapse = {
                     redraw: true,
                     from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: {  chat = { keyboard = {typing_notice = {  align: {y: -100} } }  }}
+                    apply: {  chat = { keyboard = {typing_notice = {  height: 0 } }  }}
                 }
             }
         }
@@ -1011,8 +1011,6 @@ pub struct RoomScreen {
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
     #[animator] animator: Animator,
-    /// Animation Timer for Typing Notice
-    #[rust] typing_notice_timer: Timer,
 }
 
 impl RoomScreen{
@@ -1384,13 +1382,6 @@ impl Widget for RoomScreen {
             cx.stop_timer(self.fully_read_timer);
         }
 
-        if self.typing_notice_timer.is_event(event).is_some() {
-            cx.stop_timer(self.typing_notice_timer);
-            self.view(id!(typing_notice)).set_visible(false);
-            let typing_animation =  self.view.typing_animation(id!(typing_animation));
-            typing_animation.stop_animation();
-            self.animator_play(cx, id!(typing_notice.default));
-        }
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
@@ -1689,9 +1680,10 @@ impl RoomScreen {
         if is_typing {
             let typing_animation = self.view.typing_animation(id!(typing_animation));
             self.view.view(id!(typing_notice)).set_visible(true);
+            self.animator_play(cx, id!(typing_notice.default));
             typing_animation.animate(cx);
         } else  {
-            self.start_typing_notice_animation(cx);
+            self.animator_play(cx, id!(typing_notice.collapse));
         }
         
     }
@@ -1948,11 +1940,6 @@ impl RoomScreen {
             submit_async_request(MatrixRequest::PaginateRoomTimeline { room_id: room_id.clone(), num_events: 50, forwards: false});
         }
         
-    }
-    /// Start Typing Notice animation that fades away
-    pub fn start_typing_notice_animation(&mut self, cx: &mut Cx) {
-        self.animator_play(cx, id!(typing_notice.collapse));
-        self.typing_notice_timer = cx.start_interval(1.0);
     }
 }
 
