@@ -104,8 +104,10 @@ live_design! {
 
     // StackNavigationView without header
     SimpleStackNavigationView = <StackNavigationView> {
-        header = <View> {width: 0, height: 0}
-        margin: 0
+        header = <View> {}
+        body = {
+            margin: 0
+        }
     }
 
     App = {{App}} {
