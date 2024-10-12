@@ -76,7 +76,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-    TYPING_NOTICE_ANIMATION_DURATION = 1.5
+    TYPING_NOTICE_ANIMATION_DURATION = 1
 
     FillerY = <View> {width: Fill}
 
@@ -985,12 +985,12 @@ live_design! {
                 default = {
                     redraw: true,
                     from: { all: Forward { duration: (0) } }
-                    apply: {  chat = { keyboard = {typing_notice = { height: 30 } } } }
+                    apply: {  chat = { keyboard = {typing_notice = { align:{ y: 0}}} } }
                 }
                 collapse = {
                     redraw: true,
                     from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: {  chat = { keyboard = {typing_notice = { height: 0 } }  }}
+                    apply: {  chat = { keyboard = {typing_notice = {  align: {y: -100} } }  }}
                 }
             }
         }
@@ -1952,7 +1952,7 @@ impl RoomScreen {
     /// Start Typing Notice animation that fades away
     pub fn start_typing_notice_animation(&mut self, cx: &mut Cx) {
         self.animator_play(cx, id!(typing_notice.collapse));
-        self.typing_notice_timer = cx.start_interval(1.5);
+        self.typing_notice_timer = cx.start_interval(1.0);
     }
 }
 
