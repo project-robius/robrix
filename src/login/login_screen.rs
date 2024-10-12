@@ -102,7 +102,7 @@ live_design! {
     }
 
     LoginScreen = {{LoginScreen}} {
-        width: Fit, height: Fit
+        width: Fill, height: Fill
         show_bg: true,
         draw_bg: {
             color: (COLOR_PRIMARY)

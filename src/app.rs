@@ -113,21 +113,13 @@ live_design! {
                     width: Fill, height: Fill,
                     flow: Overlay,
 
-                    home_screen = <HomeScreen> {}
-
-                    login_modal = <Modal> {
-                        bg_view: {
-                            show_bg: true,
-                            draw_bg: {
-                                color: #f
-                                fn pixel(self) -> vec4 {
-                                    return vec4(1.0, 1.0, 1.0, 0.0)
-                                }
-                            }
-                        }
-                        content: {
-                            login_modal_inner = <LoginScreen> {}
-                        }
+                    home_screen_view = <View> {
+                        visible: false
+                        home_screen = <HomeScreen> {}
+                    }
+                    login_screen_view = <View> {
+                        visible: false
+                        login_screen = <LoginScreen> {}
                     }
 
                     verification_modal = <Modal> {
@@ -186,7 +178,7 @@ impl MatchEvent for App {
         for action in actions {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, closing login modal.");
-                self.ui.modal(id!(login_modal)).close(cx);
+                self.set_login_visible(false);
                 self.ui.redraw(cx);
             }
 
@@ -273,7 +265,7 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if self.show_login {
             log!("showing login modal");
-            self.ui.modal(id!(login_modal)).open(cx);
+            self.set_login_visible(true);
             self.show_login = false;
         }
 
@@ -281,6 +273,13 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+    }
+}
+
+impl App {
+    fn set_login_visible(&self, visibility: bool) {
+        self.ui.view(id!(login_screen_view)).set_visible(visibility);
+        self.ui.view(id!(home_screen_view)).set_visible(!visibility);
     }
 }
 
