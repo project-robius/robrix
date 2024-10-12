@@ -1,0 +1,314 @@
+use std::ops::Not;
+
+use makepad_widgets::*;
+
+use crate::sliding_sync::{submit_async_request, LoginRequest, MatrixRequest};
+
+live_design! {
+    import makepad_widgets::base::*;
+    import makepad_widgets::theme_desktop_dark::*;
+    import makepad_draw::shader::std::*;
+
+    import crate::shared::styles::*;
+    import crate::shared::icon_button::*;
+
+    IMG_APP_LOGO = dep("crate://self/packaging/robrix_logo_alpha.png")
+
+    LoginTextInput = <TextInput> {
+        width: Fill, height: Fit, margin: 0
+        align: {y: 0.5}
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+            instance radius: 2.0
+            instance border_width: 0.8
+            instance border_color: #D0D5DD
+            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+
+            fn get_color(self) -> vec4 {
+                return self.color
+            }
+
+            fn get_border_color(self) -> vec4 {
+                return self.border_color
+            }
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                sdf.box(
+                    self.inset.x + self.border_width,
+                    self.inset.y + self.border_width,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
+                    max(1.0, self.radius)
+                )
+                sdf.fill_keep(self.get_color())
+                if self.border_width > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_width)
+                }
+                return sdf.result;
+            }
+        }
+
+        draw_text: {
+            color: (MESSAGE_TEXT_COLOR),
+            text_style: <MESSAGE_TEXT_STYLE>{},
+
+            fn get_color(self) -> vec4 {
+                return mix(
+                    self.color,
+                    #B,
+                    self.is_empty
+                )
+            }
+        }
+
+
+        // TODO find a way to override colors
+        draw_cursor: {
+            instance focus: 0.0
+            uniform border_radius: 0.5
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(
+                    0.,
+                    0.,
+                    self.rect_size.x,
+                    self.rect_size.y,
+                    self.border_radius
+                )
+                sdf.fill(mix(#fff, #bbb, self.focus));
+                return sdf.result
+            }
+        }
+
+        // TODO find a way to override colors
+        draw_selection: {
+            instance hover: 0.0
+            instance focus: 0.0
+            uniform border_radius: 2.0
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(
+                    0.,
+                    0.,
+                    self.rect_size.x,
+                    self.rect_size.y,
+                    self.border_radius
+                )
+                sdf.fill(mix(#eee, #ddd, self.focus)); // Pad color
+                return sdf.result
+            }
+        }
+    }
+
+    LoginScreen = {{LoginScreen}} {
+        width: Fit, height: Fit
+        show_bg: true,
+        draw_bg: {
+            color: (COLOR_PRIMARY)
+        }
+        align: {x: 0.5, y: 0.5}
+
+        <RoundedView> {
+            width: Fit, height: Fit
+            flow: Down
+            align: {x: 0.5, y: 0.5}
+            padding: 50
+            spacing: 20.0
+
+            show_bg: true,
+            draw_bg: {
+                color: (COLOR_SECONDARY)
+            }
+
+            logo_image = <Image> {
+                fit: Smallest,
+                width: 80
+                source: (IMG_APP_LOGO),
+            }
+
+            title = <Label> {
+                width: Fit, height: Fit
+                margin: { bottom: 10 }
+                draw_text: {
+                    color: (COLOR_TEXT)
+                    text_style: <TITLE_TEXT>{font_size: 16.0}
+                }
+                text: "Login to Robrix"
+            }
+
+            user_id_input = <LoginTextInput> {
+                width: 300, height: 40
+                empty_message: "User ID"
+            }
+
+            password_input = <LoginTextInput> {
+                width: 300, height: 40
+                empty_message: "Password"
+                // password: true
+            }
+
+            homeserver_input = <LoginTextInput> {
+                width: 300, height: 40
+                margin: {bottom: -15}
+                empty_message: "matrix.org"
+            }
+            <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    color: #x8c8c8c
+                    text_style: <REGULAR_TEXT>{font_size: 9}
+                }
+                text: "Homeserver (optional)"
+            }
+
+            login_button = <RobrixIconButton> {
+                width: 300, height: 40
+                margin: {top: 15}
+                draw_bg: {
+                    color: (COLOR_SELECTED_PRIMARY)
+                }
+                draw_text: {
+                    color: (COLOR_PRIMARY)
+                    text_style: <REGULAR_TEXT> {}
+                }
+                text: "Login"
+            }
+
+            status_label = <Label> {
+                width: 300, height: Fit
+                padding: {left: 5, right: 5}
+                draw_text: {
+                    color: (MESSAGE_TEXT_COLOR)
+                    text_style: <REGULAR_TEXT> {}
+                }
+                text: ""
+            }
+
+            <Label> {
+                width: Fit, height: Fit
+                draw_text: {
+                    color: #x6c6c6c
+                    text_style: <REGULAR_TEXT>{}
+                }
+                text: "Don't have an account?"
+            }
+            signup_button = <Button> {
+                width: Fit, height: Fit
+                margin: {top: -5}
+                draw_text: {
+                    // color: (MESSAGE_TEXT_COLOR)
+                    fn get_color(self) -> vec4 {
+                        return MESSAGE_TEXT_COLOR
+                    }
+                    text_style: <REGULAR_TEXT>{}
+                }
+                draw_bg: {
+                    bodybottom: #DDDDDD
+                }
+
+                text: "Sign up here"
+            }
+        }
+    }
+}
+
+static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
+
+#[derive(Live, LiveHook, Widget)]
+pub struct LoginScreen {
+    #[deref] view: View,
+}
+
+impl Widget for LoginScreen {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+
+        let status_label = self.view.label(id!(status_label));
+        let login_button = self.view.button(id!(login_button));
+        let signup_button = self.view.button(id!(signup_button));
+        let user_id_input = self.view.text_input(id!(user_id_input));
+        let password_input = self.view.text_input(id!(password_input));
+        let homeserver_input = self.view.text_input(id!(homeserver_input));
+
+        let mut needs_redraw = false;
+
+        if let Event::Actions(actions) = event {
+            if signup_button.clicked(actions) {
+                let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
+            }
+
+            if login_button.clicked(actions) {
+                let user_id = user_id_input.text();
+                let password = password_input.text();
+                let homeserver = homeserver_input.text();
+                if user_id.is_empty() || password.is_empty() {
+                    status_label.set_text("Please enter both User ID and Password.");
+                } else {
+                    status_label.set_text("Waiting for login response...");
+                    submit_async_request(MatrixRequest::Login(LoginRequest {
+                        user_id,
+                        password,
+                        homeserver: homeserver.is_empty().not().then(|| homeserver),
+                    }));
+                }
+                needs_redraw = true;
+            }
+
+            for action in actions {
+                match action.downcast_ref() {
+                    Some(LoginAction::AutofillInfo { .. }) => {
+                        todo!("set user_id, password, and homeserver inputs");
+                    }
+                    Some(LoginAction::Status(status)) => {
+                        status_label.set_text(status);
+                        needs_redraw = true;
+                    }
+                    Some(LoginAction::LoginSuccess) => {
+                        // The other real action of showing the main screen
+                        // is handled by the main app, not by this login screen.
+                        user_id_input.set_text("");
+                        password_input.set_text("");
+                        homeserver_input.set_text("");
+                        status_label.set_text("Login successful!");
+                        needs_redraw = true;
+                    }
+                    Some(LoginAction::LoginFailure(error)) => {
+                        status_label.set_text(error);
+                        needs_redraw = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if needs_redraw {
+            self.redraw(cx);
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+/// Actions sent to or from the login screen.
+#[derive(Clone, DefaultNone, Debug)]
+pub enum LoginAction {
+    /// A positive response from the backend Matrix task to the login screen.
+    ///
+    /// This is not handled by the login screen itself, but by the main app.
+    LoginSuccess,
+    /// A negative response from the backend Matrix task to the login screen.
+    LoginFailure(String),
+    /// A status message to display to the user.
+    Status(String),
+    /// Login credentials that should be filled into the login screen,
+    /// which get sent from the main function that parses CLI arguments.
+    AutofillInfo {
+        user_id: String,
+        password: String,
+        homeserver: Option<String>,
+    },
+    None,
+}

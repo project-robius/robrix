@@ -5,6 +5,7 @@ use crate::{
     home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomListAction},
     verification::VerificationAction,
     verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+    login::login_screen::LoginAction,
 };
 
 live_design! {
@@ -16,6 +17,7 @@ live_design! {
     import crate::home::home_screen::HomeScreen;
     import crate::profile::my_profile_screen::MyProfileScreen;
     import crate::verification_modal::VerificationModal;
+    import crate::login::login_screen::LoginScreen;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -113,6 +115,21 @@ live_design! {
 
                     home_screen = <HomeScreen> {}
 
+                    login_modal = <Modal> {
+                        bg_view: {
+                            show_bg: true,
+                            draw_bg: {
+                                color: #f
+                                fn pixel(self) -> vec4 {
+                                    return vec4(1.0, 1.0, 1.0, 0.0)
+                                }
+                            }
+                        }
+                        content: {
+                            login_modal_inner = <LoginScreen> {}
+                        }
+                    }
+
                     verification_modal = <Modal> {
                         content: {
                             verification_modal_inner = <VerificationModal> {}
@@ -131,6 +148,8 @@ pub struct App {
     #[live]
     ui: WidgetRef,
 
+    #[rust(true)] show_login: bool,
+
     #[rust]
     app_state: AppState,
 }
@@ -146,13 +165,14 @@ impl LiveRegister for App {
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
+        crate::login::live_design(cx);
     }
 }
 
 impl LiveHook for App { }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
+    fn handle_startup(&mut self, cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
@@ -164,6 +184,12 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                log!("Received LoginAction::LoginSuccess, closing login modal.");
+                self.ui.modal(id!(login_modal)).close(cx);
+                self.ui.redraw(cx);
+            }
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
@@ -245,6 +271,12 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if self.show_login {
+            log!("showing login modal");
+            self.ui.modal(id!(login_modal)).open(cx);
+            self.show_login = false;
+        }
+
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);

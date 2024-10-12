@@ -2,14 +2,14 @@
 
 use std::path::PathBuf;
 use anyhow::{anyhow, bail};
-use makepad_widgets::log;
+use makepad_widgets::{log, Cx};
 use matrix_sdk::{
     matrix_auth::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
 };
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::app_data_dir;
+use crate::{app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Serialize, Deserialize)]
@@ -113,7 +113,9 @@ pub async fn restore_session(
         .build()
         .await?;
 
-    log!("Restoring previous session for {}", user_session.meta.user_id);
+    let status_str = format!("Restoring previous session for {}", user_session.meta.user_id);
+    log!("{status_str}");
+    Cx::post_action(LoginAction::Status(status_str));
 
     // Restore the Matrix user session.
     client.restore_session(user_session).await?;
