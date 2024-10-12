@@ -597,25 +597,27 @@ live_design! {
     }
 
 
-
-    // The top space is used to display a loading animation while the room is being paginated.
+    // The top space is used to display a loading message while the room is being paginated.
     TopSpace = <View> {
         visible: false,
         width: Fill,
         height: Fit,
-        align: {x: 0.5, y: 0.5}
+        align: {x: 0.5, y: 0}
         show_bg: true,
         draw_bg: {
-            color: #ebfcf2,
+            color: #xDAF5E5F0, // mostly opaque light green
         }
 
         label = <Label> {
-            padding: { top: 10.0, bottom: 8.0, left: 0.0, right: 0.0 }
+            width: Fill,
+            height: Fit,
+            align: {x: 0.5, y: 0.5},
+            padding: { top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
             draw_text: {
                 text_style: <MESSAGE_TEXT_STYLE> { font_size: 10 },
                 color: (TIMESTAMP_TEXT_COLOR)
             }
-            text: "Loading more messages..."
+            text: "Loading earlier messages..."
         }
     }
 
@@ -779,8 +781,6 @@ live_design! {
             <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
-
-                top_space = <TopSpace> { }
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
@@ -969,6 +969,10 @@ live_design! {
                 }
             }
 
+            // The top space should be displayed on top of the timeline
+            top_space = <TopSpace> { }
+
+            // The user profile sliding pane should be displayed on top of all other subviews.
             <View> {
                 width: Fill,
                 height: Fill,
@@ -1690,7 +1694,6 @@ impl RoomScreen {
             Did you forget to save the timeline state back to the global map of states?",
         );
 
-
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
@@ -1725,34 +1728,28 @@ impl RoomScreen {
             }
         );
 
-        // kick off a back pagination request for this room
-        if !tl_state.fully_paginated {
+        // Kick off a back pagination request for this room. This is "urgent",
+        // because we want to show the user some messages as soon as possible
+        // when they first open the room, and there might not be any messages yet.
+        if first_time_showing_room && !tl_state.fully_paginated {
+            log!("Sending a first-time backwards pagination request for room {}", room_id);
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
-            })
-        } else {
-            // log!("Note: skipping pagination request for room {} because it is already fully paginated.", room_id);
-        }
-
-        // Even though we specify that room member profiles should be lazy-loaded,
-        // the matrix server still doesn't consistently send them to our client properly.
-        // So we kick off a request to fetch the room members here upon first viewing the room.
-        if first_time_showing_room {
-            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
-            // TODO: in the future, move the back pagination request to here,
-            //       once back pagination is done dynamically based on timeline scroll position.
+            });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
         self.restore_state(cx, &mut tl_state);
 
-        // As the final step, store the tl_state for this room into the Timeline widget,
+        // As the final step, store the tl_state for this room into this RoomScreen widget,
         // such that it can be accessed in future event/draw handlers.
         self.tl_state = Some(tl_state);
 
-        // Now we can process any background updates and redraw the timeline.
+        // Now that we have restored the TimelineUiState into this RoomScreen widget,
+        // we can proceed to processing pending background updates, and if any were processed,
+        // the timeline will also be redrawn.
         if first_time_showing_room {
             let portal_list = self.portal_list(id!(list));
             self.process_timeline_updates(cx, &portal_list);

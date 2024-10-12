@@ -314,7 +314,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
-                    log!("Sending {direction} pagination request for room {room_id}...");
+                    log!("Starting {direction} pagination request for room {room_id}...");
                     sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
                     SignalToUI::set_ui_signal();
 
