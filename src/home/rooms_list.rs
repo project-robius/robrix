@@ -2,9 +2,14 @@ use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{room, ruma::{api::client::filter, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId}};
-use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::{RoomsSideBarFilter, RoomsSideBarAction}};
+
+/// Whether to pre-paginate visible rooms at least once in order to
+/// be able to display the latest message in the room preview,
+/// and to have something to immediately show when a user first opens a room.
+const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -322,12 +327,12 @@ impl Widget for RoomsList {
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
 
                     // Paginate the room if it hasn't been paginated yet.
-                    if !room_info.has_been_paginated {
+                    if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
                         room_info.has_been_paginated = true;
                         submit_async_request(MatrixRequest::PaginateRoomTimeline {
                             room_id: room_info.room_id.clone(),
                             num_events: 50,
-                            forwards: false,
+                            direction: PaginationDirection::Backwards,
                         });
                     }
 

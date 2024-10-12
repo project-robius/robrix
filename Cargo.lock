@@ -1621,7 +1621,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -1741,7 +1741,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1750,7 +1750,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1758,7 +1758,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1767,7 +1767,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -1784,17 +1784,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "0.7.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "makepad-html"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1802,7 +1802,7 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -1813,7 +1813,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-live-compiler"
 version = "0.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -1823,7 +1823,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -1831,7 +1831,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1839,7 +1839,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -1849,7 +1849,7 @@ dependencies = [
 [[package]]
 name = "makepad-markdown"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id",
 ]
@@ -1857,17 +1857,17 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -1876,7 +1876,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1884,12 +1884,12 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "makepad-platform"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "hilog-sys",
  "makepad-android-state",
@@ -1911,7 +1911,7 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -1926,7 +1926,7 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "0.5.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -1934,7 +1934,7 @@ dependencies = [
 [[package]]
 name = "makepad-vector"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "resvg",
  "ttf-parser",
@@ -1943,7 +1943,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "0.4.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -1952,7 +1952,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "0.6.0"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -1966,16 +1966,16 @@ dependencies = [
 [[package]]
 name = "makepad-windows"
 version = "0.51.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
- "windows-core 0.51.1 (git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path)",
+ "windows-core 0.51.1 (git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self)",
  "windows-targets 0.48.5",
 ]
 
 [[package]]
 name = "makepad-zune-core"
 version = "0.2.14"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "bitflags 2.6.0",
 ]
@@ -1983,7 +1983,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-inflate"
 version = "0.2.54"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "simd-adler32",
 ]
@@ -1991,7 +1991,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-jpeg"
 version = "0.3.17"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-zune-core",
 ]
@@ -1999,7 +1999,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.2.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "makepad-zune-core",
  "makepad-zune-inflate",
@@ -3096,7 +3096,7 @@ dependencies = [
 [[package]]
 name = "robius-location"
 version = "0.1.0"
-source = "git+https://github.com/project-robius/robius-location#d47bd115f50247b98787efc72236dc65ab9c53bc"
+source = "git+https://github.com/project-robius/robius-location#befe4f9b1d0bde0ba210af3b94aed809fc51525f"
 dependencies = [
  "android-build",
  "cfg-if",
@@ -3105,20 +3105,21 @@ dependencies = [
  "objc2-core-location",
  "objc2-foundation",
  "robius-android-env",
- "windows",
+ "windows 0.57.0",
 ]
 
 [[package]]
 name = "robius-open"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b4c6634e8febd0be2e37aefd55fd256f9f39eb5583db30c7163132aa625bfda"
+checksum = "563849989e82ed61036c169afe32f95d6683b944cb667986bc6735103c69a64a"
 dependencies = [
  "cfg-if",
  "icrate",
  "jni",
  "objc2",
  "robius-android-env",
+ "windows 0.54.0",
 ]
 
 [[package]]
@@ -4036,7 +4037,7 @@ checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
 [[package]]
 name = "ttf-parser"
 version = "0.21.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 
 [[package]]
 name = "typenum"
@@ -4432,6 +4433,16 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows"
+version = "0.54.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9252e5725dbed82865af151df558e754e4a3c2c30818359eb17465f1346a1b49"
+dependencies = [
+ "windows-core 0.54.0",
+ "windows-targets 0.52.6",
+]
+
+[[package]]
+name = "windows"
 version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12342cb4d8e3b046f3d80effd474a7a02447231330ef77d71daa6fbc40681143"
@@ -4452,9 +4463,19 @@ dependencies = [
 [[package]]
 name = "windows-core"
 version = "0.51.1"
-source = "git+https://github.com/kevinaboos/makepad?branch=apple_bundle_resource_path#7e70055ab2fda14746374d02ca7ae70f804c40de"
+source = "git+https://github.com/kevinaboos/makepad?branch=portal_list_ref_immut_self#a18fde6784e71987852abaa8278d5b9e1bf9d610"
 dependencies = [
  "windows-targets 0.48.5",
+]
+
+[[package]]
+name = "windows-core"
+version = "0.54.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "12661b9c89351d684a50a8a643ce5f608e20243b9fb84687800163429f161d65"
+dependencies = [
+ "windows-result 0.1.2",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
