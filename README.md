@@ -111,7 +111,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
-- [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
+- [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
