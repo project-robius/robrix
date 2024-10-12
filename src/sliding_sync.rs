@@ -26,13 +26,12 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItemContent},
     Timeline,
 };
 use tokio::{
     runtime::Handle,
     sync::mpsc::{UnboundedSender, UnboundedReceiver},
-    task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
@@ -43,7 +42,7 @@ use crate::{
     }, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, utils::MEDIA_THUMBNAIL_FORMAT
+    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
 
@@ -166,6 +165,26 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
 }
 
 
+/// Which direction to paginate in.
+/// 
+/// * `Forwards` will retrieve later events (towards the end of the timeline),
+///    which only works if the timeline is *focused* on a specific event.
+/// * `Backwards`: the more typical choice, in which earlier events are retrieved
+///    (towards the start of the timeline), which works in  both live mode and focused mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaginationDirection {
+    Forwards,
+    Backwards,
+}
+impl std::fmt::Display for PaginationDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Forwards => write!(f, "forwards"),
+            Self::Backwards => write!(f, "backwards"),
+        }
+    }
+}
+
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
@@ -174,12 +193,7 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
-        /// Which "direction" to paginate in:
-        /// * `true`: paginate forwards to retrieve later events (towards the end of the timeline),
-        ///    which only works if the timeline is *focused* on a specific event.
-        /// * `false`: (default) paginate backwards to fill in earlier events (towards the start of the timeline),
-        ///    which works if the timeline is in either live mode and focused mode.
-        forwards: bool,
+        direction: PaginationDirection,
     },
     /// Request to fetch the full details of the given event in the given room's timeline.
     FetchDetailsForEvent {
@@ -290,69 +304,51 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
 
     while let Some(request) = receiver.recv().await {
         match request {
-            MatrixRequest::PaginateRoomTimeline { room_id, num_events, forwards } => {
-                let timeline = {
+            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+                let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
 
-                    let room_id2 = room_id.clone();
                     let timeline_ref = room_info.timeline.clone();
-                    let timeline_ref2 = timeline_ref.clone();
                     let sender = room_info.timeline_update_sender.clone();
-
-                    // If the back-pagination status task is finished or doesn't exist, spawn a new one,
-                    // but only if the timeline is not already fully paginated.
-                    let should_spawn_pagination_status_task = match room_info.pagination_status_task.as_ref() {
-                        Some(t) => t.is_finished(),
-                        None => true,
-                    };
-                    if should_spawn_pagination_status_task {
-                        room_info.pagination_status_task = Some(Handle::current().spawn( async move {
-                            if let Some((pagination_status, mut pagination_stream)) = timeline_ref2.live_back_pagination_status().await {
-                                if !matches!(pagination_status, LiveBackPaginationStatus::Idle { hit_start_of_timeline: true }) {
-                                    while let Some(status) = pagination_stream.next().await {
-                                        log!("### Timeline {room_id2} back pagination status: {:?}", status);
-                                        match status {
-                                            LiveBackPaginationStatus::Idle { hit_start_of_timeline: false } => {
-                                                sender.send(TimelineUpdate::PaginationIdle).unwrap();
-                                                SignalToUI::set_ui_signal();
-                                            }
-                                            LiveBackPaginationStatus::Idle { hit_start_of_timeline: true } => {
-                                                sender.send(TimelineUpdate::TimelineStartReached).unwrap();
-                                                SignalToUI::set_ui_signal();
-                                                break;
-                                            }
-                                            _ => { }
-                                        }
-                                    }
-                                }
-                            }
-                        }));
-                    }
-
-                    // drop the lock on ALL_ROOM_INFO before spawning the actual pagination task.
-                    timeline_ref
+                    (timeline_ref, sender)
                 };
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
-                    let direction = if forwards { "forwards" } else { "backwards" };
-                    log!("Sending {direction} pagination request for room {room_id}...");
-                    let res = if forwards {
+                    log!("Starting {direction} pagination request for room {room_id}...");
+                    sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
+                    SignalToUI::set_ui_signal();
+
+                    let res = if direction == PaginationDirection::Forwards {
                         timeline.focused_paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
                     match res {
-                        Ok(_hit_start_or_end) => log!(
-                            "Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
-                            if forwards { "end" } else { "start" },
-                            if _hit_start_or_end { "yes" } else { "no" },
-                        ),
-                        Err(e) => error!("Error sending {direction} pagination request for room {room_id}: {e:?}"),
+                        Ok(fully_paginated) => {
+                            log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
+                                if direction == PaginationDirection::Forwards { "end" } else { "start" },
+                                if fully_paginated { "yes" } else { "no" },
+                            );
+                            sender.send(TimelineUpdate::PaginationIdle {
+                                fully_paginated,
+                                direction,
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(error) => {
+                            error!("Error sending {direction} pagination request for room {room_id}: {error:?}");
+                            sender.send(TimelineUpdate::PaginationError {
+                                error,
+                                direction,
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
                     }
                 });
             }
@@ -512,7 +508,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id,
                         num_events: 50,
-                        forwards: false,
+                        direction: PaginationDirection::Backwards,
                     });
                 });
             }
@@ -788,8 +784,6 @@ struct RoomInfo {
     /// The UI thread can take ownership of these items  receiver in order for a specific
     /// timeline view (currently room_sccren) to receive and display updates to this room's timeline.
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
-    /// The async task that is subscribed to the timeline's back-pagination status.
-    pagination_status_task: Option<JoinHandle<()>>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
 }
@@ -933,6 +927,8 @@ async fn async_main_loop() -> Result<()> {
     };
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
+
+    add_verification_event_handlers_and_sync_client(client.clone());
 
     // Listen for updates to the ignored user list.
     handle_ignore_user_list_subscriber(client.clone());
@@ -1129,7 +1125,6 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline,
             timeline_update_receiver: Some(timeline_update_receiver),
             timeline_update_sender,
-            pagination_status_task: None,
             typing_notice_subscriber: None,
         },
     );
@@ -1155,6 +1150,7 @@ async fn current_ignore_user_list(client: &Client) -> Option<BTreeSet<OwnedUserI
 
 fn handle_ignore_user_list_subscriber(client: Client) {
     let mut subscriber = client.subscribe_to_ignore_user_list_changes();
+    log!("Initial ignored-user list is: {:?}", subscriber.get());
     Handle::current().spawn(async move {
         let mut first_update = true;
         while let Some(ignore_list) = subscriber.next().await {
@@ -1178,7 +1174,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id: joined_room.room_id().to_owned(),
                         num_events: 50,
-                        forwards: false,
+                        direction: PaginationDirection::Backwards,
                     });
                 }
             }
@@ -1190,6 +1186,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
 
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
+    log!("Initial sync service state is {:?}", subscriber.get());
     Handle::current().spawn(async move {
         while let Some(state) = subscriber.next().await {
             log!("Received a sync service state update: {state:?}");
@@ -1205,6 +1202,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 
 
 fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
+    log!("Initial room list loading state is {:?}", loading_state.get());
     Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
             log!("Received a room list loading state update: {state:?}");
@@ -1219,6 +1217,7 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
         }
     });
 }
+
 
 const LOG_TIMELINE_DIFFS: bool = false;
 
@@ -1236,7 +1235,9 @@ async fn timeline_subscriber_handler(
         new_items: timeline_items.clone(),
         changed_indices: usize::MIN..usize::MAX,
         clear_cache: true,
-    }).expect("Error: timeline update sender couldn't send update with initial items!");
+    }).unwrap_or_else(
+        |_e| panic!("Error: timeline update sender couldn't send update to room {room_id} with initial items!")
+    );
 
     let mut latest_event = timeline.latest_event().await;
 
