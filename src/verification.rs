@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{Cx, DefaultNone, log};
+use makepad_widgets::{Cx, ActionDefaultRef, DefaultNone, log};
 use matrix_sdk::{
     crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::verification::{
         SasState, SasVerification, Verification, VerificationRequest,
