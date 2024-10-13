@@ -231,8 +231,6 @@ impl Widget for LoginScreen {
         let password_input = self.view.text_input(id!(password_input));
         let homeserver_input = self.view.text_input(id!(homeserver_input));
 
-        let mut needs_redraw = false;
-
         if let Event::Actions(actions) = event {
             if signup_button.clicked(actions) {
                 let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
@@ -252,7 +250,7 @@ impl Widget for LoginScreen {
                         homeserver: homeserver.is_empty().not().then(|| homeserver),
                     }));
                 }
-                needs_redraw = true;
+                self.redraw(cx);
             }
 
             for action in actions {
@@ -262,7 +260,7 @@ impl Widget for LoginScreen {
                     }
                     Some(LoginAction::Status(status)) => {
                         status_label.set_text(status);
-                        needs_redraw = true;
+                        self.redraw(cx);
                     }
                     Some(LoginAction::LoginSuccess) => {
                         // The other real action of showing the main screen
@@ -271,19 +269,15 @@ impl Widget for LoginScreen {
                         password_input.set_text("");
                         homeserver_input.set_text("");
                         status_label.set_text("Login successful!");
-                        needs_redraw = true;
+                        self.redraw(cx);
                     }
                     Some(LoginAction::LoginFailure(error)) => {
                         status_label.set_text(error);
-                        needs_redraw = true;
+                        self.redraw(cx);
                     }
                     _ => {}
                 }
             }
-        }
-
-        if needs_redraw {
-            self.redraw(cx);
         }
     }
 
