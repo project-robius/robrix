@@ -91,38 +91,37 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
 - [x] Stable positioning of events during simple timeline update
 - [x] Stable positioning of events during complex/multi-part timeline update
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
-- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [x] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
-- [ ] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
+- [x] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
 - [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
-- [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
+- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
+- [x] Side panel showing detailed user profile info (click on their Avatar)
+- [x] Ignore and unignore users (see known issues)
+- [ ] User settings screen
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
+- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [ ] Room creation
 - [ ] Room settings/info screen
 - [ ] Room members pane
-- [x] Side panel showing detailed user profile info (click on their Avatar)
-- [x] Ignore and unignore users (see known issues)
-- [ ] User settings screen
-- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
 
