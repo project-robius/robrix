@@ -215,6 +215,11 @@ live_design! {
 
 static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
 
+// An unfortunate hack we must do to get the colors to work in Rust code.
+const COLOR_DANGER_RED: Vec4 = Vec4 { x: 220f32/255f32, y: 0f32, z: 5f32/255f32, w: 1f32 };
+const COLOR_ACCEPT_GREEN: Vec4 = Vec4 { x: 19f32/255f32, y: 136f32/255f32, z: 8f32/255f32, w: 1f32 };
+const MESSAGE_TEXT_COLOR: Vec4 = Vec4 { x: 68f32/255f32, y: 68f32/255f32, z: 68f32/255f32, w: 1f32 };
+
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
@@ -241,8 +246,14 @@ impl Widget for LoginScreen {
                 let password = password_input.text();
                 let homeserver = homeserver_input.text();
                 if user_id.is_empty() || password.is_empty() {
+                    status_label.apply_over(cx, live!{
+                        draw_text: { color: (COLOR_DANGER_RED) }
+                    });
                     status_label.set_text("Please enter both User ID and Password.");
                 } else {
+                    status_label.apply_over(cx, live!{
+                        draw_text: { color: (MESSAGE_TEXT_COLOR) }
+                    });
                     status_label.set_text("Waiting for login response...");
                     submit_async_request(MatrixRequest::Login(LoginRequest {
                         user_id,
@@ -260,6 +271,9 @@ impl Widget for LoginScreen {
                     }
                     Some(LoginAction::Status(status)) => {
                         status_label.set_text(status);
+                        status_label.apply_over(cx, live!{
+                            draw_text: { color: (MESSAGE_TEXT_COLOR) }
+                        });
                         self.redraw(cx);
                     }
                     Some(LoginAction::LoginSuccess) => {
@@ -269,10 +283,16 @@ impl Widget for LoginScreen {
                         password_input.set_text("");
                         homeserver_input.set_text("");
                         status_label.set_text("Login successful!");
+                        status_label.apply_over(cx, live!{
+                            draw_text: { color: (COLOR_ACCEPT_GREEN) }
+                        });
                         self.redraw(cx);
                     }
                     Some(LoginAction::LoginFailure(error)) => {
                         status_label.set_text(error);
+                        status_label.apply_over(cx, live!{
+                            draw_text: { color: (COLOR_DANGER_RED) }
+                        });
                         self.redraw(cx);
                     }
                     _ => {}

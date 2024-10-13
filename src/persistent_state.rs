@@ -97,7 +97,9 @@ pub async fn restore_session(
         log!("Could not find previous session file for user {user_id}");
         bail!("Could not find previous session file");
     }
-    log!("Found existing session at '{}'", session_file.display());
+    let status_str = format!("Loading previous session file for {user_id}...");
+    log!("{status_str}: '{}'", session_file.display());
+    Cx::post_action(LoginAction::Status(status_str));
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
@@ -113,7 +115,7 @@ pub async fn restore_session(
         .build()
         .await?;
 
-    let status_str = format!("Restoring previous session for {}", user_session.meta.user_id);
+    let status_str = format!("Restoring previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
     Cx::post_action(LoginAction::Status(status_str));
 

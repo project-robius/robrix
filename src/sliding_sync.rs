@@ -903,12 +903,12 @@ async fn async_main_loop(
         if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
             Some(session)
         } else {
-            let status_err = "Could not restore previous user session";
+            let status_err = "Error: failed to restore previous user session.";
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
 
             if let Ok(cli) = cli_parse_result {
-                let status_str = format!("Attempting auto-login from CLI arguments as user {}", cli.username);
+                let status_str = format!("Attempting auto-login from CLI arguments as user {}...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
 
