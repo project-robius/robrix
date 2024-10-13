@@ -83,11 +83,7 @@ fn main() -> std::io::Result<()> {
         }
         if arg == "--path-to-binary" {
             let path = PathBuf::from(args.next().expect("Expected a path after '--path-to-binary'."));
-            if path.exists() {
-                path_to_binary = Some(path);
-            } else {
-                panic!("The '--path-to-binary' path does not exist: '{}'", path.display());
-            }
+            path_to_binary = Some(path);
         }
         if host_os_opt.is_none() && (arg.contains("host_os") || arg.contains("host-os"))
         {
