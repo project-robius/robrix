@@ -105,9 +105,17 @@ impl WidgetNode for AdaptiveView {
         if let Some(active_widget) = self.active_widget.as_ref() {
             active_widget.widget_ref.walk(cx)
         } else {
-            self.walk
+            let template_id = if cx.get_global::<DisplayContext>().is_desktop() {
+                live_id!(Desktop)
+            } else {
+                live_id!(Mobile)
+            };
+            let template = self.templates.get(&template_id).unwrap();
+            let widget_ref = WidgetRef::new_from_ptr(cx, Some(*template));
+            widget_ref.walk(cx)
         }
     }
+
     fn area(&self)->Area{
         self.area
     }

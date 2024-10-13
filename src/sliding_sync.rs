@@ -897,7 +897,9 @@ async fn async_main_loop(
                 cli.homeserver.as_deref(),
             )
         );
-        log!("Trying to restore session for user: {specified_username:?}");
+        log!("Trying to restore session for user: {:?}",
+            specified_username.as_ref().or(most_recent_user_id.as_ref())
+        );
         if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
             Some(session)
         } else {
