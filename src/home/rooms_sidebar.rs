@@ -12,6 +12,7 @@ live_design! {
     import crate::home::rooms_list::RoomsList;
     import crate::shared::cached_widget::CachedWidget;
 
+    import crate::shared::search_bar::SearchBar;
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
 
@@ -106,6 +107,8 @@ live_design! {
                 }
             }
         }
+        <SearchBar> {
+        }
         <Label> {
             text: "Home"
             draw_text: {
@@ -163,7 +166,7 @@ live_design! {
             padding: {top: 17., left: 17., right: 17.}
             flow: Down, spacing: 7
             width: Fill, height: Fill
-        }        
+        }
     }
 }
 
@@ -177,7 +180,7 @@ impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }

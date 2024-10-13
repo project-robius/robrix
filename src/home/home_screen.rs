@@ -10,7 +10,6 @@ live_design! {
     import crate::home::spaces_dock::SpacesDock;
     import crate::shared::styles::*;
     import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::search_bar::SearchBar;
     import crate::home::main_desktop_ui::MainDesktopUI;
 
     NavigationWrapper = {{NavigationWrapper}} {
@@ -32,7 +31,6 @@ live_design! {
             <View> {
                 flow: Down
                 width: Fill, height: Fill
-                <SearchBar> {}
                 <MainDesktopUI> {}
             }
         }

@@ -1906,8 +1906,8 @@ impl RoomScreen {
         self.show_timeline(cx);
         self.label(id!(room_name)).set_text(&self.room_name);
     }
-    
-    /// Send Pagination Request when the scroll position is at the top 
+
+    /// Send Pagination Request when the scroll position is at the top
     fn send_pagination_request_based_on_scroll_pos(
         &mut self,
         cx: &mut Cx,
@@ -1918,12 +1918,12 @@ impl RoomScreen {
         if portal_list.scrolled(actions) {
             return;
         }
-        
+
         let Some(room_id) = self.room_id.as_ref() else { return };
         if  portal_list.scroll_position() == 0.0 {
             submit_async_request(MatrixRequest::PaginateRoomTimeline { room_id: room_id.clone(), num_events: 50, forwards: false});
         }
-        
+
     }
 }
 
