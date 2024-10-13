@@ -1,29 +1,32 @@
 use makepad_widgets::*;
 
 live_design! {
-    TITLE_TEXT = {
+
+    import makepad_widgets::theme_desktop_dark::*;
+    ICON_BLOCK_USER  = dep("crate://self/resources/icons/forbidden.svg")
+    ICON_CHECKMARK   = dep("crate://self/resources/icons/checkmark.svg")
+    ICON_CLOSE       = dep("crate://self/resources/icons/close.svg")
+
+
+
+    TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
-    REGULAR_TEXT = {
+    REGULAR_TEXT = <THEME_FONT_REGULAR>{
         font_size: (10),
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
     }
 
-    TEXT_SUB = {
-        font_size: (8),
-        height_factor: 1.5,
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+    TEXT_SUB = <THEME_FONT_REGULAR>{
+        font_size: (10),
     }
 
     USERNAME_FONT_SIZE = 11
     USERNAME_TEXT_COLOR = #x2
-    USERNAME_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Bold.ttf")}
+    USERNAME_TEXT_STYLE = <THEME_FONT_BOLD>{
         font_size: (USERNAME_FONT_SIZE),
-        // height_factor: 1.5,
     }
+
 
     TYPING_NOTICE_TEXT_COLOR = #121570
 
@@ -33,8 +36,7 @@ live_design! {
     MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
     // This font should only be used for plaintext labels. Don't use this for Html content,
     // as the Html widget sets different fonts for different text styles (e.g., bold, italic).
-    MESSAGE_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+    MESSAGE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (MESSAGE_FONT_SIZE),
         height_factor: (MESSAGE_TEXT_HEIGHT_FACTOR),
         line_spacing: (MESSAGE_TEXT_LINE_SPACING),
@@ -44,16 +46,14 @@ live_design! {
 
     SMALL_STATE_FONT_SIZE = 9.0
     SMALL_STATE_TEXT_COLOR = #x888
-    SMALL_STATE_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+    SMALL_STATE_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (SMALL_STATE_FONT_SIZE),
         height_factor: 1.3,
     }
 
     TIMESTAMP_FONT_SIZE = 8.5
     TIMESTAMP_TEXT_COLOR = #x999
-    TIMESTAMP_TEXT_STYLE = {
-        font: {path: dep("crate://makepad-widgets/resources/GoNotoKurrent-Regular.ttf")}
+    TIMESTAMP_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (TIMESTAMP_FONT_SIZE),
     }
 
@@ -62,6 +62,7 @@ live_design! {
     COLOR_DIVIDER_DARK = #x00000044
 
     COLOR_DANGER_RED = #xDC0005
+    COLOR_ACCEPT_GREEN = #x138808
 
     COLOR_PRIMARY = #ffffff
     COLOR_PRIMARY_DARKER = #fefefe

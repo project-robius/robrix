@@ -37,11 +37,11 @@ The following table shows which host systems can currently be used to build Robr
 
 2. If you're building on **Linux** or **WSL** on Windows, install the required dependencies. Otherwise, proceed to step 3.
    * `openssl`, `clang`/`libclang`, `binfmt`, `Xcursor`/`X11`, `asound`/`pulse`.
-   
+
    On a Debian-like Linux distro (e.g., Ubuntu), run the following:
    ```sh
    sudo apt-get update
-   sudo apt-get install libssl-dev libsqlite3-dev pkg-config llvm clang libclang-dev binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
+   sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
 3. Then, build and run Robrix (you can optionally add `--release` after `run`):
@@ -78,7 +78,7 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
         * API version 33 or higher is required, which is Android 13 and up.
 
 
-## Feature status tracker 
+## Feature status tracker
 
 These are generally sorted in order of priority. If you're interested in helping out with anything here, please reach out via a GitHub issue or on our Robius matrix channel.
 
@@ -89,11 +89,11 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Fetch user profiles (displayable names)
 - [x] Fetch and display user profile avatars
 - [x] Backwards pagination (upon viewing a room timeline)
-- [ ] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
-- [ ] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
+- [x] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
+- [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
 - [x] Stable positioning of events during simple timeline update
 - [x] Stable positioning of events during complex/multi-part timeline update
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103 
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
@@ -108,7 +108,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
-- [ ] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
+- [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
 - [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
@@ -124,10 +124,10 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
-- [ ] Persistence of app state to disk: https://github.com/project-robius/robrix/issues/112
+- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
+- [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
 
 ## Known problems/issues
- - URLs do not wrap properly; that is a Makepad-side problem.
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained

@@ -2,7 +2,8 @@ use makepad_widgets::*;
 
 use crate::{
     shared::{
-        adaptive_view::{AdaptiveViewWidgetExt, DisplayContext}, avatar::AvatarWidgetExt,
+        adaptive_view::{AdaptiveViewWidgetExt, DisplayContext},
+        avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt,
     },
     utils::{self, relative_format},
@@ -50,16 +51,16 @@ live_design! {
         latest_message = <HtmlOrPlaintext> {
             padding: {top: 3.0}
             html_view = { html = {
-                font_size: 9.3, line_spacing: 1.,
-                draw_normal:      { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_italic:      { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_bold:        { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_bold_italic: { text_style: { font_size: 9.3, line_spacing: 1. } },
-                draw_fixed:       { text_style: { font_size: 9.3, line_spacing: 1. } },
+                font_size: 9.3,
+                draw_normal:      { text_style: { font_size: 9.3 } },
+                draw_italic:      { text_style: { font_size: 9.3 } },
+                draw_bold:        { text_style: { font_size: 9.3 } },
+                draw_bold_italic: { text_style: { font_size: 9.3 } },
+                draw_fixed:       { text_style: { font_size: 9.3 } },
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
-                    text_style: { font_size: 9.5, line_spacing: 1. },
+                    text_style: { font_size: 9.5 },
                 }
                 text: "[Loading latest message]"
             } }
@@ -101,7 +102,7 @@ live_design! {
             }
         }
     }
-    
+
     RoomPreview = {{RoomPreview}} {
         // Wraps the RoomPreviewContent in an AdaptiveView
         // to change the displayed content (and its layout) based on the available space in the sidebar.
@@ -155,12 +156,10 @@ impl LiveHook for RoomPreview {
         // Adapt the preview based on the available space.
         self.view
             .adaptive_view(id!(adaptive_preview))
-            .set_variant_selector(cx, |_cx, parent_size| {
-                match parent_size.x {
-                    x if x <= 100. => live_id!(OnlyIcon),
-                    x if x <= 250. => live_id!(IconAndName),
-                    _ => live_id!(FullPreview),
-                }
+            .set_variant_selector(cx, |_cx, parent_size| match parent_size.x {
+                x if x <= 100. => live_id!(OnlyIcon),
+                x if x <= 250. => live_id!(IconAndName),
+                _ => live_id!(FullPreview),
             });
     }
 }
@@ -242,7 +241,7 @@ impl Widget for RoomPreviewContent {
                 // Mobile doesn't have a selected state. Always use the default colors.
                 // We call the update in case the app was resized from desktop to mobile while the room was selected.
                 // This can be optimized by only calling this when the app is resized.
-                self.update_preview_colors(cx, false); 
+                self.update_preview_colors(cx, false);
             }
         }
         self.view.draw_walk(cx, scope, walk)
@@ -279,44 +278,51 @@ impl RoomPreviewContent {
             ),
         );
 
-        self.view.label(id!(room_name)).apply_over(
-            cx,
-            live!(
+        // We check that the UI elements exist to avoid unnecessary updates, and prevent error logs.
+        if !self.view.label(id!(room_name)).is_empty() {
+            self.view.label(id!(room_name)).apply_over(
+                cx,
+                live!(
                 draw_text: {
                     color: (room_name_color)
                 }
-            ),
-        );
+                ),
+            );
+        }
 
-        self.view.label(id!(timestamp)).apply_over(
-            cx,
-            live!(
-                    draw_text: {
-                        color: (timestamp_color)
+        if !self.view.label(id!(timestamp)).is_empty() {
+            self.view.label(id!(timestamp)).apply_over(
+                cx,
+                live!(
+                draw_text: {
+                    color: (timestamp_color)
+                }
+                ),
+            );
+        }
+
+        if !self.view.html_or_plaintext(id!(latest_message)).is_empty() {
+            self.view.html_or_plaintext(id!(latest_message)).apply_over(
+                cx,
+                live!(
+                html_view = {
+                    html = {
+                        font_color: (message_text_color),
+                        draw_normal:      { color: (message_text_color) },
+                        draw_italic:      { color: (message_text_color) },
+                        draw_bold:        { color: (message_text_color) },
+                        draw_bold_italic: { color: (message_text_color) },
                     }
-            ),
-        );
-
-        self.html_or_plaintext(id!(latest_message)).apply_over(
-            cx,
-            live!(
-                    html_view = {
-                        html = {
-                            font_color: (message_text_color),
-                            draw_normal:      { color: (message_text_color) },
-                            draw_italic:      { color: (message_text_color) },
-                            draw_bold:        { color: (message_text_color) },
-                            draw_bold_italic: { color: (message_text_color) },
+                }
+                plaintext_view = {
+                    pt_label = {
+                        draw_text: {
+                            color: (message_text_color)
                         }
                     }
-                    plaintext_view = {
-                        pt_label = {
-                            draw_text: {
-                                color: (message_text_color)
-                            }
-                        }
-                    }
-            ),
-        );
+                }
+                ),
+            );
+        }
     }
 }

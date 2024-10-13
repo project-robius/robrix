@@ -11,9 +11,8 @@ live_design! {
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
-    HTML_LINE_SPACING = 6.0
-    HTML_TEXT_HEIGHT_FACTOR = 1.1
-    HTML_BLOCK_LINE_SPACING = 5.0
+    // HTML_LINE_SPACING = 6.0
+    // HTML_TEXT_HEIGHT_FACTOR = 1.1
 
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
@@ -25,7 +24,7 @@ live_design! {
         draw_text: {
             wrap: Word,
             color: (MESSAGE_TEXT_COLOR),
-            text_style: <MESSAGE_TEXT_STYLE> { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) },
+            text_style: <MESSAGE_TEXT_STYLE> { } //height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) },
         }
         text: "MatrixHtmlSpan placeholder",
 
@@ -35,15 +34,14 @@ live_design! {
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
     RobrixHtml = <Html> {
         padding: 0.0,
-        line_spacing: (HTML_LINE_SPACING),
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
-        draw_normal:      { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_italic:      { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_bold:        { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
-        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
+        draw_normal:      { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
+        draw_italic:      { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
+        draw_bold:        { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
+        draw_bold_italic: { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
+        draw_fixed:       { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
         draw_block: {
             line_color: (MESSAGE_TEXT_COLOR)
             sep_color: (MESSAGE_TEXT_COLOR)
@@ -51,9 +49,9 @@ live_design! {
             quote_bg_color: (#EDEDED)
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
-        list_item_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
-        code_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {left: 7.0, right: 7.0, top: 8.0, bottom: 0.0}, }
-        quote_layout: { line_spacing: (HTML_BLOCK_LINE_SPACING), padding: {top: 0.0, bottom: 0.0}, }
+        list_item_layout: { padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
+        code_layout: { padding: {left: 7.0, right: 7.0, top: 8.0, bottom: 0.0}, }
+        quote_layout: { padding: {top: 0.0, bottom: 0.0}, }
         inline_code_padding: { left: 5.0, right: 5.0, top: 7.0, bottom: 0.0 }
 
         font = <MatrixHtmlSpan> { }
