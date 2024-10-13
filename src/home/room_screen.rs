@@ -1422,6 +1422,11 @@ impl Widget for RoomScreen {
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                            let prev_event = tl_items.get(tl_idx.saturating_sub(1));
+                            if let Some(event_id) = prev_event.and_then(|timeline|timeline.as_event()).and_then(|e|e.event_id()) {
+                                tl_state.read_marker = Some((tl_idx,event_id.to_owned()));
+                                tl_state.scroll_pass_read_marker = false;
+                            }
                             let item = list.item(cx, item_id, live_id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
@@ -1710,6 +1715,8 @@ impl RoomScreen {
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 last_displayed_event: None,
+                read_marker: None,
+                scroll_pass_read_marker: false,
             };
             (new_tl_state, true)
         };
@@ -1852,54 +1859,28 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-
+        
         let Some(tl_state) = self.tl_state.as_mut() else { return };
         let Some(room_id) = self.room_id.as_ref() else { return };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
-                // scroll changed
-                self.fully_read_timer = cx.start_interval(5.0);
-                let time_now = std::time::Instant::now();
+                // if the scroll ends on page that contains read marker, set scroll_pass_read_marker to true
+                if let Some((read_marker_index, _)) = tl_state.read_marker {
+                    if read_marker_index >= first_index && read_marker_index <= first_index + portal_list.visible_items() {
+                        tl_state.scroll_pass_read_marker = true;
+                    }
+                }
                 if first_index > *index {
-                    // Store visible event messages with current time into a hashmap
-                    let mut read_receipt_event = None;
-                    for r in first_index .. (first_index + portal_list.visible_items() + 1) {
-                        if let Some(v) = tl_state.items.get(r) {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                read_receipt_event = Some(e.to_owned());
-                                if !tl_state.read_event_hashmap.contains_key(&e.to_string()) {
-                                    tl_state.read_event_hashmap.insert(
-                                        e.to_string(),
-                                        (room_id.clone(), e.to_owned(), time_now, false),
-                                    );
-                                }
-                            }
-                        }
+                    if tl_state.scroll_pass_read_marker {
+                        cx.stop_timer(self.fully_read_timer);
+                        self.fully_read_timer = cx.start_interval(5.0);
                     }
-                    if let Some(event_id) = read_receipt_event {
-                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id });
-                    }
-                    let mut fully_read_receipt_event = None;
-                    // Implements sending fully read receipts when message is scrolled out of first row
-                    for r in *index..first_index {
-                        if let Some(v) = tl_state.items.get(r).clone() {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                let mut to_remove = vec![];
-                                for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
-                                    if e == event_id {
-                                        fully_read_receipt_event = Some(event_id.clone());
-                                        to_remove.push(event_id_string.clone());
-                                    }
-                                }
-                                for r in to_remove {
-                                    tl_state.marked_fully_read_queue.remove(&r);
-                                }
-                            }
-                        }
-                    }
-                    if let Some(event_id) = fully_read_receipt_event {
-                        submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone()});
+                    if let Some(event_id) = tl_state.items.get(first_index + portal_list.visible_items())
+                            .and_then(|f| f.as_event() )
+                            .and_then(|f| f.event_id() ) {
+                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
+                        tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
                 }
                 *index = first_index;
@@ -2067,6 +2048,9 @@ struct TimelineUiState {
 
     prev_first_index: Option<usize>,
     last_displayed_event: Option<OwnedEventId>,
+    read_marker: Option<(usize, OwnedEventId)>,
+    /// Only send fully read receipt after scroll
+    scroll_pass_read_marker: bool,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events
