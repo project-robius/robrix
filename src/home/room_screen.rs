@@ -7,13 +7,12 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
-        events::room::{
+        api::client::read_marker, events::room::{
             message::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
     OwnedServerName,
 };
@@ -1345,20 +1344,45 @@ impl Widget for RoomScreen {
                 let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
                 if portal_list.scrolled(&actions) {
                     // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
+                    if let Some(ref mut tl_state) = &mut self.tl_state {
+                        //println!("tl_state.scroll_pass_read_marker {:?} tl_state.read_marker {:?}",tl_state.scroll_pass_read_marker, tl_state.read_marker);
+                        if !tl_state.scroll_pass_read_marker && tl_state.read_marker.is_some() {
+                            jump_to_bottom_view.set_visible(true);
+                            if let Some(ref mut but) = jump_to_bottom_view.button(id!(jump_button)).borrow_mut() {
+                                but.animator_play(cx, id!(jump_button.up));
+                            }
+                        } else {
+                            if !portal_list.is_at_end() {
+                                jump_to_bottom_view.set_visible(true);
+                                if let Some(ref mut but) = jump_to_bottom_view.button(id!(jump_button)).borrow_mut() {
+                                    but.animator_play(cx, id!(jump_button.down));
+                                }
+                            }
+                        }
+                    }
+                    
                 }
 
                 const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
                 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-  
                 if let Some(ref mut but) = self.button(id!(jump_button)).borrow_mut() {
+                    
                     if but.clicked(&actions) {
-                        portal_list.smooth_scroll_to_end(
-                        cx,
-                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
-                        SCROLL_TO_BOTTOM_SPEED,
-                        );
-                        jump_to_bottom_view.set_visible(false);
+                        if but.animator_in_state(cx, id!(jump_button.down) ) {
+                            portal_list.smooth_scroll_to_end(
+                                cx,
+                                SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
+                                SCROLL_TO_BOTTOM_SPEED,
+                            );
+                            but.animator_play(cx, id!(jump_button.up));
+                        } else {
+                            if let Some(ref mut tl_state) = &mut self.tl_state {
+                                if let Some((read_marker_index, _)) = tl_state.read_marker.clone() {
+                                    portal_list.smooth_scroll_to(cx, read_marker_index, SCROLL_TO_BOTTOM_SPEED);    
+                                }
+                            }
+                        }
+                        
                     }
                 }
             }
@@ -1498,12 +1522,7 @@ impl Widget for RoomScreen {
                             item.label(id!(date)).set_text(&text);
                             (item, ItemDrawnStatus::both_drawn())
                         }
-                        TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
-                            let prev_event = tl_items.get(tl_idx.saturating_sub(1));
-                            if let Some(event_id) = prev_event.and_then(|timeline|timeline.as_event()).and_then(|e|e.event_id()) {
-                                tl_state.read_marker = Some((tl_idx,event_id.to_owned()));
-                                tl_state.scroll_pass_read_marker = false;
-                            }
+                        TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => { 
                             let item = list.item(cx, item_id, live_id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
@@ -1637,7 +1656,29 @@ impl RoomScreen {
                             }
                         }
                     }
-                    
+                    for (tl_idx, timeline) in tl.items.iter().enumerate() {
+                        if let Some(v_timeline) = timeline.as_virtual() {
+                            match v_timeline {
+                                VirtualTimelineItem::ReadMarker => {
+                                    if let Some(previous_event_id) = tl.items.get(tl_idx.saturating_sub(1))
+                                    .and_then(|f|f.as_event())
+                                    .and_then(|f|f.event_id()) {
+                                        if let Some((s, event_id)) = &mut tl.read_marker {
+                                            if previous_event_id.to_owned() != *event_id {
+                                                *event_id = previous_event_id.to_owned();
+                                                tl.scroll_pass_read_marker = false;
+                                                println!("virtual timeline tl_idx {:?}", tl_idx);
+                                            } 
+                                        } else {
+                                            tl.read_marker = Some((tl_idx,previous_event_id.to_owned()));
+                                            tl.scroll_pass_read_marker = false;
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
@@ -2146,7 +2187,7 @@ struct TimelineUiState {
 
     prev_first_index: Option<usize>,
     last_displayed_event: Option<OwnedEventId>,
-    read_marker: Option<(usize, OwnedEventId)>,
+    read_marker: Option<(usize,OwnedEventId)>,
     /// Only send fully read receipt after scroll
     scroll_pass_read_marker: bool,
 }
