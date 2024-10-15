@@ -177,7 +177,7 @@ live_design! {
 
             status_label = <Label> {
                 width: 250, height: Fit
-                padding: {left: 5, right: 5}
+                padding: {left: 5, right: 5, top: 10, bottom: 10}
                 draw_text: {
                     color: (MESSAGE_TEXT_COLOR)
                     text_style: <REGULAR_TEXT> {}

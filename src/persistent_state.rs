@@ -106,6 +106,13 @@ pub async fn restore_session(
     let FullSessionPersisted { client_session, user_session, sync_token } =
         serde_json::from_str(&serialized_session)?;
 
+    let status_str = format!(
+        "Loaded session file for {user_id}. Trying to connect to homeserver ({})...",
+        client_session.homeserver,
+    );
+    log!("{status_str}");
+    Cx::post_action(LoginAction::Status(status_str));
+
     // Build the client with the previous settings from the session.
     let client = Client::builder()
         .server_name_or_homeserver_url(client_session.homeserver)
@@ -115,7 +122,7 @@ pub async fn restore_session(
         .build()
         .await?;
 
-    let status_str = format!("Restoring previous login session for {}...", user_session.meta.user_id);
+    let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
     Cx::post_action(LoginAction::Status(status_str));
 
