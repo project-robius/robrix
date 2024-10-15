@@ -7,13 +7,12 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
-        events::room::{
+        api::client::read_marker, events::room::{
             message::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
     OwnedServerName,
 };
@@ -33,7 +32,7 @@ use crate::{
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, take_fully_read_event, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -50,6 +49,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
+    import crate::shared::icon_button::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
     import crate::shared::icon_button::RobrixIconButton;
@@ -649,15 +649,16 @@ live_design! {
         jump_to_bottom_view = <View> {
             width: Fill,
             height: Fill,
-            flow: Down,
+            flow: Overlay,
             align: {x: 1.0, y: 1.0},
-            margin: {right: 15.0, bottom: 15.0},
+            margin: {right: 15.0, bottom: 0},
             visible: false,
-
-            jump_to_bottom_button = <IconButton> {
+            jump_to_bottom_button = <RobrixIconButton> {
                 width: 50, height: 50,
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                padding: 15,
+                margin: {bottom : 20}
+                icon_walk: {width: 20, height: 10, margin: {top: 0, right: 100} }
                 // draw a circular background for the button
                 draw_bg: {
                     instance background_color: #edededee,
@@ -668,10 +669,99 @@ live_design! {
                         sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
+    
+                }
+                draw_icon: {
+                    instance color: #000
+                    instance color_hover: #000
+                    uniform rotation_angle: 0.0,
+                }
+            }
+            // Badge overlay for unread messages
+            unread_message_badge = <View> {
+                width: 20, height: 20,
+                margin: { right: 15, bottom: 10},
+                visible: false,
+                show_bg: true,
+                draw_bg: {
+                    instance background_color: (#5D5E5E)
+        
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result;
+                    }
+                }
+
+                // Text to display the unread message count
+                label = <Label> {
+                    width: Fill,
+                    height: Fill,
+                    text: "0",
+                    margin: {top: 4.0, left: 5.0},
+                    draw_text:{
+                        color: #ffffff,
+                        wrap: Ellipsis,
+                        text_style: <USERNAME_TEXT_STYLE>{ font_size: 8. }
+                    }
                 }
             }
         }
-
+        jump_to_top_view = <View> {
+            width: Fill,
+            height: 80,
+            flow: Overlay,
+            align: {x: 1.0, y: 1.0},
+            margin: {right: 15.0, bottom: 30},
+            visible: true,
+            jump_to_top_button = <RobrixIconButton> {
+                width: 50, height: 50,
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                padding: 15,
+                margin: {bottom : 20}
+                icon_walk: {width: 20, height: 10, margin: {top: 0, right: 100} }
+                // draw a circular background for the button
+                draw_bg: {
+                    instance background_color: #edededee,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x)
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result
+                    }
+    
+                }
+                draw_icon: {
+                    instance color: #000
+                    instance color_hover: #000
+                    // 180.0: point upwards
+                    uniform rotation_angle: 180.0,
+                }
+                
+            }
+            // Badge overlay for unread messages
+            unread_notification_badge = <View> {
+                width: 12, height: 12,
+                margin: { right: 19, bottom: 60},
+                visible: true,
+                show_bg: true,
+                draw_bg: {
+                    instance background_color: (#58DC6C)
+        
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result;
+                    }
+                }
+            }
+           
+        }
     }
 
     LocationPreview = {{LocationPreview}} {
@@ -1284,6 +1374,9 @@ impl Widget for RoomScreen {
                     jump_to_bottom_view.set_visible(false);
                     self.redraw(cx);
                 }
+                if self.button(id!(jump_to_top_button)).clicked(&actions) {
+                    self.scroll_up_to_search_read_marker(cx, actions, &portal_list);
+                }
             }
 
             // Handle a typing action on the message input box.
@@ -1297,13 +1390,10 @@ impl Widget for RoomScreen {
 
         // Mark events as fully read after they have been displayed on screen for 5 seconds.
         if self.fully_read_timer.is_event(event).is_some() {
-            if let (Some(ref mut tl_state), Some(ref _room_id)) = (&mut self.tl_state, &self.room_id) {
-                for (k, (room, event, start, ref mut moved_to_queue)) in &mut tl_state.read_event_hashmap {
-                    if start.elapsed() > std::time::Duration::new(5, 0) && !*moved_to_queue{
-                        tl_state.marked_fully_read_queue.insert(k.clone(), (room.clone(), event.clone()));
-                        *moved_to_queue = true;
-                    }
-                }
+            if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
+                let Some(last_displayed_event) = &tl_state.last_displayed_event else { return };
+                submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_displayed_event.clone()});
+                self.view(id!(jump_to_top_view)).set_visible(false);
             }
             cx.stop_timer(self.fully_read_timer);
         }
@@ -1425,7 +1515,7 @@ impl Widget for RoomScreen {
                             item.label(id!(date)).set_text(&text);
                             (item, ItemDrawnStatus::both_drawn())
                         }
-                        TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
+                        TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => { 
                             let item = list.item(cx, item_id, live_id!(ReadMarker));
                             (item, ItemDrawnStatus::both_drawn())
                         }
@@ -1454,6 +1544,8 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
+        let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+        let jump_to_top_view = self.view(id!(jump_to_top_view));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
@@ -1539,6 +1631,24 @@ impl RoomScreen {
                     }
                     tl.items = new_items;
                     done_loading = true;
+                    // Set number of unread messages to unread_notification_badge
+                    if let Some(room_id) = &self.room_id {
+                        if let Some(num_unread)= get_client()
+                        .and_then(|c| c.get_room(room_id)).map(|room| room.num_unread_messages()) {
+                            let unread_notifications_badge = jump_to_bottom_view.view(id!(unread_notifications_badge));
+                            let unread_message_badge = jump_to_bottom_view.view(id!(unread_message_badge));
+                            if num_unread > 0 {
+                                unread_message_badge.label(id!(label)).set_text(&format!("{}",num_unread));
+                                unread_message_badge.set_visible(true);
+                                unread_notifications_badge.set_visible(false);
+                                if let Some(ref mut but) = jump_to_bottom_view.button(id!(jump_button)).borrow_mut() {
+                                    but.animator_play(cx, id!(jump_button.down));
+                                }
+                            } else {
+                                unread_message_badge.set_visible(false);
+                            }
+                        }
+                    }
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
@@ -1713,8 +1823,9 @@ impl RoomScreen {
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
-                read_event_hashmap: HashMap::new(),
-                marked_fully_read_queue: HashMap::new(),
+                last_displayed_event: None,
+                read_marker_index: None,
+                scroll_pass_read_marker: false,
             };
             (new_tl_state, true)
         };
@@ -1862,54 +1973,27 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-
         let Some(tl_state) = self.tl_state.as_mut() else { return };
         let Some(room_id) = self.room_id.as_ref() else { return };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
-                // scroll changed
-                self.fully_read_timer = cx.start_interval(5.0);
-                let time_now = std::time::Instant::now();
+                // if the scroll ends on page that contains read marker, set scroll_pass_read_marker to true
+                if let Some((read_marker_index, _)) = tl_state.read_marker_index {
+                    if read_marker_index >= first_index && read_marker_index <= first_index + portal_list.visible_items() {
+                        tl_state.scroll_pass_read_marker = true;
+                    }
+                }
                 if first_index > *index {
-                    // Store visible event messages with current time into a hashmap
-                    let mut read_receipt_event = None;
-                    for r in first_index .. (first_index + portal_list.visible_items() + 1) {
-                        if let Some(v) = tl_state.items.get(r) {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                read_receipt_event = Some(e.to_owned());
-                                if !tl_state.read_event_hashmap.contains_key(&e.to_string()) {
-                                    tl_state.read_event_hashmap.insert(
-                                        e.to_string(),
-                                        (room_id.clone(), e.to_owned(), time_now, false),
-                                    );
-                                }
-                            }
-                        }
+                    if tl_state.scroll_pass_read_marker {
+                        cx.stop_timer(self.fully_read_timer);
+                        self.fully_read_timer = cx.start_interval(5.0);
                     }
-                    if let Some(event_id) = read_receipt_event {
-                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id });
-                    }
-                    let mut fully_read_receipt_event = None;
-                    // Implements sending fully read receipts when message is scrolled out of first row
-                    for r in *index..first_index {
-                        if let Some(v) = tl_state.items.get(r).clone() {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                let mut to_remove = vec![];
-                                for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
-                                    if e == event_id {
-                                        fully_read_receipt_event = Some(event_id.clone());
-                                        to_remove.push(event_id_string.clone());
-                                    }
-                                }
-                                for r in to_remove {
-                                    tl_state.marked_fully_read_queue.remove(&r);
-                                }
-                            }
-                        }
-                    }
-                    if let Some(event_id) = fully_read_receipt_event {
-                        submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone()});
+                    if let Some(event_id) = tl_state.items.get(first_index + portal_list.visible_items())
+                            .and_then(|f| f.as_event() )
+                            .and_then(|f| f.event_id() ) {
+                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
+                        tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
                 }
                 *index = first_index;
@@ -1944,6 +2028,55 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+    fn scroll_up_to_search_read_marker(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+        portal_list: &PortalListRef,
+    ) {
+        const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
+        let jump_to_top_view = &self.view(id!(jump_to_top_view));
+        let Some(ref mut tl_state) = &mut self.tl_state else {
+            return;
+        };
+        let Some(ref room_id) = &self.room_id else {
+            return;
+        };
+    
+        let Some(ref fully_read_event_id) = take_fully_read_event(room_id) else {
+            return;
+        };
+        let len = tl_state.items.len();
+        let mut iter = tl_state.items.iter_mut();
+        let mut found = false;
+        for read_marker_index in (0..len).rev() {
+            if let Some(item) = iter
+                .next_back()
+                .and_then(|ti| ti.as_event().and_then(|e| e.event_id()))
+            {
+                if item.to_owned() == fully_read_event_id.clone() {
+                    portal_list.smooth_scroll_to(
+                        cx,
+                        read_marker_index.saturating_sub(1),
+                        SCROLL_TO_BOTTOM_SPEED,
+                    );
+                    tl_state.last_scrolled_index = read_marker_index.saturating_sub(1);
+                    jump_to_top_view.set_visible(false);
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if !found {
+            portal_list.smooth_scroll_to(cx, 0, SCROLL_TO_BOTTOM_SPEED);
+            tl_state.last_scrolled_index = 0;
+            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                room_id: room_id.clone(),
+                num_events: 50,
+                direction: PaginationDirection::Backwards,
+            });
+        }
+    }    
 }
 
 impl RoomScreenRef {
@@ -2076,8 +2209,10 @@ struct TimelineUiState {
     last_scrolled_index: usize,
 
     prev_first_index: Option<usize>,
-    read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
-    marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
+    last_displayed_event: Option<OwnedEventId>,
+    read_marker_index: Option<(usize,OwnedEventId)>,
+    /// Only send fully read receipt after scroll
+    scroll_pass_read_marker: bool,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events

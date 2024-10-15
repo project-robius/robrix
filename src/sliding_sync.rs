@@ -12,6 +12,7 @@ use matrix_sdk::{
     ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
         events::{
+            fully_read::FullyReadEventContent,
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent},
                 MediaSource,
@@ -360,7 +361,7 @@ async fn async_worker(
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
-
+                    
                     match res {
                         Ok(fully_paginated) => {
                             log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
@@ -470,6 +471,7 @@ async fn async_worker(
                     }
 
                     if update.is_none() && !local_only {
+                        
                         if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
                             update = Some(UserProfileUpdate::UserProfileOnly(
                                 UserProfile {
@@ -522,6 +524,7 @@ async fn async_worker(
                                 if room_member.is_ignored() { "" } else { "un" },
                                 if new_room_member.is_ignored() { "" } else { "un" },
                             );
+                            
                             enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
                                 room_id: room_id.clone(),
                                 room_member: new_room_member,
@@ -802,6 +805,8 @@ struct RoomInfo {
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
+    /// event_id for read marker
+    fully_read_event: Option<OwnedEventId>
 }
 
 /// Information about all of the rooms we currently know about.
@@ -855,7 +860,14 @@ pub fn take_timeline_update_receiver(
             .map(|receiver| (ri.timeline_update_sender.clone(), receiver))
         )
 }
-
+/// Return an option of OwnEventId for user's fully read event
+pub fn take_fully_read_event(
+    room_id: &OwnedRoomId,
+) -> Option<OwnedEventId>
+{
+    ALL_ROOM_INFO.lock().unwrap().get(room_id)
+    .and_then(|ri|ri.fully_read_event.clone())
+}
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
@@ -1151,7 +1163,9 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
-
+    let fully_read_event = room.account_data_static::<FullyReadEventContent>().await?
+        .and_then(|f|f.deserialize().ok())
+        .and_then(|f|Some(f.content.event_id));
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
         RoomInfo {
@@ -1160,6 +1174,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_update_receiver: Some(timeline_update_receiver),
             timeline_update_sender,
             typing_notice_subscriber: None,
+            fully_read_event
         },
     );
 
