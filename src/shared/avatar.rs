@@ -70,7 +70,7 @@ live_design! {
             visible: false,
             align: { x: 0.5, y: 0.5 }
             img = <Image> {
-                fit: Smallest,
+                fit: Stretch,
                 width: Fill, height: Fill,
                 source: (IMG_DEFAULT_AVATAR),
                 draw_bg: {
