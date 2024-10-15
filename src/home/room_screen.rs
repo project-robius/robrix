@@ -1012,7 +1012,16 @@ pub struct RoomScreen {
     #[rust] fully_read_timer: Timer,
     #[animator] animator: Animator,
 }
-
+impl Drop for RoomScreen {
+    fn drop(&mut self) {
+        // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
+        // back to to `TIMELINE_STATES`, which ensures that its UI state(s) are not lost
+        // and that other RoomScreen instances can show this room in the future.
+        // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
+        // when a Tab is closed or the app is resized to a different AdaptiveView layout.
+        self.hide_timeline();
+    }
+}
 impl RoomScreen{
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
