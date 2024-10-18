@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::shared::search_bar::SearchBarAction;
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -8,6 +10,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::adaptive_view::AdaptiveView;
+    import crate::shared::search_bar::SearchBar;
 
     import crate::home::rooms_list::RoomsList;
     import crate::shared::cached_widget::CachedWidget;
@@ -106,6 +109,7 @@ live_design! {
                 }
             }
         }
+
         <Label> {
             text: "Home"
             draw_text: {
@@ -113,6 +117,13 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
+
+        <SearchBar> {
+            input = {
+                empty_message: "Room name, alias, or id ..."
+            }
+        }
+
         <View> {
             flow: Down, spacing: 20
             padding: {top: 20}
@@ -173,12 +184,55 @@ pub struct RoomsView {
     view: View,
 }
 
+/// The filter options for the rooms view.
+#[derive(Debug, Clone)]
+pub enum RoomsSideBarFilter {
+    /// Filter room
+    People,
+    /// Filter channels
+    Rooms,
+}
+
+#[derive(Debug, Clone, DefaultNone)]
+pub enum RoomsSideBarAction {
+    Filter {
+        value: String,
+        filter_type: RoomsSideBarFilter,
+    },
+    None
+}
+
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for RoomsView {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+
+        for action in actions {
+            if let SearchBarAction::Search(keywords) = action.as_widget_action().cast() {
+
+                cx.widget_action(widget_uid, &scope.path, RoomsSideBarAction::Filter {
+                        value: keywords.clone(),
+                        filter_type: RoomsSideBarFilter::Rooms,
+                    },
+                );
+
+                cx.widget_action(widget_uid, &scope.path, RoomsSideBarAction::Filter {
+                        value: keywords.clone(),
+                        filter_type: RoomsSideBarFilter::People,
+                    },
+                );
+
+            }
+        }
     }
 }
