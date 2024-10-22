@@ -44,7 +44,7 @@ use crate::{
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
-
+use crate::popup_notification::{enqueue_popup_update, PopupUpdate};
 
 #[derive(Parser, Debug)]
 struct Cli {
@@ -162,7 +162,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     log!("Login result: {login_result:?}");
     if client.logged_in() {    
         log!("Logged in successfully? {:?}", client.logged_in());
-        enqueue_rooms_list_update(RoomsListUpdate::Status {
+        enqueue_popup_update(PopupUpdate::RoomListStatus {
             status: format!("Logged in as {}. Loading rooms...", &cli.username),
         });
         if let Err(e) = persistent_state::save_session(
@@ -173,7 +173,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         }
         Ok((client, None))
     } else {
-        enqueue_rooms_list_update(RoomsListUpdate::Status {
+        enqueue_popup_update(PopupUpdate::RoomListStatus {
             status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
         });
         bail!("Failed to login as {}: {login_result:?}", &cli.username)
@@ -748,7 +748,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                         }
                         Ok(Err(e)) => {
                             error!("Error: main async loop task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            enqueue_popup_update(PopupUpdate::RoomListStatus {
                                 status: e.to_string(),
                             });
                         },
@@ -765,7 +765,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                         }
                         Ok(Err(e)) => {
                             error!("Error: async worker task ended:\n\t{e:?}");
-                            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            enqueue_popup_update(PopupUpdate::RoomListStatus { 
                                 status: e.to_string(),
                             });
                         },
@@ -917,7 +917,7 @@ async fn async_main_loop(
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                        enqueue_popup_update(PopupUpdate::RoomListStatus { 
                             status: e.to_string(),
                         });
                         None
@@ -942,7 +942,7 @@ async fn async_main_loop(
                     Err(e) => {
                         error!("Login failed: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                        enqueue_popup_update(PopupUpdate::RoomListStatus { 
                             status: e.to_string(),
                         });
                     }
@@ -956,8 +956,8 @@ async fn async_main_loop(
 
     Cx::post_action(LoginAction::LoginSuccess);
 
-    enqueue_rooms_list_update(RoomsListUpdate::Status {
-        status: format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()),
+    enqueue_popup_update(PopupUpdate::RoomListStatus {
+        status: format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()) 
     });
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");

@@ -18,6 +18,7 @@ live_design! {
     import crate::profile::my_profile_screen::MyProfileScreen;
     import crate::verification_modal::VerificationModal;
     import crate::login::login_screen::LoginScreen;
+    import crate::popup_notification::Popup;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -128,6 +129,7 @@ live_design! {
                         }
                     }
                 }
+                <Popup>{}
             } // end of body
         }
     }
@@ -156,6 +158,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::popup_notification::live_design(cx);
     }
 }
 

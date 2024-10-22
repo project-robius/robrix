@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
-use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::AppState, popup_notification::{enqueue_popup_update, PopupUpdate}, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::room_preview::RoomPreviewAction;
 
@@ -29,22 +29,7 @@ live_design! {
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
 
-    StatusLabel = <View> {
-        width: Fill, height: Fit,
-        align: { x: 0.5, y: 0.5 }
-        padding: 15.0,
 
-        label = <Label> {
-            width: Fill,
-            align: { x: 0.5, y: 0.5 }
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <REGULAR_TEXT>{}
-            }
-            text: "Loading rooms..."
-        }
-    }
 
     RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
@@ -57,7 +42,6 @@ live_design! {
 
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
-            status_label = <StatusLabel> {}
             bottom_filler = <View> {
                 width: Fill,
                 height: 100.0,
@@ -101,10 +85,6 @@ pub enum RoomsListUpdate {
     },
     /// Remove the given room from the list of all rooms.
     RemoveRoom(OwnedRoomId),
-    /// Update the status label at the bottom of the list of all rooms.
-    Status {
-        status: String,
-    },
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -174,8 +154,6 @@ pub struct RoomsList {
     #[rust] rooms_list_map: HashMap<u64, usize>,
     /// Maps the OwnedRoomId to the index of the room in the `all_rooms` vector.
     #[rust] rooms_list_owned_room_id_map: HashMap<OwnedRoomId, usize>,
-    /// The latest status message that should be displayed in the bottom status label.
-    #[rust] status: String,
     /// The index of the currently selected room
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
@@ -184,11 +162,12 @@ pub struct RoomsList {
 
 impl RoomsList {
     fn update_status_rooms_count(&mut self) {
-        self.status = if let Some(max_rooms) = self.max_known_rooms {
+        let status = if let Some(max_rooms) = self.max_known_rooms {
             format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
+        enqueue_popup_update(PopupUpdate::RoomListStatus { status: status });
     }
 }
 
@@ -237,14 +216,12 @@ impl Widget for RoomsList {
                         self.all_rooms.clear();
                     }
                     RoomsListUpdate::NotLoaded => {
-                        self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                        let status = "Loading rooms (waiting for homeserver)...".to_string();
+                        enqueue_popup_update(PopupUpdate::RoomListStatus { status: status });
                     }
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
-                    }
-                    RoomsListUpdate::Status { status } => {
-                        self.status = status;
                     }
                 }
             }
@@ -297,7 +274,6 @@ impl Widget for RoomsList {
         }
 
         let count = self.all_rooms.len();
-        let status_label_id = count;
 
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
@@ -330,15 +306,6 @@ impl Widget for RoomsList {
                     // Pass the room info through Scope down to the RoomPreview widget.
                     scope = Scope::with_props(&*room_info);
 
-                    item
-                }
-                // Draw the status label as the bottom entry.
-                else if item_id == status_label_id {
-                    let item = list.item(cx, item_id, live_id!(status_label));
-                    item.as_view().apply_over(cx, live!{
-                        height: Fit,
-                        label = { text: (&self.status) }
-                    });
                     item
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
