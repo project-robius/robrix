@@ -15,7 +15,7 @@ live_design! {
         height: Fit,
 
         notification = <PopupNotification> {
-            margin: {top: 15,right: -10},
+            margin: {top: 25,right: 0},
             content: {
                 height: Fit,
                 width: Fit,
@@ -29,12 +29,17 @@ live_design! {
                     padding: 30,
                     show_bg: true,
                     draw_bg: {
-                        color: #3c3c3c
+                        color: #FFFFFF
+                        instance border_width: 0.8
+                        instance border_color: #D0D5DD
                         radius: 3.0
                     }
                     room_status_label = <Label> {
                         width: 170
-                        text: ".."
+                        text: "......"
+                        draw_text: {
+                            color: #000
+                        }
                     }
                     close_popup_button = <Button> {
                         width: Fit,
