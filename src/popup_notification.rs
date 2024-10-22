@@ -9,7 +9,6 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
     import crate::shared::adaptive_view::AdaptiveView;
-    ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
     Popup = {{Popup}} {
         width: Fit,
         height: Fit,
