@@ -28,7 +28,9 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
+    },
+    room::room_details::{RoomDetailsSlidingPaneRef, RoomDetailsSlidingPaneWidgetExt},
+    shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
@@ -51,6 +53,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
+    import crate::room::room_details::RoomDetailsSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
     import crate::shared::icon_button::RobrixIconButton;
 
@@ -66,6 +69,9 @@ live_design! {
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
+
+    ICO_ROOM_DETAILS = dep("crate://self/resources/icon_room_details.svg")
+    ICO_MEMBERS = dep("crate://self/resources/icon_members.svg")
 
     COLOR_BG = #xfff8ee
     COLOR_BRAND = #x5
@@ -757,6 +763,40 @@ live_design! {
         }
     }
 
+    RoomSubTab = <ButtonFlat> {
+        draw_icon: {
+            fn get_color(self) -> vec4 {
+                return #0
+            }
+        }
+        icon_walk: {width: 12, height: Fit}
+        draw_text: {
+            fn get_color(self) -> vec4 {
+                return #0
+            }
+        }
+    }
+
+    RoomSubTabs = <View> {
+        width: Fill, height: Fit,
+        flow: Right,
+        spacing: 10.
+        padding: { top: 10.0, right: 20.0, bottom: 10.0, left: 20.0 }
+
+        room_info = <RoomSubTab> {
+            text: "Info"
+            draw_icon: {
+                svg_file: (ICO_ROOM_DETAILS),
+            }
+        }
+
+        members = <RoomSubTab> {
+            text: "Members"
+            draw_icon: {
+                svg_file: (ICO_MEMBERS),
+            }
+        }
+    }
 
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
@@ -769,6 +809,8 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
+
+        room_sub_tabs = <RoomSubTabs> {}
 
         <View> {
             width: Fill, height: Fill,
@@ -981,6 +1023,16 @@ live_design! {
 
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
+
+            // The room details sliding pane should be displayed on top of all other subviews.
+            <View> {
+                width: Fill,
+                height: Fill,
+                align: { x: 1.0 },
+                flow: Right,
+
+                room_details_sliding_pane = <RoomDetailsSlidingPane> { }
+            }
         }
     }
 }
@@ -1017,7 +1069,7 @@ impl Widget for RoomScreen {
         let widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
-
+        let room_details_pane = self.room_details_sliding_pane(id!(room_details_sliding_pane));
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
@@ -1190,12 +1242,26 @@ impl Widget for RoomScreen {
                         }
                     }
                 }
+
+
             }
 
             // Set visibility of loading message banner based of pagination logic
             self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
+
+            // Handle the room info button being clicked.
+            if self.button(id!(room_info)).clicked(&actions) {
+                log!("room_info");
+                self.show_room_details(cx, &room_details_pane);
+            }
+
+            // Handle the members button being clicked.
+            if self.button(id!(members)).clicked(&actions) {
+                log!("members");
+                self.show_room_details(cx, &room_details_pane);
+            }
 
             // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(&actions) {
@@ -1613,6 +1679,14 @@ impl RoomScreen {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
         }
+    }
+
+    fn show_room_details(
+        &mut self,
+        cx: &mut Cx,
+        pane: &RoomDetailsSlidingPaneRef,
+    ) {
+        pane.show(cx);
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
