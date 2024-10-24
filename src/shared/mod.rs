@@ -11,6 +11,7 @@ pub mod search_bar;
 pub mod styles;
 pub mod text_or_image;
 pub mod typing_animation;
+pub mod popup_list;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
@@ -24,5 +25,6 @@ pub fn live_design(cx: &mut Cx) {
     html_or_plaintext::live_design(cx);
     adaptive_view::live_design(cx);
     cached_widget::live_design(cx);
-    typing_animation::live_design(cx)
+    typing_animation::live_design(cx);
+    popup_list::live_design(cx);
 }
