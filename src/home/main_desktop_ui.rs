@@ -46,7 +46,11 @@ live_design! {
 
             rooms_sidebar = <RoomsSideBar> {}
             welcome_screen = <WelcomeScreen> {}
-            room_screen = <RoomScreen> {}
+            room_screen = <RoomScreen> {
+                tabs = {
+                    visible: true
+                }
+            }
         }
     }
 }
