@@ -6,11 +6,12 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
 
     import crate::shared::styles::*;
+    import crate::shared::icon_button::RobrixIconButton;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
+    ICON_CLEAR = dep("crate://self/resources/icon_close.svg")
 
-
-    SearchBar = <RoundedView> {
+    SearchBar = {{SearchBar}}<RoundedView> {
         width: Fill,
         height: Fit,
 
@@ -19,7 +20,7 @@ live_design! {
             color: (COLOR_PRIMARY)
         }
 
-        padding: {top: 3, bottom: 3, left: 10, right: 20}
+        padding: {top: 3, bottom: 3, left: 10, right: 10}
         spacing: 4,
         align: {x: 0.0, y: 0.5},
 
@@ -121,5 +122,88 @@ live_design! {
                 }
             }
         }
+
+        clear_button = <RobrixIconButton> {
+            visible: false,
+            padding: {left: 10, right: 10}
+            draw_icon: {
+                svg_file: (ICON_CLEAR),
+                color: (COLOR_TEXT_INPUT_IDLE)
+            }
+            icon_walk: {width: 10, height: Fit}
+        }
+    }
+}
+#[derive(Live, LiveHook, Widget)]
+pub struct SearchBar {
+    #[deref]
+    view: View,
+
+    #[rust]
+    search_timer: Timer,
+
+    #[live(0.3)]
+    search_debounce_time: f64,
+}
+#[derive(Clone, Debug, Default)]
+pub enum SearchBarAction {
+    Search(String),
+    #[default]
+    ResetSearch,
+}
+
+impl Widget for SearchBar {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
+
+        if self.search_timer.is_event(event).is_some() {
+            self.search_timer = Timer::default();
+
+            let input = self.text_input(id!(input));
+            let keywords = input.text();
+
+            if keywords.len() == 0 {
+                let widget_uid = self.widget_uid();
+                cx.widget_action(widget_uid, &scope.path, SearchBarAction::ResetSearch);
+            } else {
+                let widget_uid = self.widget_uid();
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                SearchBarAction::Search(keywords.to_string())
+                );
+            }
+        }
+
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for SearchBar {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let input = self.text_input(id!(input));
+        let clear_button = self.button(id!(clear_button));
+
+        // Handle user changing the input text
+        if let Some(text) = input.changed(actions) {
+            clear_button.set_visible(!text.is_empty());
+            cx.stop_timer(self.search_timer);
+            self.search_timer = cx.start_timeout(self.search_debounce_time);
+        }
+
+        // Handle user clicked the clear button
+        if clear_button.clicked(actions) {
+            input.set_text_and_redraw(cx, "");
+            clear_button.set_visible(false);
+            input.set_key_focus(cx);
+
+            let widget_uid = self.widget_uid();
+            cx.widget_action(widget_uid, &scope.path, SearchBarAction::ResetSearch);
+        }
+
     }
 }
