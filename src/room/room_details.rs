@@ -9,145 +9,111 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::avatar::*;
     import crate::shared::icon_button::*;
-    import crate::shared::search_bar::SearchBar;
 
-    RoomInfoPane = <ScrollXYView> {
-        width: Fill,
-        height: Fill,
-        align: {x: 0.5, y: 0},
-        padding: {left: 15., right: 15., top: 15.}
-        spacing: 20,
-        flow: Down,
+    import crate::room::room_info_pane::*;
+    import crate::room::room_members_pane::*;
 
-        show_bg: true,
-        draw_bg: {
-            color: #f
-        }
+    RobrixRadioButtonTab = <RadioButtonTab> {
+        padding: 10,
 
-        room_info = <View> {
-            width: Fill, height: Fit
-            align: {x: 0.5, y: 0.0}
-            padding: {left: 10, right: 10}
-            spacing: 10
-            flow: Down
+        draw_radio: {
+            uniform radius: 3.0
+            uniform border_width: 0.0
+            instance color_unselected: (THEME_COLOR_TEXT_DEFAULT)
+            instance color_unselected_hover: (THEME_COLOR_TEXT_HOVER)
+            instance color_selected: (THEME_COLOR_TEXT_SELECTED)
+            instance border_color: (THEME_COLOR_TEXT_SELECTED)
 
-            room_avatar = <Avatar> {
-                width: 150,
-                height: 150,
-                margin: 10.0,
-                text_view = { text = { draw_text: {
-                    text_style: { font_size: 40.0 }
-                }}}
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color_unselected,
+                        self.color_unselected_hover,
+                        self.hover
+                    ),
+                    self.color_selected,
+                    self.selected
+                )
             }
 
-            room_name = <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    wrap: Word,
-                    color: #000,
-                    text_style: { font_size: 12 },
+            fn get_border_color(self) -> vec4 {
+                return self.border_color;
+            }
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                match self.radio_type {
+                    RadioType::Tab => {
+                        sdf.box(
+                            self.border_width,
+                            self.border_width,
+                            self.rect_size.x - (self.border_width * 2.0),
+                            self.rect_size.y - (self.border_width * 2.0),
+                            max(1.0, self.radius)
+                        )
+                        sdf.fill_keep(self.get_color())
+                        if self.border_width > 0.0 {
+                            sdf.stroke(self.get_border_color(), self.border_width)
+                        }
+                    }
                 }
-                text: "Room Name"
-            }
-
-            room_id = <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    wrap: Line,
-                    color: #90A4AE,
-                    text_style: { font_size: 11 },
-                }
-                text: "Room ID"
-            }
-
-        }
-
-    }
-
-    RoomMember = <View> {
-        height: 48, width: Fill,
-        show_bg: true,
-        flow: Right,
-        align: {y: 0.5},
-        padding: {left: 5, right: 5},
-
-        // Avatar
-        avatar = <View> {
-            width: 40, height: 40,
-            show_bg: true,
-            draw_bg: {
-                color: #0
+                return sdf.result
             }
         }
 
-        name = <Label> {
-            margin: {left: 5.0},
-            text: "Name"
-            draw_text: {
-                color: #0
-            }
-        }
-
-        <Filler> {}
-        // Power levels
-
-        member_room_power_level = <Label> {
-            text: "Admin",
-            draw_text: {
-                color: #0
+        draw_text: {
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        self.color_unselected,
+                        self.color_unselected_hover,
+                        self.hover
+                    ),
+                    self.color_selected,
+                    self.selected
+                )
             }
         }
     }
 
-    RoomMembersPane = <View> {
+    ActionToggleButton = <RobrixRadioButtonTab> {
         width: Fill,
-        height: Fill,
-        align: {x: 0.5, y: 0},
-        padding: {left: 10., right: 10.}
-        spacing: 10,
-        flow: Down,
+        align: { x: 0.5 },
+        padding: { left: 20, top: 10, bottom: 10, right: 20 },
+        label_walk: { margin: 0 }
+        draw_text: {
+            text_style: {font_size: 9},
+            color_selected: #475467;
+            color_unselected: #475467;
+            color_unselected_hover: #173437;
+        }
+        draw_radio: {
+            color_unselected: #D0D5DD,
+            color_selected: #fff,
+            color_unselected_hover: #D0D5DD,
+            border_color: #D0D5DD,
+            border_width: 1.0,
+            radius: 3.0
+        }
+    }
 
-        show_bg: true,
+    RoomDetailsActions = <RoundedView> {
+        width: Fill, height: Fit,
+        spacing: 5
+        padding: 5
         draw_bg: {
-            color: #f
+            color: #D0D5DD
+            radius: 3.0
         }
-
-        <SearchBar> { }
-
-        room_members_list = <ScrollXYView> {
-            width: Fill,height: Fill,
-            flow: Down,
-            spacing: 1,
-            <RoomMember> {}
-            <RoomMember> {}
-            <RoomMember> {}
-            <RoomMember> {}
-            <RoomMember> {}
-            <RoomMember> {}
-            <RoomMember> {}
-        }
-
-        invite_button = <RobrixIconButton> {
-            width: Fill, height: 32,
-            margin: { bottom: 10 },
-            draw_icon: {
-                svg_file: dep("crate://self/resources/icon_members.svg")
-                color: #000
-            }
-            icon_walk: { width: 12, height: Fit },
-            text: "Invite to this room",
-            draw_text: {
-                fn get_color(self) -> vec4 {
-                    return #000
-                }
-            }
-            draw_bg: {
-                fn pixel(self) -> vec4 {
-                    return (THEME_COLOR_MAKEPAD) + self.pressed * vec4(1., 1., 1., 1.)
-                }
+        info_button = <ActionToggleButton> {
+            text: "Info"
+            animator: {
+                selected = { default: on }
             }
         }
-
+        members_button = <ActionToggleButton> {
+            text: "Members"
+        }
     }
 
     // Copied from Moxin
@@ -162,10 +128,36 @@ live_design! {
         }
     }
 
+    RoomDetailsSlidingPaneHeader = <View> {
+        width: Fill, height: Fit,
+        flow: Right
+        padding: 10
+        align: { y: 0.5 }
+        spacing: 10
+        show_bg: true
+
+        room_details_actions = <RoomDetailsActions> {}
+
+        // The "X" close button on the top right
+        close_button = <RobrixIconButton> {
+            width: Fit,
+            height: Fit,
+            padding: 10,
+            draw_icon: {
+                svg_file: (ICON_CLOSE),
+                fn get_color(self) -> vec4 {
+                    return #x0;
+                }
+            }
+            icon_walk: {width: 12, height: 12}
+        }
+    }
+
     RoomDetailsSlidingPane = {{RoomDetailsSlidingPane}} {
         flow: Overlay,
         width: Fill, height: Fill,
         align: { x: 1.0, y: 0 }
+        visible: false
 
         bg_view = <View> {
             width: Fill
@@ -182,36 +174,18 @@ live_design! {
         main_content = <FadeView> {
             width: 360, height: Fill,
             flow: Overlay,
-
             <View> {
-                width: Fill, height: Fill,
+                height: Fill, width: Fill
                 show_bg: true,
                 draw_bg: {
-                    color: #fff
+                    color: #f
                 }
-                flow: Down,
-                room_info_pane = <RoomInfoPane> { }
-                room_members_pane = <RoomMembersPane> {
-                    visible: false
-                }
+                flow: Down
 
-            }
+                <RoomDetailsSlidingPaneHeader> {}
 
-            // The "X" close button on the top left
-            close_button = <RobrixIconButton> {
-                width: Fit,
-                height: Fit,
-                align: {x: 0.0, y: 0.0},
-                margin: 7,
-                padding: 15,
-
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    fn get_color(self) -> vec4 {
-                        return #x0;
-                    }
-                }
-                icon_walk: {width: 14, height: 14}
+                room_info_pane = <RoomInfoPane> {}
+                room_members_pane = <RoomMembersPane> {}
             }
         }
         animator: {
@@ -244,17 +218,24 @@ pub enum RoomDetailsSlidingPaneType {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomDetailsSlidingPane {
-    #[deref] view: View,
-    #[animator] animator: Animator,
+    #[deref]
+    view: View,
+    #[animator]
+    animator: Animator,
+
+    #[rust]
+    current_pane_index: usize,
 }
 
 impl Widget for RoomDetailsSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
 
+        // Close the pane when the close button is clicked, the back button is pressed, or the escape key is pressed
         let close_pane = match event {
             Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
             Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
@@ -274,35 +255,45 @@ impl Widget for RoomDetailsSlidingPane {
     }
 }
 
+impl WidgetMatchEvent for RoomDetailsSlidingPane {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
+
+        let actions_tab_buttons = self.widget(id!(room_details_actions)).radio_button_set(ids!(
+            info_button,
+            members_button
+        ));
+
+        if let Some(index) = actions_tab_buttons.selected(cx, actions) {
+            match index {
+                0 => {
+                    log!("showing info pane");
+                    self.redraw(cx);
+                },
+                1 => {
+                    log!("showing members pane");
+                    self.redraw(cx);
+                },
+                _ => {}
+            }
+            self.redraw(cx);
+        }
+    }
+}
 
 impl RoomDetailsSlidingPane {
-
     pub fn show(&mut self, cx: &mut Cx, pane_type: RoomDetailsSlidingPaneType) {
-
-        let room_info_pane_ref = self.view(id!(room_info_pane));
-        let room_members_pane_ref = self.view(id!(room_members_pane));
-
         self.visible = true;
         self.animator_play(cx, id!(panel.show));
         self.view(id!(bg_view)).set_visible(true);
 
         match pane_type {
-            RoomDetailsSlidingPaneType::Info => {
-                // Show the info pane
-                if room_members_pane_ref.visible() {
-                    room_members_pane_ref.set_visible(false);
-                }
-                room_info_pane_ref.set_visible(true);
+            RoomDetailsSlidingPaneType::Info => {;
+                self.current_pane_index = 0;
             }
             RoomDetailsSlidingPaneType::Members => {
-                // Show the members pane
-                if room_info_pane_ref.visible() {
-                    room_info_pane_ref.set_visible(false);
-                }
-                room_members_pane_ref.set_visible(true);
+                self.current_pane_index = 1;
             }
         }
-
         self.redraw(cx);
     }
 }

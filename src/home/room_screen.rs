@@ -1317,7 +1317,10 @@ impl Widget for RoomScreen {
 
             // Handle the room members tab being clicked.
             if self.button(id!(room_members)).clicked(&actions) {
-                self.show_room_members_pane(cx, &room_details_pane);
+                self.show_room_members_pane(
+                    cx,
+                    &room_details_pane,
+                );
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -1696,6 +1699,7 @@ impl RoomScreen {
         &mut self,
         cx: &mut Cx,
         pane: &RoomDetailsSlidingPaneRef,
+
     ) {
         pane.show(cx, RoomDetailsSlidingPaneType::Members);
         self.redraw(cx);
