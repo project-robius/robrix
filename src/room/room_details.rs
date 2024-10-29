@@ -134,7 +134,6 @@ live_design! {
         padding: 10
         align: { y: 0.5 }
         spacing: 10
-        show_bg: true
 
         room_details_actions = <RoomDetailsActions> {}
 
@@ -174,18 +173,17 @@ live_design! {
         main_content = <FadeView> {
             width: 360, height: Fill,
             flow: Overlay,
+
             <View> {
                 height: Fill, width: Fill
                 show_bg: true,
                 draw_bg: {
                     color: #f
                 }
-                flow: Down
-
+                flow: Down,
                 <RoomDetailsSlidingPaneHeader> {}
-
                 room_info_pane = <RoomInfoPane> {}
-                room_members_pane = <RoomMembersPane> {}
+                // room_members_pane = <RoomMembersPane> {}
             }
         }
         animator: {
@@ -195,7 +193,7 @@ live_design! {
                     redraw: true,
                     from: {all: Forward {duration: 0.4}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
+                    apply: {main_content = { width: 360, draw_bg: {opacity: 1.0} }}
                 }
                 hide = {
                     redraw: true,
@@ -281,6 +279,11 @@ impl WidgetMatchEvent for RoomDetailsSlidingPane {
 }
 
 impl RoomDetailsSlidingPane {
+
+    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
+        self.visible && self.animator_in_state(cx, id!(panel.show))
+    }
+
     pub fn show(&mut self, cx: &mut Cx, pane_type: RoomDetailsSlidingPaneType) {
         self.visible = true;
         self.animator_play(cx, id!(panel.show));
@@ -299,6 +302,11 @@ impl RoomDetailsSlidingPane {
 }
 
 impl RoomDetailsSlidingPaneRef {
+
+    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_currently_shown(cx)
+    }
 
     pub fn show(&self, cx: &mut Cx, pane_type: RoomDetailsSlidingPaneType) {
         let Some(mut inner) = self.borrow_mut() else { return };

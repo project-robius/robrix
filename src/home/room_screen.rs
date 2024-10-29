@@ -1368,14 +1368,20 @@ impl Widget for RoomScreen {
 
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
-        if event.requires_visibility() && pane.is_currently_shown(cx) {
+        if event.requires_visibility() {
             // Forward the event to the user profile sliding pane,
             // preventing the underlying timeline view from receiving it.
-            pane.handle_event(cx, event, scope);
-        } else {
-            // Forward the event to the inner timeline view.
-            self.view.handle_event(cx, event, scope);
+            if pane.is_currently_shown(cx) {
+                pane.handle_event(cx, event, scope);
+            }
+
+            if room_details_pane.is_currently_shown(cx) {
+                room_details_pane.handle_event(cx, event, scope);
+            }
         }
+        
+        self.view.handle_event(cx, event, scope);
+
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
