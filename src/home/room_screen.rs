@@ -1027,7 +1027,7 @@ impl Widget for RoomScreen {
         if let Event::Actions(actions) = event {
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
-                match action.as_widget_action().cast() {
+                match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
                     MessageAction::MessageReply(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
@@ -1321,6 +1321,7 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let room_screen_widget_uid = self.widget_uid();
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1372,6 +1373,7 @@ impl Widget for RoomScreen {
                                     prev_event,
                                     &mut tl_state.media_cache,
                                     item_drawn_status,
+                                    room_screen_widget_uid,
                                 )
                             }
                             TimelineItemContent::RedactedMessage => populate_small_state_event(
@@ -2226,6 +2228,7 @@ fn populate_message_view(
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
+    room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
 
@@ -2368,6 +2371,7 @@ fn populate_message_view(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
+        room_screen_widget_uid
     );
 
     // Set the timestamp.
@@ -3109,6 +3113,7 @@ pub struct Message {
     #[rust] item_id: usize,
     /// The event ID of the message that this message is replying to, if any.
     #[rust] replied_to_event_id: Option<OwnedEventId>,
+    #[rust] room_screen_widget_uid: Option<WidgetUid>
 }
 
 impl Widget for Message {
@@ -3123,7 +3128,7 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
 
-        let widget_uid = self.widget_uid();
+        let Some(widget_uid) = self.room_screen_widget_uid else { return };
 
         if let Event::Actions(actions) = event {
             if self.view.button(id!(reply_button)).clicked(actions) {
@@ -3199,10 +3204,12 @@ impl Message {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
+        room_screen_widget_uid: WidgetUid
     ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
         self.replied_to_event_id = replied_to_event_id;
+        self.room_screen_widget_uid = Some(room_screen_widget_uid);
     }
 }
 
@@ -3212,9 +3219,10 @@ impl MessageRef {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
+        room_screen_widget_uid: WidgetUid
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_data(can_be_replied_to, item_id, replied_to_event_id);
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid);
         };
     }
 }

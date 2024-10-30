@@ -225,10 +225,20 @@ pub struct LoginScreen {
     #[deref] view: View,
 }
 
+
 impl Widget for LoginScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.match_event(cx, event);
+    }
 
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for LoginScreen {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let status_label = self.view.label(id!(status_label));
         let login_button = self.view.button(id!(login_button));
         let signup_button = self.view.button(id!(signup_button));
@@ -236,73 +246,68 @@ impl Widget for LoginScreen {
         let password_input = self.view.text_input(id!(password_input));
         let homeserver_input = self.view.text_input(id!(homeserver_input));
 
-        if let Event::Actions(actions) = event {
-            if signup_button.clicked(actions) {
-                let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
-            }
+        if signup_button.clicked(actions) {
+            let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
+        }
 
-            if login_button.clicked(actions) {
-                let user_id = user_id_input.text();
-                let password = password_input.text();
-                let homeserver = homeserver_input.text();
-                if user_id.is_empty() || password.is_empty() {
-                    status_label.apply_over(cx, live!{
-                        draw_text: { color: (COLOR_DANGER_RED) }
-                    });
-                    status_label.set_text("Please enter both User ID and Password.");
-                } else {
+        if login_button.clicked(actions) || user_id_input.returned(actions).is_some() || password_input.returned(actions).is_some() || homeserver_input.returned(actions).is_some(){
+            let user_id = user_id_input.text();
+            let password = password_input.text();
+            let homeserver = homeserver_input.text();
+            if user_id.is_empty() || password.is_empty() {
+                status_label.apply_over(cx, live!{
+                    draw_text: { color: (COLOR_DANGER_RED) }
+                });
+                status_label.set_text("Please enter both User ID and Password.");
+            } else {
+                status_label.apply_over(cx, live!{
+                    draw_text: { color: (MESSAGE_TEXT_COLOR) }
+                });
+                status_label.set_text("Waiting for login response...");
+                submit_async_request(MatrixRequest::Login(LoginRequest {
+                    user_id,
+                    password,
+                    homeserver: homeserver.is_empty().not().then(|| homeserver),
+                }));
+            }
+            self.redraw(cx);
+        }
+
+        for action in actions {
+            match action.downcast_ref() {
+                Some(LoginAction::AutofillInfo { .. }) => {
+                    todo!("set user_id, password, and homeserver inputs");
+                }
+                Some(LoginAction::Status(status)) => {
+                    status_label.set_text(status);
                     status_label.apply_over(cx, live!{
                         draw_text: { color: (MESSAGE_TEXT_COLOR) }
                     });
-                    status_label.set_text("Waiting for login response...");
-                    submit_async_request(MatrixRequest::Login(LoginRequest {
-                        user_id,
-                        password,
-                        homeserver: homeserver.is_empty().not().then(|| homeserver),
-                    }));
+                   self.redraw(cx);
                 }
-                self.redraw(cx);
-            }
-
-            for action in actions {
-                match action.downcast_ref() {
-                    Some(LoginAction::AutofillInfo { .. }) => {
-                        todo!("set user_id, password, and homeserver inputs");
-                    }
-                    Some(LoginAction::Status(status)) => {
-                        status_label.set_text(status);
-                        status_label.apply_over(cx, live!{
-                            draw_text: { color: (MESSAGE_TEXT_COLOR) }
-                        });
-                        self.redraw(cx);
-                    }
-                    Some(LoginAction::LoginSuccess) => {
-                        // The other real action of showing the main screen
-                        // is handled by the main app, not by this login screen.
-                        user_id_input.set_text("");
-                        password_input.set_text("");
-                        homeserver_input.set_text("");
-                        status_label.set_text("Login successful!");
-                        status_label.apply_over(cx, live!{
-                            draw_text: { color: (COLOR_ACCEPT_GREEN) }
-                        });
-                        self.redraw(cx);
-                    }
-                    Some(LoginAction::LoginFailure(error)) => {
-                        status_label.set_text(error);
-                        status_label.apply_over(cx, live!{
-                            draw_text: { color: (COLOR_DANGER_RED) }
-                        });
-                        self.redraw(cx);
-                    }
-                    _ => {}
+                Some(LoginAction::LoginSuccess) => {
+                    // The other real action of showing the main screen
+                    // is handled by the main app, not by this login screen.
+                    user_id_input.set_text("");
+                    password_input.set_text("");
+                    homeserver_input.set_text("");
+                    status_label.set_text("Login successful!");
+                    status_label.apply_over(cx, live!{
+                        draw_text: { color: (COLOR_ACCEPT_GREEN) }
+                    });
+                    self.redraw(cx);
                 }
+                Some(LoginAction::LoginFailure(error)) => {
+                    status_label.set_text(error);
+                    status_label.apply_over(cx, live!{
+                        draw_text: { color: (COLOR_DANGER_RED) }
+                    });
+                    self.redraw(cx);
+                }
+                _ => {}
             }
+            
         }
-    }
-
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
     }
 }
 
