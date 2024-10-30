@@ -76,7 +76,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-    TYPING_NOTICE_ANIMATION_DURATION = 0.55
+    TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
     FillerY = <View> {width: Fill}
 
@@ -771,7 +771,7 @@ live_design! {
         }
         flow: Down, spacing: 0.0
 
-        chat = <View> {
+        room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
             show_bg: true
@@ -779,7 +779,7 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
-            keyboard = <KeyboardView> {
+            keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
 
@@ -983,18 +983,19 @@ live_design! {
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
         }
+
         animator: {
-            typing_notice = {
-                default: default,
-                default = {
+            typing_notice_animator = {
+                default: show,
+                show = {
                     redraw: true,
                     from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: {  chat = { keyboard = {typing_notice = { height: 30}} } }
+                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 30 } } } }
                 }
-                collapse = {
+                hide = {
                     redraw: true,
                     from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
-                    apply: {  chat = { keyboard = {typing_notice = {  height: 0 } }  }}
+                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 0 } } } }
                 }
             }
         }
@@ -1005,6 +1006,7 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
+    #[animator] animator: Animator,
 
     /// The room ID of the currently-shown room.
     #[rust] room_id: Option<OwnedRoomId>,
@@ -1014,7 +1016,6 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
-    #[animator] animator: Animator,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1481,7 +1482,8 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut num_updates = 0;
-        let mut is_typing = false;
+        let mut typing_users = Vec::new();
+
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1601,26 +1603,12 @@ impl RoomScreen {
                 }
 
                 TimelineUpdate::TypingUsers { users } => {
-                    let typing_text = match users.as_slice() {
-                        [] => String::new(),
-                        [user] => format!("{user} is typing "),
-                        [user1, user2] => format!("{user1} and {user2} are typing "),
-                        [user1, user2, others @ ..] => {
-                            if others.len() > 1 {
-                                format!("{user1}, {user2}, and {} are typing ", &others[0])
-                            } else {
-                                format!(
-                                    "{user1}, {user2}, and {} others are typing ",
-                                    others.len()
-                                )
-                            }
-                        }
-                    };
-                    is_typing = !users.is_empty();
-                    if typing_text != "" {
-                        self.view.label(id!(typing_label)).set_text(&typing_text);
-                    }
-                    
+                    // This update loop should be kept tight & fast, so all we do here is
+                    // save the list of typing users for future use after the loop exits.
+                    // Then, we "process" it later (by turning it into a string) after the
+                    // update loop has completed, which avoids unnecessary expensive work
+                    // if the list of typing users gets updated many times in a row.
+                    typing_users = users;
                 }
             }
         }
@@ -1628,19 +1616,40 @@ impl RoomScreen {
         if done_loading {
             top_space.set_visible(false);
         }
+
+        if !typing_users.is_empty() {
+            let typing_notice_text = match typing_users.as_slice() {
+                [] => String::new(),
+                [user] => format!("{user} is typing "),
+                [user1, user2] => format!("{user1} and {user2} are typing "),
+                [user1, user2, others @ ..] => {
+                    if others.len() > 1 {
+                        format!("{user1}, {user2}, and {} are typing ", &others[0])
+                    } else {
+                        format!(
+                            "{user1}, {user2}, and {} others are typing ",
+                            others.len()
+                        )
+                    }
+                }
+            };
+            // Set the typing notice text and make its view visible.
+            self.view.label(id!(typing_label)).set_text(&typing_notice_text);
+            self.view.view(id!(typing_notice)).set_visible(true);
+            // Animate in the typing notice view (sliding it up from the bottom).
+            self.animator_play(cx, id!(typing_notice_animator.show));
+            // Start the typing notice text animation of bouncing dots.
+            let typing_animation = self.view.typing_animation(id!(typing_animation));
+            typing_animation.animate(cx);
+        } else {
+            // Animate out the typing notice view (sliding it out towards the bottom).
+            self.animator_play(cx, id!(typing_notice_animator.hide));
+        }
+
         if num_updates > 0 {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
         }
-        if is_typing {
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            self.view.view(id!(typing_notice)).set_visible(true);
-            self.animator_play(cx, id!(typing_notice.default));
-            typing_animation.animate(cx);
-        } else  {
-            self.animator_play(cx, id!(typing_notice.collapse));
-        }
-        
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
