@@ -76,7 +76,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
-    TYPING_NOTICE_ANIMATION_DURATION = 0.75
+    TYPING_NOTICE_ANIMATION_DURATION = 0.55
 
     FillerY = <View> {width: Fill}
 
