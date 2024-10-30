@@ -76,6 +76,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
+    TYPING_NOTICE_ANIMATION_DURATION = 0.55
 
     FillerY = <View> {width: Fill}
 
@@ -770,7 +771,7 @@ live_design! {
         }
         flow: Down, spacing: 0.0
 
-        <View> {
+        chat = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
             show_bg: true
@@ -778,7 +779,7 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
-            <KeyboardView> {
+            keyboard = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
 
@@ -835,7 +836,7 @@ live_design! {
                 typing_notice = <View> {
                     visible: false
                     width: Fill
-                    height: Fit
+                    height: 30
                     flow: Right
                     padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
                     show_bg: true,
@@ -982,6 +983,21 @@ live_design! {
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
         }
+        animator: {
+            typing_notice = {
+                default: default,
+                default = {
+                    redraw: true,
+                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
+                    apply: {  chat = { keyboard = {typing_notice = { height: 30}} } }
+                }
+                collapse = {
+                    redraw: true,
+                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
+                    apply: {  chat = { keyboard = {typing_notice = {  height: 0 } }  }}
+                }
+            }
+        }
     }
 }
 
@@ -998,8 +1014,8 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+    #[animator] animator: Animator,
 }
-
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -1308,6 +1324,10 @@ impl Widget for RoomScreen {
             cx.stop_timer(self.fully_read_timer);
         }
 
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+        
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -1461,6 +1481,7 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut num_updates = 0;
+        let mut is_typing = false;
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1595,15 +1616,11 @@ impl RoomScreen {
                             }
                         }
                     };
-                    let is_typing = !users.is_empty();
-                    self.view.view(id!(typing_notice)).set_visible(is_typing);
-                    self.view.label(id!(typing_label)).set_text(&typing_text);
-                    let typing_animation = self.view.typing_animation(id!(typing_animation));
-                    if is_typing {
-                        typing_animation.animate(cx);
-                    } else {
-                        typing_animation.stop_animation();
+                    is_typing = !users.is_empty();
+                    if typing_text != "" {
+                        self.view.label(id!(typing_label)).set_text(&typing_text);
                     }
+                    
                 }
             }
         }
@@ -1615,6 +1632,15 @@ impl RoomScreen {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
         }
+        if is_typing {
+            let typing_animation = self.view.typing_animation(id!(typing_animation));
+            self.view.view(id!(typing_notice)).set_visible(true);
+            self.animator_play(cx, id!(typing_notice.default));
+            typing_animation.animate(cx);
+        } else  {
+            self.animator_play(cx, id!(typing_notice.collapse));
+        }
+        
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
