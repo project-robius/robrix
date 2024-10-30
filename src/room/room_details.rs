@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::room::room_info_pane::RoomInfoPaneWidgetExt;
+
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
@@ -221,8 +223,6 @@ pub struct RoomDetailsSlidingPane {
     #[animator]
     animator: Animator,
 
-    #[rust]
-    current_pane_index: usize,
 }
 
 impl Widget for RoomDetailsSlidingPane {
@@ -255,7 +255,6 @@ impl Widget for RoomDetailsSlidingPane {
 
 impl WidgetMatchEvent for RoomDetailsSlidingPane {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
-
         let actions_tab_buttons = self.widget(id!(room_details_actions)).radio_button_set(ids!(
             info_button,
             members_button
@@ -264,16 +263,15 @@ impl WidgetMatchEvent for RoomDetailsSlidingPane {
         if let Some(index) = actions_tab_buttons.selected(cx, actions) {
             match index {
                 0 => {
-                    log!("showing info pane");
+                    log!("Info button clicked");
                     self.redraw(cx);
-                },
+                }
                 1 => {
-                    log!("showing members pane");
+                    log!("Members button clicked");
                     self.redraw(cx);
-                },
+                }
                 _ => {}
             }
-            self.redraw(cx);
         }
     }
 }
@@ -290,13 +288,14 @@ impl RoomDetailsSlidingPane {
         self.view(id!(bg_view)).set_visible(true);
 
         match pane_type {
-            RoomDetailsSlidingPaneType::Info => {;
-                self.current_pane_index = 0;
+            RoomDetailsSlidingPaneType::Info => {
+                self.radio_button(id!(info_button)).select(cx, &mut Scope::default());
             }
             RoomDetailsSlidingPaneType::Members => {
-                self.current_pane_index = 1;
+                self.radio_button(id!(members_button)).select(cx, &mut Scope::default());
             }
         }
+
         self.redraw(cx);
     }
 }

@@ -13,6 +13,8 @@ live_design! {
     import crate::shared::avatar::*;
     import crate::shared::icon_button::*;
 
+    ICON_INVITE_PEOPLE = dep("crate://self/resources/icon_invite_people.svg");
+
     RoomMember = <View> {
         height: 48, width: Fill,
         show_bg: true,
@@ -54,7 +56,6 @@ live_design! {
         padding: {left: 10., right: 10.}
         spacing: 10,
         flow: Down,
-        visible: false,
         show_bg: true,
         draw_bg: {
             color: #f
@@ -68,24 +69,21 @@ live_design! {
         }
 
         invite_button = <RobrixIconButton> {
-            width: Fill, height: 32,
-            margin: { bottom: 10 },
+            width: Fill, height: Fit
+            align: { y: 1 }
+            margin: { bottom: 10 }
             draw_icon: {
-                svg_file: dep("crate://self/resources/icon_members.svg")
-                color: #000
-            }
-            icon_walk: { width: 12, height: Fit },
-            text: "Invite to this room",
-            draw_text: {
-                fn get_color(self) -> vec4 {
-                    return #000
-                }
+                svg_file: (ICON_INVITE_PEOPLE)
+                color: #f
             }
             draw_bg: {
-                fn pixel(self) -> vec4 {
-                    return (THEME_COLOR_MAKEPAD) + self.pressed * vec4(1., 1., 1., 1.)
-                }
+                border_color: (COLOR_DANGER_RED)
+                color: #0F88FE
             }
+            draw_text: {
+                color: #f
+            }
+            text: "Invite to this room",
         }
 
     }
