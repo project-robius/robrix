@@ -1736,6 +1736,11 @@ impl RoomScreen {
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
             });
+
+            // Even though we specify that room member profiles should be lazy-loaded,
+            // the matrix server still doesn't consistently send them to our client properly.
+            // So we kick off a request to fetch the room members here upon first viewing the room.
+            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2370,8 +2375,10 @@ fn populate_message_view(
         // format as AM/PM 12-hour time
         item.label(id!(profile.timestamp))
             .set_text(&format!("{}", dt.time().format("%l:%M %P")));
-        item.label(id!(profile.datestamp))
-            .set_text(&format!("{}", dt.date_naive()));
+        if !use_compact_view {
+            item.label(id!(profile.datestamp))
+                .set_text(&format!("{}", dt.date_naive()));
+        }
     } else {
         item.label(id!(profile.timestamp))
             .set_text(&format!("{}", ts_millis.get()));

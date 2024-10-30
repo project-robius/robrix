@@ -42,10 +42,9 @@ const EMPTY_ENVS: std::iter::Empty<(&str, &str)> = std::iter::empty::<(&str, &st
 ///   * This only works because we enable the Makepad `apple_bundle` cfg option,
 ///     which tells Makepad to invoke Apple's `NSBundle` API to retrieve the resource path at runtime.
 ///     This resource path points to the bundle's `Contents/Resources/` directory.
-/// * For AppImage packages, this should be set to a relative path that goes up two parent directories
-///   to account for the fact that AppImage binaries run in a simulated `usr/bin/` directory.
-///   * Thus, we need to get to the simulated `usr/lib/` directory to find the resources, 
-///     which currently works out to "./usr/lib/robrix`.
+/// * For AppImage packages, this should be set to the /usr/lib/<binary> directory. 
+///   Since AppImages execute with a simulated working directory of `usr/`,
+///   we just need a relative path that goes there, i.e.,  "lib/robrix`.
 ///   * Note that this must be a relative path, not an absolute path.
 /// * For Debian `.deb` packages, this should be set to `/usr/lib/<main-binary-name>`.
 ///   * This is the directory in which `dpkg` copies app resource files to
@@ -56,7 +55,7 @@ const EMPTY_ENVS: std::iter::Empty<(&str, &str)> = std::iter::empty::<(&str, &st
 fn makepad_package_dir_value(package_format: &str, main_binary_name: &str) -> String {
     match package_format {
         "app" | "dmg" => format!("."),
-        "appimage" => format!("./usr/lib/{}", main_binary_name),
+        "appimage" => format!("lib/{}", main_binary_name),
         "deb" | "pacman" => format!("/usr/lib/{}", main_binary_name),
         "nsis" => format!("."),
         _other => panic!("Unsupported package format: {}", _other),
@@ -84,11 +83,7 @@ fn main() -> std::io::Result<()> {
         }
         if arg == "--path-to-binary" {
             let path = PathBuf::from(args.next().expect("Expected a path after '--path-to-binary'."));
-            if path.exists() {
-                path_to_binary = Some(path);
-            } else {
-                panic!("The '--path-to-binary' path does not exist: '{}'", path.display());
-            }
+            path_to_binary = Some(path);
         }
         if host_os_opt.is_none() && (arg.contains("host_os") || arg.contains("host-os"))
         {
