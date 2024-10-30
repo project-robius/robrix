@@ -129,7 +129,7 @@ live_design! {
                         }
                     }
                     popup = <PopupNotification> {
-                        margin: {top: 25,right: 15},
+                        margin: {top:40,right: 15},
                         content: {
                             <PopupList> {}
                         }

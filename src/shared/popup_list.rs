@@ -1,15 +1,15 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-static POPUP_UPDATES: SegQueue<String> = SegQueue::new();
-pub fn enqueue_popup_update(update: String) {
-    POPUP_UPDATES.push(update);
+static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
+pub fn enqueue_popup_notification(update: String) {
+    POPUP_NOTIFICATION.push(update);
     SignalToUI::set_ui_signal();
 }
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
-
+    ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
     PopupDialog = <RoundedView> {
         width: 200
         height: Fit
@@ -52,12 +52,12 @@ live_design! {
         margin: {top: -8}
 
         draw_icon: {
-            svg_file: dep("crate://self/resources/close.svg"),
+            svg_file: (ICO_CLOSE),
             fn get_color(self) -> vec4 {
                 return #000;
             }
         }
-        icon_walk: {width: 10, height: 10}
+        icon_walk: {width: 12, height: 12}
     }
 
     PopupList = {{PopupList}} {
@@ -106,7 +106,7 @@ impl LiveHook for PopupList {
 }
 impl Widget for PopupList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        while let Some(message) = POPUP_UPDATES.pop() {
+        while let Some(message) = POPUP_NOTIFICATION.pop() {
             self.push(cx, message);
         }
         for view in self.popups.iter_mut() {
