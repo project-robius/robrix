@@ -966,7 +966,7 @@ async fn async_main_loop(
                         let cli = cli_parse_result.unwrap_or(Cli::default());
                         let (client, client_session) = build_client(&cli, app_data_dir()).await?;
                         match client.matrix_auth().login_sso( |sso_url: String| async move {
-                            webbrowser::open(&sso_url).
+                            let _ = webbrowser::open(&sso_url);
                             Ok(())
                         }).identity_provider_id(&id).await {
                             Ok(res) => {
