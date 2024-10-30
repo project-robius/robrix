@@ -46,7 +46,7 @@ use crate::{
 };
 
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user name that should be used for the login.
     #[clap(value_parser)]
@@ -287,6 +287,10 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
+    /// SSO Login.
+    SSO {
+        id: String,
+    },
     /// Sends a read receipt for the given event in the given room.
     ReadReceipt{
         room_id: OwnedRoomId,
@@ -307,7 +311,10 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
-
+pub enum LoginRequestType{
+    LoginRequest(LoginRequest),
+    LoginSSO(String)
+}
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginRequest {
     pub user_id: String,
@@ -322,14 +329,14 @@ pub struct LoginRequest {
 /// and then executes them within an async runtime context.
 async fn async_worker(
     mut request_receiver: UnboundedReceiver<MatrixRequest>,
-    login_sender: Sender<LoginRequest>,
+    login_sender: Sender<LoginRequestType>,
 ) -> Result<()> {
     log!("Started async_worker task.");
 
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
-                if let Err(e) = login_sender.send(login_request).await {
+                if let Err(e) = login_sender.send(LoginRequestType::LoginRequest(login_request)).await {
                     error!("Error sending login request to login_sender: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(String::from(
                         "BUG: failed to send login request to async worker thread."
@@ -607,7 +614,9 @@ async fn async_worker(
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
-
+            MatrixRequest::SSO { id } => {
+                login_sender.send(LoginRequestType::LoginSSO(id)).await.unwrap();                
+            }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
@@ -878,7 +887,7 @@ fn username_to_full_user_id(
 }
 
 async fn async_main_loop(
-    mut login_receiver: Receiver<LoginRequest>,
+    mut login_receiver: Receiver<LoginRequestType>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -935,18 +944,50 @@ async fn async_main_loop(
         Some(new_login) => new_login,
         None => loop {
             log!("Waiting for login request...");
-            if let Some(login_request) = login_receiver.recv().await {
-                log!("Received login request for user {}", login_request.user_id);
-                match login(Cli::from(login_request)).await {
-                    Ok(new_login) => break new_login,
-                    Err(e) => {
-                        error!("Login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
-                        });
+            if let Some(login_type) = login_receiver.recv().await {
+                match login_type {
+                    LoginRequestType::LoginRequest(login_request) =>{
+                        log!("Received login request for user {}", login_request.user_id);
+                        match login(Cli::from(login_request)).await {
+                            Ok(new_login) => break new_login,
+                            Err(e) => {
+                                error!("Login failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    LoginRequestType::LoginSSO(id) => {
+                        Cx::post_action(LoginAction::SsoPending(true));
+
+                        let cli_parse_result = Cli::try_parse();
+                        let cli = cli_parse_result.unwrap_or(Cli::default());
+                        let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+                        match client.matrix_auth().login_sso( |sso_url: String| async move {
+                            webbrowser::open(&sso_url).
+                            Ok(())
+                        }).identity_provider_id(&id).await {
+                            Ok(res) => {
+                                log!("Logged in successfully? {:?}", client.logged_in());
+                                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: format!("Logged in as {:?}. Loading rooms...", &res.user_id),
+                                });
+                                let _ = persistent_state::save_session(&client, client_session).await;
+                                Cx::post_action(LoginAction::SsoPending(false));
+                                break (client, None)
+                            }
+                            Err(e) =>{
+                                error!("Login failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                
+                            }
+                        }
+                        Cx::post_action(LoginAction::SsoPending(false));
                     }
                 }
+                
             } else {
                 error!("BUG: login_receiver hung up unexpectedly");
                 return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));

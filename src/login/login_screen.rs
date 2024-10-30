@@ -174,7 +174,56 @@ live_design! {
                 }
                 text: "Login"
             }
-
+           sso_view = <View> {
+                spacing: 20,
+                width: Fit, height: Fit,
+                flow: Right,
+                apple_button = <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+                    cursor: Hand,
+                    <Image> {
+                        width: 21, height: 21, margin: { left: 10.0  }
+                        source: dep("crate://self/resources/img/apple.png")
+                    }
+                }
+                facebook_button = <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+                    cursor: Hand,
+                    <Image> {
+                        width: 21, height: 21, margin: { left: 10.0  }
+                        source: dep("crate://self/resources/img/facebook.png")
+                    }
+                }
+                github_button = <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+                    cursor: Hand,
+                    <Image> {
+                        width: 21, height: 21, margin: { left: 10.0  }
+                        source: dep("crate://self/resources/img/github.png")
+                    }
+                }
+                gitlab_button = <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+                    cursor: Hand,
+                    <Image> {
+                        width: 21, height: 21, margin: { left: 10.0  }
+                        source: dep("crate://self/resources/img/gitlab.png")
+                    }
+                }
+                google_button = <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+                    cursor: Hand,
+                    <Image> {
+                        width: 21, height: 21, margin: { left: 10.0  }
+                        source: dep("crate://self/resources/img/google.png")
+                    }
+                }
+            }
             status_label = <Label> {
                 width: 250, height: Fit
                 padding: {left: 5, right: 5, top: 10, bottom: 10}
@@ -295,14 +344,51 @@ impl Widget for LoginScreen {
                         });
                         self.redraw(cx);
                     }
+                    Some(LoginAction::SsoPending(ref pending)) => {
+                        if *pending {
+                            self.view.view(id!(sso_view)).set_visible(false);
+                        } else {
+                            self.view.view(id!(sso_view)).set_visible(true);
+                        }
+                        self.redraw(cx);
+                    }
                     _ => {}
                 }
             }
+            self.match_event(cx, event);
         }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for LoginScreen {
+    fn handle_startup(&mut self, _cx: &mut Cx) {
+       
+    }
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if let Some(_) = self.view.view(id!(apple_button)).finger_down(&actions) {
+            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-apple") };
+            crate::sliding_sync::submit_async_request(matrix_req);
+        }
+        if let Some(_) = self.view.view(id!(facebook_button)).finger_down(&actions) {
+            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-facebook") };
+            crate::sliding_sync::submit_async_request(matrix_req);
+        }
+        if let Some(_) = self.view.view(id!(github_button)).finger_down(&actions) {
+            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-github") };
+            crate::sliding_sync::submit_async_request(matrix_req);
+        }
+        if let Some(_) = self.view.view(id!(gitlab_button)).finger_down(&actions) {
+            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-gitlab") };
+            crate::sliding_sync::submit_async_request(matrix_req);
+        }
+        if let Some(_) = self.view.view(id!(google_button)).finger_down(&actions) {
+            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-google") };
+            crate::sliding_sync::submit_async_request(matrix_req);
+        }
     }
 }
 
@@ -324,5 +410,6 @@ pub enum LoginAction {
         password: String,
         homeserver: Option<String>,
     },
+    SsoPending(bool),
     None,
 }

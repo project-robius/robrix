@@ -37,7 +37,7 @@ futures-util = "0.3"
 imbl = { version = "3.0.0", features = ["serde"] }  # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "experimental-sliding-sync", "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite" ] }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "experimental-sliding-sync", "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
@@ -48,7 +48,7 @@ tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
 emojis = "0.6.1"
-
+webbrowser = "1.0.2"
 
 ###################################################################################################
 #### Note: we now enable the usage of `rustls-tls` and the `bundled-sqlite` features in the 2  ####
@@ -195,3 +195,8 @@ appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",
     "$LOCALAPPDATA/$PRODUCTNAME",
 ]
+
+[profile.dev]
+incremental = true
+opt-level = "z"  # Disable optimizations
+codegen-units = 16  # Parallelize codegen
