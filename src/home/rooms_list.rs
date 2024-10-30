@@ -238,8 +238,8 @@ impl Widget for RoomsList {
                         self.all_rooms.clear();
                     }
                     RoomsListUpdate::NotLoaded => {
-                        let status = "Loading rooms (waiting for homeserver)...".to_string();
-                        enqueue_popup_notification(status);
+                        self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                        enqueue_popup_notification(self.status.clone());
                     }
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;

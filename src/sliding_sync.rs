@@ -921,7 +921,7 @@ async fn async_main_loop(
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
+                        enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: e.to_string(),
                         });
                         enqueue_popup_notification(e.to_string());
@@ -961,6 +961,7 @@ async fn async_main_loop(
     };
 
     Cx::post_action(LoginAction::LoginSuccess);
+
     enqueue_rooms_list_update(RoomsListUpdate::Status {
         status: format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()),
     });
