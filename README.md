@@ -11,6 +11,11 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 > ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
 
 Check out our most recent talks and presentations for more info:
+  * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
+    * Videos: (YouTube link coming soon)
+    * Slides:
+      [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
+      [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g)
     * Slides:
@@ -69,11 +74,9 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
    ```
 
 3. Build and run Robrix using `cargo-makepad`:
-    * Fill in your username and password in the [`login.toml`](login.toml) file.
-    * Then use cargo makepad to build and run:
-       ```sh
-       cargo makepad android run -p robrix --release
-       ```
+   ```sh
+   cargo makepad android run -p robrix --release
+   ```
     * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
         * API version 33 or higher is required, which is Android 13 and up.
 
@@ -89,46 +92,44 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Fetch user profiles (displayable names)
 - [x] Fetch and display user profile avatars
 - [x] Backwards pagination (upon viewing a room timeline)
-- [ ] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
-- [ ] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
+- [x] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
+- [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
 - [x] Stable positioning of events during simple timeline update
 - [x] Stable positioning of events during complex/multi-part timeline update
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
-- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [x] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
-- [ ] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
+- [x] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
 - [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
-- [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
-- [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
+- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
+- [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
+- [x] Side panel showing detailed user profile info (click on their Avatar)
+- [x] Ignore and unignore users (see known issues)
+- [ ] User settings screen
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
+- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [ ] Room creation
 - [ ] Room settings/info screen
 - [ ] Room members pane
-- [x] Side panel showing detailed user profile info (click on their Avatar)
-- [x] Ignore and unignore users (see known issues)
-- [ ] User settings screen
-- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
 
 ## Known problems/issues
- - URLs do not wrap properly; that is a Makepad-side problem.
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained

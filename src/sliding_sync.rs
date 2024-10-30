@@ -3,7 +3,7 @@ use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::StreamExt;
-use makepad_widgets::{error, log, warning, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig,
     event_handler::EventHandlerDropGuard,
@@ -26,13 +26,12 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItemContent},
     Timeline,
 };
 use tokio::{
     runtime::Handle,
-    sync::mpsc::{UnboundedSender, UnboundedReceiver},
-    task::JoinHandle,
+    sync::mpsc::{Sender, Receiver, UnboundedSender, UnboundedReceiver},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
@@ -40,7 +39,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync:
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
-    }, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
@@ -65,9 +64,25 @@ struct Cli {
     #[clap(short, long)]
     proxy: Option<String>,
 
+    /// Force login screen.
+    #[clap(short, long, action)]
+    login_screen: bool,
+
     /// Enable verbose logging output.
     #[clap(short, long, action)]
     verbose: bool,
+}
+impl From<LoginRequest> for Cli {
+    fn from(login: LoginRequest) -> Self {
+        Self {
+            username: login.user_id,
+            password: login.password,
+            homeserver: None,
+            proxy: None,
+            login_screen: false,
+            verbose: false,
+        }
+    }
 }
 
 
@@ -133,7 +148,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     // Query the server for supported login types.
     let login_kinds = client.matrix_auth().get_login_types().await?;
     if !login_kinds.flows.iter().any(|flow| matches!(flow, LoginType::Password(_))) {
-        bail!("Server does not support username + password login flow.");
+        bail!("Homeserver does not support username + password login flow.");
     }
 
     // Attempt to login using the CLI-provided username & password.
@@ -166,20 +181,37 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
 }
 
 
+/// Which direction to paginate in.
+/// 
+/// * `Forwards` will retrieve later events (towards the end of the timeline),
+///    which only works if the timeline is *focused* on a specific event.
+/// * `Backwards`: the more typical choice, in which earlier events are retrieved
+///    (towards the start of the timeline), which works in  both live mode and focused mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaginationDirection {
+    Forwards,
+    Backwards,
+}
+impl std::fmt::Display for PaginationDirection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Forwards => write!(f, "forwards"),
+            Self::Backwards => write!(f, "backwards"),
+        }
+    }
+}
+
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
+    /// Request from the login screen to log in with the given credentials.
+    Login(LoginRequest),
     /// Request to paginate (backwards fetch) the older events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
-        /// Which "direction" to paginate in:
-        /// * `true`: paginate forwards to retrieve later events (towards the end of the timeline),
-        ///    which only works if the timeline is *focused* on a specific event.
-        /// * `false`: (default) paginate backwards to fill in earlier events (towards the start of the timeline),
-        ///    which works if the timeline is in either live mode and focused mode.
-        forwards: bool,
+        direction: PaginationDirection,
     },
     /// Request to fetch the full details of the given event in the given room's timeline.
     FetchDetailsForEvent {
@@ -276,78 +308,79 @@ pub fn submit_async_request(req: MatrixRequest) {
 }
 
 
+/// Information needed to log in to a Matrix homeserver.
+pub struct LoginRequest {
+    pub user_id: String,
+    pub password: String,
+    pub homeserver: Option<String>,
+}
+
+
 /// The entry point for an async worker thread that can run async tasks.
 ///
 /// All this thread does is wait for [`MatrixRequests`] from the main UI-driven non-async thread(s)
 /// and then executes them within an async runtime context.
-async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<()> {
+async fn async_worker(
+    mut request_receiver: UnboundedReceiver<MatrixRequest>,
+    login_sender: Sender<LoginRequest>,
+) -> Result<()> {
     log!("Started async_worker task.");
 
-    while let Some(request) = receiver.recv().await {
+    while let Some(request) = request_receiver.recv().await {
         match request {
-            MatrixRequest::PaginateRoomTimeline { room_id, num_events, forwards } => {
-                let timeline = {
+            MatrixRequest::Login(login_request) => {
+                if let Err(e) = login_sender.send(login_request).await {
+                    error!("Error sending login request to login_sender: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(String::from(
+                        "BUG: failed to send login request to async worker thread."
+                    )));
+                }
+            }
+            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+                let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
 
-                    let room_id2 = room_id.clone();
                     let timeline_ref = room_info.timeline.clone();
-                    let timeline_ref2 = timeline_ref.clone();
                     let sender = room_info.timeline_update_sender.clone();
-
-                    // If the back-pagination status task is finished or doesn't exist, spawn a new one,
-                    // but only if the timeline is not already fully paginated.
-                    let should_spawn_pagination_status_task = match room_info.pagination_status_task.as_ref() {
-                        Some(t) => t.is_finished(),
-                        None => true,
-                    };
-                    if should_spawn_pagination_status_task {
-                        room_info.pagination_status_task = Some(Handle::current().spawn( async move {
-                            if let Some((pagination_status, mut pagination_stream)) = timeline_ref2.live_back_pagination_status().await {
-                                if !matches!(pagination_status, LiveBackPaginationStatus::Idle { hit_start_of_timeline: true }) {
-                                    while let Some(status) = pagination_stream.next().await {
-                                        log!("### Timeline {room_id2} back pagination status: {:?}", status);
-                                        match status {
-                                            LiveBackPaginationStatus::Idle { hit_start_of_timeline: false } => {
-                                                sender.send(TimelineUpdate::PaginationIdle).unwrap();
-                                                SignalToUI::set_ui_signal();
-                                            }
-                                            LiveBackPaginationStatus::Idle { hit_start_of_timeline: true } => {
-                                                sender.send(TimelineUpdate::TimelineStartReached).unwrap();
-                                                SignalToUI::set_ui_signal();
-                                                break;
-                                            }
-                                            _ => { }
-                                        }
-                                    }
-                                }
-                            }
-                        }));
-                    }
-
-                    // drop the lock on ALL_ROOM_INFO before spawning the actual pagination task.
-                    timeline_ref
+                    (timeline_ref, sender)
                 };
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
-                    let direction = if forwards { "forwards" } else { "backwards" };
-                    log!("Sending {direction} pagination request for room {room_id}...");
-                    let res = if forwards {
+                    log!("Starting {direction} pagination request for room {room_id}...");
+                    sender.send(TimelineUpdate::PaginationRunning(direction)).unwrap();
+                    SignalToUI::set_ui_signal();
+
+                    let res = if direction == PaginationDirection::Forwards {
                         timeline.focused_paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
                     match res {
-                        Ok(_hit_start_or_end) => log!(
-                            "Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
-                            if forwards { "end" } else { "start" },
-                            if _hit_start_or_end { "yes" } else { "no" },
-                        ),
-                        Err(e) => error!("Error sending {direction} pagination request for room {room_id}: {e:?}"),
+                        Ok(fully_paginated) => {
+                            log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
+                                if direction == PaginationDirection::Forwards { "end" } else { "start" },
+                                if fully_paginated { "yes" } else { "no" },
+                            );
+                            sender.send(TimelineUpdate::PaginationIdle {
+                                fully_paginated,
+                                direction,
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(error) => {
+                            error!("Error sending {direction} pagination request for room {room_id}: {error:?}");
+                            sender.send(TimelineUpdate::PaginationError {
+                                error,
+                                direction,
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
                     }
                 });
             }
@@ -507,7 +540,7 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id,
                         num_events: 50,
-                        forwards: false,
+                        direction: PaginationDirection::Backwards,
                     });
                 });
             }
@@ -695,14 +728,16 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
+    
+    let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
 
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
-        let mut worker_join_handle = rt.spawn(async_worker(receiver));
+        let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop());
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
 
         loop {
             tokio::select! {
@@ -765,8 +800,6 @@ struct RoomInfo {
     /// The UI thread can take ownership of these items  receiver in order for a specific
     /// timeline view (currently room_sccren) to receive and display updates to this room's timeline.
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
-    /// The async task that is subscribed to the timeline's back-pagination status.
-    pagination_status_task: Option<JoinHandle<()>>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
 }
@@ -824,90 +857,108 @@ pub fn take_timeline_update_receiver(
 }
 
 
-async fn async_main_loop() -> Result<()> {
-    tracing_subscriber::fmt::init();
+const DEFAULT_HOMESERVER: &str = "matrix.org";
 
-    let cli = Cli::try_parse().ok().or_else(|| {
-        // Quickly try to parse the username, password, and homeserver fields from "login.toml".
-        let login_file = std::include_str!("../login.toml");
-        let mut username = None;
-        let mut password = None;
-        let mut homeserver = None;
-        let mut homeserver_found = false;
-        for line in login_file.lines() {
-            if line.starts_with("username") {
-                username = line.find('=')
-                    .and_then(|i| line.get((i + 1) ..))
-                    .map(|s| s.trim().trim_matches('"').trim().to_string());
-            }
-            if line.starts_with("password") {
-                password = line.find('=')
-                    .and_then(|i| line.get((i + 1) ..))
-                    .map(|s| s.trim().trim_matches('"').trim().to_string());
-            }
-            if line.starts_with("homeserver") {
-                homeserver_found = true;
-                homeserver = line.find('=')
-                    .and_then(|i| line.get((i + 1) ..))
-                    .map(|s| s.trim().trim_matches('"').trim().to_string());
-                if homeserver.as_ref().is_some_and(|h| h.is_empty()) {
-                    homeserver = None;
-                }
-            }
-            if username.is_some() && password.is_some() && homeserver_found {
-                break;
-            }
-        }
-        if let (Some(username), Some(password)) = (username, password) {
-            if username.is_empty() || password.is_empty() {
-                None
-            } else {
-                log!("Parsed username and password from 'login.toml': {username:?}, homeserver: {homeserver:?}");
-                Some(Cli {
-                    username,
-                    password,
-                    homeserver,
-                    proxy: None,
-                    verbose: false,
-                })
-            }
-        } else {
-            log!("Failed to parse username and password from \"login.toml\".");
-            None
-        }
-    });
-
-    let Some(cli) = cli else {
-        enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: String::from("Error: missing username and password in 'login.toml' file. \
-                Please provide a valid username and password in 'login.toml' and rebuild the app."
-            ),
-        });
-        loop { } // nothing else we can do right now
-    };
-    enqueue_rooms_list_update(RoomsListUpdate::Status {
-        status: format!("Logging in as {}...", &cli.username)
-    });
-
-    let specified_username: Option<OwnedUserId> = cli.username.to_string().try_into().ok()
+fn username_to_full_user_id(
+    username: &str,
+    homeserver: Option<&str>,
+) -> Option<OwnedUserId> {
+    username
+        .try_into()
+        .ok()
         .or_else(|| {
-            let homeserver_url = cli.homeserver.as_deref()
-                .unwrap_or("matrix.org");
-            let user_id_str = if cli.username.starts_with("@") {
-                format!("{}:{}", cli.username, homeserver_url)
+            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
+            let user_id_str = if username.starts_with("@") {
+                format!("{}:{}", username, homeserver_url)
             } else {
-                format!("@{}:{}", cli.username, homeserver_url)
+                format!("@{}:{}", username, homeserver_url)
             };
             user_id_str.as_str().try_into().ok()
-        });
-    let (client, _sync_token) = if let Ok(restored) = persistent_state::restore_session(specified_username).await {
-        restored
+        })
+}
+
+async fn async_main_loop(
+    mut login_receiver: Receiver<LoginRequest>,
+) -> Result<()> {
+    tracing_subscriber::fmt::init();
+
+    let most_recent_user_id = persistent_state::most_recent_user_id();
+    log!("Most recent user ID: {most_recent_user_id:?}");
+    let cli_parse_result = Cli::try_parse();
+    log!("CLI parsing succeeded? {}", cli_parse_result.is_ok());
+    let wait_for_login = most_recent_user_id.is_none()
+        || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login");
+    log!("Waiting for login? {}", wait_for_login);
+
+    let new_login_opt = if !wait_for_login {
+        let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
+            username_to_full_user_id(
+                &cli.username,
+                cli.homeserver.as_deref(),
+            )
+        );
+        log!("Trying to restore session for user: {:?}",
+            specified_username.as_ref().or(most_recent_user_id.as_ref())
+        );
+        if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
+            Some(session)
+        } else {
+            let status_err = "Error: failed to restore previous user session. Please login again.";
+            log!("{status_err}");
+            Cx::post_action(LoginAction::Status(status_err.to_string()));
+
+            if let Ok(cli) = cli_parse_result {
+                let status_str = format!("Attempting auto-login from CLI arguments as user {}...", cli.username);
+                log!("{status_str}");
+                Cx::post_action(LoginAction::Status(status_str));
+
+                match login(cli).await {
+                    Ok(new_login) => Some(new_login),
+                    Err(e) => {
+                        error!("CLI-based login failed: {e:?}");
+                        Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                        None
+                    }
+                }
+            } else {
+                None
+            }
+        }
     } else {
-        match login(cli).await {
-            Ok(new_login) => new_login,
-            Err(e) => return Err(e),
+        None
+    };
+
+    let (client, _sync_token) = match new_login_opt {
+        Some(new_login) => new_login,
+        None => loop {
+            log!("Waiting for login request...");
+            if let Some(login_request) = login_receiver.recv().await {
+                log!("Received login request for user {}", login_request.user_id);
+                match login(Cli::from(login_request)).await {
+                    Ok(new_login) => break new_login,
+                    Err(e) => {
+                        error!("Login failed: {e:?}");
+                        Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                        enqueue_rooms_list_update(RoomsListUpdate::Status {
+                            status: e.to_string(),
+                        });
+                    }
+                }
+            } else {
+                error!("BUG: login_receiver hung up unexpectedly");
+                return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
+            }
         }
     };
+
+    Cx::post_action(LoginAction::LoginSuccess);
+
+    enqueue_rooms_list_update(RoomsListUpdate::Status {
+        status: format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()),
+    });
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
@@ -1108,7 +1159,6 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline,
             timeline_update_receiver: Some(timeline_update_receiver),
             timeline_update_sender,
-            pagination_status_task: None,
             typing_notice_subscriber: None,
         },
     );
@@ -1158,7 +1208,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                     submit_async_request(MatrixRequest::PaginateRoomTimeline {
                         room_id: joined_room.room_id().to_owned(),
                         num_events: 50,
-                        forwards: false,
+                        direction: PaginationDirection::Backwards,
                     });
                 }
             }
