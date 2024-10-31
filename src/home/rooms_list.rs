@@ -291,7 +291,8 @@ impl Widget for RoomsList {
                         }
                     }
                     RoomsListUpdate::RemoveRoom(room_id) => {
-                        self.all_rooms.remove(&room_id)
+                        self.all_rooms
+                            .remove(&room_id)
                             .and_then(|_removed|
                                 self.displayed_rooms.iter().position(|r| r == &room_id)
                             )
@@ -389,8 +390,10 @@ impl Widget for RoomsList {
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
 
-                // Draw the room preview for each room.
-                let room_to_draw = self.displayed_rooms.get(item_id).and_then(|room_id| self.all_rooms.get_mut(room_id));
+                // Draw the room preview for each room in the `displayed_rooms` list.
+                let room_to_draw = self.displayed_rooms
+                    .get(item_id)
+                    .and_then(|room_id| self.all_rooms.get_mut(room_id));
                 let item = if let Some(room_info) = room_to_draw {
                     let item = list.item(cx, item_id, live_id!(room_preview));
                     self.displayed_rooms_map.insert(item.widget_uid(), item_id);
