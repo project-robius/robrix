@@ -145,7 +145,7 @@ live_design! {
             password_input = <LoginTextInput> {
                 width: 250, height: 40
                 empty_message: "Password"
-                // password: true
+                draw_text: { text_style: { is_secret: true } }
             }
 
             homeserver_input = <LoginTextInput> {
