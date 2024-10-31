@@ -409,9 +409,8 @@ impl Widget for RoomsList {
                         });
                     }
 
-                    // Pass the room info through Scope down to the RoomPreview widget.
+                    // Pass the room info down to the RoomPreview widget via Scope.
                     scope = Scope::with_props(&*room_info);
-
                     item
                 }
                 // Draw the status label as the bottom entry.
