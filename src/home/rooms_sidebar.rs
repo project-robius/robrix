@@ -115,12 +115,6 @@ live_design! {
             }
         }
 
-        <SearchBar> {
-            input = {
-                empty_message: "Search by room name"
-            }
-        }
-
         <View> {
             flow: Down, spacing: 20
             padding: {top: 20}

@@ -9,7 +9,6 @@ live_design! {
     import crate::shared::icon_button::RobrixIconButton;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
-    ICON_CLEAR = dep("crate://self/resources/icon_close.svg")
 
     SearchBar = {{SearchBar}}<RoundedView> {
         width: Fill,
@@ -127,7 +126,7 @@ live_design! {
             visible: false,
             padding: {left: 10, right: 10}
             draw_icon: {
-                svg_file: (ICON_CLEAR),
+                svg_file: (ICON_CLOSE),
                 color: (COLOR_TEXT_INPUT_IDLE)
             }
             icon_walk: {width: 10, height: Fit}
@@ -138,44 +137,18 @@ live_design! {
 pub struct SearchBar {
     #[deref]
     view: View,
-
-    #[rust]
-    search_timer: Timer,
-
-    #[live(0.3)]
-    search_debounce_time: f64,
 }
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, DefaultNone)]
 pub enum SearchBarAction {
     Search(String),
-    #[default]
     ResetSearch,
+    None
 }
 
 impl Widget for SearchBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
-
-        if self.search_timer.is_event(event).is_some() {
-            self.search_timer = Timer::default();
-
-            let input = self.text_input(id!(input));
-            let keywords = input.text();
-
-            if keywords.len() == 0 {
-                let widget_uid = self.widget_uid();
-                cx.widget_action(widget_uid, &scope.path, SearchBarAction::ResetSearch);
-            } else {
-                let widget_uid = self.widget_uid();
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                SearchBarAction::Search(keywords.to_string())
-                );
-            }
-        }
-
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -189,10 +162,23 @@ impl WidgetMatchEvent for SearchBar {
         let clear_button = self.button(id!(clear_button));
 
         // Handle user changing the input text
-        if let Some(text) = input.changed(actions) {
-            clear_button.set_visible(!text.is_empty());
-            cx.stop_timer(self.search_timer);
-            self.search_timer = cx.start_timeout(self.search_debounce_time);
+        if let Some(keywords) = input.changed(actions) {
+            clear_button.set_visible(!keywords.is_empty());
+            if keywords.is_empty() {
+                let widget_uid = self.widget_uid();
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    SearchBarAction::ResetSearch
+                );
+            } else {
+                let widget_uid = self.widget_uid();
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    SearchBarAction::Search(keywords)
+                );
+            }
         }
 
         // Handle user clicked the clear button
