@@ -160,7 +160,11 @@ impl LiveRegister for App {
     }
 }
 
-impl LiveHook for App { }
+impl LiveHook for App {
+    fn after_update_from_doc(&mut self, _cx:&mut Cx) {
+        self.update_login_visibility();
+    }
+}
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, _cx: &mut Cx) {
@@ -169,8 +173,7 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        log!("Showing login view");
-        self.set_login_visible(true);
+        self.update_login_visibility();
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
@@ -180,7 +183,8 @@ impl MatchEvent for App {
         for action in actions {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.set_login_visible(false);
+                self.app_state.logged_in = true;
+                self.update_login_visibility();
                 self.ui.redraw(cx);
             }
 
@@ -273,15 +277,17 @@ impl AppMain for App {
 }
 
 impl App {
-    fn set_login_visible(&self, visibility: bool) {
-        self.ui.view(id!(login_screen_view)).set_visible(visibility);
-        self.ui.view(id!(home_screen_view)).set_visible(!visibility);
+    fn update_login_visibility(&self) {
+        let login_visible = !self.app_state.logged_in;
+        self.ui.view(id!(login_screen_view)).set_visible(login_visible);
+        self.ui.view(id!(home_screen_view)).set_visible(!login_visible);
     }
 }
 
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    pub logged_in: bool,
 }
 
 #[derive(Default, Debug)]

@@ -71,6 +71,11 @@ pub struct MainDesktopUI {
     /// The order in which the rooms were opened
     #[rust]
     room_order: Vec<OwnedRoomId>,
+
+    /// The most recently selected room, used to prevent re-selecting the same room in Dock 
+    /// which would trigger redraw of whole Widget.
+    #[rust]
+    most_recently_selected_room: Option<OwnedRoomId>,
 }
 
 impl Widget for MainDesktopUI {
@@ -133,7 +138,9 @@ impl Widget for MainDesktopUI {
         }
 
         // if the focus was not reset, then focus the new selected room or the previously selected one
-        if !focus_reset {           
+        if !focus_reset {
+            // In this draw event, we determined that a new room should be selected,
+            // So we focus it or create a new tab for it.
             if let Some(room) = new_selected_room {
                 self.focus_or_create_tab(cx, &room);
             } else if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
@@ -149,10 +156,16 @@ impl MainDesktopUI {
     fn focus_or_create_tab(&mut self, cx: &mut Cx2d, room: &SelectedRoom) {
         let dock = self.view.dock(id!(dock));
 
+        // Early return if the room to select is already created and focused.
+        if let Some(room_id) = &self.most_recently_selected_room {
+            if *room_id == room.id { return; }
+        }
+
         // if the room is already open, select its tab
         let room_id_as_live_id = LiveId::from_str(&room.id.to_string());
         if self.open_rooms.contains_key(&room_id_as_live_id) {
             dock.select_tab(cx, room_id_as_live_id);
+            self.most_recently_selected_room = Some(room.id.clone());
             return;
         }
 
@@ -187,6 +200,8 @@ impl MainDesktopUI {
                 room.id.clone(),
             );
         }
+        
+        self.most_recently_selected_room = Some(room.id.clone());
     }
 }
 

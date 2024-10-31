@@ -1,0 +1,5 @@
+## Add these flags onto all target builds cumulatively.
+## <https://github.com/rust-lang/cargo/issues/5376#issuecomment-2163350032>
+[target.'cfg(all())']
+rustflags = ["--cfg", "ruma_identifiers_storage=\"Arc\""]
+
