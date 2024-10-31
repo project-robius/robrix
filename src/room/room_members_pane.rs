@@ -12,6 +12,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::avatar::*;
     import crate::shared::icon_button::*;
+    import crate::shared::search_bar::SearchBar;
 
     ICON_INVITE_PEOPLE = dep("crate://self/resources/icon_invite_people.svg");
 
@@ -42,7 +43,7 @@ live_design! {
         // Power levels
 
         member_room_power_level = <Label> {
-            text: "Admin",
+            text: "",
             draw_text: {
                 color: #0
             }
@@ -59,6 +60,12 @@ live_design! {
         show_bg: true,
         draw_bg: {
             color: #f
+        }
+
+        room_members_search_bar = <SearchBar> {
+            input = {
+                text: "Search for room members..."
+            }
         }
 
         room_members_list = <ScrollXYView> {
@@ -113,12 +120,7 @@ impl Widget for RoomMembersPane {
 
 impl RoomMembersPane {
     pub fn set_room_members_info(&mut self, _cx: &mut Cx, room_members_info: RoomMembersPaneInfo) {
-        // TDDO: get room members from cache
-
-        // Get the room members from server
-        submit_async_request(MatrixRequest::FetchRoomMembers {
-            room_id: room_members_info.room_id.clone()
-        });
+        // TODO: Implement
     }
 }
 
@@ -126,5 +128,10 @@ impl RoomMembersPaneRef {
     pub fn set_room_members_info(self, _cx: &mut Cx, room_members_info: RoomMembersPaneInfo) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_room_members_info(_cx, room_members_info);
+    }
+
+    pub fn set_visible(&mut self, visible: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.view.visible = visible;
     }
 }

@@ -15,7 +15,7 @@ use matrix_sdk::{
         },
         matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
-    OwnedServerName,
+    OwnedServerName, RoomInfo,
 };
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo,
@@ -1329,8 +1329,12 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Handle the room info tab being clicked.
             if self.button(id!(room_info)).clicked(&actions) {
-                self.show_room_info_pane(cx, &room_details_pane);
+                self.show_room_info_pane(
+                    cx, 
+                    &room_details_pane,
+                );
             }
 
             // Handle the room members tab being clicked.
@@ -1736,6 +1740,7 @@ impl RoomScreen {
         pane: &RoomDetailsSlidingPaneRef,
     ) {
         pane.show(cx, RoomDetailsSlidingPaneType::Info);
+        // pane.set_room_info(cx, room_info);
         self.redraw(cx);
     }
 

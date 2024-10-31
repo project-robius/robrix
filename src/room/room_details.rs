@@ -1,6 +1,7 @@
 use makepad_widgets::*;
+use matrix_sdk::RoomInfo;
 
-use crate::room::room_info_pane::RoomInfoPaneWidgetExt;
+use crate::room::{room_info_pane::RoomInfoPaneWidgetExt, room_members_pane::RoomMembersPaneWidgetExt};
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -136,7 +137,10 @@ live_design! {
         padding: 10
         align: { y: 0.5 }
         spacing: 10
-
+        show_bg: true
+        draw_bg: {
+            color: #f
+        }
         room_details_actions = <RoomDetailsActions> {}
 
         // The "X" close button on the top right
@@ -174,18 +178,19 @@ live_design! {
 
         main_content = <FadeView> {
             width: 360, height: Fill,
-            flow: Overlay,
-
+            flow: Down,
+            <RoomDetailsSlidingPaneHeader> {}
             <View> {
                 height: Fill, width: Fill
                 show_bg: true,
                 draw_bg: {
                     color: #f
                 }
-                flow: Down,
-                <RoomDetailsSlidingPaneHeader> {}
+                flow: Overlay,
                 room_info_pane = <RoomInfoPane> {}
-                // room_members_pane = <RoomMembersPane> {}
+                room_members_pane = <RoomMembersPane> {
+                    visible: false
+                }
             }
         }
         animator: {
@@ -263,12 +268,22 @@ impl WidgetMatchEvent for RoomDetailsSlidingPane {
         if let Some(index) = actions_tab_buttons.selected(cx, actions) {
             match index {
                 0 => {
-                    log!("Info button clicked");
+                    self.room_info_pane(id!(room_info_pane)).set_visible(true);
+                    self.room_members_pane(id!(room_members_pane)).set_visible(false);
                     self.redraw(cx);
                 }
                 1 => {
                     log!("Members button clicked");
+                    self.room_info_pane(id!(room_info_pane)).set_visible(false);
+                    self.room_members_pane(id!(room_members_pane)).set_visible(true);
                     self.redraw(cx);
+
+                    // I think there is a bug in Makepad, where if you query `view(id!(some_id))` but some_id is another type (not a view)
+                    // it still will return a reference that is not empty. However it doesn't do anything, because the API is different between View
+                    // and RoomInfoPane
+
+                    // I think in the future, Makepad should automatically implement set_visible for all widgets, so that we don't have to write
+                    // the method ourselves.
                 }
                 _ => {}
             }
@@ -310,5 +325,10 @@ impl RoomDetailsSlidingPaneRef {
     pub fn show(&self, cx: &mut Cx, pane_type: RoomDetailsSlidingPaneType) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx, pane_type);
+    }
+
+    pub fn set_room_info(&self, cx: &mut Cx, room_info: RoomInfo) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.room_info_pane(id!(room_info_pane)).set_room_info(room_info);
     }
 }

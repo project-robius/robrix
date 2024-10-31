@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use matrix_sdk::RoomInfo;
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -9,6 +10,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::avatar::*;
     import crate::shared::icon_button::*;
+    import crate::shared::search_bar::SearchBar;
 
     ICON_INVITE_PEOPLE = dep("crate://self/resources/icon_invite_people.svg");
     ICON_COPY        = dep("crate://self/resources/icons/copy.svg")
@@ -76,9 +78,15 @@ live_design! {
         width: Fill,
         height: Fill,
         align: {x: 0.5, y: 0},
-        padding: {left: 15., right: 15., top: 15.}
+        padding: {left: 15., right: 15.}
         spacing: 20,
         flow: Down,
+
+        message_search_bar = <SearchBar> {
+            input = {
+                text: "Search messages..."
+            }
+        }
 
         room_info = <View> {
             width: Fill, height: Fit
@@ -90,7 +98,6 @@ live_design! {
             room_avatar = <Avatar> {
                 width: 150,
                 height: 150,
-                margin: 10.0,
                 text_view = { text = { draw_text: {
                     text_style: { font_size: 40.0 }
                 }}}
@@ -203,6 +210,7 @@ impl Widget for RoomInfoPane {
 
 impl WidgetMatchEvent for RoomInfoPane {
     fn handle_actions(&mut self, _cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+
         if self.button(id!(copy_link_to_room_button)).clicked(actions) {
             log!("Copy link to room button clicked");
         }
@@ -214,5 +222,24 @@ impl WidgetMatchEvent for RoomInfoPane {
         if self.button(id!(leave_room_button)).clicked(actions) {
             log!("Leave room button clicked");
         }
+    }
+}
+
+impl RoomInfoPane {
+    pub fn set_room_info(&mut self, room_info: RoomInfo) {
+        log!("Setting room info: {:?}", room_info);
+    }
+}
+
+
+impl RoomInfoPaneRef {
+    pub fn set_visible(&mut self, visible: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.view.visible = visible;
+    }
+
+    pub fn set_room_info(&mut self, room_info: RoomInfo) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_room_info(room_info);
     }
 }
