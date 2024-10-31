@@ -1,20 +1,23 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
+
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 pub fn enqueue_popup_notification(update: String) {
     POPUP_NOTIFICATION.push(update);
     SignalToUI::set_ui_signal();
 }
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
+
     PopupDialog = <RoundedView> {
         width: 200
         height: Fit
         margin: {top: 20, right: 20}
-        padding: {top: 20, right: 20 bottom: 20 left: 20}
+        padding: {top: 20, right: 20, bottom: 20, left: 20}
         spacing: 15
 
         show_bg: true
@@ -48,7 +51,6 @@ live_design! {
     PopupCloseButton = <Button> {
         width: Fit,
         height: Fit,
-
         margin: {top: -8}
 
         draw_icon: {
@@ -65,7 +67,6 @@ live_design! {
         height: Fit
         flow: Down
         popup = <PopupDialog> {
-
             close_button = <PopupCloseButton> {}
         }
         popup_meta: <PopupDialog> {
@@ -158,7 +159,7 @@ impl WidgetMatchEvent for PopupList {
 }
 
 impl PopupListRef {
-    pub fn push(&mut self, cx: &mut Cx, message: String) {
+    pub fn push(&self, cx: &mut Cx, message: String) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.push(cx, message);
         }
