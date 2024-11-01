@@ -390,7 +390,6 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::SsoPending(ref pending)) => {
                     if *pending {
-                        //self.view.view(id!(apple_button)).apply_from_ptr(cx, self.sso_button_pending_template);
                         self.view.view_set(button_set).iter().for_each(|view_ref| {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
@@ -412,13 +411,7 @@ impl MatchEvent for LoginScreen {
                     let mut button_iter = button_vec.iter();
                     for view_ref in self
                         .view
-                        .view_set(ids!(
-                            apple_button,
-                            facebook_button,
-                            github_button,
-                            gitlab_button,
-                            google_button
-                        ))
+                        .view_set(button_set)
                         .iter()
                     {
                         let brand = button_iter.next().unwrap();
