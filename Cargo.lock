@@ -2367,6 +2367,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndk-context"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27b02d87554356db9e9a873add8782d4ea6e3e58ea071a9adb9a2e8ddb884a8b"
+
+[[package]]
 name = "new_debug_unreachable"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3067,18 +3073,20 @@ dependencies = [
 
 [[package]]
 name = "robius-android-env"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "312584c40c0d996c96a0c8498c6e556c38ca5785eda670ae11ba12fe2e556c4f"
+checksum = "087fcb3061ccc432658a605cb868edd44e0efb08e7a159b486f02804a7616bef"
 dependencies = [
  "jni",
  "makepad-android-state",
+ "ndk-context",
 ]
 
 [[package]]
 name = "robius-directories"
 version = "5.0.1"
-source = "git+https://github.com/project-robius/robius-directories?branch=robius#a7ac6b7b137232f5a835b4d4946a07f9dda05c3d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5dd88aeb764f8040f6795a33699780929a378d1a320d36cf221d1a42807d0666"
 dependencies = [
  "dirs-sys",
  "jni",
@@ -3087,8 +3095,8 @@ dependencies = [
 
 [[package]]
 name = "robius-location"
-version = "0.1.0"
-source = "git+https://github.com/project-robius/robius-location#befe4f9b1d0bde0ba210af3b94aed809fc51525f"
+version = "0.1.1"
+source = "git+https://github.com/project-robius/robius-location#01974598e66e6fa44e493040bcb525ae7a413479"
 dependencies = [
  "android-build",
  "cfg-if",
@@ -3102,9 +3110,9 @@ dependencies = [
 
 [[package]]
 name = "robius-open"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "563849989e82ed61036c169afe32f95d6683b944cb667986bc6735103c69a64a"
+checksum = "243e2abbc8c1ca8ddc283056d4675b67e452fd527c3741c5318642da37840ff3"
 dependencies = [
  "cfg-if",
  "icrate",
@@ -3116,9 +3124,9 @@ dependencies = [
 
 [[package]]
 name = "robius-use-makepad"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dc404c4111c88cd9f8a409b2831d13fe93e5242c95939a3852e7e7d675f89c4"
+checksum = "947db6944188cbab806d657f70ec5c55ec9f169d3cab83ac2d04801bd25a2826"
 dependencies = [
  "robius-android-env",
 ]
