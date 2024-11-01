@@ -11,7 +11,6 @@ live_design! {
 
     import crate::home::rooms_list::RoomsList;
     import crate::shared::cached_widget::CachedWidget;
-    import crate::shared::search_bar::SearchBar;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
@@ -114,7 +113,6 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
-
         <View> {
             flow: Down, spacing: 20
             padding: {top: 20}

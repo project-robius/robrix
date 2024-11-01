@@ -140,7 +140,9 @@ pub struct SearchBar {
 }
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SearchBarAction {
+    /// The user has entered a search query.
     Search(String),
+    /// The user has cleared the search query or the search has been reset.
     ResetSearch,
     None
 }
