@@ -32,6 +32,7 @@ use tokio::{
     sync::mpsc::{Sender, Receiver, UnboundedSender, UnboundedReceiver},
 };
 use unicode_segmentation::UnicodeSegmentation;
+use robius_open::Uri;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
 
 use crate::{
@@ -942,7 +943,6 @@ async fn async_main_loop(
         Some(new_login) => new_login,
         None => {
             let cli_parse_result = Cli::try_parse();
-            let cli = cli_parse_result.unwrap_or(Cli::default());
             let user = user_id!("@user:matrix.org");
             let unauth_client = Client::builder().server_name(user.server_name()).build().await?;
             let l = unauth_client.matrix_auth().get_login_types().await?;
@@ -972,7 +972,7 @@ async fn async_main_loop(
                             let cli = cli_parse_result.unwrap_or(Cli::default());
                             let (client, client_session) = build_client(&cli, app_data_dir()).await?;
                             match client.matrix_auth().login_sso( |sso_url: String| async move {
-                                let _ = webbrowser::open(&sso_url);
+                                let _ = Uri::new(&sso_url).open();
                                 Ok(())
                             }).identity_provider_id(&id).await {
                                 Ok(res) => {

@@ -47,7 +47,6 @@ tracing-subscriber = "0.3.17"
 unicode-segmentation = "1.11.0"
 url = "2.5.0"
 emojis = "0.6.1"
-webbrowser = "1.0.2"
 
 ###################################################################################################
 #### Note: we now enable the usage of `rustls-tls` and the `bundled-sqlite` features in the 2  ####
