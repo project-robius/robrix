@@ -16,14 +16,13 @@ version = "0.0.1-pre-alpha"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "widget_uid_hashable" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
-robius-use-makepad = "0.1.0"
-robius-open = "0.1.1"
+robius-use-makepad = "0.1.1"
+robius-open = "0.1.2"
 ## A fork of the `directories` crate that adds support for Android by using our `robius-android-env` crate.
-robius-directories = { git = "https://github.com/project-robius/robius-directories", branch = "robius"}
+robius-directories = "5.0.1"
 robius-location = { git = "https://github.com/project-robius/robius-location" }
 
 anyhow = "1.0"
