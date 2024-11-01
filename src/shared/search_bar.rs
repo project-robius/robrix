@@ -133,16 +133,19 @@ live_design! {
         }
     }
 }
+
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchBar {
     #[deref]
     view: View,
 }
+
+/// Actions emitted by the search bar based on user interaction with it.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SearchBarAction {
     /// The user has entered a search query.
     Search(String),
-    /// The user has cleared the search query or the search has been reset.
+    /// The user has cleared the search query.
     ResetSearch,
     None
 }
@@ -166,15 +169,14 @@ impl WidgetMatchEvent for SearchBar {
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(!keywords.is_empty());
+            let widget_uid = self.widget_uid(); 
             if keywords.is_empty() {
-                let widget_uid = self.widget_uid();
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
                     SearchBarAction::ResetSearch
                 );
             } else {
-                let widget_uid = self.widget_uid();
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
@@ -189,9 +191,11 @@ impl WidgetMatchEvent for SearchBar {
             clear_button.set_visible(false);
             input.set_key_focus(cx);
 
-            let widget_uid = self.widget_uid();
-            cx.widget_action(widget_uid, &scope.path, SearchBarAction::ResetSearch);
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                SearchBarAction::ResetSearch,
+            );
         }
-
     }
 }
