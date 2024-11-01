@@ -947,7 +947,7 @@ async fn async_main_loop(
             let unauth_client = Client::builder().server_name(user.server_name()).build().await?;
             let l = unauth_client.matrix_auth().get_login_types().await?;
             let LoginType::Sso(sso_type) = l.flows.get(0).unwrap() else { return Ok(());};
-            Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers));
+            Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers.clone()));
             loop {
                 log!("Waiting for login request...");
                 if let Some(login_type) = login_receiver.recv().await {

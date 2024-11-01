@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, ops::Not};
+use std::ops::Not;
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
@@ -101,7 +101,18 @@ live_design! {
             }
         }
     }
-
+    SsoButton = <RoundedView> {
+        width: Fit,
+        height: Fit,
+        cursor: Hand,
+        visible: true,
+        padding: 10.0,
+        draw_bg: {
+            border_width: 1.0,
+            border_color: (#6c6c6c),
+            color: (COLOR_PRIMARY)
+        }
+    }
     LoginScreen = {{LoginScreen}} {
         width: Fill, height: Fill
         show_bg: true,
@@ -110,7 +121,7 @@ live_design! {
         }
         align: {x: 0.5, y: 0.5}
 
-        <RoundedView> {
+        round_view = <RoundedView> {
             width: Fit, height: Fit
             flow: Down
             align: {x: 0.5, y: 0.5}
@@ -175,61 +186,51 @@ live_design! {
                 }
                 text: "Login"
             }
-           sso_view = <View> {
+
+            sso_view = <View> {
                 spacing: 20,
                 width: Fit, height: Fit,
                 flow: Right,
-                apple_button = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-                    cursor: Hand,
-                    visible: false,
+                apple_button = <SsoButton> {
                     <Image> {
-                        width: 21, height: 21, margin: { left: 10.0  }
+                        width: 21, height: 21
                         source: dep("crate://self/resources/img/apple.png")
                     }
                 }
-                facebook_button = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-                    cursor: Hand,
-                    visible: false,
+                facebook_button = <SsoButton> {
                     <Image> {
-                        width: 21, height: 21, margin: { left: 10.0  }
+                        width: 21, height: 21
                         source: dep("crate://self/resources/img/facebook.png")
                     }
                 }
-                github_button = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-                    cursor: Hand,
-                    visible: false,
+                github_button = <SsoButton> {
                     <Image> {
-                        width: 21, height: 21, margin: { left: 10.0  }
+                        width: 21, height: 21
                         source: dep("crate://self/resources/img/github.png")
                     }
                 }
-                gitlab_button = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-                    cursor: Hand,
-                    visible: false,
+                github_button = <SsoButton> {
                     <Image> {
-                        width: 21, height: 21, margin: { left: 10.0  }
+                        width: 21, height: 21
+                        source: dep("crate://self/resources/img/github.png")
+                    }
+                }
+                gitlab_button = <SsoButton> {
+                    <Image> {
+                        width: 21, height: 21
                         source: dep("crate://self/resources/img/gitlab.png")
                     }
                 }
-                google_button = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-                    cursor: Hand,
-                    visible: false,
+                google_button = <SsoButton> {
                     <Image> {
-                        width: 21, height: 21, margin: { left: 10.0  }
+                        width: 21, height: 21
                         source: dep("crate://self/resources/img/google.png")
                     }
                 }
             }
+                
+            
+            
             status_label = <Label> {
                 width: 250, height: Fit
                 padding: {left: 5, right: 5, top: 10, bottom: 10}
@@ -265,7 +266,23 @@ live_design! {
                 text: "Sign up here"
             }
         }
+        
+        sso_button_pending_template: <RoundedView> {
+            cursor: NotAllowed,
+            draw_bg: {
+                border_width: 1.0,
+                border_color: (#Ff0000),
+            }
+        }
+        sso_button_ok_template: <RoundedView> {
+            cursor: Hand,
+            draw_bg: {
+                border_width: 1.0,
+                border_color: (#6c6c6c),
+            }
+        }
     }
+    
 }
 
 static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
@@ -279,7 +296,14 @@ const MESSAGE_TEXT_COLOR: Vec4 = Vec4 { x: 68f32/255f32, y: 68f32/255f32, z: 68f
 pub struct LoginScreen {
     #[deref] view: View,
     #[rust]
-    identity_providers: Vec<IdentityProvider>
+    identity_providers: Vec<IdentityProvider>,
+    #[animator] animator: Animator,
+    #[live]
+    sso_button_pending_template: Option<LivePtr>,
+    #[live]
+    sso_button_ok_template: Option<LivePtr>,
+    #[rust]
+    sso_pending:bool
 }
 
 
@@ -296,9 +320,7 @@ impl Widget for LoginScreen {
 }
 
 impl MatchEvent for LoginScreen {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
-        
-    }
+    
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let status_label = self.view.label(id!(status_label));
         let login_button = self.view.button(id!(login_button));
@@ -333,7 +355,8 @@ impl MatchEvent for LoginScreen {
             }
             self.redraw(cx);
         }
-
+        let button_vec = vec!["apple","facebook","github","gitlab","google"];
+        let button_set: &[&[LiveId]] = ids!(apple_button,facebook_button,github_button,gitlab_button,google_button);
         for action in actions {
             match action.downcast_ref() {
                 Some(LoginAction::AutofillInfo { .. }) => {
@@ -367,26 +390,29 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::SsoPending(ref pending)) => {
                     if *pending {
-                        self.view.view(id!(sso_view)).set_visible(false);
+                        //self.view.view(id!(apple_button)).apply_from_ptr(cx, self.sso_button_pending_template);
+                        self.view.view_set(button_set).iter().for_each(|view_ref|{
+                            let Some(mut view_ref) = view_ref.borrow_mut() else {return};
+                            view_ref.apply_from_ptr(cx, self.sso_button_pending_template);
+                        });
                     } else {
-                        self.view.view(id!(sso_view)).set_visible(true);
+                        self.view.view_set(button_set).iter().for_each(|view_ref|{
+                            let Some(mut view_ref) = view_ref.borrow_mut() else {return};
+                            view_ref.apply_from_ptr(cx, self.sso_button_ok_template);
+                        });
                     }
+                    self.sso_pending = *pending;
                     self.redraw(cx);
                 }
                 Some(LoginAction::IdentityProvider(identity_providers)) => {
-                    
-      
-                    for ip in identity_providers{
-                        if ip.id.contains("apple") {
-                            self.view.view(id!(apple_button)).set_visible(true);
-                        } else if ip.id.contains("facebook") {
-                            self.view.view(id!(facebook_button)).set_visible(true);
-                        } else if ip.id.contains("github") {
-                            self.view.view(id!(github_button)).set_visible(true);
-                        } else if ip.id.contains("gitlab") {
-                            self.view.view(id!(gitlab_button)).set_visible(true);
-                        } else if ip.id.contains("google") {
-                            self.view.view(id!(google_button)).set_visible(true);
+                    let mut button_iter = button_vec.iter();
+                    for view_ref in self.view.view_set(ids!(apple_button,facebook_button,github_button,gitlab_button,google_button)).iter() {
+                        let brand = button_iter.next().unwrap();
+                        for ip in identity_providers.iter(){
+                            if ip.id.contains(brand) {
+                                view_ref.set_visible(true);
+                                break
+                            }
                         }
                     }
                     self.identity_providers = identity_providers.clone();
@@ -397,40 +423,21 @@ impl MatchEvent for LoginScreen {
                 }
             }
         }
-        let button_vec = vec!["apple","facebook","github","gitlab","google"];
         let mut button_iter = button_vec.iter();
-        for v in self.view.view_set(ids!(apple_button,facebook_button,github_button,gitlab_button,google_button)).iter() {
-            let brand = button_vec.next().unwrap();
+        for v in self.view.view_set(button_set).iter() {
+            let brand = button_iter.next().unwrap();
             for ip in self.identity_providers.iter(){
                 if ip.id.contains(brand) {
                     if let Some(_) = v.finger_down(&actions) {
-                        let matrix_req = MatrixRequest::SSO { id: ip.id };
-                        crate::sliding_sync::submit_async_request(matrix_req);
+                        if !self.sso_pending {
+                            let matrix_req = MatrixRequest::SSO { id: ip.id.clone() };
+                            crate::sliding_sync::submit_async_request(matrix_req);
+                        }
                     }
                     break
                 }
             }
         }
-        // if let Some(_) = self.view.view(id!(apple_button)).finger_down(&actions) {
-        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-apple") };
-        //     crate::sliding_sync::submit_async_request(matrix_req);
-        // }
-        // if let Some(_) = self.view.view(id!(facebook_button)).finger_down(&actions) {
-        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-facebook") };
-        //     crate::sliding_sync::submit_async_request(matrix_req);
-        // }
-        // if let Some(_) = self.view.view(id!(github_button)).finger_down(&actions) {
-        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-github") };
-        //     crate::sliding_sync::submit_async_request(matrix_req);
-        // }
-        // if let Some(_) = self.view.view(id!(gitlab_button)).finger_down(&actions) {
-        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-gitlab") };
-        //     crate::sliding_sync::submit_async_request(matrix_req);
-        // }
-        // if let Some(_) = self.view.view(id!(google_button)).finger_down(&actions) {
-        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-google") };
-        //     crate::sliding_sync::submit_async_request(matrix_req);
-        // }
     }
 
 }
