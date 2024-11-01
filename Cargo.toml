@@ -48,6 +48,7 @@ unicode-segmentation = "1.11.0"
 url = "2.5.0"
 emojis = "0.6.1"
 
+
 ###################################################################################################
 #### Note: we now enable the usage of `rustls-tls` and the `bundled-sqlite` features in the 2  ####
 ####       matrix crate dependencies, so the below android- and windows-specific dependencies  ####

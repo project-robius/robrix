@@ -19,7 +19,7 @@ use matrix_sdk::{
     },
     sliding_sync::VersionBuilder,
     Client,
-    Room, ServerName,
+    Room,
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -942,11 +942,10 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let cli_parse_result = Cli::try_parse();
             let user = user_id!("@user:matrix.org");
             let unauth_client = Client::builder().server_name(user.server_name()).build().await?;
-            let l = unauth_client.matrix_auth().get_login_types().await?;
-            let LoginType::Sso(sso_type) = l.flows.get(0).unwrap() else { return Ok(());};
+            let login_type_res = unauth_client.matrix_auth().get_login_types().await?;
+            let LoginType::Sso(sso_type) = login_type_res.flows.get(0).unwrap() else { return Ok(());};
             Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers.clone()));
             loop {
                 log!("Waiting for login request...");
@@ -970,24 +969,33 @@ async fn async_main_loop(
 
                             let cli_parse_result = Cli::try_parse();
                             let cli = cli_parse_result.unwrap_or(Cli::default());
-                            let (client, client_session) = build_client(&cli, app_data_dir()).await?;
-                            match client.matrix_auth().login_sso( |sso_url: String| async move {
-                                let _ = Uri::new(&sso_url).open();
-                                Ok(())
-                            }).identity_provider_id(&id).await {
+                            let (client, client_session) =
+                                build_client(&cli, app_data_dir()).await?;
+                            match client
+                                .matrix_auth()
+                                .login_sso(|sso_url: String| async move {
+                                    let _ = Uri::new(&sso_url).open();
+                                    Ok(())
+                                })
+                                .identity_provider_id(&id)
+                                .await
+                            {
                                 Ok(res) => {
                                     log!("Logged in successfully? {:?}", client.logged_in());
                                     enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                        status: format!("Logged in as {:?}. Loading rooms...", &res.user_id),
+                                        status: format!(
+                                            "Logged in as {:?}. Loading rooms...",
+                                            &res.user_id
+                                        ),
                                     });
-                                    let _ = persistent_state::save_session(&client, client_session).await;
+                                    let _ = persistent_state::save_session(&client, client_session)
+                                        .await;
                                     Cx::post_action(LoginAction::SsoPending(false));
-                                    break (client, None)
+                                    break (client, None);
                                 }
-                                Err(e) =>{
+                                Err(e) => {
                                     error!("Login failed: {e:?}");
                                     Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                                    
                                 }
                             }
                             Cx::post_action(LoginAction::SsoPending(false));

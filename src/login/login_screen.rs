@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
 
-use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
+use crate::sliding_sync::{submit_async_request, LoginByPassword, MatrixRequest};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -121,7 +121,7 @@ live_design! {
         }
         align: {x: 0.5, y: 0.5}
 
-        round_view = <RoundedView> {
+        <RoundedView> {
             width: Fit, height: Fit
             flow: Down
             align: {x: 0.5, y: 0.5}
@@ -391,13 +391,17 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoPending(ref pending)) => {
                     if *pending {
                         //self.view.view(id!(apple_button)).apply_from_ptr(cx, self.sso_button_pending_template);
-                        self.view.view_set(button_set).iter().for_each(|view_ref|{
-                            let Some(mut view_ref) = view_ref.borrow_mut() else {return};
+                        self.view.view_set(button_set).iter().for_each(|view_ref| {
+                            let Some(mut view_ref) = view_ref.borrow_mut() else {
+                                return;
+                            };
                             view_ref.apply_from_ptr(cx, self.sso_button_pending_template);
                         });
                     } else {
-                        self.view.view_set(button_set).iter().for_each(|view_ref|{
-                            let Some(mut view_ref) = view_ref.borrow_mut() else {return};
+                        self.view.view_set(button_set).iter().for_each(|view_ref| {
+                            let Some(mut view_ref) = view_ref.borrow_mut() else {
+                                return;
+                            };
                             view_ref.apply_from_ptr(cx, self.sso_button_ok_template);
                         });
                     }
@@ -406,12 +410,22 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::IdentityProvider(identity_providers)) => {
                     let mut button_iter = button_vec.iter();
-                    for view_ref in self.view.view_set(ids!(apple_button,facebook_button,github_button,gitlab_button,google_button)).iter() {
+                    for view_ref in self
+                        .view
+                        .view_set(ids!(
+                            apple_button,
+                            facebook_button,
+                            github_button,
+                            gitlab_button,
+                            google_button
+                        ))
+                        .iter()
+                    {
                         let brand = button_iter.next().unwrap();
-                        for ip in identity_providers.iter(){
+                        for ip in identity_providers.iter() {
                             if ip.id.contains(brand) {
                                 view_ref.set_visible(true);
-                                break
+                                break;
                             }
                         }
                     }
@@ -426,7 +440,7 @@ impl MatchEvent for LoginScreen {
         let mut button_iter = button_vec.iter();
         for v in self.view.view_set(button_set).iter() {
             let brand = button_iter.next().unwrap();
-            for ip in self.identity_providers.iter(){
+            for ip in self.identity_providers.iter() {
                 if ip.id.contains(brand) {
                     if let Some(_) = v.finger_down(&actions) {
                         if !self.sso_pending {
@@ -434,7 +448,7 @@ impl MatchEvent for LoginScreen {
                             crate::sliding_sync::submit_async_request(matrix_req);
                         }
                     }
-                    break
+                    break;
                 }
             }
         }
