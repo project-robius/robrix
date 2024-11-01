@@ -10,18 +10,16 @@ use matrix_sdk::{
     media::MediaRequest,
     room::{Receipts, RoomMember},
     ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
-        events::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent},
                 MediaSource,
             }, FullStateEventContent
-        },
-        OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
+        }, user_id, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
     },
     sliding_sync::VersionBuilder,
     Client,
-    Room,
+    Room, ServerName,
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -72,8 +70,8 @@ struct Cli {
     #[clap(short, long, action)]
     verbose: bool,
 }
-impl From<LoginRequest> for Cli {
-    fn from(login: LoginRequest) -> Self {
+impl From<LoginByPassword> for Cli {
+    fn from(login: LoginByPassword) -> Self {
         Self {
             username: login.user_id,
             password: login.password,
@@ -205,7 +203,7 @@ impl std::fmt::Display for PaginationDirection {
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
-    Login(LoginRequest),
+    Login(LoginByPassword),
     /// Request to paginate (backwards fetch) the older events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -311,12 +309,12 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
-pub enum LoginRequestType{
-    LoginRequest(LoginRequest),
+pub enum LoginRequest{
+    LoginByPassword(LoginByPassword),
     LoginSSO(String)
 }
 /// Information needed to log in to a Matrix homeserver.
-pub struct LoginRequest {
+pub struct LoginByPassword {
     pub user_id: String,
     pub password: String,
     pub homeserver: Option<String>,
@@ -329,14 +327,14 @@ pub struct LoginRequest {
 /// and then executes them within an async runtime context.
 async fn async_worker(
     mut request_receiver: UnboundedReceiver<MatrixRequest>,
-    login_sender: Sender<LoginRequestType>,
+    login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
 
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
-                if let Err(e) = login_sender.send(LoginRequestType::LoginRequest(login_request)).await {
+                if let Err(e) = login_sender.send(LoginRequest::LoginByPassword(login_request)).await {
                     error!("Error sending login request to login_sender: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(String::from(
                         "BUG: failed to send login request to async worker thread."
@@ -615,7 +613,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SSO { id } => {
-                login_sender.send(LoginRequestType::LoginSSO(id)).await.unwrap();                
+                login_sender.send(LoginRequest::LoginSSO(id)).await.unwrap();                
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = CLIENT.get() else { continue };
@@ -887,7 +885,7 @@ fn username_to_full_user_id(
 }
 
 async fn async_main_loop(
-    mut login_receiver: Receiver<LoginRequestType>,
+    mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -942,55 +940,64 @@ async fn async_main_loop(
 
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
-        None => loop {
-            log!("Waiting for login request...");
-            if let Some(login_type) = login_receiver.recv().await {
-                match login_type {
-                    LoginRequestType::LoginRequest(login_request) =>{
-                        log!("Received login request for user {}", login_request.user_id);
-                        match login(Cli::from(login_request)).await {
-                            Ok(new_login) => break new_login,
-                            Err(e) => {
-                                error!("Login failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                                enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
-                                });
+        None => {
+            let cli_parse_result = Cli::try_parse();
+            let cli = cli_parse_result.unwrap_or(Cli::default());
+            let user = user_id!("@user:matrix.org");
+            let unauth_client = Client::builder().server_name(user.server_name()).build().await?;
+            let l = unauth_client.matrix_auth().get_login_types().await?;
+            let LoginType::Sso(sso_type) = l.flows.get(0).unwrap() else { return Ok(());};
+            Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers));
+            loop {
+                log!("Waiting for login request...");
+                if let Some(login_type) = login_receiver.recv().await {
+                    match login_type {
+                        LoginRequest::LoginByPassword(login_request) =>{
+                            log!("Received login request for user {}", login_request.user_id);
+                            match login(Cli::from(login_request)).await {
+                                Ok(new_login) => break new_login,
+                                Err(e) => {
+                                    error!("Login failed: {e:?}");
+                                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                    enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                        status: e.to_string(),
+                                    });
+                                }
                             }
                         }
-                    }
-                    LoginRequestType::LoginSSO(id) => {
-                        Cx::post_action(LoginAction::SsoPending(true));
+                        LoginRequest::LoginSSO(id) => {
+                            Cx::post_action(LoginAction::SsoPending(true));
 
-                        let cli_parse_result = Cli::try_parse();
-                        let cli = cli_parse_result.unwrap_or(Cli::default());
-                        let (client, client_session) = build_client(&cli, app_data_dir()).await?;
-                        match client.matrix_auth().login_sso( |sso_url: String| async move {
-                            let _ = webbrowser::open(&sso_url);
-                            Ok(())
-                        }).identity_provider_id(&id).await {
-                            Ok(res) => {
-                                log!("Logged in successfully? {:?}", client.logged_in());
-                                enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: format!("Logged in as {:?}. Loading rooms...", &res.user_id),
-                                });
-                                let _ = persistent_state::save_session(&client, client_session).await;
-                                Cx::post_action(LoginAction::SsoPending(false));
-                                break (client, None)
+                            let cli_parse_result = Cli::try_parse();
+                            let cli = cli_parse_result.unwrap_or(Cli::default());
+                            let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+                            match client.matrix_auth().login_sso( |sso_url: String| async move {
+                                let _ = webbrowser::open(&sso_url);
+                                Ok(())
+                            }).identity_provider_id(&id).await {
+                                Ok(res) => {
+                                    log!("Logged in successfully? {:?}", client.logged_in());
+                                    enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                        status: format!("Logged in as {:?}. Loading rooms...", &res.user_id),
+                                    });
+                                    let _ = persistent_state::save_session(&client, client_session).await;
+                                    Cx::post_action(LoginAction::SsoPending(false));
+                                    break (client, None)
+                                }
+                                Err(e) =>{
+                                    error!("Login failed: {e:?}");
+                                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                    
+                                }
                             }
-                            Err(e) =>{
-                                error!("Login failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                                
-                            }
+                            Cx::post_action(LoginAction::SsoPending(false));
                         }
-                        Cx::post_action(LoginAction::SsoPending(false));
                     }
+                    
+                } else {
+                    error!("BUG: login_receiver hung up unexpectedly");
+                    return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
                 }
-                
-            } else {
-                error!("BUG: login_receiver hung up unexpectedly");
-                return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
             }
         }
     };

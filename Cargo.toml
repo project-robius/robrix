@@ -194,8 +194,3 @@ appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",
     "$LOCALAPPDATA/$PRODUCTNAME",
 ]
-
-[profile.dev]
-incremental = true
-opt-level = "z"  # Disable optimizations
-codegen-units = 16  # Parallelize codegen

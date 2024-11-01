@@ -1,8 +1,9 @@
-use std::ops::Not;
+use std::{borrow::BorrowMut, ops::Not};
 
 use makepad_widgets::*;
+use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
 
-use crate::sliding_sync::{submit_async_request, LoginRequest, MatrixRequest};
+use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -182,6 +183,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
                     cursor: Hand,
+                    visible: false,
                     <Image> {
                         width: 21, height: 21, margin: { left: 10.0  }
                         source: dep("crate://self/resources/img/apple.png")
@@ -191,6 +193,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
                     cursor: Hand,
+                    visible: false,
                     <Image> {
                         width: 21, height: 21, margin: { left: 10.0  }
                         source: dep("crate://self/resources/img/facebook.png")
@@ -200,6 +203,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
                     cursor: Hand,
+                    visible: false,
                     <Image> {
                         width: 21, height: 21, margin: { left: 10.0  }
                         source: dep("crate://self/resources/img/github.png")
@@ -209,6 +213,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
                     cursor: Hand,
+                    visible: false,
                     <Image> {
                         width: 21, height: 21, margin: { left: 10.0  }
                         source: dep("crate://self/resources/img/gitlab.png")
@@ -218,6 +223,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
                     cursor: Hand,
+                    visible: false,
                     <Image> {
                         width: 21, height: 21, margin: { left: 10.0  }
                         source: dep("crate://self/resources/img/google.png")
@@ -272,10 +278,13 @@ const MESSAGE_TEXT_COLOR: Vec4 = Vec4 { x: 68f32/255f32, y: 68f32/255f32, z: 68f
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
+    #[rust]
+    identity_providers: Vec<IdentityProvider>
 }
 
 
 impl Widget for LoginScreen {
+
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
@@ -287,6 +296,9 @@ impl Widget for LoginScreen {
 }
 
 impl MatchEvent for LoginScreen {
+    fn handle_startup(&mut self, _cx: &mut Cx) {
+        
+    }
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let status_label = self.view.label(id!(status_label));
         let login_button = self.view.button(id!(login_button));
@@ -313,7 +325,7 @@ impl MatchEvent for LoginScreen {
                     draw_text: { color: (MESSAGE_TEXT_COLOR) }
                 });
                 status_label.set_text("Waiting for login response...");
-                submit_async_request(MatrixRequest::Login(LoginRequest {
+                submit_async_request(MatrixRequest::Login(LoginByPassword {
                     user_id,
                     password,
                     homeserver: homeserver.is_empty().not().then(|| homeserver),
@@ -361,31 +373,64 @@ impl MatchEvent for LoginScreen {
                     }
                     self.redraw(cx);
                 }
+                Some(LoginAction::IdentityProvider(identity_providers)) => {
+                    
+      
+                    for ip in identity_providers{
+                        if ip.id.contains("apple") {
+                            self.view.view(id!(apple_button)).set_visible(true);
+                        } else if ip.id.contains("facebook") {
+                            self.view.view(id!(facebook_button)).set_visible(true);
+                        } else if ip.id.contains("github") {
+                            self.view.view(id!(github_button)).set_visible(true);
+                        } else if ip.id.contains("gitlab") {
+                            self.view.view(id!(gitlab_button)).set_visible(true);
+                        } else if ip.id.contains("google") {
+                            self.view.view(id!(google_button)).set_visible(true);
+                        }
+                    }
+                    self.identity_providers = identity_providers.clone();
+                    self.redraw(cx);
+                }
                 _ => {
 
                 }
             }
         }
-        if let Some(_) = self.view.view(id!(apple_button)).finger_down(&actions) {
-            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-apple") };
-            crate::sliding_sync::submit_async_request(matrix_req);
+        let button_vec = vec!["apple","facebook","github","gitlab","google"];
+        let mut button_iter = button_vec.iter();
+        for v in self.view.view_set(ids!(apple_button,facebook_button,github_button,gitlab_button,google_button)).iter() {
+            let brand = button_vec.next().unwrap();
+            for ip in self.identity_providers.iter(){
+                if ip.id.contains(brand) {
+                    if let Some(_) = v.finger_down(&actions) {
+                        let matrix_req = MatrixRequest::SSO { id: ip.id };
+                        crate::sliding_sync::submit_async_request(matrix_req);
+                    }
+                    break
+                }
+            }
         }
-        if let Some(_) = self.view.view(id!(facebook_button)).finger_down(&actions) {
-            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-facebook") };
-            crate::sliding_sync::submit_async_request(matrix_req);
-        }
-        if let Some(_) = self.view.view(id!(github_button)).finger_down(&actions) {
-            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-github") };
-            crate::sliding_sync::submit_async_request(matrix_req);
-        }
-        if let Some(_) = self.view.view(id!(gitlab_button)).finger_down(&actions) {
-            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-gitlab") };
-            crate::sliding_sync::submit_async_request(matrix_req);
-        }
-        if let Some(_) = self.view.view(id!(google_button)).finger_down(&actions) {
-            let matrix_req = MatrixRequest::SSO { id: String::from("oidc-google") };
-            crate::sliding_sync::submit_async_request(matrix_req);
-        }
+        // if let Some(_) = self.view.view(id!(apple_button)).finger_down(&actions) {
+        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-apple") };
+        //     crate::sliding_sync::submit_async_request(matrix_req);
+        // }
+        // if let Some(_) = self.view.view(id!(facebook_button)).finger_down(&actions) {
+        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-facebook") };
+        //     crate::sliding_sync::submit_async_request(matrix_req);
+        // }
+        // if let Some(_) = self.view.view(id!(github_button)).finger_down(&actions) {
+        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-github") };
+        //     crate::sliding_sync::submit_async_request(matrix_req);
+        // }
+        // if let Some(_) = self.view.view(id!(gitlab_button)).finger_down(&actions) {
+        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-gitlab") };
+        //     crate::sliding_sync::submit_async_request(matrix_req);
+        // }
+        // if let Some(_) = self.view.view(id!(google_button)).finger_down(&actions) {
+        //     let matrix_req = MatrixRequest::SSO { id: String::from("oidc-google") };
+        //     crate::sliding_sync::submit_async_request(matrix_req);
+        // }
     }
 
 }
@@ -409,5 +454,6 @@ pub enum LoginAction {
         homeserver: Option<String>,
     },
     SsoPending(bool),
+    IdentityProvider(Vec<IdentityProvider>),
     None,
 }
