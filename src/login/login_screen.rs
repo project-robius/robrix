@@ -442,7 +442,7 @@ impl MatchEvent for LoginScreen {
             let brand = button_iter.next().unwrap();
             for ip in self.identity_providers.iter() {
                 if ip.id.contains(brand) {
-                    if let Some(_) = v.finger_down(&actions) {
+                    if let Some(_) = v.finger_up(&actions) {
                         if !self.sso_pending {
                             let matrix_req = MatrixRequest::SSO { id: ip.id.clone() };
                             crate::sliding_sync::submit_async_request(matrix_req);
