@@ -1098,16 +1098,6 @@ fn remove_room(room: room_list_service::Room) {
 async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     let room_id = room.room_id().to_owned();
 
-    let room_tombstone_event_content = room.get_state_event_static::<RoomTombstoneEventContent>()
-        .await
-        .ok()
-        .flatten()
-        // .map(|tombstone| match tombstone {
-        //     RawSyncOrStrippedState::Sync()
-        //     replacement_room.clone());
-        ;
-
-
     // NOTE: the call to `sync_up()` never returns, so I'm not sure how to force a room to fully sync.
     //       I suspect that's the problem -- we can't get the room's tombstone event content because
     //       the room isn't fully synced yet. But I don't know how to force it to fully sync.

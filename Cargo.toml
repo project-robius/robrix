@@ -133,11 +133,12 @@ out_dir = "./dist"
 ## so we need to copy the resources to a known fixed (static) path before packaging,
 ## such that cargo-packager can locate them and include them in the final package.
 before-packaging-command = """
-cargo run --manifest-path packaging/before-packaging-command/Cargo.toml \
-    before-packaging \
+robius-packaging-commands before-packaging \
+    --force-makepad \
     --binary-name robrix \
     --path-to-binary ./target/release/robrix
 """
+
 
 ## See the above paragraph comments for more info on how we create/populate the below `src` directories.
 resources = [
@@ -156,8 +157,8 @@ resources = [
 ##   * For Debian and Pacman (still a to-do!) packages, we also auto-generate the list of dependencies required by Robrix.
 ##
 before-each-package-command = """
-cargo run --manifest-path packaging/before-packaging-command/Cargo.toml \
-    before-each-package \
+robius-packaging-commands before-each-package \
+    --force-makepad \
     --binary-name robrix \
     --path-to-binary ./target/release/robrix
 """
