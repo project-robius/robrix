@@ -124,7 +124,7 @@ macOS, Windows, Linux, Android, and iOS.
 icons = ["./packaging/robrix_logo_alpha.png"]
 out_dir = "./dist"
 
-## The below command uses cargo-metadata to determine the path of the `makepad_widgets` crate on the host build system,
+## The below command primarily uses cargo-metadata to determine the path of the `makepad_widgets` crate on the host build system,
 ## and copies the `makepad-widgets/resources` directory to the `./dist/resources/makepad_widgets` directory.
 ## We also copy the Robrix project's `resources/` directory to the `./dist/resources/robrix` directory.
 ##
@@ -146,7 +146,7 @@ resources = [
     { src = "./dist/resources/robrix", target = "robrix" },
 ]
 
-## We then build the entire Robrix project and set the `MAKEPAD_PACKAGE_DIR` env var to the proper value.
+## We then build the entire Robrix project and set the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the proper value.
 ## * For macOS app bundles, this should be set to `.` because we set the `apple_bundle` cfg option
 ##   for Makepad, which causes Makepad to look for resources in the `Contents/Resources/` directory,
 ##   which is where the resources are located for an Apple app bundle (`.app` and `.dmg`).

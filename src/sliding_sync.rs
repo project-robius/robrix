@@ -9,7 +9,7 @@ use matrix_sdk::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
         events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, tombstone::RoomTombstoneEventContent, MediaSource
+                message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         },
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
