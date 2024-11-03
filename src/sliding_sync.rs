@@ -9,7 +9,7 @@ use matrix_sdk::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
         events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, tombstone::RoomTombstoneEventContent, MediaSource
+                message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         },
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
@@ -1097,16 +1097,6 @@ fn remove_room(room: room_list_service::Room) {
 /// Invoked when the room list service has received an update with a brand new room.
 async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     let room_id = room.room_id().to_owned();
-
-    let room_tombstone_event_content = room.get_state_event_static::<RoomTombstoneEventContent>()
-        .await
-        .ok()
-        .flatten()
-        // .map(|tombstone| match tombstone {
-        //     RawSyncOrStrippedState::Sync()
-        //     replacement_room.clone());
-        ;
-
 
     // NOTE: the call to `sync_up()` never returns, so I'm not sure how to force a room to fully sync.
     //       I suspect that's the problem -- we can't get the room's tombstone event content because
