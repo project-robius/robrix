@@ -11,6 +11,11 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 > ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
 
 Check out our most recent talks and presentations for more info:
+  * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
+    * Videos: (YouTube link coming soon)
+    * Slides:
+      [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
+      [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g)
     * Slides:
@@ -69,11 +74,9 @@ cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
    ```
 
 3. Build and run Robrix using `cargo-makepad`:
-    * Fill in your username and password in the [`login.toml`](login.toml) file.
-    * Then use cargo makepad to build and run:
-       ```sh
-       cargo makepad android run -p robrix --release
-       ```
+   ```sh
+   cargo makepad android run -p robrix --release
+   ```
     * You'll need to connect a physical Android device with developer options enabled, or start up an emulator using Android Studio.
         * API version 33 or higher is required, which is Android 13 and up.
 
@@ -93,41 +96,109 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
 - [x] Stable positioning of events during simple timeline update
 - [x] Stable positioning of events during complex/multi-part timeline update
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 - [x] Display simple text-only messages
 - [x] Display image messages (PNG, JPEG)
 - [x] Rich text formatting for message bodies
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
-- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [x] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
 - [x] Send messages (standalone, no replies)
-- [ ] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
+- [x] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
 - [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
-- [ ] Error display banners: no connection, failure to login, sync timeout: https://github.com/project-robius/robrix/issues/121
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
 
 ### Auxiliary/admin features: login, registration, settings
-- [ ] Username/password login screen: https://github.com/project-robius/robrix/issues/113
+- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
+- [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
+- [x] Side panel showing detailed user profile info (click on their Avatar)
+- [x] Ignore and unignore users (see known issues)
+- [ ] User settings screen
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
+- [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
 - [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
 - [ ] Room creation
 - [ ] Room settings/info screen
 - [ ] Room members pane
-- [x] Side panel showing detailed user profile info (click on their Avatar)
-- [x] Ignore and unignore users (see known issues)
-- [ ] User settings screen
-- [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
 
 ## Known problems/issues
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained
+
+
+## Packaging Robrix for Distribution on Desktop Platforms
+
+> [!TIP]
+> We already have [pre-built releases of Robrix](https://github.com/project-robius/robrix/releases) available for download.
+
+
+1. Install `cargo-packager`:
+```sh
+rustup update stable  ## Rust version 1.79 or higher is required
+cargo +stable install --force --locked cargo-packager
+```
+For posterity, these instructions have been tested on `cargo-packager` version 0.10.1, which requires Rust v1.79.
+
+2. Install the `robius-packaging-commands` crate with the `makepad` feature enabled:
+```sh
+cargo install --locked --git https://github.com/project-robius/robius-packaging-commands.git
+```
+
+3. Then run the packaging command, which must build in release mode:
+```sh
+cargo packager --release ## --verbose is optional
+```
+
+
+### Platform-specific considerations
+Note that due to platform restrictions, you can currently only build:
+* Linux packages on a Linux OS machine
+* Windows installer executables on a Windows OS machine
+* macOS disk images / app bundles on a macOS machine
+* iOS apps on a macOS machine.
+* Android, on a machine with any OS!
+
+There are some additional considerations when packaging Robrix for macOS:
+
+> [!IMPORTANT]
+> You will see a .dmg window pop up — please leave it alone, it will auto-close once the packaging procedure has completed.
+
+> [!TIP]
+> If you receive the following error:
+>
+> ```
+> ERROR cargo_packager::cli: Error running create-dmg script: File exists (os error 17)
+> ```
+>
+> then open Finder and unmount any Robrix-related disk images, then try the above `cargo packager` command again.
+
+> [!TIP]
+> If you receive an error like so:
+>
+> ```
+> Creating disk image...
+> hdiutil: create failed - Operation not permitted
+> could not access /Volumes/Robrix/Robrix.app - Operation not permitted
+> ```
+>
+> then you need to grant "App Management" permissions to the app in which you ran the `cargo packager` command, e.g., Terminal, Visual Studio Code, etc.
+> To do this, open `System Preferences` → `Privacy & Security` → `App Management`,
+> and then click the toggle switch next to the relevant app to enable that permission.
+> Then, try the above `cargo packager` command again.
+
+After the command completes, you should see both the `Robrix.app` and the `.dmg` in the `dist/` directory.
+You can immediately double-click the `Robrix.app` bundle to run it, or you can double-click the `.dmg` file to
+
+> Note that the `.dmg` is what should be distributed for installation on other machines, not the `.app`.
+
+If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
+

@@ -5,6 +5,7 @@ use crate::{
     home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomListAction},
     verification::VerificationAction,
     verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+    login::login_screen::LoginAction,
 };
 
 live_design! {
@@ -16,6 +17,7 @@ live_design! {
     import crate::home::home_screen::HomeScreen;
     import crate::profile::my_profile_screen::MyProfileScreen;
     import crate::verification_modal::VerificationModal;
+    import crate::login::login_screen::LoginScreen;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -111,7 +113,14 @@ live_design! {
                     width: Fill, height: Fill,
                     flow: Overlay,
 
-                    home_screen = <HomeScreen> {}
+                    home_screen_view = <View> {
+                        visible: false
+                        home_screen = <HomeScreen> {}
+                    }
+                    login_screen_view = <View> {
+                        visible: true
+                        login_screen = <LoginScreen> {}
+                    }
 
                     verification_modal = <Modal> {
                         content: {
@@ -146,10 +155,15 @@ impl LiveRegister for App {
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
+        crate::login::live_design(cx);
     }
 }
 
-impl LiveHook for App { }
+impl LiveHook for App {
+    fn after_update_from_doc(&mut self, _cx:&mut Cx) {
+        self.update_login_visibility();
+    }
+}
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, _cx: &mut Cx) {
@@ -158,12 +172,21 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
+        self.update_login_visibility();
+
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
+                log!("Received LoginAction::LoginSuccess, hiding login view.");
+                self.app_state.logged_in = true;
+                self.update_login_visibility();
+                self.ui.redraw(cx);
+            }
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
@@ -252,9 +275,18 @@ impl AppMain for App {
     }
 }
 
+impl App {
+    fn update_login_visibility(&self) {
+        let login_visible = !self.app_state.logged_in;
+        self.ui.view(id!(login_screen_view)).set_visible(login_visible);
+        self.ui.view(id!(home_screen_view)).set_visible(!login_visible);
+    }
+}
+
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    pub logged_in: bool,
 }
 
 #[derive(Default, Debug)]
