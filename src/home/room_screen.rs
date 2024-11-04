@@ -76,6 +76,7 @@ live_design! {
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
+    TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
     FillerY = <View> {width: Fill}
 
@@ -860,7 +861,7 @@ live_design! {
         }
         flow: Down, spacing: 0.0
 
-        <View> {
+        room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
             show_bg: true
@@ -868,7 +869,7 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
-            <KeyboardView> {
+            keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
 
@@ -925,7 +926,7 @@ live_design! {
                 typing_notice = <View> {
                     visible: false
                     width: Fill
-                    height: Fit
+                    height: 30
                     flow: Right
                     padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
                     show_bg: true,
@@ -1072,6 +1073,22 @@ live_design! {
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
         }
+
+        animator: {
+            typing_notice_animator = {
+                default: show,
+                show = {
+                    redraw: true,
+                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
+                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 30 } } } }
+                }
+                hide = {
+                    redraw: true,
+                    from: { all: Forward { duration: (TYPING_NOTICE_ANIMATION_DURATION) } }
+                    apply: { room_screen_wrapper = { keyboard_view = { typing_notice = { height: 0 } } } }
+                }
+            }
+        }
     }
 }
 
@@ -1079,6 +1096,7 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
+    #[animator] animator: Animator,
 
     /// The room ID of the currently-shown room.
     #[rust] room_id: Option<OwnedRoomId>,
@@ -1089,7 +1107,6 @@ pub struct RoomScreen {
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
 }
-
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -1117,7 +1134,7 @@ impl Widget for RoomScreen {
         if let Event::Actions(actions) = event {
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
-                match action.as_widget_action().cast() {
+                match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
                     MessageAction::MessageReply(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
@@ -1398,6 +1415,10 @@ impl Widget for RoomScreen {
             cx.stop_timer(self.fully_read_timer);
         }
 
+        if self.animator_handle_event(cx, event).must_redraw() {
+            self.redraw(cx);
+        }
+        
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -1411,6 +1432,7 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let room_screen_widget_uid = self.widget_uid();
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1462,6 +1484,7 @@ impl Widget for RoomScreen {
                                     prev_event,
                                     &mut tl_state.media_cache,
                                     item_drawn_status,
+                                    room_screen_widget_uid,
                                 )
                             }
                             TimelineItemContent::RedactedMessage => populate_small_state_event(
@@ -1551,6 +1574,8 @@ impl RoomScreen {
 
         let mut done_loading = false;
         let mut num_updates = 0;
+        let mut typing_users = Vec::new();
+
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1688,30 +1713,12 @@ impl RoomScreen {
                 }
 
                 TimelineUpdate::TypingUsers { users } => {
-                    let typing_text = match users.as_slice() {
-                        [] => String::new(),
-                        [user] => format!("{user} is typing "),
-                        [user1, user2] => format!("{user1} and {user2} are typing "),
-                        [user1, user2, others @ ..] => {
-                            if others.len() > 1 {
-                                format!("{user1}, {user2}, and {} are typing ", &others[0])
-                            } else {
-                                format!(
-                                    "{user1}, {user2}, and {} others are typing ",
-                                    others.len()
-                                )
-                            }
-                        }
-                    };
-                    let is_typing = !users.is_empty();
-                    self.view.view(id!(typing_notice)).set_visible(is_typing);
-                    self.view.label(id!(typing_label)).set_text(&typing_text);
-                    let typing_animation = self.view.typing_animation(id!(typing_animation));
-                    if is_typing {
-                        typing_animation.animate(cx);
-                    } else {
-                        typing_animation.stop_animation();
-                    }
+                    // This update loop should be kept tight & fast, so all we do here is
+                    // save the list of typing users for future use after the loop exits.
+                    // Then, we "process" it later (by turning it into a string) after the
+                    // update loop has completed, which avoids unnecessary expensive work
+                    // if the list of typing users gets updated many times in a row.
+                    typing_users = users;
                 }
             }
         }
@@ -1719,6 +1726,36 @@ impl RoomScreen {
         if done_loading {
             top_space.set_visible(false);
         }
+
+        if !typing_users.is_empty() {
+            let typing_notice_text = match typing_users.as_slice() {
+                [] => String::new(),
+                [user] => format!("{user} is typing "),
+                [user1, user2] => format!("{user1} and {user2} are typing "),
+                [user1, user2, others @ ..] => {
+                    if others.len() > 1 {
+                        format!("{user1}, {user2}, and {} are typing ", &others[0])
+                    } else {
+                        format!(
+                            "{user1}, {user2}, and {} others are typing ",
+                            others.len()
+                        )
+                    }
+                }
+            };
+            // Set the typing notice text and make its view visible.
+            self.view.label(id!(typing_label)).set_text(&typing_notice_text);
+            self.view.view(id!(typing_notice)).set_visible(true);
+            // Animate in the typing notice view (sliding it up from the bottom).
+            self.animator_play(cx, id!(typing_notice_animator.show));
+            // Start the typing notice text animation of bouncing dots.
+            let typing_animation = self.view.typing_animation(id!(typing_animation));
+            typing_animation.animate(cx);
+        } else {
+            // Animate out the typing notice view (sliding it out towards the bottom).
+            self.animator_play(cx, id!(typing_notice_animator.hide));
+        }
+
         if num_updates > 0 {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
@@ -2369,6 +2406,7 @@ fn populate_message_view(
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
+    room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
 
@@ -2511,6 +2549,7 @@ fn populate_message_view(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
+        room_screen_widget_uid
     );
 
     // Set the timestamp.
@@ -3252,6 +3291,7 @@ pub struct Message {
     #[rust] item_id: usize,
     /// The event ID of the message that this message is replying to, if any.
     #[rust] replied_to_event_id: Option<OwnedEventId>,
+    #[rust] room_screen_widget_uid: Option<WidgetUid>
 }
 
 impl Widget for Message {
@@ -3266,7 +3306,7 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
 
-        let widget_uid = self.widget_uid();
+        let Some(widget_uid) = self.room_screen_widget_uid else { return };
 
         if let Event::Actions(actions) = event {
             if self.view.button(id!(reply_button)).clicked(actions) {
@@ -3342,10 +3382,12 @@ impl Message {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
+        room_screen_widget_uid: WidgetUid
     ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
         self.replied_to_event_id = replied_to_event_id;
+        self.room_screen_widget_uid = Some(room_screen_widget_uid);
     }
 }
 
@@ -3355,9 +3397,10 @@ impl MessageRef {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
+        room_screen_widget_uid: WidgetUid
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_data(can_be_replied_to, item_id, replied_to_event_id);
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid);
         };
     }
 }

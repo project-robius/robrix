@@ -11,6 +11,11 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 > ⚠️ Robrix is a work-in-progress that doesn't yet support all Matrix chat features.
 
 Check out our most recent talks and presentations for more info:
+  * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
+    * Videos: (YouTube link coming soon)
+    * Slides:
+      [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
+      [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g)
     * Slides:
@@ -128,3 +133,72 @@ These are generally sorted in order of priority. If you're interested in helping
 ## Known problems/issues
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained
+
+
+## Packaging Robrix for Distribution on Desktop Platforms
+
+> [!TIP]
+> We already have [pre-built releases of Robrix](https://github.com/project-robius/robrix/releases) available for download.
+
+
+1. Install `cargo-packager`:
+```sh
+rustup update stable  ## Rust version 1.79 or higher is required
+cargo +stable install --force --locked cargo-packager
+```
+For posterity, these instructions have been tested on `cargo-packager` version 0.10.1, which requires Rust v1.79.
+
+2. Install the `robius-packaging-commands` crate with the `makepad` feature enabled:
+```sh
+cargo install --locked --git https://github.com/project-robius/robius-packaging-commands.git
+```
+
+3. Then run the packaging command, which must build in release mode:
+```sh
+cargo packager --release ## --verbose is optional
+```
+
+
+### Platform-specific considerations
+Note that due to platform restrictions, you can currently only build:
+* Linux packages on a Linux OS machine
+* Windows installer executables on a Windows OS machine
+* macOS disk images / app bundles on a macOS machine
+* iOS apps on a macOS machine.
+* Android, on a machine with any OS!
+
+There are some additional considerations when packaging Robrix for macOS:
+
+> [!IMPORTANT]
+> You will see a .dmg window pop up — please leave it alone, it will auto-close once the packaging procedure has completed.
+
+> [!TIP]
+> If you receive the following error:
+>
+> ```
+> ERROR cargo_packager::cli: Error running create-dmg script: File exists (os error 17)
+> ```
+>
+> then open Finder and unmount any Robrix-related disk images, then try the above `cargo packager` command again.
+
+> [!TIP]
+> If you receive an error like so:
+>
+> ```
+> Creating disk image...
+> hdiutil: create failed - Operation not permitted
+> could not access /Volumes/Robrix/Robrix.app - Operation not permitted
+> ```
+>
+> then you need to grant "App Management" permissions to the app in which you ran the `cargo packager` command, e.g., Terminal, Visual Studio Code, etc.
+> To do this, open `System Preferences` → `Privacy & Security` → `App Management`,
+> and then click the toggle switch next to the relevant app to enable that permission.
+> Then, try the above `cargo packager` command again.
+
+After the command completes, you should see both the `Robrix.app` and the `.dmg` in the `dist/` directory.
+You can immediately double-click the `Robrix.app` bundle to run it, or you can double-click the `.dmg` file to
+
+> Note that the `.dmg` is what should be distributed for installation on other machines, not the `.app`.
+
+If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
+

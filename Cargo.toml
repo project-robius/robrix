@@ -16,14 +16,13 @@ version = "0.0.1-pre-alpha"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "widget_uid_hashable" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
-robius-use-makepad = "0.1.0"
-robius-open = "0.1.1"
+robius-use-makepad = "0.1.1"
+robius-open = "0.1.2"
 ## A fork of the `directories` crate that adds support for Android by using our `robius-android-env` crate.
-robius-directories = { git = "https://github.com/project-robius/robius-directories", branch = "robius"}
+robius-directories = "5.0.1"
 robius-location = { git = "https://github.com/project-robius/robius-location" }
 
 anyhow = "1.0"
@@ -125,7 +124,7 @@ macOS, Windows, Linux, Android, and iOS.
 icons = ["./packaging/robrix_logo_alpha.png"]
 out_dir = "./dist"
 
-## The below command uses cargo-metadata to determine the path of the `makepad_widgets` crate on the host build system,
+## The below command primarily uses cargo-metadata to determine the path of the `makepad_widgets` crate on the host build system,
 ## and copies the `makepad-widgets/resources` directory to the `./dist/resources/makepad_widgets` directory.
 ## We also copy the Robrix project's `resources/` directory to the `./dist/resources/robrix` directory.
 ##
@@ -134,11 +133,12 @@ out_dir = "./dist"
 ## so we need to copy the resources to a known fixed (static) path before packaging,
 ## such that cargo-packager can locate them and include them in the final package.
 before-packaging-command = """
-cargo run --manifest-path packaging/before-packaging-command/Cargo.toml \
-    before-packaging \
+robius-packaging-commands before-packaging \
+    --force-makepad \
     --binary-name robrix \
     --path-to-binary ./target/release/robrix
 """
+
 
 ## See the above paragraph comments for more info on how we create/populate the below `src` directories.
 resources = [
@@ -146,7 +146,7 @@ resources = [
     { src = "./dist/resources/robrix", target = "robrix" },
 ]
 
-## We then build the entire Robrix project and set the `MAKEPAD_PACKAGE_DIR` env var to the proper value.
+## We then build the entire Robrix project and set the `MAKEPAD`/`MAKEPAD_PACKAGE_DIR` env vars to the proper value.
 ## * For macOS app bundles, this should be set to `.` because we set the `apple_bundle` cfg option
 ##   for Makepad, which causes Makepad to look for resources in the `Contents/Resources/` directory,
 ##   which is where the resources are located for an Apple app bundle (`.app` and `.dmg`).
@@ -157,8 +157,8 @@ resources = [
 ##   * For Debian and Pacman (still a to-do!) packages, we also auto-generate the list of dependencies required by Robrix.
 ##
 before-each-package-command = """
-cargo run --manifest-path packaging/before-packaging-command/Cargo.toml \
-    before-each-package \
+robius-packaging-commands before-each-package \
+    --force-makepad \
     --binary-name robrix \
     --path-to-binary ./target/release/robrix
 """
