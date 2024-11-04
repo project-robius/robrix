@@ -2,7 +2,8 @@ use anyhow::{Result, bail};
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
-use futures_util::StreamExt;
+use futures_util::{pin_mut, StreamExt};
+use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
@@ -977,14 +978,18 @@ async fn async_main_loop(
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
-    let (mut all_known_rooms, mut room_diff_stream) = all_rooms_list.entries();
-    log!("Populating initial set of {} known rooms.", all_known_rooms.len());
-    for room in all_known_rooms.iter() {
-        add_new_room(room).await?;
-    }
+
+    let (room_diff_stream, room_list_dynamic_entries_controller) = all_rooms_list
+        .entries_with_dynamic_adapters(10, client.room_info_notable_update_receiver());
+
+    room_list_dynamic_entries_controller.set_filter(
+        Box::new(|_room| true),
+    );
 
     const LOG_ROOM_LIST_DIFFS: bool = true;
 
+    let mut all_known_rooms = Vector::new();
+    pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
         for diff in batch {
             match diff {
@@ -1018,12 +1023,14 @@ async fn async_main_loop(
                 VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
                     if let Some(room) = all_known_rooms.pop_front() {
+                        log!("PopFront: removing {}", room.room_id());
                         remove_room(room);
                     }
                 }
                 VectorDiff::PopBack => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopBack"); }
                     if let Some(room) = all_known_rooms.pop_back() {
+                        log!("PopBack: removing {}", room.room_id());
                         remove_room(room);
                     }
                 }
