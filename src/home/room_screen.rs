@@ -1073,7 +1073,12 @@ live_design! {
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
         }
-
+        cursor_not_allowed_template: <RobrixIconButton>{
+            cursor: NotAllowed,
+        }
+        cursor_hand_template: <RobrixIconButton>{
+            cursor: Hand,
+        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -1106,6 +1111,11 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+    /// To apply cursor NotAllowed on Robrix Icon Button
+    #[live] cursor_not_allowed_template: Option<LivePtr>,
+    /// To apply cursor Hand on Robrix Icon Button
+    #[live] cursor_hand_template: Option<LivePtr>
+
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1404,9 +1414,8 @@ impl Widget for RoomScreen {
                 });
             }
         }
-
         // Mark events as fully read after they have been displayed on screen for 5 seconds.
-        if self.fully_read_timer.is_event(event).is_some() {
+        if let Some(_) = self.fully_read_timer.is_event(event) {
             if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
                 let Some(last_displayed_event) = &tl_state.last_displayed_event else { return };
                 submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_displayed_event.clone()});
@@ -1666,9 +1675,6 @@ impl RoomScreen {
                                 unread_message_badge.label(id!(label)).set_text(&format!("{}",num_unread));
                                 unread_message_badge.set_visible(true);
                                 unread_notifications_badge.set_visible(false);
-                                if let Some(ref mut but) = jump_to_bottom_view.button(id!(jump_button)).borrow_mut() {
-                                    but.animator_play(cx, id!(jump_button.down));
-                                }
                             } else {
                                 unread_message_badge.set_visible(false);
                             }
@@ -2024,7 +2030,7 @@ impl RoomScreen {
                 if first_index > *index {
                     if tl_state.scroll_pass_read_marker {
                         cx.stop_timer(self.fully_read_timer);
-                        self.fully_read_timer = cx.start_interval(5.0);
+                        self.fully_read_timer = cx.start_timeout(5.0);
                     }
                     if let Some(event_id) = tl_state.items.get(first_index + portal_list.visible_items())
                             .and_then(|f| f.as_event() )
