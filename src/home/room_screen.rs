@@ -2055,6 +2055,7 @@ impl RoomScreen {
                 .and_then(|ti| ti.as_event().and_then(|e| e.event_id()))
             {
                 if item.to_owned() == fully_read_event_id.clone() {
+                    tl_state.read_marker_index = Some((read_marker_index,fully_read_event_id.clone()));
                     portal_list.smooth_scroll_to(
                         cx,
                         read_marker_index.saturating_sub(1),
@@ -2207,11 +2208,18 @@ struct TimelineUiState {
     /// upwards to the first visible item (index 0), which is the top of the timeline,
     /// at which point we submit a backwards pagination request to fetch more events.
     last_scrolled_index: usize,
-
+    /// Previous first index before scrolling
     prev_first_index: Option<usize>,
+
+    /// Last displayed event after scrolling.
+    /// Used for sending fully read receipt
     last_displayed_event: Option<OwnedEventId>,
+
+    /// Index of Read Marker. It is only set once upon first entering the room.
+    /// It's position is used to determine if the user scroll pass the read marker
     read_marker_index: Option<(usize,OwnedEventId)>,
-    /// Only send fully read receipt after scroll
+
+    /// Used to send fully read receipt after scrolling pass the read marker
     scroll_pass_read_marker: bool,
 }
 
