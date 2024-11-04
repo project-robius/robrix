@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::shared::search_bar::SearchBarAction;
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -11,6 +13,7 @@ live_design! {
 
     import crate::home::rooms_list::RoomsList;
     import crate::shared::cached_widget::CachedWidget;
+    import crate::shared::search_bar::SearchBar;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
@@ -113,6 +116,11 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
+        <SearchBar> {
+            input = {
+                empty_message: "Search by room name"
+            }
+        }
         <View> {
             flow: Down, spacing: 20
             padding: {top: 20}
@@ -167,6 +175,25 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RoomsSideBarFilter {
+    /// Filter all
+    All,
+    /// Filter people
+    People,
+    /// Filter rooms
+    Rooms,
+}
+
+#[derive(Debug, Clone, DefaultNone)]
+pub enum RoomsSideBarAction {
+    /// Filter
+    Filter {
+        keywords: String,
+        filter: RoomsSideBarFilter,
+    },
+    None
+}
 #[derive(Widget, Live, LiveHook)]
 pub struct RoomsView {
     #[deref]
@@ -176,9 +203,42 @@ pub struct RoomsView {
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
     }
     
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for RoomsView {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+
+        for action in actions.iter() {
+            match action.as_widget_action().cast() {
+                SearchBarAction::Search(keywords) => {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        RoomsSideBarAction::Filter {
+                            keywords: keywords.clone(),
+                            filter: RoomsSideBarFilter::Rooms,
+                        }
+                    );
+                },
+                SearchBarAction::ResetSearch => {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        RoomsSideBarAction::Filter {
+                            keywords: "".to_string(),
+                            filter: RoomsSideBarFilter::Rooms,
+                        }
+                    );
+                }
+                _ => {}
+            }
+        }
     }
 }

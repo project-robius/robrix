@@ -5,7 +5,7 @@ use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
-use super::room_preview::RoomPreviewAction;
+use super::{room_preview::RoomPreviewAction, rooms_sidebar::{RoomsSideBarAction, RoomsSideBarFilter}};
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in the room preview,
@@ -231,6 +231,25 @@ impl RoomsList {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
     }
+    fn filter_rooms(&mut self, keywords: &str) {
+        let keywords = keywords.to_lowercase();
+
+        if keywords.is_empty() {
+            self.display_filter = RoomDisplayFilter::default();
+            self.displayed_rooms = self.all_rooms.keys().cloned().collect();
+            return;
+        }
+
+        self.display_filter = RoomDisplayFilter(Box::new(move |room| {
+            let room_name = room.room_name.as_ref().map(|n| n.to_lowercase());
+            room_name.as_ref().map_or(false, |n| n.contains(&keywords))
+        }));
+
+        self.displayed_rooms = self.all_rooms.iter()
+            .filter(|(_, room)| (self.display_filter)(&room))
+            .map(|(room_id, _)| room_id.clone())
+            .collect();
+    }
 }
 
 impl Widget for RoomsList {
@@ -361,6 +380,7 @@ impl Widget for RoomsList {
                 self.redraw(cx);
             }
         }
+        self.widget_match_event(cx, event, scope);
     }
 
 
@@ -376,6 +396,7 @@ impl Widget for RoomsList {
         }
 
         let count = self.displayed_rooms.len();
+        log!("Drawing {count} rooms in the list of all rooms");
         let status_label_id = count;
 
         // Start the actual drawing procedure.
@@ -389,6 +410,8 @@ impl Widget for RoomsList {
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
+
+                log!("Drawing room at index {item_id}");
 
                 // Draw the room preview for each room in the `displayed_rooms` list.
                 let room_to_draw = self.displayed_rooms
@@ -434,4 +457,16 @@ impl Widget for RoomsList {
         DrawStep::done()
     }
 
+}
+
+impl WidgetMatchEvent for RoomsList {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+        for action in actions {
+            if let RoomsSideBarAction::Filter { keywords, filter } = action.as_widget_action().cast() {
+                if filter == RoomsSideBarFilter::Rooms {
+                    self.filter_rooms(&keywords);
+                }
+            }
+        }
+    }
 }
