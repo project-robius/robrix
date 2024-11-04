@@ -463,7 +463,6 @@ async fn async_worker(
                     }
 
                     if update.is_none() && !local_only {
-                        
                         if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
                             update = Some(UserProfileUpdate::UserProfileOnly(
                                 UserProfile {
@@ -861,12 +860,12 @@ pub fn take_timeline_update_receiver(
         )
 }
 /// Return an option of OwnEventId for user's fully read event
-pub fn take_fully_read_event(
-    room_id: &OwnedRoomId,
-) -> Option<OwnedEventId>
-{
-    ALL_ROOM_INFO.lock().unwrap().get(room_id)
-    .and_then(|ri|ri.fully_read_event.clone())
+pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
+    ALL_ROOM_INFO
+        .lock()
+        .unwrap()
+        .get(room_id)
+        .and_then(|ri| ri.fully_read_event.clone())
 }
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
@@ -1193,9 +1192,11 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
-    let fully_read_event = room.account_data_static::<FullyReadEventContent>().await?
-        .and_then(|f|f.deserialize().ok())
-        .and_then(|f|Some(f.content.event_id));
+    let fully_read_event = room
+        .account_data_static::<FullyReadEventContent>()
+        .await?
+        .and_then(|f| f.deserialize().ok())
+        .and_then(|f| Some(f.content.event_id));
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
         .remove(&room_id);
