@@ -1253,6 +1253,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "htmlize"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e81e415f6d22240930e82ae0f541b2dd494ca37daaf10c1d7b32546f3b1159f"
+dependencies = [
+ "memchr",
+ "paste",
+]
+
+[[package]]
 name = "http"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3144,6 +3154,7 @@ dependencies = [
  "eyeball",
  "eyeball-im",
  "futures-util",
+ "htmlize",
  "imbl",
  "imghdr",
  "linkify",
