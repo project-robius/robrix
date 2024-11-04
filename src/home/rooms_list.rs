@@ -265,8 +265,7 @@ impl Widget for RoomsList {
                         let should_display = (self.display_filter)(&room);
                         let _replaced = self.all_rooms.insert(room_id.clone(), room);
                         if let Some(_old_room) = _replaced {
-                            // TODO: handle tombstoned rooms, and treat this case as a bug/error.
-                            warning!("Added room {room_id} that already exists in the list of all rooms");
+                            error!("BUG: Added room {room_id} that already existed");
                         } else {
                             if should_display {
                                 self.displayed_rooms.push(room_id);
