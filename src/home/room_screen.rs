@@ -1045,7 +1045,6 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let portal_list = self.portal_list(id!(list));
             let mut tooltip = self.tooltip(id!(tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
