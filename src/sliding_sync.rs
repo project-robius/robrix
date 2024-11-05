@@ -5,23 +5,15 @@ use eyeball_im::VectorDiff;
 use futures_util::StreamExt;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig,
-    event_handler::EventHandlerDropGuard,
-    media::MediaRequest,
-    room::{Receipts, RoomMember},
-    ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
         events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent},
-                MediaSource,
+                message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         },
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
-    },
-    sliding_sync::VersionBuilder,
-    Client,
-    Room,
+    }, sliding_sync::VersionBuilder, Client, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -806,10 +798,18 @@ struct RoomInfo {
     timeline_update_receiver: Option<crossbeam_channel::Receiver<TimelineUpdate>>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
+    /// The ID of the old tombstoned room that this room has replaced, if any.
+    replaces_tombstoned_room: Option<OwnedRoomId>,
 }
 
 /// Information about all of the rooms we currently know about.
 static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
+
+/// Information about all of the rooms that have been tombstoned.
+///
+/// The map key is the **NEW** replacement room ID, and the value is the **OLD** tombstoned room ID.
+/// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
+static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
@@ -889,9 +889,16 @@ async fn async_main_loop(
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
-    log!("CLI parsing succeeded? {}", cli_parse_result.is_ok());
-    let wait_for_login = most_recent_user_id.is_none()
-        || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login");
+    let cli_has_valid_username_password = cli_parse_result.as_ref()
+        .is_ok_and(|cli| !cli.username.is_empty() && !cli.password.is_empty());
+    log!("CLI parsing succeeded? {}. CLI has valid UN+PW? {}",
+        cli_parse_result.as_ref().is_ok(),
+        cli_has_valid_username_password,
+    );
+    let wait_for_login = !cli_has_valid_username_password && (
+        most_recent_user_id.is_none()
+            || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login")
+    );
     log!("Waiting for login? {}", wait_for_login);
 
     let new_login_opt = if !wait_for_login {
@@ -907,12 +914,12 @@ async fn async_main_loop(
         if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
             Some(session)
         } else {
-            let status_err = "Error: failed to restore previous user session. Please login again.";
+            let status_err = "Failed to restore previous user session. Please login again.";
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
 
             if let Ok(cli) = cli_parse_result {
-                let status_str = format!("Attempting auto-login from CLI arguments as user {}...", cli.username);
+                let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
 
@@ -1105,7 +1112,37 @@ fn remove_room(room: room_list_service::Room) {
 async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     let room_id = room.room_id().to_owned();
 
-    log!("Adding new room: {:?}, room_id: {room_id}", room.compute_display_name().await.map(|n| n.to_string()).unwrap_or_default());
+    // NOTE: the call to `sync_up()` never returns, so I'm not sure how to force a room to fully sync.
+    //       I suspect that's the problem -- we can't get the room's tombstone event content because
+    //       the room isn't fully synced yet. But I don't know how to force it to fully sync.
+    //
+    // if !room.is_state_fully_synced() {
+    //     log!("Room {room_id} is not fully synced yet; waiting for sync_up...");
+    //     room.sync_up().await;
+    //     log!("Room {room_id} is now fully synced? {}", room.is_state_fully_synced());
+    // }
+
+
+    // Do not add tombstoned rooms to the rooms list; they require special handling.
+    if let Some(tombstoned_info) = room.tombstone() {
+        log!("Room {room_id} has been tombstoned: {tombstoned_info:#?}");
+        // Since we don't know the order in which we'll learn about new rooms,
+        // we need to first check to see if the replacement for this tombstoned room
+        // refers to an already-known room as its replacement.
+        // If so, we can immediately update the replacement room's room info
+        // to indicate that it replaces this tombstoned room.
+        let replacement_room_id = tombstoned_info.replacement_room;
+        if let Some(room_info) = ALL_ROOM_INFO.lock().unwrap().get_mut(&replacement_room_id) {
+            room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
+        }
+        // But if we don't know about the replacement room yet, we need to save this tombstoned room
+        // in a separate list so that the replacement room we will discover in the future
+        // can know which old tombstoned room it replaces (see the bottom of this function).
+        else {
+            TOMBSTONED_ROOMS.lock().unwrap().insert(replacement_room_id, room_id.clone());
+        }
+        return Ok(());
+    }
 
     let timeline = {
         let builder = room.default_room_timeline_builder().await?
@@ -1159,6 +1196,11 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
 
     spawn_fetch_room_avatar(room.inner_room().clone());
 
+    let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
+        .unwrap()
+        .remove(&room_id);
+
+    log!("Adding new room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
         RoomInfo {
@@ -1167,9 +1209,9 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_update_receiver: Some(timeline_update_receiver),
             timeline_update_sender,
             typing_notice_subscriber: None,
+            replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
         },
     );
-
     Ok(())
 }
 
