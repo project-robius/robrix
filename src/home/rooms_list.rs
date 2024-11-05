@@ -395,7 +395,6 @@ impl Widget for RoomsList {
         }
 
         let count = self.displayed_rooms.len();
-        log!("Drawing {count} rooms in the list of all rooms");
         let status_label_id = count;
 
         // Start the actual drawing procedure.
@@ -409,9 +408,6 @@ impl Widget for RoomsList {
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
-
-                log!("Drawing room at index {item_id}");
-
                 // Draw the room preview for each room in the `displayed_rooms` list.
                 let room_to_draw = self.displayed_rooms
                     .get(item_id)
