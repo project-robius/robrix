@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -15,11 +15,7 @@ use matrix_sdk::{
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
     }, sliding_sync::VersionBuilder, Client, Room
 };
-use matrix_sdk::{
-    ruma::{
-        user_id,
-    }
-};
+use matrix_sdk::ServerName;
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
@@ -309,9 +305,10 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
+/// Submits a request to a receiver that runs a loop to wait for successful login 
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
-    LoginSSO(String)
+    LoginBySSO(String)
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -613,7 +610,12 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SSO { id } => {
-                login_sender.send(LoginRequest::LoginSSO(id)).await.unwrap();                
+                if let Err(e) = login_sender.send(LoginRequest::LoginBySSO(id)).await {
+                    error!("Error sending login by sso request to login_sender: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(String::from(
+                        "BUG: failed to send login by sso request to async worker thread."
+                    )));
+                }
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = CLIENT.get() else { continue };
@@ -956,10 +958,10 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let user = user_id!("@user:matrix.org");
-            let unauth_client = Client::builder().server_name(user.server_name()).build().await?;
+            let server_name = ServerName::parse("matrix.org")?;
+            let unauth_client = Client::builder().server_name(&server_name).build().await?;
             let login_type_res = unauth_client.matrix_auth().get_login_types().await?;
-            let LoginType::Sso(sso_type) = login_type_res.flows.get(0).unwrap() else { return Ok(());};
+            let Some(LoginType::Sso(sso_type)) = login_type_res.flows.get(0) else { return Err(anyhow!("Login Type response error")); };
             Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers.clone()));
             loop {
                 log!("Waiting for login request...");
@@ -978,7 +980,7 @@ async fn async_main_loop(
                                 }
                             }
                         }
-                        LoginRequest::LoginSSO(id) => {
+                        LoginRequest::LoginBySSO(id) => {
                             Cx::post_action(LoginAction::SsoPending(true));
 
                             let cli_parse_result = Cli::try_parse();

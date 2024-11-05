@@ -105,12 +105,29 @@ live_design! {
         width: Fit,
         height: Fit,
         cursor: Hand,
-        visible: true,
+        visible: false,
         padding: 10.0,
         draw_bg: {
             border_width: 1.0,
             border_color: (#6c6c6c),
-            color: (COLOR_PRIMARY)
+            color: (#6c6c6c)
+        }
+    }
+    SsoImage = <Image> {
+        width: 21, height: 21
+        draw_bg:{
+            uniform mask: 0.0
+            fn pixel(self) -> vec4 {
+                let color = sample2d(self.image, self.pos).xyzw;
+                if self.mask >= 0.5 {
+                    let gray =  dot(color, vec4(0.299, 0.587, 0.114, 0.4));
+                    let diff = pow(max(gray, 0), 3)
+                    return vec4(diff);
+                } else {
+                    return color;
+                }
+                
+            }
         }
     }
     LoginScreen = {{LoginScreen}} {
@@ -192,38 +209,32 @@ live_design! {
                 width: Fit, height: Fit,
                 flow: Right,
                 apple_button = <SsoButton> {
-                    <Image> {
-                        width: 21, height: 21
+                    image = <SsoImage> {
                         source: dep("crate://self/resources/img/apple.png")
                     }
                 }
                 facebook_button = <SsoButton> {
-                    <Image> {
-                        width: 21, height: 21
+                    image = <SsoImage> {
                         source: dep("crate://self/resources/img/facebook.png")
                     }
                 }
                 github_button = <SsoButton> {
-                    <Image> {
-                        width: 21, height: 21
+                    image = <SsoImage> {
                         source: dep("crate://self/resources/img/github.png")
                     }
                 }
                 github_button = <SsoButton> {
-                    <Image> {
-                        width: 21, height: 21
+                    image = <SsoImage> {
                         source: dep("crate://self/resources/img/github.png")
                     }
                 }
                 gitlab_button = <SsoButton> {
-                    <Image> {
-                        width: 21, height: 21
+                    image = <SsoImage> {
                         source: dep("crate://self/resources/img/gitlab.png")
                     }
                 }
                 google_button = <SsoButton> {
-                    <Image> {
-                        width: 21, height: 21
+                    image = <SsoImage> {
                         source: dep("crate://self/resources/img/google.png")
                     }
                 }
@@ -269,16 +280,20 @@ live_design! {
         
         sso_button_pending_template: <RoundedView> {
             cursor: NotAllowed,
-            draw_bg: {
-                border_width: 1.0,
-                border_color: (#Ff0000),
+        }
+        sso_image_pending_template: <Image> {
+            width: 21, height: 21
+            draw_bg:{
+                uniform mask: 1.0
             }
         }
         sso_button_ok_template: <RoundedView> {
             cursor: Hand,
-            draw_bg: {
-                border_width: 1.0,
-                border_color: (#6c6c6c),
+        }
+        sso_image_ok_template: <Image> {
+            width: 21, height: 21
+            draw_bg:{
+                uniform mask: 0.0
             }
         }
     }
@@ -297,11 +312,14 @@ pub struct LoginScreen {
     #[deref] view: View,
     #[rust]
     identity_providers: Vec<IdentityProvider>,
-    #[animator] animator: Animator,
     #[live]
     sso_button_pending_template: Option<LivePtr>,
     #[live]
     sso_button_ok_template: Option<LivePtr>,
+    #[live]
+    sso_image_pending_template: Option<LivePtr>,
+    #[live]
+    sso_image_ok_template: Option<LivePtr>,
     #[rust]
     sso_pending:bool
 }
@@ -320,7 +338,6 @@ impl Widget for LoginScreen {
 }
 
 impl MatchEvent for LoginScreen {
-    
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let status_label = self.view.label(id!(status_label));
         let login_button = self.view.button(id!(login_button));
@@ -390,18 +407,20 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::SsoPending(ref pending)) => {
                     if *pending {
-                        self.view.view_set(button_set).iter().for_each(|view_ref| {
+                        self.view_set(button_set).iter().for_each(|view_ref| {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
                             };
                             view_ref.apply_from_ptr(cx, self.sso_button_pending_template);
+                            view_ref.image(id!(image)).apply_from_ptr(cx, self.sso_image_pending_template);
                         });
                     } else {
-                        self.view.view_set(button_set).iter().for_each(|view_ref| {
+                        self.view_set(button_set).iter().for_each(|view_ref| {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
                             };
                             view_ref.apply_from_ptr(cx, self.sso_button_ok_template);
+                            view_ref.image(id!(image)).apply_from_ptr(cx, self.sso_image_ok_template);
                         });
                     }
                     self.sso_pending = *pending;
@@ -409,16 +428,13 @@ impl MatchEvent for LoginScreen {
                 }
                 Some(LoginAction::IdentityProvider(identity_providers)) => {
                     let mut button_iter = button_vec.iter();
-                    for view_ref in self
-                        .view
-                        .view_set(button_set)
-                        .iter()
-                    {
-                        let brand = button_iter.next().unwrap();
-                        for ip in identity_providers.iter() {
-                            if ip.id.contains(brand) {
-                                view_ref.set_visible(true);
-                                break;
+                    for view_ref in self.view_set(button_set).iter() {
+                        if let Some(brand) = button_iter.next() {
+                            for ip in identity_providers.iter() {
+                                if ip.id.contains(brand) {
+                                    view_ref.set_visible(true);
+                                    break;
+                                }
                             }
                         }
                     }
@@ -431,17 +447,18 @@ impl MatchEvent for LoginScreen {
             }
         }
         let mut button_iter = button_vec.iter();
-        for v in self.view.view_set(button_set).iter() {
-            let brand = button_iter.next().unwrap();
-            for ip in self.identity_providers.iter() {
-                if ip.id.contains(brand) {
-                    if let Some(_) = v.finger_up(&actions) {
-                        if !self.sso_pending {
-                            let matrix_req = MatrixRequest::SSO { id: ip.id.clone() };
-                            crate::sliding_sync::submit_async_request(matrix_req);
+        for v in self.view_set(button_set).iter() {
+            if let Some(brand) = button_iter.next() {
+                for ip in self.identity_providers.iter() {
+                    if ip.id.contains(brand) {
+                        if let Some(_) = v.finger_up(&actions) {
+                            if !self.sso_pending {
+                                let matrix_req = MatrixRequest::SSO { id: ip.id.clone() };
+                                crate::sliding_sync::submit_async_request(matrix_req);
+                            }
                         }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -467,7 +484,12 @@ pub enum LoginAction {
         password: String,
         homeserver: Option<String>,
     },
+    /// True refers to await user's SSO login in a browser. This check primary prevents
+    /// spawning another sso http server  
     SsoPending(bool),
+    /// A list of identity providers from matrix login_type api. 
+    /// As not all homeservers have the same identity providers, 
+    /// this determines the number of different sso login types in the frontend
     IdentityProvider(Vec<IdentityProvider>),
     None,
 }
