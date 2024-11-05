@@ -181,7 +181,6 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        log!("Showing login view");
         self.update_login_visibility();
         
         self.ui.popup_notification(id!(popup)).open(cx);
