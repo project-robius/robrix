@@ -33,6 +33,7 @@ crossbeam-queue = "0.3.8"
 eyeball = { version = "0.8.8", features = ["tracing"] }
 eyeball-im = "0.5.0"
 futures-util = "0.3"
+htmlize = "1.0.5"
 imbl = { version = "3.0.0", features = ["serde"] }  # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"

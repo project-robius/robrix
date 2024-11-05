@@ -900,9 +900,16 @@ async fn async_main_loop(
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
-    log!("CLI parsing succeeded? {}", cli_parse_result.is_ok());
-    let wait_for_login = most_recent_user_id.is_none()
-        || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login");
+    let cli_has_valid_username_password = cli_parse_result.as_ref()
+        .is_ok_and(|cli| !cli.username.is_empty() && !cli.password.is_empty());
+    log!("CLI parsing succeeded? {}. CLI has valid UN+PW? {}",
+        cli_parse_result.as_ref().is_ok(),
+        cli_has_valid_username_password,
+    );
+    let wait_for_login = !cli_has_valid_username_password && (
+        most_recent_user_id.is_none()
+            || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login")
+    );
     log!("Waiting for login? {}", wait_for_login);
 
     let new_login_opt = if !wait_for_login {
@@ -918,12 +925,12 @@ async fn async_main_loop(
         if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
             Some(session)
         } else {
-            let status_err = "Error: failed to restore previous user session. Please login again.";
+            let status_err = "Failed to restore previous user session. Please login again.";
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
 
             if let Ok(cli) = cli_parse_result {
-                let status_str = format!("Attempting auto-login from CLI arguments as user {}...", cli.username);
+                let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
 
