@@ -1202,6 +1202,7 @@ impl Widget for RoomScreen {
                     }
 
                     if !link_was_handled {
+                        log!("Opening URL \"{}\"", url);
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
                         }
