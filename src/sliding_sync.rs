@@ -1191,7 +1191,9 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         return Ok(());
     }
 
-    let timeline = {
+    let timeline = if let Some(tl_arc) = room.timeline() {
+        tl_arc
+    } else {
         let builder = room.default_room_timeline_builder().await?
             .track_read_marker_and_receipts();
         room.init_timeline_with_builder(builder).await?;
