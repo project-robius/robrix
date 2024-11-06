@@ -220,19 +220,21 @@ pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
             match link.kind() {
                 &LinkKind::Url => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{link_txt}\">{link_txt}</a>",
+                        "{linkified_text}{}<a href=\"{link_txt}\">{}</a>",
                         text.get(last_end_index..link.start()).unwrap_or_default(),
+                        htmlize::escape_attribute(link_txt),
                     );
                 }
                 &LinkKind::Email => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{link_txt}\">{link_txt}</a>",
+                        "{linkified_text}{}<a href=\"mailto:{link_txt}\">{}</a>",
                         text.get(last_end_index..link.start()).unwrap_or_default(),
+                        htmlize::escape_attribute(link_txt),
                     );
                 }
                 _ => return Cow::Borrowed(text), // unreachable
             }
-        }        
+        }
         last_end_index = link.end();
     }
     linkified_text.push_str(text.get(last_end_index..).unwrap_or_default());
