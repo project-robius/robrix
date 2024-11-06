@@ -209,7 +209,8 @@ impl Avatar {
             AvatarDisplayStatus::Text
         }
     }
-    pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
+    /// Returns Hit event when mouse in
+    fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
         event.hits_with_options(
             cx,
             self.area(),
@@ -251,7 +252,16 @@ impl AvatarRef {
         } else {
             AvatarDisplayStatus::Text
         }
-    }    
+    }
+    /// Returns an option of Hit event when mouse in
+    pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
+        if let Some(mut inner) = self.borrow_mut() {
+            Some(inner.hit(cx, event, sweep_area))
+        } else {
+            None
+        }
+        
+    }
 }
 
 /// What an Avatar instance is currently displaying.

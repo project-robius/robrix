@@ -1,4 +1,4 @@
-use crate::shared::avatar::Avatar;
+use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use makepad_widgets::*;
 use std::cmp;
 live_design! {
@@ -36,7 +36,7 @@ pub struct AvatarRow {
     #[live(false)]
     hover_actions_enabled: bool,
     #[rust]
-    buttons: Vec<Avatar>,
+    buttons: Vec<AvatarRef>,
     #[rust]
     count: usize,
 }
@@ -62,14 +62,14 @@ impl Widget for AvatarRow {
         let uid = self.widget_uid();
         for button in self.buttons.iter_mut() {
             match button.hit(cx, event, self.area) {
-                Hit::FingerHoverIn(finger_event) => {
+                Some(Hit::FingerHoverIn(finger_event)) => {
                     let rect = Rect {
                         pos: finger_event.abs,
                         size: DVec2::new(),
                     };
                     cx.widget_action(uid, &scope.path, AvatarRowAction::HoverIn(rect));
                 }
-                Hit::FingerHoverOut(_) => {
+                Some(Hit::FingerHoverOut(_)) => {
                     cx.widget_action(uid, &scope.path, AvatarRowAction::HoverOut);
                 }
                 _ => {}
@@ -101,14 +101,15 @@ impl AvatarRow {
         if count != self.buttons.len() {
             self.buttons.clear();
             for _ in 0..cmp::min(5, count) {
-                self.buttons.push(Avatar::new_from_ptr(cx, self.button));
+                //self.buttons.push(Avatar::new_from_ptr(cx, self.button));
+                self.buttons.push(WidgetRef::new_from_ptr(cx, self.button).as_avatar());
             }
         }
         self.count = count;
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, Avatar> {
-        self.buttons.iter_mut()
+    pub fn iter_mut(&self) -> std::slice::Iter<'_, AvatarRef> {
+        self.buttons.iter()
     }
 }
 impl AvatarRowRef {

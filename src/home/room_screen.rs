@@ -25,17 +25,15 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::room_read_receipt::AvatarRowWidgetRefExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{Avatar, AvatarWidgetRefExt},
+        avatar::{Avatar, AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, 
-    home::room_read_receipt::AvatarRowWidgetRefExt,
-    utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1689,10 +1687,9 @@ impl RoomScreen {
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
         let avatar_ref = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar));
-        let Some(ref mut avatar)  = avatar_ref.borrow_mut() else { return };
         let (replying_preview_username, _) = set_avatar_and_get_username(
             cx,
-            avatar,
+            avatar_ref,
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
             Some(replying_to.0.sender_profile()),
@@ -2318,7 +2315,7 @@ fn populate_message_view(
             if let Some(ref mut v)= seq.borrow_mut() {
                 for avatar in v.iter_mut() {
                     if let Some((user, r)) = receipt_iter.next() {
-                        set_avatar_and_get_username(cx, avatar, room_id, user, None, event_tl_item.event_id());
+                        set_avatar_and_get_username(cx, avatar.clone(), room_id, user, None, event_tl_item.event_id());
                     }
                 }
             }
@@ -2414,18 +2411,14 @@ fn populate_message_view(
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
         let avatar_ref = item.avatar(id!(profile.avatar));
-        let (username, profile_drawn) = if let Some(ref mut avatar)  = avatar_ref.borrow_mut() {
-            set_avatar_and_get_username(
-                cx,
-                avatar,
-                room_id,
-                event_tl_item.sender(),
-                Some(event_tl_item.sender_profile()),
-                event_tl_item.event_id(),
-            )
-        } else {
-            (String::from(""), false )
-        };
+        let (username, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            avatar_ref,
+            room_id,
+            event_tl_item.sender(),
+            Some(event_tl_item.sender_profile()),
+            event_tl_item.event_id(),
+        );
         item.label(id!(content.username)).set_text(&username);
         new_drawn_status.profile_drawn = profile_drawn;
     }
@@ -2610,10 +2603,9 @@ fn draw_replied_to_message(
             TimelineDetails::Ready(replied_to_event) => {
                 let avatar_ref = replied_to_message_view
                 .avatar(id!(replied_to_message_content.reply_preview_avatar));
-                let Some(ref mut avatar)  = avatar_ref.borrow_mut() else { return (show_reply, replied_to_event_id) };
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
-                    avatar,
+                    avatar_ref,
                     room_id,
                     replied_to_event.sender(),
                     Some(replied_to_event.sender_profile()),
@@ -2899,18 +2891,14 @@ fn populate_small_state_event(
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
         let avatar_ref = item.avatar(id!(avatar));
-        let (username, profile_drawn) = if let Some(ref mut avatar ) = avatar_ref.borrow_mut() {
-             set_avatar_and_get_username(
-                cx,
-                avatar,
-                room_id,
-                event_tl_item.sender(),
-                Some(event_tl_item.sender_profile()),
-                event_tl_item.event_id(),
-            )
-        } else {
-            (event_tl_item.sender().to_string(),false)
-        };
+        let (username, profile_drawn) = set_avatar_and_get_username(
+            cx,
+            avatar_ref,
+            room_id,
+            event_tl_item.sender(),
+            Some(event_tl_item.sender_profile()),
+            event_tl_item.event_id(),
+        );
         
         // Draw the timestamp as part of the profile.
         set_timestamp(
@@ -2976,7 +2964,7 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
 ///    (for purposes of caching it to avoid future redraws).
 fn set_avatar_and_get_username(
     cx: &mut Cx,
-    avatar: &mut Avatar,
+    avatar: AvatarRef,
     room_id: &RoomId,
     avatar_user_id: &UserId,
     avatar_profile_opt: Option<&TimelineDetails<Profile>>,
@@ -2984,7 +2972,6 @@ fn set_avatar_and_get_username(
 ) -> (String, bool) {
     // Get the display name and avatar URL from the user's profile, if available,
     // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let mut taken_from_cache = false;
     let (username_opt, avatar_state) = match avatar_profile_opt {
         Some(TimelineDetails::Ready(profile)) => (
             profile.display_name.clone(),
@@ -3020,13 +3007,28 @@ fn set_avatar_and_get_username(
             .unwrap_or((None, AvatarState::Unknown))
         }
         None => {
-            if let Some(user_profile) = user_profile_cache::get_user_profile(cx, avatar_user_id)
-            {
-                taken_from_cache = true;
-                (user_profile.username, user_profile.avatar_state)
-            } else {
-                (None, AvatarState::Unknown)
-            }
+                submit_async_request(MatrixRequest::GetUserProfile { 
+                    user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
+                });
+                user_profile_cache::with_user_profile(
+                    cx,
+                    avatar_user_id,
+                    |profile, room_members| {
+                        room_members
+                            .get(room_id)
+                            .map(|rm| {
+                                (
+                                    rm.display_name().map(|n| n.to_owned()),
+                                    AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                (profile.username.clone(), profile.avatar_state.clone())
+                            })
+                    },
+                )
+                .unwrap_or((None, AvatarState::Unknown))
+            //}
         }
     };
 
@@ -3049,14 +3051,6 @@ fn set_avatar_and_get_username(
     // Set the sender's avatar image, or use the username if no image is available.
     avatar_img_data_opt
         .and_then(|data| {
-            if !taken_from_cache {
-                user_profile_cache::set_user_profile(
-                    cx,
-                    avatar_user_id,
-                    username.clone(),
-                    AvatarState::Loaded(data.clone()),
-                );
-            }
             avatar
                 .show_image(
                     Some((
