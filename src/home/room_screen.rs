@@ -1043,13 +1043,12 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let portal_list = self.portal_list(id!(list));
             let mut tooltip = self.tooltip(id!(tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
                 let num_seen = seq.len();
                 if let Some(rect) = seq.hover_in(actions) {
-                    tooltip.show_with_options(cx, rect.pos, &format!("{} seen", num_seen));
+                    tooltip.show_with_options(cx, rect.pos, &format!("Seen by {num_seen}"));
                 }
                 if seq.hover_out(&actions) {
                     tooltip.hide(cx);
