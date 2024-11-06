@@ -1005,7 +1005,8 @@ async fn async_main_loop(
     let mut all_known_rooms = Vector::new();
     pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
-        for diff in batch {
+        let mut peekable_diffs = batch.into_iter().peekable();
+        while let Some(diff) = peekable_diffs.next() {
             match diff {
                 VectorDiff::Append { values: new_rooms } => {
                     let _num_new_rooms = new_rooms.len();
@@ -1051,18 +1052,40 @@ async fn async_main_loop(
                     all_known_rooms.insert(index, new_room);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
-                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index} !!!!!!!!"); }
+                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
                     let old_room = all_known_rooms.get(index).expect("BUG: Set index out of bounds");
                     update_room(old_room, &changed_room).await?;
                     all_known_rooms.set(index, changed_room);
                 }
-                VectorDiff::Remove { index } => {
-                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {index}"); }
-                    if index < all_known_rooms.len() {
-                        let room = all_known_rooms.remove(index);
-                        remove_room(&room);
+                VectorDiff::Remove { index: remove_index } => {
+                    if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
+                    if remove_index < all_known_rooms.len() {
+                        let room = all_known_rooms.remove(remove_index);
+                        // Try to optimize a common operation, in which a `Remove` diff
+                        // is immediately followed by an `Insert` diff for the same room,
+                        // which happens frequently in order to "sort" the room list
+                        // by changing its positional order.
+                        // We treat this as a simple `Set` operation (`update_room()`),
+                        // which is way more efficient.
+                        let mut next_diff_was_handled = false;
+                        match peekable_diffs.peek() {
+                            Some(VectorDiff::Insert { index: insert_index, value: new_room }) => {
+                                if room.room_id() == new_room.room_id() {
+                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
+                                    update_room(&room, new_room).await?;
+                                    all_known_rooms.insert(*insert_index, new_room.clone());
+                                    next_diff_was_handled = true;
+                                }
+                            }
+                            _ => {}
+                        }
+                        if next_diff_was_handled {
+                            peekable_diffs.next(); // consume the next diff
+                        } else {
+                            remove_room(&room);
+                        }
                     } else {
-                        error!("BUG: room_list: diff Remove index {index} out of bounds, len {}", all_known_rooms.len());
+                        error!("BUG: room_list: diff Remove index {remove_index} out of bounds, len {}", all_known_rooms.len());
                     }
                 }
                 VectorDiff::Truncate { length } => {
