@@ -197,31 +197,6 @@ pub fn get_user_profile(_cx: &mut Cx, user_id: &UserId) -> Option<UserProfile> {
         cache.get(user_id).map(|entry| entry.user_profile.clone())
     })
 }
-/// Set user profile into cache only if cache does not have user profile
-///
-/// This function requires passing in a reference to `Cx`,
-/// which isn't used, but acts as a guarantee that this function
-/// must only be called by the main UI thread.
-#[allow(unused)]
-pub fn set_user_profile(
-    _cx: &mut Cx,
-    user_id: &UserId,
-    username: String,
-    avatar_state: AvatarState,
-) {
-    USER_PROFILE_CACHE.with_borrow_mut(|cache| {
-        cache
-            .entry(user_id.to_owned())
-            .or_insert(UserProfileCacheEntry {
-                user_profile: UserProfile {
-                    user_id: user_id.to_owned(),
-                    username: Some(username),
-                    avatar_state,
-                },
-                room_members: BTreeMap::new(),
-            });
-    });
-}
 
 /// Returns a clone of the cached user profile for the given user ID
 /// and a clone of that user's room member info for the given room ID.

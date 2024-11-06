@@ -2987,10 +2987,24 @@ fn set_avatar_and_get_username(
                 }
             }
             // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(
-                cx,
-                avatar_user_id,
-                |profile, room_members| {
+            user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
+                room_members
+                    .get(room_id)
+                    .map(|rm| {
+                        (
+                            rm.display_name().map(|n| n.to_owned()),
+                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                        )
+                    })
+                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+            })
+            .unwrap_or((None, AvatarState::Unknown))
+        }
+        None => {
+                submit_async_request(MatrixRequest::GetUserProfile { 
+                    user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
+                });
+                user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
                     room_members
                         .get(room_id)
                         .map(|rm| {
@@ -2999,34 +3013,8 @@ fn set_avatar_and_get_username(
                                 AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
                             )
                         })
-                        .unwrap_or_else(|| {
-                            (profile.username.clone(), profile.avatar_state.clone())
-                        })
-                },
-            )
-            .unwrap_or((None, AvatarState::Unknown))
-        }
-        None => {
-                submit_async_request(MatrixRequest::GetUserProfile { 
-                    user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
-                });
-                user_profile_cache::with_user_profile(
-                    cx,
-                    avatar_user_id,
-                    |profile, room_members| {
-                        room_members
-                            .get(room_id)
-                            .map(|rm| {
-                                (
-                                    rm.display_name().map(|n| n.to_owned()),
-                                    AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                                )
-                            })
-                            .unwrap_or_else(|| {
-                                (profile.username.clone(), profile.avatar_state.clone())
-                            })
-                    },
-                )
+                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                })
                 .unwrap_or((None, AvatarState::Unknown))
             //}
         }
