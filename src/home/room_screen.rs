@@ -12,8 +12,7 @@ use matrix_sdk::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId
     },
     OwnedServerName,
 };
@@ -309,16 +308,22 @@ live_design! {
         draw_bg: {
             instance highlight: 0.0
             instance hover: 0.0
+            color: #ffffff  // default color
+
             fn pixel(self) -> vec4 {
-                return mix(
-                    mix(
-                        #ffffff,
-                        #fafafa,
-                        self.hover
-                    ),
-                    #c5d6fa, // light blue
+                let base_color = mix(
+                    self.color,
+                    #fafafa,
+                    self.hover
+                );
+
+                let with_highlight = mix(
+                    base_color,
+                    #c5d6fa,
                     self.highlight
-                )
+                );
+
+                return with_highlight;
             }
         }
 
@@ -1328,7 +1333,7 @@ impl Widget for RoomScreen {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
-        
+
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -2401,12 +2406,16 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
+    // Check if the message mentions the current user.
+    let mentions_user = check_if_message_mentions_current_user(message);
+
     // Set the Message widget's metatdata for reply-handling purposes.
     item.as_message().set_data(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
-        room_screen_widget_uid
+        room_screen_widget_uid,
+        mentions_user
     );
 
     // Set the timestamp.
@@ -2424,6 +2433,42 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
+}
+
+/// Check if the message mentions the current user.
+fn check_if_message_mentions_current_user(
+    message: &timeline::Message,
+) -> bool {
+    let Some(client) = get_client() else {
+        return false;
+    };
+
+    let Some(current_user_id) = client.user_id() else {
+        return false;
+    };
+
+    match message.msgtype() {
+        MessageType::Text(TextMessageEventContent { body, formatted, .. }) |
+        MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+            // Matrix HTML mentions style:
+            // <a href="https://matrix.org/#/@userid:domain.com">Display Name</a>
+            if let Some(formatted) = formatted {
+                // log!("Formatted HTML: {}", formatted.body);
+
+                // Find `matrix.to/#/@user:domain.com`
+                if formatted.format == MessageFormat::Html {
+                    let html = &formatted.body;
+                    if html.contains(&format!("matrix.to/#/{}", current_user_id)) {
+                        log!("Found mention of current user in HTML: {}", current_user_id);
+                        return true;
+                    }
+                }
+            }
+
+            false
+        }
+        _ => false
+    }
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3143,6 +3188,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
+    #[rust(false)] mentions_user: bool,
 
     #[rust] can_be_replied_to: bool,
     #[rust] item_id: usize,
@@ -3225,6 +3271,16 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.mentions_user {
+            self.view.apply_over(
+                cx, live!(
+                    draw_bg: {
+                        color: (vec4(1.0, 1.0, 0.82, 1.0))
+                    }
+                )
+            )
+        }
+
         self.view
             .button(id!(reply_button))
             .set_visible(self.can_be_replied_to);
@@ -3239,12 +3295,14 @@ impl Message {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
         self.replied_to_event_id = replied_to_event_id;
         self.room_screen_widget_uid = Some(room_screen_widget_uid);
+        self.mentions_user = mentions_user;
     }
 }
 
@@ -3254,10 +3312,11 @@ impl MessageRef {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid);
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
 }
