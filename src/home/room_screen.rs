@@ -7,7 +7,7 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
-        api::client::read_marker, events::room::{
+        events::room::{
             message::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
@@ -32,7 +32,7 @@ use crate::{
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, take_fully_read_event, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1333,7 +1333,6 @@ impl Widget for RoomScreen {
             {
                 let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
                 if portal_list.scrolled(&actions) {
-                    println!("portal_list.is_at_end() {:?}",portal_list.is_at_end());
                     // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
                     jump_to_bottom_view.set_visible(!portal_list.is_at_end());
                 }

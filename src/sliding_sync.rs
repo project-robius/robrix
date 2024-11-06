@@ -676,7 +676,10 @@ async fn async_worker(
                 };
                 let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
+                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { 
+                            set_fully_read_event(&room_id, event_id.clone());
+                            "Sent" 
+                        } else { "Already sent" }),
                         Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
                 });
@@ -867,7 +870,15 @@ pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
         .get(room_id)
         .and_then(|ri| ri.fully_read_event.clone())
 }
-
+/// Update fully read event inside All Room Info after sending out read_receipt
+fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId) {
+    if let Some(ref mut room_info) = ALL_ROOM_INFO
+        .lock()
+        .unwrap()
+        .get_mut(room_id) {
+            room_info.fully_read_event = Some(read_event)
+        }
+}
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
 fn username_to_full_user_id(
