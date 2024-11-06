@@ -2464,6 +2464,21 @@ fn check_if_message_mentions_current_user(
                     }
                 }
             }
+            // Check if it is a reply to the current user’s message
+            if let Some(in_reply_to) = message.in_reply_to() {
+                match &in_reply_to.event {
+                    TimelineDetails::Ready(replied_to_event) => {
+                        let replied_user = replied_to_event.sender().to_string();
+                        // log!("current user : {}", current_user_id.to_string());
+                        // log!("reply to current user : {}", replied_user);
+                        if replied_user == current_user_id.to_string() {
+                            log!("Is reply to current user's message");
+                            return true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
 
             false
         }
