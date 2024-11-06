@@ -353,7 +353,6 @@ async fn async_worker(
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
-                    
                     match res {
                         Ok(fully_paginated) => {
                             log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",

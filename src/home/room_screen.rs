@@ -32,7 +32,7 @@ use crate::{
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_fully_read_event, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1584,6 +1584,7 @@ impl RoomScreen {
                                 cx.stop_timer(timer);
                             }
                             self.fully_read_timer = None;
+                            tl.scroll_pass_read_marker = false;
                         }
                     }
                     // TODO: after an (un)ignore user event, all timelines are cleared.
@@ -1815,7 +1816,7 @@ impl RoomScreen {
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 last_displayed_event: None,
-                read_marker_index: None,
+                read_marker: None,
                 scroll_pass_read_marker: false,
             };
             (new_tl_state, true)
@@ -1969,12 +1970,6 @@ impl RoomScreen {
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
-                // if the scroll ends on page that contains read marker, set scroll_pass_read_marker to true
-                if let Some((read_marker_index, _)) = tl_state.read_marker_index {
-                    if read_marker_index >= first_index && read_marker_index <= first_index + portal_list.visible_items() {
-                        tl_state.scroll_pass_read_marker = true;
-                    }
-                }
                 if first_index > *index {
                     if tl_state.scroll_pass_read_marker {
                         if let Some(timer) = self.fully_read_timer {
@@ -1985,7 +1980,14 @@ impl RoomScreen {
                     if let Some(event_id) = tl_state.items.get(first_index + portal_list.visible_items())
                             .and_then(|f| f.as_event() )
                             .and_then(|f| f.event_id() ) {
+                        // Scroll pass read marker, can then subsequently send fully read events
+                        if let Some(fully_read_event) = take_fully_read_event(&room_id) {
+                            if &fully_read_event == event_id {
+                                tl_state.scroll_pass_read_marker = true;
+                            }
+                        }
                         submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
+                        
                         tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
                 }
@@ -2160,7 +2162,7 @@ struct TimelineUiState {
 
     /// Index of Read Marker. It is only set once upon first entering the room.
     /// It's position is used to determine if the user scroll pass the read marker
-    read_marker_index: Option<(usize,OwnedEventId)>,
+    read_marker: Option<(usize,OwnedEventId)>,
 
     /// Used to send fully read receipt after scrolling pass the read marker
     scroll_pass_read_marker: bool,
