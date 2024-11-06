@@ -1783,7 +1783,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2211,7 +2211,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.7.1"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "anymap2",
  "aquamarine",
@@ -2259,7 +2259,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.7.0"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -2283,7 +2283,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.7.0"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "async-trait",
  "futures-core",
@@ -2304,7 +2304,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.7.2"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "aes",
  "as_variant",
@@ -2343,7 +2343,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.7.0"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2371,7 +2371,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sqlite"
 version = "0.7.1"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "async-trait",
  "deadpool-sqlite",
@@ -2393,7 +2393,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.7.0"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "base64",
  "blake3",
@@ -2412,7 +2412,7 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.7.0"
-source = "git+https://github.com/Hywan/matrix-rust-sdk?branch=feat-ui-room-list-tombstoned#aad7af3d1ac68e3bcdd4af2ad11f150185b57921"
+source = "git+https://github.com/matrix-org/matrix-rust-sdk#933033cc2532c53abc2e68ccb783979323dc5183"
 dependencies = [
  "as_variant",
  "async-once-cell",
@@ -4581,7 +4581,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

@@ -302,6 +302,14 @@ impl Widget for RoomsList {
                             .unwrap_or_else(|| {
                                 error!("Error: couldn't find room {room_id} to remove room");
                             });
+
+                        // TODO: send an action to the RoomScreen to hide this room
+                        //       if it is currently being displayed,
+                        //       and also ensure that the room's TimelineUIState is preserved
+                        //       and saved (if the room has not been left),
+                        //       and also that it's MediaCache instance is put into a special state
+                        //       where its internal update sender gets replaced upon next usage
+                        //       (that is, upon the next time that same room is opened by the user).
                     }
                     RoomsListUpdate::ClearRooms => {
                         self.all_rooms.clear();
