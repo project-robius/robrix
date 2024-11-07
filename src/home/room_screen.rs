@@ -2449,10 +2449,8 @@ fn check_if_message_mentions_current_user(
 
     //  Matrix SDK offers an API to obtain the users mentioned by a given message,
     // also cover the use case of a replied-to message.
-    match message.mentions() {
-        Some(mentions) => mentions.user_ids.contains(current_user_id),
-        None => false,
-    }
+    message.mentions()
+        .map_or(false, |mentions| mentions.user_ids.contains(current_user_id))
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3259,7 +3257,7 @@ impl Widget for Message {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
-                        color: (vec4(0.96, 0.95, 0.90, 1.0))
+                        color: (vec4(0.96, 0.95, 0.90, 0.95))
                     }
                 )
             )
