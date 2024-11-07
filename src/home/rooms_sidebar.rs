@@ -118,7 +118,7 @@ live_design! {
         }
         <SearchBar> {
             input = {
-                empty_message: "Search by room name"
+                empty_message: "Search for rooms..."
             }
         }
         <View> {
