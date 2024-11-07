@@ -11,7 +11,7 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, Room
 };
 use matrix_sdk_ui::{
@@ -1138,21 +1138,18 @@ async fn update_room(
     new_room: &room_list_service::Room,
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
+    let mut room_avatar_changed = false;
     if old_room.room_id() == &new_room_id {
         if let Some(new_latest_event) = new_room.latest_event().await {
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    let (timestamp, latest_message_text) = get_latest_event_details(&new_latest_event, new_room_id.clone());
-                    enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
-                        room_id: new_room_id.clone(),
-                        timestamp,
-                        latest_message_text,
-                    });
+                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event);
                 }
             }
         }
-        if old_room.avatar_url() != new_room.avatar_url() {
+
+        if room_avatar_changed || (old_room.avatar_url() != new_room.avatar_url()) {
             log!("Updating avatar for room {}", new_room_id);
             spawn_fetch_room_avatar(new_room.inner_room().clone());
         }
@@ -1246,7 +1243,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     ));
 
     let latest = latest_event.as_ref().map(
-        |ev| get_latest_event_details(ev, room_id.clone())
+        |ev| get_latest_event_details(ev, &room_id)
     );
 
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
@@ -1374,14 +1371,14 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
 /// and will submit a background async request to fetch the details for this event.
 fn get_latest_event_details(
     latest_event: &EventTimelineItem,
-    room_id: OwnedRoomId,
+    room_id: &OwnedRoomId,
 ) -> (MilliSecondsSinceUnixEpoch, String) {
     let sender_username = match latest_event.sender_profile() {
         TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
         TimelineDetails::Unavailable => {
             if let Some(event_id) = latest_event.event_id() {
                 submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                    room_id,
+                    room_id: room_id.clone(),
                     event_id: event_id.to_owned(),
                 });
             }
@@ -1553,7 +1550,7 @@ async fn timeline_subscriber_handler(
             // Update the latest event for this room.
             if let Some(new_latest) = new_latest_event {
                 if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                    let room_avatar_changed = update_latest_event(&room_id, &new_latest);
+                    let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
                     latest_event = Some(new_latest);
                     if room_avatar_changed {
                         spawn_fetch_room_avatar(room.clone());
@@ -1569,22 +1566,25 @@ async fn timeline_subscriber_handler(
 
 /// Updates the latest event for the given room.
 ///
+/// This function handles room name changes and checks for (but does not direclty handle)
+/// room avatar changes.
+///
 /// Returns `true` if this latest event indicates that the room's avatar has changed
 /// and should also be updated.
 fn update_latest_event(
-    room_id: &RoomId,
+    room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
 ) -> bool {
     let mut room_avatar_changed = false;
 
-    let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, room_id.to_owned());
+    let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
 
     // Check for relevant state events: a changed room name or avatar.
     match event_tl_item.content() {
         TimelineItemContent::OtherState(other) => match other.content() {
             AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                    room_id: room_id.to_owned(),
+                    room_id: room_id.clone(),
                     new_room_name: content.name.clone(),
                 });
             }
@@ -1596,7 +1596,7 @@ fn update_latest_event(
         _ => { }
     }
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
-        room_id: room_id.to_owned(),
+        room_id,
         timestamp,
         latest_message_text,
     });
