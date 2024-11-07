@@ -968,7 +968,7 @@ async fn async_main_loop(
                 if let Some(login_type) = login_receiver.recv().await {
                     match login_type {
                         LoginRequest::LoginByPassword(login_request) =>{
-                            log!("Received login request for user {}", login_request.user_id);
+                            log!("Received password-based login request for user {}", login_request.user_id);
                             match login(Cli::from(login_request)).await {
                                 Ok(new_login) => break new_login,
                                 Err(e) => {
