@@ -305,7 +305,7 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
-/// Submits a request to a receiver that runs a loop to wait for successful login 
+/// Details of a login request that get submitted within [`MatrixRequest::Login`].
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSO(String)
