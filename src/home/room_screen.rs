@@ -29,7 +29,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{Avatar, AvatarRef, AvatarWidgetRefExt},
+        avatar::{AvatarWidgetRefExt, set_avatar_and_get_username},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
@@ -1046,7 +1046,7 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
-                let num_seen = seq.len();
+                let num_seen = seq.total_num_seen();
                 if let Some(rect) = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, rect.pos, &format!("Seen by {num_seen}"));
                 }
@@ -2308,16 +2308,8 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_range(cx, receipts.len());
-            let seq = item.avatar_row(id!(avatar_row));
-            let mut receipt_iter = receipts.iter();
-            if let Some(ref mut v)= seq.borrow_mut() {
-                for avatar in v.iter_mut() {
-                    if let Some((user, r)) = receipt_iter.next() {
-                        set_avatar_and_get_username(cx, avatar.clone(), room_id, user, None, event_tl_item.event_id());
-                    }
-                }
-            }
+            let receipts_len = receipts.len();
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), receipts_len, receipts.iter());
 
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -2933,130 +2925,6 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
         item.label(live_id_path)
             .set_text(&format!("{}", timestamp.get()));
     }
-}
-
-/// Sets the given avatar and returns a displayable username based on the
-/// given profile and user ID of the sender of the event with the given event ID.
-///
-/// If the user profile is not ready, this function will submit an async request
-/// to fetch the user profile from the server, but only if the event ID is `Some`.
-/// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
-///
-/// This function will always choose a nice, displayable username and avatar.
-///
-/// The specific behavior is as follows:
-/// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
-///   will be the user's display name and avatar image, if available.
-///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
-/// * If no avatar image is available, then the `avatar` will be set to the first character
-///   of the user's display name, if available.
-/// * If the user's display name is not available or has not been set, the user ID
-///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
-///   our user profile cache , then the `username` and `avatar`  will be the user ID
-///   and the first character of that user ID, respectively.
-///
-/// ## Return
-/// Returns a tuple of:
-/// 1. The displayable username that should be used to populate the username field.
-/// 2. A boolean indicating whether the user's profile info has been completely drawn
-///    (for purposes of caching it to avoid future redraws).
-fn set_avatar_and_get_username(
-    cx: &mut Cx,
-    avatar: AvatarRef,
-    room_id: &RoomId,
-    avatar_user_id: &UserId,
-    avatar_profile_opt: Option<&TimelineDetails<Profile>>,
-    event_id: Option<&EventId>,
-) -> (String, bool) {
-    // Get the display name and avatar URL from the user's profile, if available,
-    // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let (username_opt, avatar_state) = match avatar_profile_opt {
-        Some(TimelineDetails::Ready(profile)) => (
-            profile.display_name.clone(),
-            AvatarState::Known(profile.avatar_url.clone()),
-        ),
-        Some(not_ready) => {
-            if matches!(not_ready, TimelineDetails::Unavailable) {
-                if let Some(event_id) = event_id {
-                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        event_id: event_id.to_owned(),
-                    });
-                }
-            }
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-            })
-            .unwrap_or((None, AvatarState::Unknown))
-        }
-        None => {
-                submit_async_request(MatrixRequest::GetUserProfile { 
-                    user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
-                });
-                user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
-                    room_members
-                        .get(room_id)
-                        .map(|rm| {
-                            (
-                                rm.display_name().map(|n| n.to_owned()),
-                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                            )
-                        })
-                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-                })
-                .unwrap_or((None, AvatarState::Unknown))
-            //}
-        }
-    };
-
-    let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
-        AvatarState::Loaded(data) => (Some(data), true),
-        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-            AvatarCacheEntry::Loaded(data) => (Some(data), true),
-            AvatarCacheEntry::Failed => (None, true),
-            AvatarCacheEntry::Requested => (None, false),
-        },
-        AvatarState::Known(None) | AvatarState::Failed => (None, true),
-        AvatarState::Unknown => (None, false),
-    };
-
-    // Set sender to the display name if available, otherwise the user id.
-    let username = username_opt
-        .clone()
-        .unwrap_or_else(|| avatar_user_id.to_string());
-
-    // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt
-        .and_then(|data| {
-            avatar
-                .show_image(
-                    Some((
-                        avatar_user_id.to_owned(),
-                        username_opt.clone(),
-                        room_id.to_owned(),
-                        data.clone(),
-                    )),
-                    |img| utils::load_png_or_jpg(&img, cx, &data),
-                )
-                .ok()
-        })
-        .unwrap_or_else(|| {
-            avatar.show_text(
-                Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned())),
-                &username,
-            )
-        });
-    (username, profile_drawn)
 }
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
