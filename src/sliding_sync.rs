@@ -281,7 +281,7 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
-    /// SSO Login.
+    /// Request from the login screen to log in with the given SSO identity provider.
     SSO {
         id: String,
     },
