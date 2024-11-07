@@ -110,7 +110,7 @@ live_design! {
         draw_bg: {
             border_width: 1.0,
             border_color: (#6c6c6c),
-            color: (#6c6c6c)
+            color: (COLOR_PRIMARY)
         }
     }
     SsoImage = <Image> {
@@ -280,6 +280,11 @@ live_design! {
         
         sso_button_pending_template: <RoundedView> {
             cursor: NotAllowed,
+            draw_bg: {
+                border_width: 1.0,
+                border_color: (#6c6c6c),
+                color: (#6c6c6c)
+            }
         }
         sso_image_pending_template: <Image> {
             width: 21, height: 21
@@ -289,6 +294,11 @@ live_design! {
         }
         sso_button_ok_template: <RoundedView> {
             cursor: Hand,
+            draw_bg: {
+                border_width: 1.0,
+                border_color: (#6c6c6c),
+                color: (COLOR_PRIMARY)
+            }
         }
         sso_image_ok_template: <Image> {
             width: 21, height: 21

@@ -958,64 +958,62 @@ async fn async_main_loop(
             Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers.clone()));
             loop {
                 log!("Waiting for login request...");
-                if let Some(login_type) = login_receiver.recv().await {
-                    match login_type {
-                        LoginRequest::LoginByPassword(login_request) =>{
-                            log!("Received password-based login request for user {}", login_request.user_id);
-                            match login(Cli::from(login_request)).await {
-                                Ok(new_login) => break new_login,
-                                Err(e) => {
-                                    error!("Login failed: {e:?}");
-                                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                                    enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                        status: e.to_string(),
-                                    });
-                                }
+                match login_receiver.recv().await {
+                    Some(LoginRequest::LoginByPassword(login_request)) => {
+                        log!("Received password-based login request for user {}", login_request.user_id);
+                        match login(Cli::from(login_request)).await {
+                            Ok(new_login) => break new_login,
+                            Err(e) => {
+                                error!("Login failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
                             }
-                        }
-                        LoginRequest::LoginBySSO(id) => {
-                            Cx::post_action(LoginAction::SsoPending(true));
-                            let (client, client_session) =
-                                build_client(&cli, app_data_dir()).await?;
-                            match client
-                                .matrix_auth()
-                                .login_sso(|sso_url: String| async move {
-                                    Uri::new(&sso_url).open().map_err(|err| {
-                                       Error::UnknownError(Box::new(io::Error::new(io::ErrorKind::Other, format!(" robius open error {:?}", err))).into())                                        
-                                    })
-                                })
-                                .identity_provider_id(&id)
-                                .await
-                            {
-                                Ok(res) => {
-                                    log!("Logged in successfully? {:?}", client.logged_in());
-                                    enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                        status: format!(
-                                            "Logged in as {:?}. Loading rooms...",
-                                            &res.user_id
-                                        ),
-                                    });
-                                    if let Err(e) = persistent_state::save_session(
-                                        &client,
-                                        client_session,
-                                    ).await {
-                                        error!("Failed to save session state to storage: {e:?}");
-                                    }
-                                    Cx::post_action(LoginAction::SsoPending(false));
-                                    break (client, None);
-                                }
-                                Err(e) => {
-                                    error!("Login failed: {e:?}");
-                                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                                }
-                            }
-                            Cx::post_action(LoginAction::SsoPending(false));
                         }
                     }
-                    
-                } else {
-                    error!("BUG: login_receiver hung up unexpectedly");
-                    return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
+                    Some(LoginRequest::LoginBySSO(id)) => {
+                        Cx::post_action(LoginAction::SsoPending(true));
+                        let (client, client_session) =
+                            build_client(&cli, app_data_dir()).await?;
+                        match client
+                            .matrix_auth()
+                            .login_sso(|sso_url: String| async move {
+                                Uri::new(&sso_url).open().map_err(|err| {
+                                    Error::UnknownError(Box::new(io::Error::new(io::ErrorKind::Other, format!(" robius open error {:?}", err))).into())                                        
+                                })
+                            })
+                            .identity_provider_id(&id)
+                            .await
+                        {
+                            Ok(res) => {
+                                log!("Logged in successfully? {:?}", client.logged_in());
+                                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: format!(
+                                        "Logged in as {:?}. Loading rooms...",
+                                        &res.user_id
+                                    ),
+                                });
+                                if let Err(e) = persistent_state::save_session(
+                                    &client,
+                                    client_session,
+                                ).await {
+                                    error!("Failed to save session state to storage: {e:?}");
+                                }
+                                Cx::post_action(LoginAction::SsoPending(false));
+                                break (client, None);
+                            }
+                            Err(e) => {
+                                error!("Login failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                            }
+                        }
+                        Cx::post_action(LoginAction::SsoPending(false));
+                    }
+                    None => {
+                        error!("BUG: login_receiver hung up unexpectedly");
+                        return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
+                    }
                 }
             }
         }
