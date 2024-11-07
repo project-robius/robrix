@@ -12,8 +12,7 @@ use matrix_sdk::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
     OwnedServerName,
 };
@@ -309,16 +308,35 @@ live_design! {
         draw_bg: {
             instance highlight: 0.0
             instance hover: 0.0
+            color: #ffffff  // default color
+
+            instance mentions_bar_color: #ffffff
+            instance mentions_bar_width: 4.0
+
             fn pixel(self) -> vec4 {
-                return mix(
-                    mix(
-                        #ffffff,
-                        #fafafa,
-                        self.hover
-                    ),
-                    #c5d6fa, // light blue
+                let base_color = mix(
+                    self.color,
+                    #fafafa,
+                    self.hover
+                );
+
+                let with_highlight = mix(
+                    base_color,
+                    #c5d6fa,
                     self.highlight
-                )
+                );
+
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
+                // draw bg
+                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
+                sdf.fill(with_highlight);
+
+                // draw the left vertical line
+                sdf.rect(0., 0., self.mentions_bar_width, self.rect_size.y);
+                sdf.fill(self.mentions_bar_color);
+
+                return sdf.result;
             }
         }
 
@@ -1329,7 +1347,7 @@ impl Widget for RoomScreen {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
-        
+
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -2407,7 +2425,8 @@ fn populate_message_view(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
-        room_screen_widget_uid
+        room_screen_widget_uid,
+        does_message_mention_current_user(message),
     );
 
     // Set the timestamp.
@@ -2425,6 +2444,23 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
+}
+
+
+/// Returns `true` if the given message mentions the current user.
+fn does_message_mention_current_user(
+    message: &timeline::Message,
+) -> bool {
+    let Some(client) = get_client() else {
+        return false;
+    };
+    let Some(current_user_id) = client.user_id() else {
+        return false;
+    };
+
+    // This covers both direct mentions ("@user") and a replied-to message.
+    message.mentions()
+        .is_some_and(|mentions| mentions.user_ids.contains(current_user_id))
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3144,6 +3180,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
+    #[rust(false)] mentions_user: bool,
 
     #[rust] can_be_replied_to: bool,
     #[rust] item_id: usize,
@@ -3226,6 +3263,17 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.mentions_user {
+            self.view.apply_over(
+                cx, live!(
+                    draw_bg: {
+                        color: (vec4(1.0, 1.0, 0.82, 1.0))
+                        mentions_bar_color: #ffd54f
+                    }
+                )
+            )
+        }
+
         self.view
             .button(id!(reply_button))
             .set_visible(self.can_be_replied_to);
@@ -3240,12 +3288,14 @@ impl Message {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
         self.replied_to_event_id = replied_to_event_id;
         self.room_screen_widget_uid = Some(room_screen_widget_uid);
+        self.mentions_user = mentions_user;
     }
 }
 
@@ -3255,10 +3305,11 @@ impl MessageRef {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid);
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
 }
