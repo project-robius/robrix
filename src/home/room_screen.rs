@@ -420,7 +420,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (12.0)}, hover_actions_enabled:true}
+            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (12.0) }, hover_actions_enabled:true }
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -1685,10 +1685,9 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let avatar_ref = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar));
         let (replying_preview_username, _) = set_avatar_and_get_username(
             cx,
-            avatar_ref,
+            replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
             Some(replying_to.0.sender_profile()),
@@ -2401,10 +2400,9 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let avatar_ref = item.avatar(id!(profile.avatar));
         let (username, profile_drawn) = set_avatar_and_get_username(
             cx,
-            avatar_ref,
+            item.avatar(id!(profile.avatar)),
             room_id,
             event_tl_item.sender(),
             Some(event_tl_item.sender_profile()),
@@ -2592,11 +2590,10 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let avatar_ref = replied_to_message_view
-                .avatar(id!(replied_to_message_content.reply_preview_avatar));
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
-                    avatar_ref,
+                    replied_to_message_view
+                    .avatar(id!(replied_to_message_content.reply_preview_avatar)),
                     room_id,
                     replied_to_event.sender(),
                     Some(replied_to_event.sender_profile()),
@@ -2890,7 +2887,6 @@ fn populate_small_state_event(
             Some(event_tl_item.sender_profile()),
             event_tl_item.event_id(),
         );
-        
         // Draw the timestamp as part of the profile.
         set_timestamp(
             &item,

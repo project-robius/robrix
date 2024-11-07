@@ -1,7 +1,6 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{log, warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, RoomId, UserId}};
-use matrix_sdk_ui::timeline::Profile;
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
 use crate::profile::user_profile::AvatarState;
