@@ -484,12 +484,18 @@ pub enum LoginAction {
         password: String,
         homeserver: Option<String>,
     },
-    /// True refers to await user's SSO login in a browser. This check primary prevents
-    /// spawning another sso http server  
+    /// An acknowledgment that is sent from the backend Matrix task to the login screen
+    /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
+    ///
+    /// Note that an inner value of `false` does *not* imply that the login request has
+    /// successfully finished. 
+    /// The login screen can use this to prevent the user from submitting
+    /// additional SSO login requests while a previous request is in flight. 
     SsoPending(bool),
-    /// A list of identity providers from matrix login_type api. 
-    /// As not all homeservers have the same identity providers, 
-    /// this determines the number of different sso login types in the frontend
+    /// A list of SSO identity providers supported by the homeserver.
+    ///
+    /// This is sent from the backend async task to the login screen in order to
+    /// inform the login screen which SSO identity providers it should display to the user.
     IdentityProvider(Vec<IdentityProvider>),
     None,
 }
