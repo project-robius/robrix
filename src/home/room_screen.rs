@@ -12,7 +12,7 @@ use matrix_sdk::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
     },
     OwnedServerName,
 };
@@ -2419,16 +2419,13 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Check if the message mentions the current user.
-    let mentions_user = check_if_message_mentions_current_user(message);
-
     // Set the Message widget's metatdata for reply-handling purposes.
     item.as_message().set_data(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
         room_screen_widget_uid,
-        mentions_user
+        does_message_mention_current_user(message),
     );
 
     // Set the timestamp.
@@ -2448,22 +2445,21 @@ fn populate_message_view(
     (item, new_drawn_status)
 }
 
-/// Check if the message mentions the current user.
-fn check_if_message_mentions_current_user(
+
+/// Returns `true` if the given message mentions the current user.
+fn does_message_mention_current_user(
     message: &timeline::Message,
 ) -> bool {
     let Some(client) = get_client() else {
         return false;
     };
-
     let Some(current_user_id) = client.user_id() else {
         return false;
     };
 
-    // Matrix SDK offers an API to obtain the users mentioned by a given message,
-    // also cover the use case of a replied-to message.
+    // This covers both direct mentions ("@user") and a replied-to message.
     message.mentions()
-        .map_or(false, |mentions| mentions.user_ids.contains(current_user_id))
+        .is_some_and(|mentions| mentions.user_ids.contains(current_user_id))
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
