@@ -12,7 +12,7 @@ use matrix_sdk::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
     },
     OwnedServerName,
 };
@@ -1220,6 +1220,7 @@ impl Widget for RoomScreen {
                     }
 
                     if !link_was_handled {
+                        log!("Opening URL \"{}\"", url);
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
                         }
@@ -2275,7 +2276,7 @@ fn populate_message_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2596,7 +2597,7 @@ fn populate_location_message_content(
 fn draw_replied_to_message(
     cx: &mut Cx2d,
     replied_to_message_view: &ViewRef,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     message: &timeline::Message,
     message_event_id: Option<&EventId>,
 ) -> (bool, Option<OwnedEventId>) {
@@ -2873,7 +2874,7 @@ fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
@@ -2970,7 +2971,7 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
 fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     sender_user_id: &UserId,
     sender_profile: &TimelineDetails<Profile>,
     event_id: Option<&EventId>,
