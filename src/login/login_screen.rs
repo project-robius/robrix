@@ -3,7 +3,7 @@ use std::ops::Not;
 use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
 
-use crate::sliding_sync::{submit_async_request, LoginByPassword, MatrixRequest};
+use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -364,11 +364,11 @@ impl MatchEvent for LoginScreen {
                     draw_text: { color: (MESSAGE_TEXT_COLOR) }
                 });
                 status_label.set_text("Waiting for login response...");
-                submit_async_request(MatrixRequest::Login(LoginByPassword {
+                submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
                     homeserver: homeserver.is_empty().not().then(|| homeserver),
-                }));
+                })));
             }
             self.redraw(cx);
         }
@@ -453,7 +453,7 @@ impl MatchEvent for LoginScreen {
                     if ip.id.contains(brand) {
                         if let Some(_) = v.finger_up(&actions) {
                             if !self.sso_pending {
-                                let matrix_req = MatrixRequest::SSO { id: ip.id.clone() };
+                                let matrix_req = MatrixRequest::Login(LoginRequest::LoginBySSO(ip.id.clone()));
                                 crate::sliding_sync::submit_async_request(matrix_req);
                             }
                         }

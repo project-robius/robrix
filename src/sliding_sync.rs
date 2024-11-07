@@ -13,7 +13,7 @@ use matrix_sdk::{
             }, FullStateEventContent
         },
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
-    }, sliding_sync::VersionBuilder, Client, Room
+    }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk::ServerName;
 use matrix_sdk_ui::{
@@ -29,7 +29,7 @@ use tokio::{
 use unicode_segmentation::UnicodeSegmentation;
 use robius_open::Uri;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
-
+use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
@@ -199,7 +199,7 @@ impl std::fmt::Display for PaginationDirection {
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
-    Login(LoginByPassword),
+    Login(LoginRequest),
     /// Request to paginate (backwards fetch) the older events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -281,10 +281,6 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
-    /// Request from the login screen to log in with the given SSO identity provider.
-    SSO {
-        id: String,
-    },
     /// Sends a read receipt for the given event in the given room.
     ReadReceipt{
         room_id: OwnedRoomId,
@@ -331,7 +327,7 @@ async fn async_worker(
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
-                if let Err(e) = login_sender.send(LoginRequest::LoginByPassword(login_request)).await {
+                if let Err(e) = login_sender.send(login_request).await {
                     error!("Error sending login request to login_sender: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(String::from(
                         "BUG: failed to send login request to async worker thread."
@@ -608,14 +604,6 @@ async fn async_worker(
                     }
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
-            }
-            MatrixRequest::SSO { id } => {
-                if let Err(e) = login_sender.send(LoginRequest::LoginBySSO(id)).await {
-                    error!("Error sending login by sso request to login_sender: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(String::from(
-                        "BUG: failed to send login by sso request to async worker thread."
-                    )));
-                }
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = CLIENT.get() else { continue };
@@ -954,13 +942,18 @@ async fn async_main_loop(
     } else {
         None
     };
-
+    let cli_parse_result = Cli::try_parse();
+    let cli: Cli = cli_parse_result.unwrap_or(Cli::default());
+    let homeserver_url_str = cli.homeserver.as_deref()
+        .unwrap_or("https://matrix.org/");
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let server_name = ServerName::parse("matrix.org")?;
-            let unauth_client = Client::builder().server_name(&server_name).build().await?;
-            let login_type_res = unauth_client.matrix_auth().get_login_types().await?;
+            let homeserver_url = url::Url::parse(homeserver_url_str)?;
+            let server_name = ServerName::parse(homeserver_url.domain().unwrap_or("matrix.org"))?;
+            // Obtain the other available login types other than password by first establishing a unauthenticated connection to the server
+            let unauthenticated_client = Client::builder().server_name(&server_name).build().await?;
+            let login_type_res = unauthenticated_client.matrix_auth().get_login_types().await?;
             let Some(LoginType::Sso(sso_type)) = login_type_res.flows.get(0) else { return Err(anyhow!("Login Type response error")); };
             Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers.clone()));
             loop {
@@ -982,16 +975,14 @@ async fn async_main_loop(
                         }
                         LoginRequest::LoginBySSO(id) => {
                             Cx::post_action(LoginAction::SsoPending(true));
-
-                            let cli_parse_result = Cli::try_parse();
-                            let cli = cli_parse_result.unwrap_or(Cli::default());
                             let (client, client_session) =
                                 build_client(&cli, app_data_dir()).await?;
                             match client
                                 .matrix_auth()
                                 .login_sso(|sso_url: String| async move {
-                                    let _ = Uri::new(&sso_url).open();
-                                    Ok(())
+                                    Uri::new(&sso_url).open().map_err(|err| {
+                                       Error::UnknownError(Box::new(io::Error::new(io::ErrorKind::Other, format!(" robius open error {:?}", err))).into())                                        
+                                    })
                                 })
                                 .identity_provider_id(&id)
                                 .await
@@ -1004,8 +995,12 @@ async fn async_main_loop(
                                             &res.user_id
                                         ),
                                     });
-                                    let _ = persistent_state::save_session(&client, client_session)
-                                        .await;
+                                    if let Err(e) = persistent_state::save_session(
+                                        &client,
+                                        client_session,
+                                    ).await {
+                                        error!("Failed to save session state to storage: {e:?}");
+                                    }
                                     Cx::post_action(LoginAction::SsoPending(false));
                                     break (client, None);
                                 }
