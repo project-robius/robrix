@@ -310,6 +310,9 @@ live_design! {
             instance hover: 0.0
             color: #ffffff  // default color
 
+            instance mentions_bar_color: #ffffff
+            instance mentions_bar_width: 4.0
+
             fn pixel(self) -> vec4 {
                 let base_color = mix(
                     self.color,
@@ -323,7 +326,17 @@ live_design! {
                     self.highlight
                 );
 
-                return with_highlight;
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
+                // draw bg
+                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
+                sdf.fill(with_highlight);
+
+                // draw the left vertical line
+                sdf.rect(0., 0., self.mentions_bar_width, self.rect_size.y);
+                sdf.fill(self.mentions_bar_color);
+
+                return sdf.result;
             }
         }
 
@@ -3257,7 +3270,8 @@ impl Widget for Message {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
-                        color: (vec4(0.96, 0.95, 0.90, 0.95))
+                        color: (vec4(1.0, 1.0, 0.82, 1.0))
+                        mentions_bar_color: #ffd54f
                     }
                 )
             )
