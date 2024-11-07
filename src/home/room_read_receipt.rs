@@ -2,10 +2,13 @@ use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use std::cmp;
-use crate::shared::avatar::{set_avatar_and_get_username};
+use crate::shared::avatar::set_avatar_and_get_username;
 live_design! {
     import makepad_draw::shader::std::*;
+    import makepad_widgets::base::*;
+    import makepad_widgets::theme_desktop_dark::*;
     import crate::shared::avatar::*;
+    import crate::shared::styles::*;
 
     AvatarRow = {{AvatarRow}} {
         button: <Avatar> {
@@ -17,11 +20,18 @@ live_design! {
         }
         margin: {top: 3, right: 10, bottom: 3, left: 10}
         width: Fit,
-        height: Fit
+        height: Fit,
+        plus: <Label> {
+            draw_text: {
+                color: #x0,
+                text_style: <TITLE_TEXT>{ font_size: 11}
+            }
+            text: ""
+        }
     }
 }
 
-#[derive(Live, Widget)]
+#[derive(Live, Widget, LiveHook)]
 pub struct AvatarRow {
     #[redraw]
     #[rust]
@@ -37,10 +47,15 @@ pub struct AvatarRow {
     button: Option<LivePtr>,
     #[live(false)]
     hover_actions_enabled: bool,
+    #[live]
+    plus: Option<LivePtr>,
     #[rust]
     buttons: Vec<AvatarRef>,
     #[rust]
+    label: Option<LabelRef>,
+    #[rust]
     total_num_seen: usize,
+
 }
 
 #[derive(Clone, Debug, DefaultNone)]
@@ -49,16 +64,7 @@ pub enum AvatarRowAction {
     HoverOut,
     None,
 }
-impl LiveHook for AvatarRow {
-    fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
-        for button in self.buttons.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, live_id!(button).as_field()) {
-                button.apply(cx, apply, index, nodes);
-            }
-        }
-        self.area.redraw(cx);
-    }
-}
+
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
@@ -82,6 +88,12 @@ impl Widget for AvatarRow {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         for v in self.buttons.iter_mut() {
             let _ = v.draw(cx, scope);
+        }
+        if self.total_num_seen > 5 {
+            if let Some(label) = &mut self.label {
+                label.set_text(&format!(" + {:?}", self.total_num_seen - 5));
+                let _ = label.draw(cx, scope);
+            }
         }
         DrawStep::done()
     }
@@ -107,6 +119,7 @@ impl AvatarRow {
             }
         }
         self.total_num_seen = total_num_seen;
+        self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
     }
 
     fn iter(&self) -> std::slice::Iter<'_, AvatarRef> {
