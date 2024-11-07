@@ -2447,42 +2447,11 @@ fn check_if_message_mentions_current_user(
         return false;
     };
 
-    match message.msgtype() {
-        MessageType::Text(TextMessageEventContent { body, formatted, .. }) |
-        MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-            // Matrix HTML mentions style:
-            // <a href="https://matrix.org/#/@userid:domain.com">Display Name</a>
-            if let Some(formatted) = formatted {
-                // log!("Formatted HTML: {}", formatted.body);
-
-                // Find `matrix.to/#/@user:domain.com`
-                if formatted.format == MessageFormat::Html {
-                    let html = &formatted.body;
-                    if html.contains(&format!("matrix.to/#/{}", current_user_id)) {
-                        log!("Found mention of current user in HTML: {}", current_user_id);
-                        return true;
-                    }
-                }
-            }
-            // Check if it is a reply to the current user’s message
-            if let Some(in_reply_to) = message.in_reply_to() {
-                match &in_reply_to.event {
-                    TimelineDetails::Ready(replied_to_event) => {
-                        let replied_user = replied_to_event.sender().to_string();
-                        // log!("current user : {}", current_user_id.to_string());
-                        // log!("reply to current user : {}", replied_user);
-                        if replied_user == current_user_id.to_string() {
-                            log!("Is reply to current user's message");
-                            return true;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            false
-        }
-        _ => false
+    //  Matrix SDK offers an API to obtain the users mentioned by a given message,
+    // also cover the use case of a replied-to message.
+    match message.mentions() {
+        Some(mentions) => mentions.user_ids.contains(current_user_id),
+        None => false,
     }
 }
 
@@ -3290,7 +3259,7 @@ impl Widget for Message {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
-                        color: (vec4(1.0, 1.0, 0.82, 1.0))
+                        color: (vec4(0.96, 0.95, 0.90, 1.0))
                     }
                 )
             )
