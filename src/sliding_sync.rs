@@ -1049,7 +1049,7 @@ async fn async_main_loop(
                 VectorDiff::PopBack => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopBack"); }
                     if let Some(room) = all_known_rooms.pop_back() {
-                        log!("PopBack: removing {}", room.room_id());
+                        if LOG_ROOM_LIST_DIFFS { log!("PopBack: removing {}", room.room_id()); }
                         remove_room(&room);
                     }
                 }
@@ -1142,7 +1142,7 @@ async fn update_room(
         if let Some(new_latest_event) = new_room.latest_event().await {
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
-                    log!("#### update_room: Updating latest event for room {}", new_room_id);
+                    log!("Updating latest event for room {}", new_room_id);
                     let (timestamp, latest_message_text) = get_latest_event_details(&new_latest_event, new_room_id.clone());
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
                         room_id: new_room_id.clone(),
@@ -1153,14 +1153,14 @@ async fn update_room(
             }
         }
         if old_room.avatar_url() != new_room.avatar_url() {
-            log!("#### update_room: Updating avatar for room {}", new_room_id);
+            log!("Updating avatar for room {}", new_room_id);
             spawn_fetch_room_avatar(new_room.inner_room().clone());
         }
 
         if let Ok(new_room_name) = new_room.compute_display_name().await {
             let new_room_name = new_room_name.to_string();
             if old_room.cached_display_name().as_ref() != Some(&new_room_name) {
-                log!("#### update_room: Updating room name for room {} to {}", new_room_id, new_room_name);
+                log!("Updating room name for room {} to {}", new_room_id, new_room_name);
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
                     new_room_name,
