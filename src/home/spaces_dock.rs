@@ -1,4 +1,6 @@
 use makepad_widgets::*;
+use matrix_sdk::encryption::VerificationState;
+use crate::sliding_sync::get_client;
 
 live_design! {
     import makepad_widgets::base::*;
@@ -102,51 +104,83 @@ live_design! {
         }
     }
 
+    SDock = {{SDock}} {}
+
     SpacesDock = <AdaptiveView> {
-        Desktop = {
-            flow: Down, spacing: 15
-            align: {x: 0.5}
-            padding: {top: 40., bottom: 20.}
-            width: 68., height: Fill
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_SECONDARY)
+            Desktop =  <SDock> {
+                    flow: Down, spacing: 15
+                    align: {x: 0.5}
+                    padding: {top: 40., bottom: 20.}
+                    width: 68., height: Fill
+                    show_bg: true
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
+
+                    profile = <Profile> {}
+
+                    <Separator> {}
+
+                    <Home> {}
+
+                    <Filler> {}
+
+                    <Settings> {}
             }
+            Mobile = <SDock> {
+                    flow: Right
+                    align: {x: 0.5, y: 0.5}
+                    padding: {top: 10, right: 10, bottom: 10, left: 10}
+                    width: Fill, height: Fit
+                    show_bg: true
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
 
-            <Profile> {}
+                    <Filler> {}
 
-            <Separator> {}
+                    profile = <Profile> {}
 
-            <Home> {}
-            
-            <Filler> {}
+                    <Filler> {}
 
-            <Settings> {}
-        }
+                    <Home> {}
 
-        Mobile = {
-            flow: Right
-            align: {x: 0.5, y: 0.5}
-            padding: {top: 10, right: 10, bottom: 10, left: 10}
-            width: Fill, height: Fit
-            show_bg: true
-            draw_bg: {
-                color: (COLOR_SECONDARY)
+                    <Filler> {}
+
+                    <Settings> {}
+
+                    <Filler> {}
             }
+    }
+}
 
-            <Filler> {}
+#[derive(Live, LiveHook, Widget)]
+pub struct SDock {
+    #[deref]
+    view: View,
+    #[rust(None)]
+    verification_state: Option<matrix_sdk::encryption::VerificationState>,
+}
 
-            <Profile> {}
-    
-            <Filler> {}
-    
-            <Home> {}
-            
-            <Filler> {}
-    
-            <Settings> {}
-    
-            <Filler> {}
-        }
+impl Widget for SDock {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let client = get_client().unwrap();
+        let verficiation_state_subscriber = client.encryption().verification_state();
+        self.verification_state = Some(verficiation_state_subscriber.get());
+
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if let Some(verification_state) = self.verification_state {
+            let verification_text = match verification_state {
+                VerificationState::Unknown => "U",
+                VerificationState::Verified => "V",
+                VerificationState::Unverified => "N",
+            };
+        self.label(id!(profile.text_view.text)).set_text(verification_text);
+        };
+
+        self.view.draw_walk(cx, scope, walk)
     }
 }
