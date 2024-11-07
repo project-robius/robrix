@@ -2447,7 +2447,7 @@ fn check_if_message_mentions_current_user(
         return false;
     };
 
-    //  Matrix SDK offers an API to obtain the users mentioned by a given message,
+    // Matrix SDK offers an API to obtain the users mentioned by a given message,
     // also cover the use case of a replied-to message.
     message.mentions()
         .map_or(false, |mentions| mentions.user_ids.contains(current_user_id))
