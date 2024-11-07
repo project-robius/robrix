@@ -10,7 +10,7 @@ use super::room_preview::RoomPreviewAction;
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in the room preview,
 /// and to have something to immediately show when a user first opens a room.
-const PREPAGINATE_VISIBLE_ROOMS: bool = false;
+const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
 live_design! {
     import makepad_draw::shader::std::*;

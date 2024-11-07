@@ -1007,7 +1007,7 @@ async fn async_main_loop(
         Box::new(|_room| true),
     );
 
-    const LOG_ROOM_LIST_DIFFS: bool = true;
+    const LOG_ROOM_LIST_DIFFS: bool = false;
 
     let mut all_known_rooms = Vector::new();
     pin_mut!(room_diff_stream);
@@ -1042,7 +1042,7 @@ async fn async_main_loop(
                 VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
                     if let Some(room) = all_known_rooms.pop_front() {
-                        log!("PopFront: removing {}", room.room_id());
+                        if LOG_ROOM_LIST_DIFFS { log!("PopFront: removing {}", room.room_id()); }
                         remove_room(&room);
                     }
                 }
@@ -1078,7 +1078,9 @@ async fn async_main_loop(
                         match peekable_diffs.peek() {
                             Some(VectorDiff::Insert { index: insert_index, value: new_room }) => {
                                 if room.room_id() == new_room.room_id() {
-                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
+                                    if LOG_ROOM_LIST_DIFFS {
+                                        log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
+                                    }
                                     update_room(&room, new_room).await?;
                                     all_known_rooms.insert(*insert_index, new_room.clone());
                                     next_diff_was_handled = true;
@@ -1089,6 +1091,7 @@ async fn async_main_loop(
                         if next_diff_was_handled {
                             peekable_diffs.next(); // consume the next diff
                         } else {
+                            warning!("UNTESTED SCENARIO: room_list: diff Remove({remove_index}) was NOT followed by an Insert. Removed room: {}", room.room_id());
                             remove_room(&room);
                         }
                     } else {
