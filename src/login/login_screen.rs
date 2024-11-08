@@ -369,6 +369,7 @@ impl MatchEvent for LoginScreen {
         let sso_search_button = self.view.button(id!(sso_search_button));
 
         if signup_button.clicked(actions) {
+            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
             let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
         }
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{Cx, ActionDefaultRef, DefaultNone, log};
+use makepad_widgets::{log, warning, ActionDefaultRef, Cx, DefaultNone};
 use matrix_sdk::{
     crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::verification::{
         SasState, SasVerification, Verification, VerificationRequest,
@@ -31,26 +31,36 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
 
     client.add_event_handler(
         |ev: ToDeviceKeyVerificationRequestEvent, client: Client| async move {
-            let request = client
+            if let Some(request) = client
                 .encryption()
                 .get_verification_request(&ev.sender, &ev.content.transaction_id)
                 .await
-                .expect("Request object wasn't created");
-
-            Handle::current().spawn(request_verification_handler(client, request));
+            {
+                Handle::current().spawn(request_verification_handler(client, request));
+            }
+            else {
+                warning!("Skipping invalid verification request from {}, transaction ID: {}\n   Content: {:?}",
+                    ev.sender, ev.content.transaction_id, ev.content,
+                );
+            }
         },
     );
 
     client.add_event_handler(
         |ev: OriginalSyncRoomMessageEvent, client: Client| async move {
             if let MessageType::VerificationRequest(_) = &ev.content.msgtype {
-                let request = client
+                if let Some(request) = client
                     .encryption()
                     .get_verification_request(&ev.sender, &ev.event_id)
                     .await
-                    .expect("Request object wasn't created");
-
-                Handle::current().spawn(request_verification_handler(client, request));
+                {
+                    Handle::current().spawn(request_verification_handler(client, request));
+                }
+                else {
+                    warning!("Skipping invalid verification request from {}, event ID: {}\n   Content: {:?}",
+                        ev.sender, ev.event_id, ev.content,
+                    );
+                }
             }
         }
     );
