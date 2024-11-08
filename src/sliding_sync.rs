@@ -980,7 +980,10 @@ async fn async_main_loop(
                             .matrix_auth()
                             .login_sso(|sso_url: String| async move {
                                 Uri::new(&sso_url).open().map_err(|err| {
-                                    Error::UnknownError(Box::new(io::Error::new(io::ErrorKind::Other, format!(" robius open error {:?}", err))).into())                                        
+                                    Error::UnknownError(Box::new(io::Error::new(
+                                        io::ErrorKind::Other,
+                                        format!("Unable to open SSO login url. Error: {:?}", err)
+                                    )).into())                                        
                                 })
                             })
                             .identity_provider_id(&id)
