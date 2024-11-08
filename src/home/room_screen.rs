@@ -1157,7 +1157,9 @@ impl Widget for RoomScreen {
                                 if self.room_id.as_ref() == Some(room_id) {
                                     return true;
                                 }
-                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                                if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                                    self.room_id = Some(room_id.clone());
+                                    self.room_name = known_room.name().unwrap_or(String::default());
                                     log!("TODO: jump to known room {}", room_id);
                                 } else {
                                     log!("TODO: fetch and display room preview for room {}", room_id);
