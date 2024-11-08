@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -15,7 +15,6 @@ use matrix_sdk::{
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
     }, sliding_sync::VersionBuilder, Client, Error, Room
 };
-use matrix_sdk::ServerName;
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
@@ -40,7 +39,7 @@ use crate::{
 };
 
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Debug, Default, Clone)]
 struct Cli {
     /// The user name that should be used for the login.
     #[clap(value_parser)]
@@ -136,8 +135,8 @@ async fn build_client(
 }
 
 
-async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
-    let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+async fn login(cli: &Cli) -> Result<(Client, Option<String>)> {
+    let (client, client_session) = build_client(cli, app_data_dir()).await?;
 
     // Query the server for supported login types.
     let login_kinds = client.matrix_auth().get_login_types().await?;
@@ -148,7 +147,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     // Attempt to login using the CLI-provided username & password.
     let login_result = client
         .matrix_auth()
-        .login_username(&cli.username, &cli.password)
+        .login_username(&cli.username.clone(), &cli.password.clone())
         .initial_device_display_name("robrix-un-pw")
         .send()
         .await?;
@@ -157,7 +156,7 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
     if client.logged_in() {    
         log!("Logged in successfully? {:?}", client.logged_in());
         enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: format!("Logged in as {}. Loading rooms...", &cli.username),
+            status: format!("Logged in as {}. Loading rooms...", cli.username),
         });
         if let Err(e) = persistent_state::save_session(
             &client,
@@ -168,9 +167,9 @@ async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
         Ok((client, None))
     } else {
         enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
+            status: format!("Failed to login as {}: {:?}", cli.username, login_result),
         });
-        bail!("Failed to login as {}: {login_result:?}", &cli.username)
+        bail!("Failed to login as {}: {login_result:?}", cli.username)
     }
 }
 
@@ -304,7 +303,8 @@ pub fn submit_async_request(req: MatrixRequest) {
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
-    LoginBySSO(String)
+    LoginBySSO(String),
+    HomeServerInputChange(String),
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -919,7 +919,7 @@ async fn async_main_loop(
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
 
-            if let Ok(cli) = cli_parse_result {
+            if let Ok(cli) = &cli_parse_result {
                 let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
@@ -942,26 +942,29 @@ async fn async_main_loop(
     } else {
         None
     };
-    let cli_parse_result = Cli::try_parse();
     let cli: Cli = cli_parse_result.unwrap_or(Cli::default());
-    let homeserver_url_str = cli.homeserver.as_deref()
-        .unwrap_or("https://matrix.org/");
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = url::Url::parse(homeserver_url_str)?;
-            let server_name = ServerName::parse(homeserver_url.domain().unwrap_or("matrix.org"))?;
-            // Obtain the other available login types other than password by first establishing a unauthenticated connection to the server
-            let unauthenticated_client = Client::builder().server_name(&server_name).build().await?;
+            let homeserver_url = cli.homeserver.as_deref()
+                .unwrap_or("https://matrix-client.matrix.org/");
+            // Unauthenticated client to query login types is the official Matrix-recommended way of obtaining supported login
+            let unauthenticated_client = Client::builder().server_name_or_homeserver_url(&homeserver_url).build().await?;
             let login_type_res = unauthenticated_client.matrix_auth().get_login_types().await?;
-            let Some(LoginType::Sso(sso_type)) = login_type_res.flows.get(0) else { return Err(anyhow!("Login Type response error")); };
-            Cx::post_action(LoginAction::IdentityProvider(sso_type.identity_providers.clone()));
+            let identity_providers = login_type_res.flows.iter().fold(vec![],|mut acc, login_type|{
+                if let LoginType::Sso(sso_type) = login_type {
+                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
+                }
+                acc
+            });
+            println!("identity_providers {:?}",identity_providers);
+            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(LoginRequest::LoginByPassword(login_request)) => {
                         log!("Received password-based login request for user {}", login_request.user_id);
-                        match login(Cli::from(login_request)).await {
+                        match login(&Cli::from(login_request)).await {
                             Ok(new_login) => break new_login,
                             Err(e) => {
                                 error!("Login failed: {e:?}");
@@ -1009,6 +1012,37 @@ async fn async_main_loop(
                             }
                         }
                         Cx::post_action(LoginAction::SsoPending(false));
+                    },
+                    Some(LoginRequest::HomeServerInputChange(homeserver_url)) => {
+                        let homeserver_url = if homeserver_url.is_empty() {
+                            DEFAULT_HOMESERVER
+                        } else {
+                            homeserver_url.as_str()
+                        };
+                        // Unauthenticated client to query login types is the official Matrix-recommended way of obtaining supported login
+                        match Client::builder().server_name_or_homeserver_url(&homeserver_url).build().await {
+                            Ok(unauthenticated_client) => {
+                                match unauthenticated_client.matrix_auth().get_login_types().await{
+                                    Ok(login_type_res) => {
+                                        let identity_providers = login_type_res.flows.iter().fold(vec![],|mut acc, login_type|{
+                                            if let LoginType::Sso(sso_type) = login_type {
+                                                acc.extend_from_slice(sso_type.identity_providers.as_slice());
+                                            }
+                                            acc
+                                        });
+                                        Cx::post_action(LoginAction::IdentityProvider(identity_providers));
+                                    },
+                                    Err(e) => {
+                                        Cx::post_action(LoginAction::Status(format!("Error fetching Login Types: {}", e.to_string())));
+                                    }
+                                };
+                            }
+                            Err(e) => {
+                                Cx::post_action(LoginAction::Status(format!("Error fetching Login Types: {}", e.to_string())));
+                            }
+                        }
+                       
+                        
                     }
                     None => {
                         error!("BUG: login_receiver hung up unexpectedly");

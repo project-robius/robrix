@@ -14,7 +14,8 @@ live_design! {
     import crate::shared::icon_button::*;
 
     IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
-
+    ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
+    
     LoginTextInput = <TextInput> {
         width: Fill, height: Fit, margin: 0
         align: {y: 0.5}
@@ -119,17 +120,13 @@ live_design! {
             uniform mask: 0.0
             fn pixel(self) -> vec4 {
                 let color = sample2d(self.image, self.pos).xyzw;
-                if self.mask >= 0.5 {
-                    let gray =  dot(color, vec4(0.299, 0.587, 0.114, 0.4));
-                    let diff = pow(max(gray, 0), 3)
-                    return vec4(diff);
-                } else {
-                    return color;
-                }
-                
+                let gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                let grayed = mix(color, vec4(gray, gray, gray, color.a), self.mask);
+                return grayed;
             }
         }
     }
+
     LoginScreen = {{LoginScreen}} {
         width: Fill, height: Fill
         show_bg: true,
@@ -176,12 +173,24 @@ live_design! {
                 empty_message: "Password"
                 draw_text: { text_style: { is_secret: true } }
             }
-
-            homeserver_input = <LoginTextInput> {
-                width: 250, height: 40
-                margin: {bottom: -10}
-                empty_message: "matrix.org"
+            <View> {
+                width: Fit, height: Fit,
+                flow: Right,
+                homeserver_input = <LoginTextInput> {
+                    width: 220, height: 40
+                    margin: {bottom: -10}
+                    empty_message: "matrix.org"
+                }
+                sso_search_button = <RobrixIconButton> {
+                    width: 25, height: 25,
+                    margin: {top: 5, left: 5 }
+                    draw_icon: {
+                        svg_file: (ICON_SEARCH)
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                }
             }
+            
             <Label> {
                 width: Fit, height: Fit
                 draw_text: {
@@ -331,7 +340,9 @@ pub struct LoginScreen {
     #[live]
     sso_image_ok_template: Option<LivePtr>,
     #[rust]
-    sso_pending:bool
+    sso_pending:bool,
+    #[rust]
+    prev_homeserver_url: Option<String>,
 }
 
 
@@ -355,6 +366,7 @@ impl MatchEvent for LoginScreen {
         let user_id_input = self.view.text_input(id!(user_id_input));
         let password_input = self.view.text_input(id!(password_input));
         let homeserver_input = self.view.text_input(id!(homeserver_input));
+        let sso_search_button = self.view.button(id!(sso_search_button));
 
         if signup_button.clicked(actions) {
             let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
@@ -380,10 +392,16 @@ impl MatchEvent for LoginScreen {
                     homeserver: homeserver.is_empty().not().then(|| homeserver),
                 })));
             }
+            if self.prev_homeserver_url == Some(homeserver_input.text()) {
+                sso_search_button.set_enabled(false);
+            } else {
+                sso_search_button.set_enabled(true);
+            }
             self.redraw(cx);
         }
-        let button_vec = vec!["apple","facebook","github","gitlab","google"];
-        let button_set: &[&[LiveId]] = ids!(apple_button,facebook_button,github_button,gitlab_button,google_button);
+        
+        let button_vec = vec!["apple", "facebook", "github", "gitlab", "google"];
+        let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
             match action.downcast_ref() {
                 Some(LoginAction::AutofillInfo { .. }) => {
@@ -394,6 +412,7 @@ impl MatchEvent for LoginScreen {
                     status_label.apply_over(cx, live!{
                         draw_text: { color: (MESSAGE_TEXT_COLOR) }
                     });
+                    sso_search_button.set_enabled(true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginSuccess) => {
@@ -437,18 +456,17 @@ impl MatchEvent for LoginScreen {
                     self.redraw(cx);
                 }
                 Some(LoginAction::IdentityProvider(identity_providers)) => {
-                    let mut button_iter = button_vec.iter();
-                    for view_ref in self.view_set(button_set).iter() {
-                        if let Some(brand) = button_iter.next() {
-                            for ip in identity_providers.iter() {
-                                if ip.id.contains(brand) {
-                                    view_ref.set_visible(true);
-                                    break;
-                                }
+                    for (view_ref, brand) in self.view_set(button_set).iter().zip(button_vec.iter()) {
+                        for ip in identity_providers.iter() {
+                            if ip.id.contains(brand) {
+                                view_ref.set_visible(true);
+                                break;
                             }
-                        }
+                        }  
                     }
                     self.identity_providers = identity_providers.clone();
+                    sso_search_button.set_enabled(true);
+                    status_label.set_text("");
                     self.redraw(cx);
                 }
                 _ => {
@@ -456,19 +474,26 @@ impl MatchEvent for LoginScreen {
                 }
             }
         }
-        let mut button_iter = button_vec.iter();
-        for v in self.view_set(button_set).iter() {
-            if let Some(brand) = button_iter.next() {
-                for ip in self.identity_providers.iter() {
-                    if ip.id.contains(brand) {
-                        if let Some(_) = v.finger_up(&actions) {
-                            if !self.sso_pending {
-                                let matrix_req = MatrixRequest::Login(LoginRequest::LoginBySSO(ip.id.clone()));
-                                crate::sliding_sync::submit_async_request(matrix_req);
-                            }
+        if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
+            self.prev_homeserver_url = Some(homeserver_input.text());
+            status_label.set_text("Waiting for available login types...");
+            submit_async_request(MatrixRequest::Login(LoginRequest::HomeServerInputChange(homeserver_input.text())));
+            sso_search_button.set_enabled(false);
+            for view_ref in self.view_set(button_set).iter() {
+                view_ref.set_visible(false);
+            }
+            self.redraw(cx);
+        }
+        for (view_ref, brand) in self.view_set(button_set).iter().zip(button_vec.iter()) {
+            for ip in self.identity_providers.iter() {
+                if ip.id.contains(brand) {
+                    if let Some(_) = view_ref.finger_up(&actions) {
+                        if !self.sso_pending {
+                            let matrix_req = MatrixRequest::Login(LoginRequest::LoginBySSO(ip.id.clone()));
+                            crate::sliding_sync::submit_async_request(matrix_req);
                         }
-                        break;
                     }
+                    break;
                 }
             }
         }
