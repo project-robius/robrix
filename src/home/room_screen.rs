@@ -1254,9 +1254,27 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked.
-            if self.button(id!(send_message_button)).clicked(&actions) {
-                let msg_input_widget = self.text_input(id!(message_input));
+            let msg_input_widget = self.text_input(id!(message_input));
+            // Handle the Ctrl+Enter key combination to add a new line in the message input box.
+            if let Some(
+                KeyEvent{
+                    key_code: KeyCode::ReturnKey,
+                    modifiers: KeyModifiers{
+                        control: true,
+                        ..
+                    },
+                    ..
+                }) = msg_input_widget.key_down_unhandled(&actions) {
+
+                let msg_len = msg_input_widget.text().len();
+
+                msg_input_widget.set_text(&(msg_input_widget.text() + "\n"));
+                msg_input_widget.set_cursor(msg_len, msg_len);
+                msg_input_widget.redraw(cx);
+            }
+
+            // Handle the send message button being clicked and enter key being pressed.
+            if self.button(id!(send_message_button)).clicked(&actions) || msg_input_widget.returned(&actions).is_some() {
                 let entered_text = msg_input_widget.text();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
