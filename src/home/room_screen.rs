@@ -668,29 +668,59 @@ live_design! {
         jump_to_bottom_view = <View> {
             width: Fill,
             height: Fill,
-            flow: Down,
+            flow: Overlay,
             align: {x: 1.0, y: 1.0},
-            margin: {right: 15.0, bottom: 15.0},
             visible: false,
 
             jump_to_bottom_button = <IconButton> {
+                margin: {right: 15.0, bottom: 15.0},
                 width: 50, height: 50,
                 draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
                 icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
                 // draw a circular background for the button
                 draw_bg: {
-                    instance background_color: #edededee,
+                    instance background_color: #edededce,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x)
+                        sdf.circle(c.x, c.x, c.x);
                         sdf.fill_keep(self.background_color);
                         return sdf.result
                     }
                 }
             }
-        }
 
+            // A badge overlay on the jump to bottom button showing unread messages
+            unread_message_badge = <View> {
+                width: 12, height: 12,
+                margin: {right: 33.0, bottom: 11.0},
+                visible: false,
+
+                show_bg: true,
+                draw_bg: {
+                    color: (COLOR_UNREAD_MESSAGE_BADGE)
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.color);
+                        return sdf.result;
+                    }
+                }
+
+                // // Label that displays the unread message count
+                // unread_messages_count = <Label> {
+                //     width: Fill,
+                //     height: Fill,
+                //     text: "",
+                //     align: {x: 0.5, y: 0.5},
+                //     draw_text: {
+                //         color: #ffffff,
+                //         text_style: {font_size: 8.0},
+                //     }
+                // }
+            }
+        }
     }
 
     LocationPreview = {{LocationPreview}} {
@@ -1304,9 +1334,14 @@ impl Widget for RoomScreen {
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             {
                 let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+                let unread_message_badge = self.view(id!(unread_message_badge));
                 if portal_list.scrolled(&actions) {
-                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
+                    if portal_list.is_at_end() {
+                        jump_to_bottom_view.set_visible(false);
+                        unread_message_badge.set_visible(false);
+                    } else {
+                        jump_to_bottom_view.set_visible(true);
+                    }
                 }
 
                 const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
@@ -1318,6 +1353,7 @@ impl Widget for RoomScreen {
                         SCROLL_TO_BOTTOM_SPEED,
                     );
                     jump_to_bottom_view.set_visible(false);
+                    unread_message_badge.set_visible(false);
                     self.redraw(cx);
                 }
             }
@@ -1496,6 +1532,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
+        let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
@@ -1506,7 +1543,7 @@ impl RoomScreen {
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::NewItems { new_items, changed_indices, clear_cache } => {
+                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1545,6 +1582,8 @@ impl RoomScreen {
                         log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
+                        jump_to_bottom_view.set_visible(false);
+                        jump_to_bottom_view.view(id!(unread_message_badge)).set_visible(false);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
@@ -1570,6 +1609,13 @@ impl RoomScreen {
                     // }
                     else {
                         warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                    }
+
+                    // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
+                    if is_append && !portal_list.is_at_end() {
+                        log!("is_append was true, showing unread message badge on the jump to bottom button visible");
+                        jump_to_bottom_view.set_visible(true);
+                        jump_to_bottom_view.view(id!(unread_message_badge)).set_visible(true);
                     }
 
                     if clear_cache {
@@ -2021,6 +2067,9 @@ pub enum TimelineUpdate {
         /// and thus must be removed from any caches of drawn items in the timeline.
         /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
         changed_indices: Range<usize>,
+        /// An optimization that informs the UI whether the changes to the timeline
+        /// resulted in new items being *appended to the end* of the timeline.
+        is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
         /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
