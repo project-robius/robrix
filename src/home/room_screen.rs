@@ -14,7 +14,7 @@ use matrix_sdk::{
             MediaSource,
         }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
     },
-    OwnedServerName,
+    OwnedServerName, RoomInfo,
 };
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo,
@@ -27,7 +27,7 @@ use crate::{
     avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
-    }, shared::{
+    }, room::room_details::{RoomDetailsSlidingPaneRef, RoomDetailsSlidingPaneType, RoomDetailsSlidingPaneWidgetExt}, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt},
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
@@ -50,6 +50,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
+    import crate::room::room_details::RoomDetailsSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
     import crate::shared::icon_button::RobrixIconButton;
 
@@ -65,6 +66,9 @@ live_design! {
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
+
+    ICO_ROOM_INFO = dep("crate://self/resources/icon_info.svg")
+    ICO_ROOM_MEMBERS = dep("crate://self/resources/icon_members.svg")
 
     COLOR_BG = #xfff8ee
     COLOR_BRAND = #x5
@@ -615,6 +619,38 @@ live_design! {
         }
     }
 
+    TabsSpace = <View> {
+        width: Fill, height: Fit,
+        flow: Right,
+        spacing: 10.0,
+        padding: { top: 10.0, bottom: 10.0, left: 10.0, right: 10.0 },
+        visible: false,
+        
+        room_tabs = <View> {
+            width: Fit, height: Fit,
+            spacing: 10.0,
+
+            room_info = <RobrixIconButton> {
+                padding: {left: 15, right: 15}
+                text: "Info",
+                draw_icon: {
+                    svg_file: (ICO_ROOM_INFO)
+                }
+                icon_walk: {width: 12, height: 12 }
+            }
+
+            room_members = <RobrixIconButton> {
+                padding: {left: 15, right: 15}
+                text: "Members",
+                draw_icon: {
+                    svg_file: (ICO_USER)
+                }
+                icon_walk: {width: 12, height: 12 }
+            }
+
+        }
+
+    }
 
     // The top space is used to display a loading message while the room is being paginated.
     TopSpace = <View> {
@@ -806,7 +842,6 @@ live_design! {
         }
     }
 
-
     IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
@@ -819,7 +854,10 @@ live_design! {
         }
         flow: Down, spacing: 0.0
 
+        tabs = <TabsSpace> { }
+
         room_screen_wrapper = <View> {
+
             width: Fill, height: Fill,
             flow: Overlay,
             show_bg: true
@@ -1030,6 +1068,15 @@ live_design! {
 
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
+
+            <View> {
+                width: Fill,
+                height: Fill,
+                align: { x: 1.0 },
+                flow: Right,
+
+                room_details_sliding_pane = <RoomDetailsSlidingPane> { }
+            }
         }
 
         animator: {
@@ -1082,7 +1129,7 @@ impl Widget for RoomScreen {
         let widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
-
+        let room_details_pane = self.room_details_sliding_pane(id!(room_details_sliding_pane));
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
@@ -1331,6 +1378,22 @@ impl Widget for RoomScreen {
                 }
             }
 
+            // Handle the room info tab being clicked.
+            if self.button(id!(room_info)).clicked(&actions) {
+                self.show_room_info_pane(
+                    cx, 
+                    &room_details_pane,
+                );
+            }
+
+            // Handle the room members tab being clicked.
+            if self.button(id!(room_members)).clicked(&actions) {
+                self.show_room_members_pane(
+                    cx,
+                    &room_details_pane,
+                );
+            }
+
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             {
                 let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
@@ -1386,14 +1449,20 @@ impl Widget for RoomScreen {
 
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
-        if event.requires_visibility() && pane.is_currently_shown(cx) {
+        if event.requires_visibility() {
             // Forward the event to the user profile sliding pane,
             // preventing the underlying timeline view from receiving it.
-            pane.handle_event(cx, event, scope);
-        } else {
-            // Forward the event to the inner timeline view.
-            self.view.handle_event(cx, event, scope);
+            if pane.is_currently_shown(cx) {
+                pane.handle_event(cx, event, scope);
+            }
+
+            if room_details_pane.is_currently_shown(cx) {
+                room_details_pane.handle_event(cx, event, scope);
+            }
         }
+        
+        self.view.handle_event(cx, event, scope);
+
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -1727,6 +1796,26 @@ impl RoomScreen {
         pane.set_info(cx, info);
         pane.show(cx);
         // Not sure if this redraw is necessary
+        self.redraw(cx);
+    }
+
+    fn show_room_info_pane(
+        &mut self,
+        cx: &mut Cx,
+        pane: &RoomDetailsSlidingPaneRef,
+    ) {
+        pane.show(cx, RoomDetailsSlidingPaneType::Info);
+        // pane.set_room_info(cx, room_info);
+        self.redraw(cx);
+    }
+
+    fn show_room_members_pane(
+        &mut self,
+        cx: &mut Cx,
+        pane: &RoomDetailsSlidingPaneRef,
+
+    ) {
+        pane.show(cx, RoomDetailsSlidingPaneType::Members);
         self.redraw(cx);
     }
 

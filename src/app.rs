@@ -155,6 +155,7 @@ impl LiveRegister for App {
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
+        crate::room::live_design(cx);
         crate::login::live_design(cx);
     }
 }
