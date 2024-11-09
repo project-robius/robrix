@@ -52,6 +52,7 @@ live_design! {
 
         list = <PortalList> {
             keep_invisible: false
+            auto_tail: false
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
 

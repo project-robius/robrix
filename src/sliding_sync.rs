@@ -1410,6 +1410,7 @@ async fn timeline_subscriber_handler(
     sender.send(TimelineUpdate::NewItems {
         new_items: timeline_items.clone(),
         changed_indices: usize::MIN..usize::MAX,
+        is_append: false,
         clear_cache: true,
     }).unwrap_or_else(
         |_e| panic!("Error: timeline update sender couldn't send update to room {room_id} with initial items!")
@@ -1423,7 +1424,10 @@ async fn timeline_subscriber_handler(
         let mut reobtain_latest_event = true;
         let mut index_of_first_change = usize::MAX;
         let mut index_of_last_change = usize::MIN;
-        let mut clear_cache = false; // whether to clear the entire cache of items
+        // whether to clear the entire cache of drawn items
+        let mut clear_cache = false;
+        // whether the changes include items being appended to the end of the timeline
+        let mut is_append = false;
         for diff in batch {
             match diff {
                 VectorDiff::Append { values } => {
@@ -1433,6 +1437,7 @@ async fn timeline_subscriber_handler(
                     index_of_last_change = max(index_of_last_change, timeline_items.len());
                     if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
+                    is_append = true;
                     num_updates += 1;
                 }
                 VectorDiff::Clear => {
@@ -1455,6 +1460,7 @@ async fn timeline_subscriber_handler(
                     index_of_last_change = max(index_of_last_change, timeline_items.len());
                     if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
                     reobtain_latest_event = true;
+                    is_append = true;
                     num_updates += 1;
                 }
                 VectorDiff::PopFront => {
@@ -1478,6 +1484,9 @@ async fn timeline_subscriber_handler(
                     } else {
                         index_of_first_change = min(index_of_first_change, index);
                         index_of_last_change = usize::MAX;
+                    }
+                    if index >= timeline_items.len() {
+                        is_append = true;
                     }
                     timeline_items.insert(index, value);
                     if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
@@ -1536,12 +1545,13 @@ async fn timeline_subscriber_handler(
             let changed_indices = index_of_first_change..index_of_last_change;
 
             if LOG_TIMELINE_DIFFS {
-                log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. Clear cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
+                log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
             }
             sender.send(TimelineUpdate::NewItems {
                 new_items: timeline_items.clone(),
                 changed_indices,
                 clear_cache,
+                is_append,
             }).expect("Error: timeline update sender couldn't send update with new items!");
         
             // Send a Makepad-level signal to update this room's timeline UI view.
