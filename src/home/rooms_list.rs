@@ -234,7 +234,7 @@ impl RoomsList {
                     } else if max_rooms == 0 {
                         "No rooms yet.".to_string()
                     } else if max_rooms >= all_rooms_len {
-                        format!("Loaded {} of {} total rooms", max_rooms, max_rooms)
+                        format!("Loaded {} of {} total rooms", all_rooms_len, max_rooms)
                     } else {
                         format!("Loaded {} of {} total rooms, {} just empty.",  max_rooms, all_rooms_len, all_rooms_len - max_rooms )
                     }
