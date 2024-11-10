@@ -229,10 +229,10 @@ impl RoomsList {
             let all_rooms_len =  self.all_rooms.len() as u32;
             self.status = match self.max_known_rooms {
                 Some(max_rooms) => {
-                    if all_rooms_len == 0 {
-                        "Loading rooms...".to_string()
-                    } else if max_rooms == 0 {
+                    if all_rooms_len == 0 && max_rooms == 0 {
                         "No rooms yet.".to_string()
+                    } else if all_rooms_len == 0 {
+                        "Loading rooms...".to_string()
                     } else if max_rooms >= all_rooms_len {
                         format!("Loaded {} of {} total rooms", all_rooms_len, max_rooms)
                     } else {
