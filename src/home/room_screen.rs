@@ -909,7 +909,8 @@ live_design! {
                 location_preview = <LocationPreview> { }
 
                 // Below that, display a view that holds the message input bar and send button.
-                <View> {
+
+                bottom_input = <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {y: 0.5},
@@ -1015,6 +1016,24 @@ live_design! {
                         draw_icon: {svg_file: (ICO_SEND)},
                         icon_walk: {width: 18.0, height: Fit},
                     }
+                }
+                no_send_permisson_notice = <View> {
+                            visible: false
+                            show_bg: true
+                            draw_bg: {
+                                color: #BFBFEF
+                            }
+                            width: Fill, height: Fit
+                            padding: {left: 200, bottom: 6}
+
+                            <Label> {
+                                width: Fill, height: Fit
+                                draw_text: {
+                                    color: #EF6F6F
+                                    text_style: <REGULAR_TEXT>{font_size: 14}
+                                }
+                                text: "You have no permission to send messages in this room"
+                            }
                 }
             }
 
@@ -1408,7 +1427,7 @@ impl Widget for RoomScreen {
                     });
                     if !self.user_can_send_message {
                         self.view(id!(bottom_input)).set_visible(false);
-                        self.view(id!(no_permisson_notice)).set_visible(true);
+                        self.view(id!(no_send_permisson_notice)).set_visible(true);
                         log!("You can't send messages in {}", room_id);
                     }
                 }
