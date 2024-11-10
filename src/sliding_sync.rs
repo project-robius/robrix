@@ -705,7 +705,7 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+pub static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.

@@ -32,7 +32,7 @@ use crate::{
         html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
         text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
         typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection, TOKIO_RUNTIME}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1064,6 +1064,8 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+    /// The permission to send a message in this room.
+    #[rust] user_can_send_message: bool,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1393,6 +1395,24 @@ impl Widget for RoomScreen {
         } else {
             // Forward the event to the inner timeline view.
             self.view.handle_event(cx, event, scope);
+        }
+        let client = get_client().unwrap();
+        if let Some(room_id) = self.room_id.clone() {
+            let room = client.get_room(&room_id).unwrap();
+            if let Some (self_user_id) = client.user_id() {
+                if let Some(rt) = TOKIO_RUNTIME.get() {
+                    rt.block_on(async {
+                        if let Ok(user_can_send_messages) = room.can_user_send_message(self_user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await {
+                            self.user_can_send_message = user_can_send_messages;
+                        }
+                    });
+                    if !self.user_can_send_message {
+                        self.view(id!(bottom_input)).set_visible(false);
+                        self.view(id!(no_permisson_notice)).set_visible(true);
+                        log!("You can't send messages in {}", room_id);
+                    }
+                }
+            }
         }
     }
 
