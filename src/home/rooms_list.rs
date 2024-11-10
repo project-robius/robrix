@@ -23,7 +23,7 @@ live_design! {
     import crate::shared::helpers::*;
     import crate::shared::avatar::Avatar;
     import crate::shared::html_or_plaintext::HtmlOrPlaintext;
-    
+
     import crate::home::room_preview::*;
 
     // An empty view that takes up no space in the portal list.
@@ -205,7 +205,7 @@ pub struct RoomsList {
     /// when its value changes. Instead, you must manually invoke it on the set of `all_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
     #[rust] display_filter: RoomDisplayFilter,
-    
+
     /// The list of rooms currently displayed in the UI, in order from top to bottom.
     /// This must be a strict subset of the rooms present in `all_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_rooms``.
@@ -226,12 +226,24 @@ pub struct RoomsList {
 
 impl RoomsList {
     fn update_status_rooms_count(&mut self) {
-        self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
-        } else {
-            format!("Loaded {} rooms.", self.all_rooms.len())
-        };
-    }
+            let all_rooms_len =  self.all_rooms.len() as u32;
+            self.status = match self.max_known_rooms {
+                Some(max_rooms) => {
+                    if all_rooms_len == 0 {
+                        "Loading rooms...".to_string()
+                    } else if max_rooms == 0 {
+                        "No rooms yet.".to_string()
+                    } else if max_rooms >= all_rooms_len {
+                        format!("Loaded {} of {} total rooms", max_rooms, max_rooms)
+                    } else {
+                        format!("Loaded {} of {} total rooms, {} just empty.",  max_rooms, all_rooms_len, all_rooms_len - max_rooms )
+                    }
+                }
+                None => {
+                    format!("Please check your internet.")
+                }
+            }
+        }
 }
 
 impl Widget for RoomsList {
