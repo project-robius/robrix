@@ -286,35 +286,6 @@ live_design! {
                 text: "Sign up here"
             }
         }
-        
-        sso_button_pending_template: <RoundedView> {
-            cursor: NotAllowed,
-            draw_bg: {
-                border_width: 1.0,
-                border_color: (#6c6c6c),
-                color: (#6c6c6c)
-            }
-        }
-        sso_image_pending_template: <Image> {
-            width: 21, height: 21
-            draw_bg:{
-                uniform mask: 1.0
-            }
-        }
-        sso_button_ok_template: <RoundedView> {
-            cursor: Hand,
-            draw_bg: {
-                border_width: 1.0,
-                border_color: (#6c6c6c),
-                color: (COLOR_PRIMARY)
-            }
-        }
-        sso_image_ok_template: <Image> {
-            width: 21, height: 21
-            draw_bg:{
-                uniform mask: 0.0
-            }
-        }
     }
     
 }
@@ -331,14 +302,6 @@ pub struct LoginScreen {
     #[deref] view: View,
     #[rust]
     identity_providers: Vec<IdentityProvider>,
-    #[live]
-    sso_button_pending_template: Option<LivePtr>,
-    #[live]
-    sso_button_ok_template: Option<LivePtr>,
-    #[live]
-    sso_image_pending_template: Option<LivePtr>,
-    #[live]
-    sso_image_ok_template: Option<LivePtr>,
     #[rust]
     sso_pending:bool,
     #[rust]
@@ -441,8 +404,16 @@ impl MatchEvent for LoginScreen {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
                             };
-                            view_ref.update_from_ptr(cx, self.sso_button_pending_template);
-                            view_ref.image(id!(image)).update_from_ptr(cx, self.sso_image_pending_template);
+                            view_ref.apply_over(cx,
+                                live! {
+                                    cursor: NotAllowed
+                                },
+                            );
+                            view_ref.image(id!(image)).apply_over(cx, live! {
+                                draw_bg: {
+                                    mask: (1.0)
+                                }
+                            });
                             
                         });
                     } else {
@@ -450,8 +421,17 @@ impl MatchEvent for LoginScreen {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
                             };
-                            view_ref.update_from_ptr(cx, self.sso_button_ok_template);
-                            view_ref.image(id!(image)).update_from_ptr(cx, self.sso_image_ok_template);
+                            view_ref.apply_over(cx,
+                                live! {
+                                    cursor: Hand
+                                },
+                            );
+                            view_ref.image(id!(image)).apply_over(cx, live! {
+                                draw_bg: {
+                                    mask: (0.0)
+                                }
+                            });
+
                         });
                     }
                     self.sso_pending = *pending;
