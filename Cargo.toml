@@ -196,5 +196,3 @@ appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",
     "$LOCALAPPDATA/$PRODUCTNAME",
 ]
-[profile.dev]
-debug = 0
