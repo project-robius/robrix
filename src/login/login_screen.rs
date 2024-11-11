@@ -441,16 +441,17 @@ impl MatchEvent for LoginScreen {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
                             };
-                            view_ref.apply_from_ptr(cx, self.sso_button_pending_template);
-                            view_ref.image(id!(image)).apply_from_ptr(cx, self.sso_image_pending_template);
+                            view_ref.update_from_ptr(cx, self.sso_button_pending_template);
+                            view_ref.image(id!(image)).update_from_ptr(cx, self.sso_image_pending_template);
+                            
                         });
                     } else {
                         self.view_set(button_set).iter().for_each(|view_ref| {
                             let Some(mut view_ref) = view_ref.borrow_mut() else {
                                 return;
                             };
-                            view_ref.apply_from_ptr(cx, self.sso_button_ok_template);
-                            view_ref.image(id!(image)).apply_from_ptr(cx, self.sso_image_ok_template);
+                            view_ref.update_from_ptr(cx, self.sso_button_ok_template);
+                            view_ref.image(id!(image)).update_from_ptr(cx, self.sso_image_ok_template);
                         });
                     }
                     self.sso_pending = *pending;
