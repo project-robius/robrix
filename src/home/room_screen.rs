@@ -1196,21 +1196,14 @@ impl Widget for RoomScreen {
                 }
             }
 
-            let msg_input_widget = self.text_input(id!(message_input));
-
-            let mut send_message_with_shortcut_key = false;
-            if let Some(key_event) = msg_input_widget.key_down_unhandled(&actions) {
-
-                // Windows and linux use control key, mac uses logo key
-                if key_event.key_code == KeyCode::ReturnKey
-                && (key_event.modifiers.control || key_event.modifiers.logo)
-                {
-                    send_message_with_shortcut_key = true;
-                }
-            }
-
             // Handle the send message button being clicked and enter key being pressed.
-            if self.button(id!(send_message_button)).clicked(&actions) || send_message_with_shortcut_key {
+            let msg_input_widget = self.text_input(id!(message_input));
+            let send_message_shortcut_pressed = msg_input_widget
+                .key_down_unhandled(&actions)
+                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
+            if send_message_shortcut_pressed
+                || self.button(id!(send_message_button)).clicked(&actions)
+            {
                 let entered_text = msg_input_widget.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
