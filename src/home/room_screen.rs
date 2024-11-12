@@ -28,10 +28,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt},
-        html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
-        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-        typing_animation::TypingAnimationWidgetExt,
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
@@ -51,7 +48,8 @@ live_design! {
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
-    import crate::shared::icon_button::RobrixIconButton;
+    import crate::shared::icon_button::*;
+    import crate::shared::jump_to_bottom_button::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -62,16 +60,10 @@ live_design! {
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
-    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
     COLOR_BG = #xfff8ee
-    COLOR_BRAND = #x5
-    COLOR_BRAND_HOVER = #x3
-    COLOR_META_TEXT = #xaaa
-    COLOR_META = #xccc
-    COLOR_META_INV = #xfffa
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
@@ -80,51 +72,6 @@ live_design! {
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
-
-
-    IconButton = <Button> {
-        draw_text: {
-            instance hover: 0.0
-            instance pressed: 0.0
-            text_style: {
-                font_size: 11.0
-            }
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META_TEXT),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        draw_icon: {
-            svg_file: (ICO_FAV),
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
-        }
-        padding: 9.0
-        text: ""
-    }
 
     Timestamp = <Label> {
         width: Fit, height: Fit
@@ -664,63 +611,9 @@ live_design! {
             ReadMarker = <ReadMarker> {}
         }
 
-        // A jump to bottom button that appears when the timeline is not at the bottom.
-        jump_to_bottom_view = <View> {
-            width: Fill,
-            height: Fill,
-            flow: Overlay,
-            align: {x: 1.0, y: 1.0},
-            visible: false,
-
-            jump_to_bottom_button = <IconButton> {
-                margin: {right: 15.0, bottom: 15.0},
-                width: 50, height: 50,
-                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-                // draw a circular background for the button
-                draw_bg: {
-                    instance background_color: #edededce,
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x);
-                        sdf.fill_keep(self.background_color);
-                        return sdf.result
-                    }
-                }
-            }
-
-            // A badge overlay on the jump to bottom button showing unread messages
-            unread_message_badge = <View> {
-                width: 12, height: 12,
-                margin: {right: 33.0, bottom: 11.0},
-                visible: false,
-
-                show_bg: true,
-                draw_bg: {
-                    color: (COLOR_UNREAD_MESSAGE_BADGE)
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x);
-                        sdf.fill_keep(self.color);
-                        return sdf.result;
-                    }
-                }
-
-                // // Label that displays the unread message count
-                // unread_messages_count = <Label> {
-                //     width: Fill,
-                //     height: Fill,
-                //     text: "",
-                //     align: {x: 0.5, y: 0.5},
-                //     draw_text: {
-                //         color: #ffffff,
-                //         text_style: {font_size: 8.0},
-                //     }
-                // }
-            }
-        }
+        // A jump to bottom button (with an unread message badge) that is shown
+        // when the timeline is not at the bottom.
+        jump_to_bottom = <JumpToBottomButton> { }
     }
 
     LocationPreview = {{LocationPreview}} {
@@ -1303,10 +1196,22 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked.
-            if self.button(id!(send_message_button)).clicked(&actions) {
-                let msg_input_widget = self.text_input(id!(message_input));
-                let entered_text = msg_input_widget.text();
+            let msg_input_widget = self.text_input(id!(message_input));
+
+            let mut send_message_with_shortcut_key = false;
+            if let Some(key_event) = msg_input_widget.key_down_unhandled(&actions) {
+
+                // Windows and linux use control key, mac uses logo key
+                if key_event.key_code == KeyCode::ReturnKey
+                && (key_event.modifiers.control || key_event.modifiers.logo)
+                {
+                    send_message_with_shortcut_key = true;
+                }
+            }
+
+            // Handle the send message button being clicked and enter key being pressed.
+            if self.button(id!(send_message_button)).clicked(&actions) || send_message_with_shortcut_key {
+                let entered_text = msg_input_widget.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
@@ -1332,31 +1237,11 @@ impl Widget for RoomScreen {
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            {
-                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
-                let unread_message_badge = self.view(id!(unread_message_badge));
-                if portal_list.scrolled(&actions) {
-                    if portal_list.is_at_end() {
-                        jump_to_bottom_view.set_visible(false);
-                        unread_message_badge.set_visible(false);
-                    } else {
-                        jump_to_bottom_view.set_visible(true);
-                    }
-                }
-
-                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
-                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                    portal_list.smooth_scroll_to_end(
-                        cx,
-                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
-                        SCROLL_TO_BOTTOM_SPEED,
-                    );
-                    jump_to_bottom_view.set_visible(false);
-                    unread_message_badge.set_visible(false);
-                    self.redraw(cx);
-                }
-            }
+            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
+                cx,
+                &portal_list,
+                actions,
+            );
 
             // Handle a typing action on the message input box.
             if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
@@ -1532,7 +1417,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
-        let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
+        let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
@@ -1582,8 +1467,7 @@ impl RoomScreen {
                         log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
-                        jump_to_bottom_view.set_visible(false);
-                        jump_to_bottom_view.view(id!(unread_message_badge)).set_visible(false);
+                        jump_to_bottom.update_visibility(true);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
@@ -1613,9 +1497,8 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        log!("is_append was true, showing unread message badge on the jump to bottom button visible");
-                        jump_to_bottom_view.set_visible(true);
-                        jump_to_bottom_view.view(id!(unread_message_badge)).set_visible(true);
+                        // log!("is_append was true, showing unread message badge on the jump to bottom button visible");
+                        jump_to_bottom.show_unread_message_badge(1);
                     }
 
                     if clear_cache {

@@ -4,7 +4,7 @@ authors = [
     "Kevin Boos <kevinaboos@gmail.com>",
     "Robius Project Maintainers",
 ]
-description = "A Matrix chat client written using the Robius app dev framework in Rust."
+description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
 documentation = "https://docs.rs/robrix"
 edition = "2021"
 homepage = "https://robius.rs/"
@@ -16,7 +16,7 @@ version = "0.0.1-pre-alpha"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "portal_list_fix_at_end" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"

@@ -57,6 +57,8 @@ live_design! {
         font_size: (TIMESTAMP_FONT_SIZE),
     }
 
+    COLOR_META = #xccc
+
     COLOR_PROFILE_CIRCLE = #xfff8ee
     COLOR_DIVIDER = #x00000018
     COLOR_DIVIDER_DARK = #x00000044
