@@ -409,15 +409,14 @@ impl MatchEvent for LoginScreen {
                             };
                             view_ref.apply_over(cx,
                                 live! {
-                                    cursor: NotAllowed
-                                },
-                            );
-                            view_ref.image(id!(image)).apply_over(cx, live! {
-                                draw_bg: {
-                                    mask: (1.0)
+                                    cursor: NotAllowed,
+                                    image = { 
+                                        draw_bg: {
+                                            mask: (1.0)
+                                        }
+                                    }
                                 }
-                            });
-                            
+                            );
                         });
                     } else {
                         self.view_set(button_set).iter().for_each(|view_ref| {
@@ -426,15 +425,14 @@ impl MatchEvent for LoginScreen {
                             };
                             view_ref.apply_over(cx,
                                 live! {
-                                    cursor: Hand
+                                    cursor: Hand,
+                                    image = { 
+                                        draw_bg: {
+                                            mask: (0.0)
+                                        }
+                                    }
                                 },
                             );
-                            view_ref.image(id!(image)).apply_over(cx, live! {
-                                draw_bg: {
-                                    mask: (0.0)
-                                }
-                            });
-
                         });
                     }
                     self.sso_pending = *pending;
