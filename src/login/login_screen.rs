@@ -180,6 +180,9 @@ live_design! {
                     width: 220, height: 40
                     margin: {bottom: -10}
                     empty_message: "matrix.org"
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{font_size: 9.0}
+                    }
                 }
                 sso_search_button = <RobrixIconButton> {
                     width: 25, height: 25,
