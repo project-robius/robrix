@@ -12,8 +12,7 @@ use matrix_sdk::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
     },
     OwnedServerName,
 };
@@ -29,10 +28,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt},
-        html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
-        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-        typing_animation::TypingAnimationWidgetExt,
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
@@ -52,7 +48,8 @@ live_design! {
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
-    import crate::shared::icon_button::RobrixIconButton;
+    import crate::shared::icon_button::*;
+    import crate::shared::jump_to_bottom_button::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -63,16 +60,10 @@ live_design! {
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
-    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
     COLOR_BG = #xfff8ee
-    COLOR_BRAND = #x5
-    COLOR_BRAND_HOVER = #x3
-    COLOR_META_TEXT = #xaaa
-    COLOR_META = #xccc
-    COLOR_META_INV = #xfffa
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
@@ -81,51 +72,6 @@ live_design! {
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
-
-
-    IconButton = <Button> {
-        draw_text: {
-            instance hover: 0.0
-            instance pressed: 0.0
-            text_style: {
-                font_size: 11.0
-            }
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META_TEXT),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        draw_icon: {
-            svg_file: (ICO_FAV),
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
-        }
-        padding: 9.0
-        text: ""
-    }
 
     Timestamp = <Label> {
         width: Fit, height: Fit
@@ -309,16 +255,35 @@ live_design! {
         draw_bg: {
             instance highlight: 0.0
             instance hover: 0.0
+            color: #ffffff  // default color
+
+            instance mentions_bar_color: #ffffff
+            instance mentions_bar_width: 4.0
+
             fn pixel(self) -> vec4 {
-                return mix(
-                    mix(
-                        #ffffff,
-                        #fafafa,
-                        self.hover
-                    ),
-                    #c5d6fa, // light blue
+                let base_color = mix(
+                    self.color,
+                    #fafafa,
+                    self.hover
+                );
+
+                let with_highlight = mix(
+                    base_color,
+                    #c5d6fa,
                     self.highlight
-                )
+                );
+
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
+                // draw bg
+                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
+                sdf.fill(with_highlight);
+
+                // draw the left vertical line
+                sdf.rect(0., 0., self.mentions_bar_width, self.rect_size.y);
+                sdf.fill(self.mentions_bar_color);
+
+                return sdf.result;
             }
         }
 
@@ -646,33 +611,9 @@ live_design! {
             ReadMarker = <ReadMarker> {}
         }
 
-        // A jump to bottom button that appears when the timeline is not at the bottom.
-        jump_to_bottom_view = <View> {
-            width: Fill,
-            height: Fill,
-            flow: Down,
-            align: {x: 1.0, y: 1.0},
-            margin: {right: 15.0, bottom: 15.0},
-            visible: false,
-
-            jump_to_bottom_button = <IconButton> {
-                width: 50, height: 50,
-                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-                // draw a circular background for the button
-                draw_bg: {
-                    instance background_color: #edededee,
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x)
-                        sdf.fill_keep(self.background_color);
-                        return sdf.result
-                    }
-                }
-            }
-        }
-
+        // A jump to bottom button (with an unread message badge) that is shown
+        // when the timeline is not at the bottom.
+        jump_to_bottom = <JumpToBottomButton> { }
     }
 
     LocationPreview = {{LocationPreview}} {
@@ -1202,6 +1143,7 @@ impl Widget for RoomScreen {
                     }
 
                     if !link_was_handled {
+                        log!("Opening URL \"{}\"", url);
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
                         }
@@ -1254,10 +1196,22 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked.
-            if self.button(id!(send_message_button)).clicked(&actions) {
-                let msg_input_widget = self.text_input(id!(message_input));
-                let entered_text = msg_input_widget.text();
+            let msg_input_widget = self.text_input(id!(message_input));
+
+            let mut send_message_with_shortcut_key = false;
+            if let Some(key_event) = msg_input_widget.key_down_unhandled(&actions) {
+
+                // Windows and linux use control key, mac uses logo key
+                if key_event.key_code == KeyCode::ReturnKey
+                && (key_event.modifiers.control || key_event.modifiers.logo)
+                {
+                    send_message_with_shortcut_key = true;
+                }
+            }
+
+            // Handle the send message button being clicked and enter key being pressed.
+            if self.button(id!(send_message_button)).clicked(&actions) || send_message_with_shortcut_key {
+                let entered_text = msg_input_widget.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
@@ -1283,25 +1237,11 @@ impl Widget for RoomScreen {
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            {
-                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
-                if portal_list.scrolled(&actions) {
-                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
-                }
-
-                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
-                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                    portal_list.smooth_scroll_to_end(
-                        cx,
-                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
-                        SCROLL_TO_BOTTOM_SPEED,
-                    );
-                    jump_to_bottom_view.set_visible(false);
-                    self.redraw(cx);
-                }
-            }
+            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
+                cx,
+                &portal_list,
+                actions,
+            );
 
             // Handle a typing action on the message input box.
             if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
@@ -1328,7 +1268,7 @@ impl Widget for RoomScreen {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
-        
+
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -1477,6 +1417,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
+        let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
@@ -1487,7 +1428,7 @@ impl RoomScreen {
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::NewItems { new_items, changed_indices, clear_cache } => {
+                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1526,6 +1467,7 @@ impl RoomScreen {
                         log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
+                        jump_to_bottom.update_visibility(true);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
@@ -1551,6 +1493,12 @@ impl RoomScreen {
                     // }
                     else {
                         warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                    }
+
+                    // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
+                    if is_append && !portal_list.is_at_end() {
+                        // log!("is_append was true, showing unread message badge on the jump to bottom button visible");
+                        jump_to_bottom.show_unread_message_badge(1);
                     }
 
                     if clear_cache {
@@ -2002,6 +1950,9 @@ pub enum TimelineUpdate {
         /// and thus must be removed from any caches of drawn items in the timeline.
         /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
         changed_indices: Range<usize>,
+        /// An optimization that informs the UI whether the changes to the timeline
+        /// resulted in new items being *appended to the end* of the timeline.
+        is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
         /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
@@ -2257,7 +2208,7 @@ fn populate_message_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2406,7 +2357,8 @@ fn populate_message_view(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
-        room_screen_widget_uid
+        room_screen_widget_uid,
+        does_message_mention_current_user(message),
     );
 
     // Set the timestamp.
@@ -2424,6 +2376,23 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
+}
+
+
+/// Returns `true` if the given message mentions the current user.
+fn does_message_mention_current_user(
+    message: &timeline::Message,
+) -> bool {
+    let Some(client) = get_client() else {
+        return false;
+    };
+    let Some(current_user_id) = client.user_id() else {
+        return false;
+    };
+
+    // This covers both direct mentions ("@user") and a replied-to message.
+    message.mentions()
+        .is_some_and(|mentions| mentions.user_ids.contains(current_user_id))
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -2560,7 +2529,7 @@ fn populate_location_message_content(
 fn draw_replied_to_message(
     cx: &mut Cx2d,
     replied_to_message_view: &ViewRef,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     message: &timeline::Message,
     message_event_id: Option<&EventId>,
 ) -> (bool, Option<OwnedEventId>) {
@@ -2837,7 +2806,7 @@ fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
@@ -2934,7 +2903,7 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
 fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     sender_user_id: &UserId,
     sender_profile: &TimelineDetails<Profile>,
     event_id: Option<&EventId>,
@@ -3143,6 +3112,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
+    #[rust(false)] mentions_user: bool,
 
     #[rust] can_be_replied_to: bool,
     #[rust] item_id: usize,
@@ -3225,6 +3195,17 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.mentions_user {
+            self.view.apply_over(
+                cx, live!(
+                    draw_bg: {
+                        color: (vec4(1.0, 1.0, 0.82, 1.0))
+                        mentions_bar_color: #ffd54f
+                    }
+                )
+            )
+        }
+
         self.view
             .button(id!(reply_button))
             .set_visible(self.can_be_replied_to);
@@ -3239,12 +3220,14 @@ impl Message {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
         self.replied_to_event_id = replied_to_event_id;
         self.room_screen_widget_uid = Some(room_screen_widget_uid);
+        self.mentions_user = mentions_user;
     }
 }
 
@@ -3254,10 +3237,11 @@ impl MessageRef {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid);
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
 }

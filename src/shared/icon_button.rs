@@ -7,6 +7,54 @@ live_design! {
 
     import crate::shared::styles::*;
 
+    COLOR_BRAND = #x5
+    COLOR_BRAND_HOVER = #x3
+    COLOR_META_TEXT = #xaaa
+
+    IconButton = <Button> {
+        draw_text: {
+            instance hover: 0.0
+            instance pressed: 0.0
+            text_style: {
+                font_size: 11.0
+            }
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        (COLOR_META_TEXT),
+                        (COLOR_BRAND),
+                        self.hover
+                    ),
+                    (COLOR_BRAND_HOVER),
+                    self.pressed
+                )
+            }
+        }
+        draw_icon: {
+            fn get_color(self) -> vec4 {
+                return mix(
+                    mix(
+                        (COLOR_META),
+                        (COLOR_BRAND),
+                        self.hover
+                    ),
+                    (COLOR_BRAND_HOVER),
+                    self.pressed
+                )
+            }
+        }
+        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
+        draw_bg: {
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                return sdf.result
+            }
+        }
+        padding: 9.0
+        text: ""
+    }
+
+
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
     RobrixIconButton = <Button> {

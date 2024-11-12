@@ -247,6 +247,7 @@ impl MatchEvent for LoginScreen {
         let homeserver_input = self.view.text_input(id!(homeserver_input));
 
         if signup_button.clicked(actions) {
+            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
             let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
         }
 

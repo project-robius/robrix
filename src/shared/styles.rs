@@ -57,6 +57,8 @@ live_design! {
         font_size: (TIMESTAMP_FONT_SIZE),
     }
 
+    COLOR_META = #xccc
+
     COLOR_PROFILE_CIRCLE = #xfff8ee
     COLOR_DIVIDER = #x00000018
     COLOR_DIVIDER_DARK = #x00000044
@@ -73,6 +75,8 @@ live_design! {
 
     COLOR_AVATAR_BG = #52b2ac
     COLOR_AVATAR_BG_IDLE = #d8d8d8
+
+    COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
 
     COLOR_TEXT_IDLE = #d8d8d8
     COLOR_TEXT = #1C274C
