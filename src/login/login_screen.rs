@@ -459,7 +459,7 @@ impl MatchEvent for LoginScreen {
         }
         if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
             self.prev_homeserver_url = Some(homeserver_input.text());
-            status_label.set_text("Waiting for available login types...");
+            status_label.set_text("Fetching support login types from the homeserver...");
             submit_async_request(MatrixRequest::Login(LoginRequest::HomeServerInputChange(homeserver_input.text())));
             sso_search_button.set_enabled(false);
             for view_ref in self.view_set(button_set).iter() {

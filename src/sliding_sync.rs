@@ -30,7 +30,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync:
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
+        self, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -146,17 +146,17 @@ async fn build_client(
 /// This value is used by the login screen to determine whether to show the login form again
 /// or to show the main app UI after a successful login.
 async fn login(
-    cli: &Cli,
+    cli: &mut Cli,
+    prev_client: Option<(Client, ClientSessionPersisted)>,
     login_request: LoginRequest,
-    login_types: Vec<LoginType>,
-) -> Result<(Client, Option<String>, bool)> {
+    login_types: &mut Vec<LoginType>,
+    login_sender: Sender<LoginRequest>
+) -> Result<(Client, ClientSessionPersisted, Option<String>, bool)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
-            let cli = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
-                &Cli::from(login_by_password)
-            } else {
-                cli
-            };
+            if let LoginRequest::LoginByPassword(login_by_password) = login_request {
+                *cli = Cli::from(login_by_password);
+            }
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
             if !login_types
                 .iter()
@@ -176,10 +176,10 @@ async fn login(
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                     status: format!("Logged in as {}. Loading rooms...", cli.username),
                 });
-                if let Err(e) = persistent_state::save_session(&client, client_session).await {
+                if let Err(e) = persistent_state::save_session(&client, client_session.clone()).await {
                     error!("Failed to save session state to storage: {e:?}");
                 }
-                Ok((client, None, true))
+                Ok((client, client_session, None, true))
             } else {
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                     status: format!("Failed to login as {}: {:?}", cli.username, login_result),
@@ -188,9 +188,15 @@ async fn login(
             }
         }
         LoginRequest::LoginBySSO(id) => {
+            Cx::post_action(LoginAction::Status(format!(
+                "Opening browser for SSO login...",
+            )));
             Cx::post_action(LoginAction::SsoPending(true));
-            let (client, client_session) = build_client(cli, app_data_dir()).await?;
-            match client
+            let (client, client_session) = prev_client.unwrap_or(build_client(cli, app_data_dir()).await?);
+            let client_clone = client.clone();
+            // Spawn a task to handle the SSO login flow, otherwise it will block login by password
+            Handle::current().spawn(async move {
+                match client_clone
                 .matrix_auth()
                 .login_sso(|sso_url: String| async move {
                     Uri::new(&sso_url).open().map_err(|err| {
@@ -205,63 +211,66 @@ async fn login(
                 })
                 .identity_provider_id(&id)
                 .await
-            {
-                Ok(res) => {
-                    log!("Logged in successfully? {:?}", client.logged_in());
-                    enqueue_rooms_list_update(RoomsListUpdate::Status {
-                        status: format!("Logged in as {:?}. Loading rooms...", &res.user_id),
-                    });
-                    if let Err(e) = persistent_state::save_session(&client, client_session).await {
-                        error!("Failed to save session state to storage: {e:?}");
+                {
+                    Ok(res) => {
+                        if let Some(_) = get_client(){
+                            log!("Already logged in, ignore login with sso");
+                        } else {
+                            log!("Logged in successfully? {:?}", client_clone.logged_in());
+                            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: format!("Logged in as {:?}. Loading rooms...", &res.user_id),
+                            });
+                            
+                            Cx::post_action(LoginAction::SsoPending(false));
+                            login_sender.send(LoginRequest::LoginBySSOSuccess).await.unwrap();
+                        }
+
                     }
-                    Cx::post_action(LoginAction::SsoPending(false));
-                    Ok((client, None, true))
+                    Err(e) => {
+                        if let Some(_) = get_client(){
+                            log!("Already logged in, ignore login with sso");
+                        } else {
+                            error!("Login failed: {e:?}");
+                            Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                            Cx::post_action(LoginAction::SsoPending(false));
+                        }
+                    }
                 }
-                Err(e) => {
-                    error!("Login failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                    Cx::post_action(LoginAction::SsoPending(false));
-                    Ok((client, None, false))
-                }
+            });
+            Ok((client, client_session, None, false))
+        }
+        LoginRequest::LoginBySSOSuccess => {
+            let (client, client_session) = prev_client.unwrap_or(build_client(cli, app_data_dir()).await?);
+            if let Err(e) = persistent_state::save_session(&client, client_session.clone()).await {
+                error!("Failed to save session state to storage: {e:?}");
             }
+            Ok((client, client_session, None, true))
         }
         LoginRequest::HomeServerInputChange(homeserver_url) => {
-            let (client, _) = build_client(cli, app_data_dir()).await?;
-            let homeserver_url = if homeserver_url.is_empty() {
-                DEFAULT_HOMESERVER
+            Cx::post_action(LoginAction::Status(format!(
+                "Fetching Login Types ..."
+            )));
+            cli.homeserver = if homeserver_url.is_empty() {
+                None
             } else {
-                homeserver_url.as_str()
+                Some(homeserver_url.to_string())
             };
-            // Unauthenticated client to query login types is the official Matrix-recommended way of obtaining supported login
-            match Client::builder()
-                .server_name_or_homeserver_url(&homeserver_url)
-                .build()
-                .await
-            {
-                Ok(unauthenticated_client) => {
-                    match unauthenticated_client.matrix_auth().get_login_types().await {
-                        Ok(login_type_res) => {
-                            let identity_providers =
-                                login_type_res
-                                    .flows
-                                    .iter()
-                                    .fold(vec![], |mut acc, login_type| {
-                                        if let LoginType::Sso(sso_type) = login_type {
-                                            acc.extend_from_slice(
-                                                sso_type.identity_providers.as_slice(),
-                                            );
-                                        }
-                                        acc
-                                    });
-                            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-                        }
-                        Err(e) => {
-                            Cx::post_action(LoginAction::Status(format!(
-                                "Error fetching Login Types: {}",
-                                e.to_string()
-                            )));
-                        }
-                    }
+            let (client, client_session) = build_client(&cli, app_data_dir()).await?;
+            match client.matrix_auth().get_login_types().await {
+                Ok(login_type_res) => {
+                    *login_types = login_type_res.flows;
+                    let identity_providers =
+                            login_types
+                            .iter()
+                            .fold(vec![], |mut acc, login_type| {
+                                if let LoginType::Sso(sso_type) = login_type {
+                                    acc.extend_from_slice(
+                                        sso_type.identity_providers.as_slice(),
+                                    );
+                                }
+                                acc
+                            });
+                    Cx::post_action(LoginAction::IdentityProvider(identity_providers));
                 }
                 Err(e) => {
                     Cx::post_action(LoginAction::Status(format!(
@@ -269,8 +278,8 @@ async fn login(
                         e.to_string()
                     )));
                 }
-            };
-            Ok((client, None, false))
+            }
+            Ok((client, client_session, None, false))
         }
     }
 }
@@ -406,6 +415,7 @@ pub fn submit_async_request(req: MatrixRequest) {
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSO(String),
+    LoginBySSOSuccess,
     LoginByCli,
     HomeServerInputChange(String),
     
@@ -836,10 +846,10 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
-        let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
+        let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender.clone()));
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver, login_sender));
 
         loop {
             tokio::select! {
@@ -1004,12 +1014,13 @@ fn username_to_full_user_id(
 
 async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
+    login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
-    let cli_parse_result = Cli::try_parse();
+    let mut cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()
         .is_ok_and(|cli| !cli.username.is_empty() && !cli.password.is_empty());
     log!("CLI parsing succeeded? {}. CLI has valid UN+PW? {}",
@@ -1039,24 +1050,13 @@ async fn async_main_loop(
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
 
-            if let Ok(cli) = &cli_parse_result {
+            if let Ok(ref mut cli) = &mut cli_parse_result {
                 let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
-
-                // match login(cli).await {
-                //     Ok(new_login) => Some(new_login),
-                //     Err(e) => {
-                //         error!("CLI-based login failed: {e:?}");
-                //         Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                //         enqueue_rooms_list_update(RoomsListUpdate::Status {
-                //             status: e.to_string(),
-                //         });
-                //         None
-                //     }
-                // }
-                match login(cli, LoginRequest::LoginByCli, vec![]).await {
-                    Ok(new_login) => Some((new_login.0, new_login.1)),
+                // CLI-based login does not need login types
+                match login(cli, None, LoginRequest::LoginByCli, &mut vec![], login_sender.clone()).await {
+                    Ok(new_login) => Some((new_login.0, new_login.2)),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(e.to_string()));
@@ -1073,35 +1073,33 @@ async fn async_main_loop(
     } else {
         None
     };
-    let cli: Cli = cli_parse_result.unwrap_or(Cli::default());
+    let mut cli: Cli = cli_parse_result.unwrap_or(Cli::default());
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.as_deref()
-                .unwrap_or("https://matrix-client.matrix.org/");
-            // Unauthenticated client to query login types is the official Matrix-recommended way of obtaining supported login
-            let unauthenticated_client = Client::builder().server_name_or_homeserver_url(&homeserver_url).build().await?;
-            let login_type_res = unauthenticated_client.matrix_auth().get_login_types().await?;
-            let login_types = login_type_res.flows;
-            let identity_providers = login_types.iter().fold(vec![],|mut acc, login_type|{
-                if let LoginType::Sso(sso_type) = login_type {
-                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
-                }
-                acc
-            });
-            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
+            let homeserver_url = cli.homeserver.clone()
+                .unwrap_or(String::from("https://matrix-client.matrix.org/"));
+            let mut login_types = vec![];
+            // Display the available Identity providers by fetching the login types
+            let (mut temp_client, mut temp_client_session, _, _) = login(&mut cli, None, LoginRequest::HomeServerInputChange(homeserver_url), &mut login_types, login_sender.clone()).await?;
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
-                        match login(&cli, login_request, login_types.clone()).await {
-                            Ok((client, sync_token, is_logined)) => {
+                        match login(&mut cli, Some((temp_client.clone(), temp_client_session.clone())), login_request, &mut login_types, login_sender.clone()).await {
+                            Ok((client, client_session, sync_token, is_logined)) => {
+                                temp_client = client.clone();
+                                temp_client_session = client_session;
                                 if is_logined {
                                     break (client, sync_token);
                                 }
                             }
                             Err(e) => {
-                                
+                                error!("Login failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: e.to_string(),
+                                });
                             }
                         }
                     },
