@@ -359,11 +359,7 @@ impl MatchEvent for LoginScreen {
                     homeserver: homeserver.is_empty().not().then(|| homeserver),
                 })));
             }
-            if self.prev_homeserver_url == Some(homeserver_input.text()) {
-                sso_search_button.set_enabled(false);
-            } else {
-                sso_search_button.set_enabled(true);
-            }
+            sso_search_button.set_enabled(self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
         
