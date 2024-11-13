@@ -472,8 +472,7 @@ impl MatchEvent for LoginScreen {
                 if ip.id.contains(brand) {
                     if let Some(_) = view_ref.finger_up(&actions) {
                         if !self.sso_pending {
-                            let matrix_req = MatrixRequest::Login(LoginRequest::LoginBySSO(ip.id.clone()));
-                            crate::sliding_sync::submit_async_request(matrix_req);
+                            crate::sliding_sync::spawn_sso_server(ip.id.clone(), homeserver_input.text());
                         }
                     }
                     break;
