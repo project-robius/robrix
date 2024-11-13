@@ -306,7 +306,7 @@ pub struct LoginScreen {
     #[rust]
     identity_providers: Vec<IdentityProvider>,
     #[rust]
-    sso_pending:bool,
+    sso_pending: bool,
     #[rust]
     prev_homeserver_url: Option<String>,
 }
