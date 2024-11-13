@@ -176,7 +176,7 @@ async fn login(
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                     status: format!("Logged in as {}. Loading rooms...", cli.username),
                 });
-                if let Err(e) = persistent_state::save_session(&client, client_session.clone()).await {
+                if let Err(e) = persistent_state::save_session(&client, client_session).await {
                     error!("Failed to save session state to storage: {e:?}");
                 }
                 Ok((client, None))
@@ -189,7 +189,7 @@ async fn login(
         }
        
         LoginRequest::LoginBySSOSuccess(client, client_session) => {
-            if let Err(e) = persistent_state::save_session(&client, client_session.clone()).await {
+            if let Err(e) = persistent_state::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
             }
             Ok((client, None))
