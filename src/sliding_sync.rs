@@ -1758,6 +1758,9 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
 /// to the login screen using the `LOGIN_SENDER`.
 pub fn spawn_sso_server(id: String, homeserver_url: String) {
     Cx::post_action(LoginAction::SsoPending(true));
+    Cx::post_action(LoginAction::Status(format!(
+        "Opening Browser ..."
+    )));
     let mut cli = Cli::default();
     cli.homeserver = if homeserver_url.is_empty() {
         None
