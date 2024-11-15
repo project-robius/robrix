@@ -194,8 +194,8 @@ async fn login(
             }
             Ok((client, None))
         }
-        LoginRequest::HomeServerInputChange(_) => {
-            bail!("LoginRequest::HomeServerInputChange not handled earlier");
+        LoginRequest::HomeserverLoginTypesQuery(_) => {
+            bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
         }
     }
 }
@@ -339,6 +339,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         typing: bool,
     },
+    /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
+    ///
+    /// This request will disable anymore attempts of spawning SSO server.
+    SpawnSSOServer{
+        id: String,
+        homeserver_url: String,
+    },
     /// Subscribe to typing notices for the given room.
     ///
     /// This request does not return a response or notify the UI thread.
@@ -373,7 +380,7 @@ pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
-    HomeServerInputChange(String),
+    HomeserverLoginTypesQuery(String),
     
 }
 /// Information needed to log in to a Matrix homeserver.
@@ -676,6 +683,9 @@ async fn async_worker(
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
+            MatrixRequest::SpawnSSOServer { id, homeserver_url } => {
+                spawn_sso_server(id, homeserver_url, login_sender.clone()).await;
+            }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
@@ -782,7 +792,7 @@ async fn async_worker(
 
 
 /// The single global Tokio runtime that is used by all async tasks.
-pub static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
@@ -791,14 +801,13 @@ static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new(
 
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
-    let rt: &tokio::runtime::Runtime = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
+    let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
     
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
-    LOGIN_SENDER.set(login_sender.clone()).unwrap();
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
@@ -918,9 +927,6 @@ pub fn get_sync_service() -> Option<&'static SyncService> {
 /// but the Matrix SDK doesn't currently properly maintain the list of ignored users.
 static IGNORED_USERS: Mutex<BTreeSet<OwnedUserId>> = Mutex::new(BTreeSet::new());
 
-
-pub static LOGIN_SENDER: OnceLock<Sender<LoginRequest>> = OnceLock::new();
-
 /// Returns a deep clone of the current list of ignored users.
 pub fn get_ignored_users() -> BTreeSet<OwnedUserId> {
     IGNORED_USERS.lock().unwrap().clone()
@@ -1013,8 +1019,13 @@ async fn async_main_loop(
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
                 // CLI-based login does not need login types
-                match login(cli, LoginRequest::LoginByCli, &vec![]).await {
-                    Ok(new_login) => Some((new_login.0, new_login.1)),
+                let mut login_types = vec![];
+                if let Err(e) = populate_login_types(String::from(""), &mut login_types).await {
+                    error!("Populating Login types failed: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                }
+                match login(cli, LoginRequest::LoginByCli, &login_types).await {
+                    Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
                         Cx::post_action(LoginAction::LoginFailure(e.to_string()));
@@ -1041,16 +1052,16 @@ async fn async_main_loop(
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                 error!("Populating Login types failed: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed: {}", e.to_string())));
             }
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
-                        if let LoginRequest::HomeServerInputChange(homeserver_url) = login_request {
+                        if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
                             if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                                 error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed: {}", e.to_string())));
                             }
                             continue
                         }
@@ -1755,8 +1766,8 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
 /// failed to do so.
 ///
 /// If the login attempt is successful, the resulting `Client` and `ClientSession` will be sent
-/// to the login screen using the `LOGIN_SENDER`.
-pub fn spawn_sso_server(id: String, homeserver_url: String) {
+/// to the login screen using the `login_sender`.
+async fn spawn_sso_server(id: String, homeserver_url: String, login_sender: Sender<LoginRequest>) {
     Cx::post_action(LoginAction::SsoPending(true));
     Cx::post_action(LoginAction::Status(format!(
         "Opening Browser ..."
@@ -1767,9 +1778,7 @@ pub fn spawn_sso_server(id: String, homeserver_url: String) {
     } else {
         Some(homeserver_url)
     };
-    let rt: &tokio::runtime::Runtime =
-        TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
-    rt.spawn(async move {
+    Handle::current().spawn(async move {
         let (client, client_session) = build_client(&cli, app_data_dir()).await.unwrap();
         match client
             .matrix_auth()
@@ -1788,20 +1797,18 @@ pub fn spawn_sso_server(id: String, homeserver_url: String) {
             .await
         {
             Ok(identity_provider_res) => {
-                let mut logined = false;
+                let mut is_logged_in  = false;
                 if let Some(client) = get_client() {
                     if client.logged_in() {
-                        logined = true;
+                        is_logged_in  = true;
                     }
                     log!("Already logged in, ignore login with sso");
                 }
-                if !logined {
-                    if let Some(login_sender) = LOGIN_SENDER.get() {
-                        login_sender
-                            .send(LoginRequest::LoginBySSOSuccess(client, client_session))
-                            .await
-                            .unwrap();
-                    }
+                if !is_logged_in  {
+                    login_sender
+                        .send(LoginRequest::LoginBySSOSuccess(client, client_session))
+                        .await
+                        .unwrap();
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!("Logged in as {:?}. Loading rooms...", &identity_provider_res.user_id),
                     });
@@ -1809,14 +1816,14 @@ pub fn spawn_sso_server(id: String, homeserver_url: String) {
                 }
             }
             Err(e) => {
-                let mut logined = false;
+                let mut is_logged_in  = false;
                 if let Some(client) = get_client() {
                     if client.logged_in() {
-                        logined = true;
+                        is_logged_in  = true;
                     }
                     log!("Already logged in, ignore login with sso");
                 }
-                if !logined {
+                if !is_logged_in  {
                     error!("Login failed: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(e.to_string()));
                     Cx::post_action(LoginAction::SsoPending(false));

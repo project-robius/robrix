@@ -456,7 +456,7 @@ impl MatchEvent for LoginScreen {
         if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
             self.prev_homeserver_url = Some(homeserver_input.text());
             status_label.set_text("Fetching support login types from the homeserver...");
-            submit_async_request(MatrixRequest::Login(LoginRequest::HomeServerInputChange(homeserver_input.text())));
+            submit_async_request(MatrixRequest::Login(LoginRequest::HomeserverLoginTypesQuery(homeserver_input.text())));
             sso_search_button.set_enabled(false);
             for view_ref in self.view_set(button_set).iter() {
                 view_ref.set_visible(false);
@@ -468,7 +468,10 @@ impl MatchEvent for LoginScreen {
                 if ip.id.contains(brand) {
                     if let Some(_) = view_ref.finger_up(&actions) {
                         if !self.sso_pending {
-                            crate::sliding_sync::spawn_sso_server(ip.id.clone(), homeserver_input.text());
+                            submit_async_request(MatrixRequest::SpawnSSOServer{
+                                id: ip.id.clone(),
+                                homeserver_url: homeserver_input.text()
+                            });
                         }
                     }
                     break;
