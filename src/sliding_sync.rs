@@ -38,7 +38,7 @@ use crate::{
 };
 
 
-#[derive(Parser, Debug, Default, Clone)]
+#[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user name that should be used for the login.
     #[clap(value_parser)]
@@ -375,7 +375,6 @@ pub fn submit_async_request(req: MatrixRequest) {
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
-#[derive(Debug)]
 pub enum LoginRequest{
     LoginByPassword(LoginByPassword),
     LoginBySSOSuccess(Client, ClientSessionPersisted),
@@ -384,7 +383,6 @@ pub enum LoginRequest{
     
 }
 /// Information needed to log in to a Matrix homeserver.
-#[derive(Debug)]
 pub struct LoginByPassword {
     pub user_id: String,
     pub password: String,
@@ -1801,8 +1799,8 @@ async fn spawn_sso_server(id: String, homeserver_url: String, login_sender: Send
                 if let Some(client) = get_client() {
                     if client.logged_in() {
                         is_logged_in  = true;
+                        log!("Already logged in, ignore login with sso");
                     }
-                    log!("Already logged in, ignore login with sso");
                 }
                 if !is_logged_in  {
                     login_sender
@@ -1812,7 +1810,6 @@ async fn spawn_sso_server(id: String, homeserver_url: String, login_sender: Send
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!("Logged in as {:?}. Loading rooms...", &identity_provider_res.user_id),
                     });
-                    Cx::post_action(LoginAction::SsoPending(false));
                 }
             }
             Err(e) => {
@@ -1820,15 +1817,15 @@ async fn spawn_sso_server(id: String, homeserver_url: String, login_sender: Send
                 if let Some(client) = get_client() {
                     if client.logged_in() {
                         is_logged_in  = true;
+                        log!("Already logged in, ignore login with sso");
                     }
-                    log!("Already logged in, ignore login with sso");
                 }
                 if !is_logged_in  {
                     error!("Login failed: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                    Cx::post_action(LoginAction::SsoPending(false));
                 }
             }
         }
+        Cx::post_action(LoginAction::SsoPending(false));
     });
 }
