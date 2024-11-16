@@ -1020,15 +1020,15 @@ async fn async_main_loop(
                 let mut login_types = vec![];
                 if let Err(e) = populate_login_types(String::from(""), &mut login_types).await {
                     error!("Populating Login types failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                    Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed: {e:?}")));
                 }
                 match login(cli, LoginRequest::LoginByCli, &login_types).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                        Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
+                            status: format!("Login failed: {e:?}"),
                         });
                         None
                     }
@@ -1069,9 +1069,9 @@ async fn async_main_loop(
                             }
                             Err(e) => {
                                 error!("Login failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                                Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
                                 enqueue_rooms_list_update(RoomsListUpdate::Status {
-                                    status: e.to_string(),
+                                    status: format!("Login failed: {e:?}"),
                                 });
                             }
                         }
