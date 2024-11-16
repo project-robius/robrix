@@ -204,9 +204,7 @@ async fn populate_login_types(
     homeserver_url: String,
     login_types: &mut Vec<LoginType>,
 ) -> Result<()> {
-    Cx::post_action(LoginAction::Status(format!(
-        "Fetching Login Types ..."
-    )));
+    Cx::post_action(LoginAction::Status(format!("Fetching Login Types ...")));
     let homeserver_url = if homeserver_url.is_empty() {
         DEFAULT_HOMESERVER.to_string()
     } else {
@@ -219,17 +217,12 @@ async fn populate_login_types(
     match client.matrix_auth().get_login_types().await {
         Ok(login_type_res) => {
             *login_types = login_type_res.flows;
-            let identity_providers =
-                    login_types
-                    .iter()
-                    .fold(vec![], |mut acc, login_type| {
-                        if let LoginType::Sso(sso_type) = login_type {
-                            acc.extend_from_slice(
-                                sso_type.identity_providers.as_slice(),
-                            );
-                        }
-                        acc
-                    });
+            let identity_providers = login_types.iter().fold(vec![], |mut acc, login_type| {
+                if let LoginType::Sso(sso_type) = login_type {
+                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
+                }
+                acc
+            });
             Cx::post_action(LoginAction::IdentityProvider(identity_providers));
         }
         Err(e) => {
@@ -241,6 +234,7 @@ async fn populate_login_types(
     }
     Ok(())
 }
+
 /// Which direction to paginate in.
 /// 
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
