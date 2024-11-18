@@ -1004,7 +1004,8 @@ async fn async_main_loop(
                 Cx::post_action(LoginAction::Status(status_str));
                 // CLI-based login does not need login types
                 let mut login_types = vec![];
-                if let Err(e) = populate_login_types(String::from(""), &mut login_types).await {
+                let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
+                if let Err(e) = populate_login_types(homeserver_url.to_string(), &mut login_types).await {
                     error!("Populating Login types failed: {e:?}");
                     let truncated_error = e.to_string().chars().take(100).collect::<String>();
                     Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {truncated_error:?}")));
