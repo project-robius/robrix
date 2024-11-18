@@ -391,7 +391,8 @@ impl MatchEvent for LoginScreen {
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
-                    status_label.set_text(error);
+                    let truncated_error = error.chars().take(200).collect::<String>();
+                    status_label.set_text(&truncated_error);
                     status_label.apply_over(cx, live!{
                         draw_text: { color: (COLOR_DANGER_RED) }
                     });
