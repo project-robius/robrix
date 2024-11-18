@@ -1006,15 +1006,17 @@ async fn async_main_loop(
                 let mut login_types = vec![];
                 if let Err(e) = populate_login_types(String::from(""), &mut login_types).await {
                     error!("Populating Login types failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed: {e:?}")));
+                    let truncated_error = e.to_string().chars().take(100).collect::<String>();
+                    Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {truncated_error:?}")));
                 }
                 match login(cli, LoginRequest::LoginByCli, &login_types).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
+                        let truncated_error = e.to_string().chars().take(100).collect::<String>();
+                        Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {truncated_error:?}")));
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: format!("Login failed: {e:?}"),
+                            status: format!("Login failed: {truncated_error:?}"),
                         });
                         None
                     }
@@ -1036,7 +1038,8 @@ async fn async_main_loop(
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
                 error!("Populating Login types failed for {homeserver_url}: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed for {homeserver_url}")));
+                let truncated_error = e.to_string().chars().take(100).collect::<String>();
+                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed for {homeserver_url} {truncated_error:?}")));
             }
             loop {
                 log!("Waiting for login request...");
@@ -1045,7 +1048,8 @@ async fn async_main_loop(
                         if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
                             if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
                                 error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url}")));
+                                let truncated_error = e.to_string().chars().take(100).collect::<String>();
+                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {truncated_error:?}")));
                             }
                             continue
                         }
