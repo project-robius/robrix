@@ -194,7 +194,6 @@ impl MatchEvent for App {
                     room_index: _,
                     room_name,
                 } => {
-                    // self.ui.modal(id!(verification_modal)).open(cx);
 
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
                         id: room_id.clone(),
