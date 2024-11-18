@@ -31,7 +31,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         self, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::{login_screen::LoginAction}, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
@@ -214,23 +214,15 @@ async fn populate_login_types(
         .server_name_or_homeserver_url(homeserver_url)
         .build()
         .await?;
-    match client.matrix_auth().get_login_types().await {
-        Ok(login_type_res) => {
-            *login_types = login_type_res.flows;
-            let identity_providers = login_types.iter().fold(vec![], |mut acc, login_type| {
-                if let LoginType::Sso(sso_type) = login_type {
-                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
-                }
-                acc
-            });
-            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-        }
-        Err(e) => {
-            Cx::post_action(LoginAction::Status(format!(
-                "Error fetching Login Types: {}",
-                e.to_string()
-            )));
-        }
+    if let Ok(login_type_res) = client.matrix_auth().get_login_types().await {
+        *login_types = login_type_res.flows;
+        let identity_providers = login_types.iter().fold(vec![], |mut acc, login_type| {
+            if let LoginType::Sso(sso_type) = login_type {
+                acc.extend_from_slice(sso_type.identity_providers.as_slice());
+            }
+            acc
+        });
+        Cx::post_action(LoginAction::IdentityProvider(identity_providers));
     }
     Ok(())
 }
@@ -1042,18 +1034,18 @@ async fn async_main_loop(
                 .unwrap_or(String::from("https://matrix-client.matrix.org/"));
             let mut login_types = vec![];
             // Display the available Identity providers by fetching the login types
-            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                error!("Populating Login types failed: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed: {}", e.to_string())));
+            if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
+                error!("Populating Login types failed for {homeserver_url}: {e:?}");
+                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed for {homeserver_url}")));
             }
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
                         if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
-                            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
+                            if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
                                 error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed: {}", e.to_string())));
+                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url}")));
                             }
                             continue
                         }
