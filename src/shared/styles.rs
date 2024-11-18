@@ -57,6 +57,8 @@ live_design! {
         font_size: (TIMESTAMP_FONT_SIZE),
     }
 
+    ROOM_NAME_TEXT_COLOR = #x0
+
     COLOR_META = #xccc
 
     COLOR_PROFILE_CIRCLE = #xfff8ee
