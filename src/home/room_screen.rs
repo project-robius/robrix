@@ -1867,7 +1867,6 @@ impl RoomScreen {
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
-                last_displayed_event: None,
                 scrolled_past_read_marker: false,
             };
             (new_tl_state, true)
@@ -2042,10 +2041,7 @@ impl RoomScreen {
                             }
                         }
                         submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
-                        
-                        tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
-                    //send_user_read_receipts(&mut self.fully_read_timer, cx, tl_state.items, first_index, portal_list, room_id);
                 }
                 *index = first_index;
             }
@@ -2238,10 +2234,6 @@ struct TimelineUiState {
     /// The index of the first item in the timeline that is currently visible
     prev_first_index: Option<usize>,
 
-    /// Last displayed event after scrolling.
-    /// 
-    /// Used for sending fully read receipt
-    last_displayed_event: Option<OwnedEventId>,
     /// Boolean to indicate if the user scrolled pass the read marker
     /// 
     /// Used to send fully read receipt after user scrolled pass the read marker
