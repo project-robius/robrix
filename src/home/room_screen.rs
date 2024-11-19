@@ -1578,9 +1578,6 @@ impl RoomScreen {
                                 "Looking for event {target_event_id}\n\n\
                                 Loaded {events_paginated} messages so far...",
                             ));
-                            // redraw now to show the updated status message
-                            self.view.modal(id!(loading_modal)).redraw(cx);
-                            loading_modal_inner.redraw(cx);
                             // Here, we assume that we have not yet found the target event,
                             // so we need to continue paginating backwards.
                             // If the target event has already been found, it will be handled

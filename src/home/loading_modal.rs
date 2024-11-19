@@ -160,18 +160,18 @@ impl WidgetMatchEvent for LoadingModal {
             .is_some();
 
         if cancel_button.clicked(actions) || modal_dismissed {
-            log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
+            // log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
             if let LoadingModalState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
-                let did_send = request_sender.send_if_modified(|requests| {
+                let _did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();
                     requests.retain(|r| &r.target_event_id != target_event_id);
                     // if we actually cancelled this request, notify the receivers
                     // such that they can stop looking for the target event.
                     requests.len() != initial_len
                 });
-                log!("LoadingModal: {} cancel request for target_event_id: {target_event_id}",
-                    if did_send { "Sent" } else { "Did not send" },
-                );
+                // log!("LoadingModal: {} cancel request for target_event_id: {target_event_id}",
+                //     if did_send { "Sent" } else { "Did not send" },
+                // );
             }
             self.set_state(cx, LoadingModalState::None);
 
