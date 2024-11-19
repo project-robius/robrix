@@ -967,7 +967,7 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// 5 secs timer when scroll ends
+    /// 5 secs timer starts when user scrolled past read marker
     #[rust] fully_read_timer: Option<Timer>,
 
 }
@@ -1296,11 +1296,12 @@ impl Widget for RoomScreen {
                 });
             }
         }
-        // Mark events as fully read after they have been displayed on screen for 5 seconds.
+        // Send fully read receipt for last displayed event 5 Seconds after user scrolled past the read marker
         if let Some(timer) = self.fully_read_timer {
             if timer.is_event(event).is_some() {
                 if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
                     let Some(last_displayed_event) = &tl_state.last_displayed_event else { return };
+                    // let Some(last_displayed_event) = take_fully_read_event(room_id)  else { return };
                     submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_displayed_event.clone()});
                 }
                 cx.stop_timer(timer);
