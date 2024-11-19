@@ -160,16 +160,20 @@ impl WidgetMatchEvent for LoadingModal {
             .is_some();
 
         if cancel_button.clicked(actions) || modal_dismissed {
+            log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
             if let LoadingModalState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
-                request_sender.send_if_modified(|requests| {
+                let did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();
                     requests.retain(|r| &r.target_event_id != target_event_id);
                     // if we actually cancelled this request, notify the receivers
                     // such that they can stop looking for the target event.
                     requests.len() != initial_len
                 });
+                log!("LoadingModal: {} cancel request for target_event_id: {target_event_id}",
+                    if did_send { "Sent" } else { "Did not send" },
+                );
             }
-            self.set_state(LoadingModalState::None);
+            self.set_state(cx, LoadingModalState::None);
 
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a `LoadingModalAction::Close` action, as that would cause
@@ -182,7 +186,7 @@ impl WidgetMatchEvent for LoadingModal {
 }
 
 impl LoadingModal {
-    pub fn set_state(&mut self, state: LoadingModalState) {
+    pub fn set_state(&mut self, cx: &mut Cx, state: LoadingModalState) {
         let cancel_button = self.button(id!(cancel_button));
         match &state {
             LoadingModalState::BackwardsPaginateUntilEvent {
@@ -190,46 +194,47 @@ impl LoadingModal {
                 events_paginated,
                 ..
             } => {
-                self.set_title("Loading older messages...");
-                self.set_status(&format!(
+                self.set_title(cx, "Loading older messages...");
+                self.set_status(cx, &format!(
                     "Looking for event {target_event_id}\n\n\
                     Loaded {events_paginated} messages so far...",
                 ));
-                cancel_button.set_text("Cancel");
+                cancel_button.set_text_and_redraw(cx, "Cancel");
             }
             LoadingModalState::Error(error_message) => {
-                self.set_title("Error loading content");
-                self.set_status(error_message);
-                cancel_button.set_text("Okay");
+                self.set_title(cx, "Error loading content");
+                self.set_status(cx, error_message);
+                cancel_button.set_text_and_redraw(cx, "Okay");
             }
             LoadingModalState::None => { }
         }
 
         self.state = state;
+        self.redraw(cx);
     }
 
-    pub fn set_status(&mut self, status: &str) {
-        self.label(id!(status)).set_text(status);
+    pub fn set_status(&mut self, cx: &mut Cx, status: &str) {
+        self.label(id!(status)).set_text_and_redraw(cx, status);
     }
 
-    pub fn set_title(&mut self, title: &str) {
-        self.label(id!(title)).set_text(title);
+    pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
+        self.label(id!(title)).set_text_and_redraw(cx, title);
     }
 }
 
 impl LoadingModalRef {
-    pub fn set_state(&self, state: LoadingModalState) {
+    pub fn set_state(&self, cx: &mut Cx, state: LoadingModalState) {
         let Some(mut inner) = self.borrow_mut() else { return }; 
-        inner.set_state(state);
+        inner.set_state(cx, state);
     }
 
-    pub fn set_status(&self, status: &str) {
+    pub fn set_status(&self, cx: &mut Cx, status: &str) {
         let Some(mut inner) = self.borrow_mut() else { return }; 
-        inner.set_status(status);
+        inner.set_status(cx, status);
     }
 
-    pub fn set_title(&self, title: &str) {
+    pub fn set_title(&self, cx: &mut Cx, title: &str) {
         let Some(mut inner) = self.borrow_mut() else { return }; 
-        inner.set_title(title);
+        inner.set_title(cx, title);
     }
 }

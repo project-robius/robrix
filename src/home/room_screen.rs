@@ -24,7 +24,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::{self, LoadingModalWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1059,7 +1059,7 @@ impl Widget for RoomScreen {
                                 events_paginated: 0,
                                 request_sender: tl.request_sender.clone(),
                             };
-                            loading_modal_inner.set_state(self.loading_modal_state.clone());
+                            loading_modal_inner.set_state(cx, self.loading_modal_state.clone());
                             loading_modal.open(cx);
 
                             tl.request_sender.send_if_modified(|requests| {
@@ -1198,7 +1198,8 @@ impl Widget for RoomScreen {
                 }
 
                 if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.modal(id!(loading_model)).close(cx);
+                    self.loading_modal_state = LoadingModalState::None;
+                    self.modal(id!(loading_modal)).close(cx);
                 }
             }
 
@@ -1570,11 +1571,22 @@ impl RoomScreen {
                         if let LoadingModalState::BackwardsPaginateUntilEvent {
                             ref mut events_paginated, target_event_id, ..
                         } = &mut self.loading_modal_state {
-                            *events_paginated += new_items.len() - tl.items.len();
-                            self.view.loading_modal(id!(loading_modal_inner)).set_status(&format!(
+                            *events_paginated += new_items.len().saturating_sub(tl.items.len());
+                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...\n\n\n");
+                            let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+                            loading_modal_inner.set_status(cx, &format!(
                                 "Looking for event {target_event_id}\n\n\
                                 Loaded {events_paginated} messages so far...",
                             ));
+                            // redraw now to show the updated status message
+                            self.view.modal(id!(loading_modal)).redraw(cx);
+                            loading_modal_inner.redraw(cx);
+                            // Here, we assume that we have not yet found the target event,
+                            // so we need to continue paginating backwards.
+                            // If the target event has already been found, it will be handled
+                            // in the `TargetEventFound` match arm below, which will set
+                            // `should_continue_backwards_pagination` to `false`.
+                            // So either way, it's okay to set this to `true` here.
                             should_continue_backwards_pagination = true;
                         }
                     } else {
@@ -1593,18 +1605,27 @@ impl RoomScreen {
                         false
                     });
 
-                    // sanity check to ensure the target event is in the timeline
+                    // sanity check: ensure the target event is in the timeline at the given `index`.
                     let item = tl.items.get(index);
                     let is_valid = item.is_some_and(|item|
                         item.as_event()
                             .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
                     );
+                    let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+
                     log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
                     if is_valid {
+                        // We successfully found the target event, so we can close the loading modal,
+                        // reset the loading modal state to `None`, and stop issuing backwards pagination requests.
+                        loading_modal_inner.set_status(cx, "Successfully found replied-to message!");
+                        loading_modal_inner.set_state(cx, LoadingModalState::None);
+                        self.view.modal(id!(loading_modal)).close(cx);
+                        self.loading_modal_state = LoadingModalState::None;
+
                         // NOTE: this code was copied from the `ReplyPreviewClicked` action handler;
                         //       we should deduplicate them at some point.
                         let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-                        let base_speed = 15.0;
+                        let base_speed = 10.0;
                         // apply a scaling based on the distance
                         let scaled_speed = base_speed * (distance * distance);
                         // Scroll to the message right above the replied-to message.
@@ -1616,11 +1637,6 @@ impl RoomScreen {
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                             item_id: index
                         };
-                        // We successfully found the target event, so we can close the loading modal,
-                        // reset the loading modal state to `None`, and stop issuing backwards pagination requests.
-                        self.view.loading_modal(id!(loading_modal_inner)).set_state(LoadingModalState::None);
-                        self.view.modal(id!(loading_modal)).close(cx);
-                        self.loading_modal_state = LoadingModalState::None;
                     }
                     else {
                         // Here, the target event was not found in the current timeline,
@@ -1628,7 +1644,7 @@ impl RoomScreen {
                         // which means we encountered an error and are unable to jump to the target event.
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
                         // Show this error in the loading modal, which should already be open.
-                        self.view.loading_modal(id!(loading_modal_inner)).set_state(LoadingModalState::Error(
+                        loading_modal_inner.set_state(cx, LoadingModalState::Error(
                             format!("Unable to find replied-to message; it may have been deleted."),
                         ));
                     }
