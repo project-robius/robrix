@@ -132,7 +132,7 @@ impl Widget for VerificationModal {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk.with_abs_pos(DVec2 { x: 0., y: 0. }))
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
