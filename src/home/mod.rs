@@ -1,18 +1,20 @@
 use makepad_widgets::Cx;
 
 pub mod home_screen;
-pub mod main_mobile_ui;
+pub mod light_themed_dock;  
+pub mod loading_modal;
 pub mod main_desktop_ui;
+pub mod main_mobile_ui;
 pub mod room_preview;
 pub mod room_screen;
 pub mod rooms_list;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
 pub mod welcome_screen;
-pub mod light_themed_dock;  
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
+    loading_modal::live_design(cx);
     rooms_list::live_design(cx);
     room_preview::live_design(cx);
     room_screen::live_design(cx);

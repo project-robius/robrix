@@ -194,17 +194,22 @@ impl MatchEvent for App {
                     room_index: _,
                     room_name,
                 } => {
+
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
                         id: room_id.clone(),
                         name: room_name.clone(),
                     });
 
                     let widget_uid = self.ui.widget_uid();
+                    // Navigate to the main content view
                     cx.widget_action(
                         widget_uid,
                         &Scope::default().path,
                         StackNavigationAction::NavigateTo(live_id!(main_content_view))
                     );
+                    // Update the Stack Navigation header with the room name
+                    self.ui.label(id!(main_content_view.header.content.title_container.title))
+                        .set_text(&room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
                 RoomListAction::None => { }
