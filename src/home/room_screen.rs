@@ -925,12 +925,6 @@ live_design! {
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
             }
         }
-        cursor_not_allowed_template: <RobrixIconButton>{
-            cursor: NotAllowed,
-        }
-        cursor_hand_template: <RobrixIconButton>{
-            cursor: Hand,
-        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -963,10 +957,6 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Option<Timer>,
-    /// To apply cursor NotAllowed on Robrix Icon Button
-    #[live] cursor_not_allowed_template: Option<LivePtr>,
-    /// To apply cursor Hand on Robrix Icon Button
-    #[live] cursor_hand_template: Option<LivePtr>,
 
 }
 impl Drop for RoomScreen {
@@ -1524,7 +1514,6 @@ impl RoomScreen {
                     }
                     tl.items = new_items;
                     done_loading = true;
-                    
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
@@ -1720,7 +1709,6 @@ impl RoomScreen {
 
         // Subscribe to typing notices, but hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(false);
-        println!("show_timeline {:?}", room_id);
         submit_async_request(
             MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
@@ -1919,7 +1907,7 @@ impl RoomScreen {
             });
         }
         tl.last_scrolled_index = first_index;
-    }   
+    }
 }
 
 impl RoomScreenRef {

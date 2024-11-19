@@ -48,6 +48,7 @@ live_design! {
                 y: 0.5
             }
             visible: false,
+
             show_bg: true,
             draw_bg: {
                 color: (COLOR_UNREAD_MESSAGE_BADGE)

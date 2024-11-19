@@ -352,6 +352,7 @@ async fn async_worker(
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
+
                     match res {
                         Ok(fully_paginated) => {
                             log!("Completed {direction} pagination request for room {room_id}, hit {} of timeline? {}",
@@ -513,7 +514,6 @@ async fn async_worker(
                                 if room_member.is_ignored() { "" } else { "un" },
                                 if new_room_member.is_ignored() { "" } else { "un" },
                             );
-                            
                             enqueue_user_profile_update(UserProfileUpdate::RoomMemberOnly {
                                 room_id: room_id.clone(),
                                 room_member: new_room_member,
@@ -804,7 +804,19 @@ struct RoomInfo {
     /// event_id for read marker
     fully_read_event: Option<OwnedEventId>,
 }
-
+impl Drop for RoomInfo {
+    fn drop(&mut self) {
+        log!("Dropping RoomInfo for room {}", self.room_id);
+        self.timeline_subscriber_handler_task.abort();
+        drop(self.typing_notice_subscriber.take());
+        if let Some(replaces_tombstoned_room) = self.replaces_tombstoned_room.take() {
+            TOMBSTONED_ROOMS.lock().unwrap().insert(
+                self.room_id.clone(),
+                replaces_tombstoned_room,
+            );
+        }
+    }
+}
 /// Information about all of the rooms we currently know about.
 static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
 
@@ -862,6 +874,8 @@ pub fn take_timeline_update_receiver(
             .map(|receiver| (ri.timeline_update_sender.clone(), receiver))
         )
 }
+
+
 /// Return an option of OwnEventId for user's fully read event
 pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
     ALL_ROOM_INFO
@@ -1566,7 +1580,7 @@ async fn timeline_subscriber_handler(
                 clear_cache,
                 is_append,
             }).expect("Error: timeline update sender couldn't send update with new items!");
-            
+
             // Send a Makepad-level signal to update this room's timeline UI view.
             SignalToUI::set_ui_signal();
         
