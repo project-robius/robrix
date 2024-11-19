@@ -30,7 +30,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync:
 
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::{MessageAction, TimelineUpdate}, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -1566,14 +1566,6 @@ async fn timeline_subscriber_handler(
                 clear_cache,
                 is_append,
             }).expect("Error: timeline update sender couldn't send update with new items!");
-
-            // if let Some(num_unread) = get_client()
-            //     .and_then(|c| c.get_room(&room_id))
-            //     .map(|room| room.num_unread_messages())
-            // {
-            //     println!("calling num_unread_messages {:?} room_id", num_unread);
-            //     Cx::post_action(MessageAction::UnReadCount(num_unread));
-            // }
             
             // Send a Makepad-level signal to update this room's timeline UI view.
             SignalToUI::set_ui_signal();

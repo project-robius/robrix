@@ -41,10 +41,13 @@ live_design! {
 
         // A badge overlay on the jump to bottom button showing unread messages
         unread_message_badge = <View> {
-            width: 12, height: 12,
-            margin: {right: 33.0, bottom: 11.0},
+            width: 20, height: 20,
+            margin: {right: 28.0, bottom: 8.0},
+            align: {
+                x: 0.5,
+                y: 0.5
+            }
             visible: false,
-
             show_bg: true,
             draw_bg: {
                 color: (COLOR_UNREAD_MESSAGE_BADGE)
@@ -59,10 +62,9 @@ live_design! {
 
             // Label that displays the unread message count
             unread_messages_count = <Label> {
-                width: Fill,
-                height: Fill,
+                width: Fit,
+                height: Fit,
                 text: "",
-                align: {x: 0.5, y: 0.5},
                 draw_text: {
                     color: #ffffff,
                     text_style: {font_size: 8.0},
@@ -112,10 +114,15 @@ impl JumpToBottomButton {
     ///
     /// TODO: in the future, we'll display the actual count of unread messages in the badge.
     pub fn show_unread_message_badge(&mut self, unread_message_count: usize) {
-        self.visible = true;
-        self.view(id!(unread_message_badge)).set_visible(true);
-        self.label(id!(unread_messages_count)).set_text(&format!("{}", unread_message_count));
-        
+        if unread_message_count > 0 {
+            self.visible = true;
+            self.view(id!(unread_message_badge)).set_visible(true);
+            self.label(id!(unread_messages_count)).set_text(&format!("{}", unread_message_count));
+        } else {
+            self.visible = false;
+            self.view(id!(unread_message_badge)).set_visible(false);
+            self.label(id!(unread_messages_count)).set_text(&format!("{}", ""));
+        }
     }
 
     /// Updates the visibility of the jump to bottom button and the unread message badge

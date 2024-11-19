@@ -967,8 +967,6 @@ pub struct RoomScreen {
     #[live] cursor_not_allowed_template: Option<LivePtr>,
     /// To apply cursor Hand on Robrix Icon Button
     #[live] cursor_hand_template: Option<LivePtr>,
-    /// number of unread messages
-    #[rust] unread_message_count: u64,
 
 }
 impl Drop for RoomScreen {
@@ -1049,22 +1047,6 @@ impl Widget for RoomScreen {
                         } else {
                             log!("TODO: the replied-to message was not yet available in the timeline.");
                         }
-                    }
-                    MessageAction::UnReadCount(unread_message_count) => {
-                        println!(" unread_message_count {:?}", unread_message_count);
-                        let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
-                        // let unread_notifications_badge = jump_to_bottom.view(id!(unread_notifications_badge));
-                        //self.unread_message_count = unread_message_count;
-                        jump_to_bottom.show_unread_message_badge(unread_message_count as usize);
-                        self.redraw(cx);
-                        // let unread_message_badge = jump_to_bottom.view(id!(unread_message_badge));
-                        // if num_unread > 0 {
-                        //     unread_message_badge.label(id!(label)).set_text(&format!("{}", num_unread));
-                        //     unread_message_badge.set_visible(true);
-                        //     unread_notifications_badge.set_visible(false);
-                        // } else {
-                        //     unread_message_badge.set_visible(false);
-                        // }
                     }
                     _ => {}
                 }
@@ -1521,8 +1503,14 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        // log!("is_append was true, showing unread message badge on the jump to bottom button visible");
-                        //jump_to_bottom.show_unread_message_badge(self.unread_message_count as usize);
+                        log!("is_append was true, showing unread message badge on the jump to bottom button visible");
+                        // Set number of unread messages to unread_notification_badge
+                        if let Some(room_id) = &self.room_id {
+                            if let Some(num_unread)= get_client()
+                            .and_then(|c| c.get_room(room_id)).map(|room| room.num_unread_messages()) {
+                                jump_to_bottom.show_unread_message_badge(num_unread as usize);
+                            }
+                        }
                     }
 
                     if clear_cache {
@@ -1536,25 +1524,7 @@ impl RoomScreen {
                     }
                     tl.items = new_items;
                     done_loading = true;
-                    // Set number of unread messages to unread_notification_badge
-                    if let Some(room_id) = &self.room_id {
-                        if let Some(num_unread)= get_client()
-                        .and_then(|c| c.get_room(room_id)).map(|room| room.num_unread_messages()) {
-                            println!("calling num_unread_messages {:?} room_id {:?} num_unread", room_id, num_unread);
-                        // let unread_notifications_badge = jump_to_bottom.view(id!(unread_notifications_badge));
-                        //self.unread_message_count = unread_message_count;
-                                 jump_to_bottom.show_unread_message_badge(num_unread as usize);
-                            // let unread_notifications_badge = jump_to_bottom.view(id!(unread_notifications_badge));
-                            // let unread_message_badge = jump_to_bottom.view(id!(unread_message_badge));
-                            // if num_unread > 0 {
-                            //     unread_message_badge.label(id!(label)).set_text(&format!("{}",num_unread));
-                            //     unread_message_badge.set_visible(true);
-                            //     unread_notifications_badge.set_visible(false);
-                            // } else {
-                            //     unread_message_badge.set_visible(false);
-                            // }
-                        }
-                    }
+                    
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
@@ -3134,7 +3104,6 @@ pub enum MessageAction {
     },
     /// The message with the given item ID should be highlighted.
     MessageHighlight(usize),
-    UnReadCount(u64),
     None,
 }
 
