@@ -892,7 +892,10 @@ pub fn take_timeline_endpoints(
 }
 
 
-/// Return an option of OwnEventId for user's fully read event
+/// Return an option of user's fully read event id for a given room using Mutex Lock
+/// 
+/// Gets the fully read event for the given room
+/// Returns `None` if there is no fully read event
 pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
     ALL_ROOM_INFO
         .lock()
@@ -900,7 +903,7 @@ pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
         .get(room_id)
         .and_then(|ri| ri.fully_read_event.clone())
 }
-/// Update fully read event inside All Room Info after sending out read_receipt
+/// Update fully read event inside all Room Info after sending out read_receipt
 fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId) {
     if let Some(ref mut room_info) = ALL_ROOM_INFO
         .lock()

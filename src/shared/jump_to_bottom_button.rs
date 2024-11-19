@@ -112,8 +112,6 @@ impl JumpToBottomButton {
     /// Sets both the jump to bottom view and its unread message badge to be visible.
     ///
     /// This does not automatically redraw any views.
-    ///
-    /// TODO: in the future, we'll display the actual count of unread messages in the badge.
     pub fn show_unread_message_badge(&mut self, unread_message_count: usize) {
         if unread_message_count > 0 {
             self.visible = true;

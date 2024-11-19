@@ -1536,7 +1536,7 @@ impl RoomScreen {
                                 cx.stop_timer(timer);
                             }
                             self.fully_read_timer = None;
-                            tl.scrolled_pass_read_marker = false;
+                            tl.scrolled_past_read_marker = false;
                         }
                     }
                     //
@@ -1549,11 +1549,13 @@ impl RoomScreen {
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
                         log!("is_append was true, showing unread message badge on the jump to bottom button visible");
-                        // Set number of unread messages to unread_notification_badge
+                        // Set the number of unread messages to unread_notification_badge
                         if let Some(room_id) = &self.room_id {
-                            if let Some(num_unread)= get_client()
-                            .and_then(|c| c.get_room(room_id)).map(|room| room.num_unread_messages()) {
-                                //jump_to_bottom.show_unread_message_badge(num_unread as usize);
+                            if let Some(num_unread) = get_client()
+                                .and_then(|c| c.get_room(room_id))
+                                .map(|room| room.num_unread_messages())
+                            {
+                                jump_to_bottom.show_unread_message_badge(num_unread as usize);
                             }
                         }
                     }
@@ -1847,7 +1849,7 @@ impl RoomScreen {
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 last_displayed_event: None,
-                scrolled_pass_read_marker: false,
+                scrolled_past_read_marker: false,
             };
             (new_tl_state, true)
         };
@@ -2004,7 +2006,7 @@ impl RoomScreen {
             // to detect change of scroll when scroll ends
             if *index != first_index {
                 if first_index > *index {
-                    if tl_state.scrolled_pass_read_marker {
+                    if tl_state.scrolled_past_read_marker {
                         if let Some(timer) = self.fully_read_timer {
                             cx.stop_timer(timer);
                         }
@@ -2013,10 +2015,9 @@ impl RoomScreen {
                     if let Some(event_id) = tl_state.items.get(first_index + portal_list.visible_items())
                             .and_then(|f| f.as_event() )
                             .and_then(|f| f.event_id() ) {
-                        // Scroll pass read marker, can then subsequently send fully read events
                         if let Some(fully_read_event) = take_fully_read_event(&room_id) {
                             if &fully_read_event == event_id {
-                                tl_state.scrolled_pass_read_marker = true;
+                                tl_state.scrolled_past_read_marker = true;
                             }
                         }
                         submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: event_id.to_owned() });
@@ -2223,7 +2224,7 @@ struct TimelineUiState {
     /// 
     /// Used to send fully read receipt after user scrolled pass the read marker
     /// Value is determined by comparing the fully read event with the event id of read receipt when sending out read receipt
-    scrolled_pass_read_marker: bool,
+    scrolled_past_read_marker: bool,
 }
 
 #[derive(Default, Debug)]
