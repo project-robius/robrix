@@ -86,7 +86,7 @@ pub struct TypingAnimation {
     #[animator] animator: Animator,
 
     #[live(0.65)] animation_duration: f64,
-    #[rust] timer: Timer,
+    #[rust] timer: Option<Timer>,
     #[rust] current_animated_dot: CurrentAnimatedDot,
 }
 
@@ -109,8 +109,10 @@ impl CurrentAnimatedDot {
 
 impl Widget for TypingAnimation {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.timer.is_event(event).is_some() {
-            self.update_animation(cx);
+        if let Some(timer) = self.timer {
+            if timer.is_event(event).is_some() {
+                self.update_animation(cx);
+            }
         }
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
@@ -143,7 +145,7 @@ impl TypingAnimation {
             }
         };
 
-        self.timer = cx.start_timeout(self.animation_duration * 0.5);
+        self.timer = Some(cx.start_timeout(self.animation_duration * 0.5));
     }
 }
 
@@ -156,7 +158,7 @@ impl TypingAnimationRef {
 
     pub fn stop_animation(&self) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.timer = Timer::default();
+            inner.timer = None;
         }
     }
 }
