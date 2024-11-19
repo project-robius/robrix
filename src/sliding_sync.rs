@@ -674,10 +674,7 @@ async fn async_worker(
                 };
                 let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { 
-                            set_fully_read_event(&room_id, event_id.clone());
-                            "Sent" 
-                        } else { "Already sent" }),
+                        Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
                         Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
                 });
@@ -695,7 +692,10 @@ async fn async_worker(
                 let _send_frr_task = Handle::current().spawn(async move {
                     let receipt = Receipts::new().fully_read_marker(event_id.clone());
                     match timeline.send_multiple_receipts(receipt).await {
-                        Ok(()) => log!("Sent fully read receipt to room {room_id}, event {event_id}"),
+                        Ok(()) => {
+                            set_fully_read_event(&room_id, event_id.clone());
+                            log!("Sent fully read receipt to room {room_id}, event {event_id}")
+                        },
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
@@ -897,11 +897,12 @@ pub fn take_timeline_endpoints(
 /// Gets the fully read event for the given room
 /// Returns `None` if there is no fully read event
 pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
-    ALL_ROOM_INFO
+    let result = ALL_ROOM_INFO
         .lock()
         .unwrap()
         .get(room_id)
-        .and_then(|ri| ri.fully_read_event.clone())
+        .and_then(|ri| ri.fully_read_event.clone());
+    result
 }
 /// Update fully read event inside all Room Info after sending out read_receipt
 fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId) {

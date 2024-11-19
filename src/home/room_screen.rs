@@ -1300,9 +1300,18 @@ impl Widget for RoomScreen {
         if let Some(timer) = self.fully_read_timer {
             if timer.is_event(event).is_some() {
                 if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
-                    let Some(last_displayed_event) = &tl_state.last_displayed_event else { return };
-                    // let Some(last_displayed_event) = take_fully_read_event(room_id)  else { return };
-                    submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: last_displayed_event.clone()});
+                    let first_index = portal_list.first_id();
+                    if let Some(event_id) = tl_state
+                        .items
+                        .get(first_index + portal_list.visible_items())
+                        .and_then(|f| f.as_event())
+                        .and_then(|f| f.event_id())
+                    {
+                        submit_async_request(MatrixRequest::FullyReadReceipt {
+                            room_id: room_id.clone(),
+                            event_id: event_id.to_owned(),
+                        });
+                    }
                 }
                 cx.stop_timer(timer);
                 self.fully_read_timer = None;
@@ -1558,6 +1567,15 @@ impl RoomScreen {
                             {
                                 jump_to_bottom.show_unread_message_badge(num_unread as usize);
                             }
+                        }
+                    }
+                    if is_append && portal_list.is_at_end() { //123
+                        let last_displayed_event = new_items.last().and_then(|f| f.as_event()).and_then(|f| f.event_id());
+                        if let (Some(event_id), Some(room_id)) = (last_displayed_event, &self.room_id) {
+                            submit_async_request(MatrixRequest::ReadReceipt {
+                                room_id: room_id.clone(),
+                                event_id: event_id.to_owned(),
+                            });
                         }
                     }
 
@@ -1989,6 +2007,8 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
+    
+
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
@@ -2006,7 +2026,7 @@ impl RoomScreen {
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
-                if first_index > *index {
+                if first_index >= *index {
                     if tl_state.scrolled_past_read_marker {
                         if let Some(timer) = self.fully_read_timer {
                             cx.stop_timer(timer);
@@ -2025,6 +2045,7 @@ impl RoomScreen {
                         
                         tl_state.last_displayed_event = Some(event_id.to_owned());
                     }
+                    //send_user_read_receipts(&mut self.fully_read_timer, cx, tl_state.items, first_index, portal_list, room_id);
                 }
                 *index = first_index;
             }
