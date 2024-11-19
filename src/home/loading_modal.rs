@@ -160,7 +160,7 @@ impl WidgetMatchEvent for LoadingModal {
             .is_some();
 
         if cancel_button.clicked(actions) || modal_dismissed {
-            // log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
+            log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
             if let LoadingModalState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
                 let _did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();
@@ -169,9 +169,9 @@ impl WidgetMatchEvent for LoadingModal {
                     // such that they can stop looking for the target event.
                     requests.len() != initial_len
                 });
-                // log!("LoadingModal: {} cancel request for target_event_id: {target_event_id}",
-                //     if did_send { "Sent" } else { "Did not send" },
-                // );
+                log!("LoadingModal: {} cancel request for target_event_id: {target_event_id}",
+                    if _did_send { "Sent" } else { "Did not send" },
+                );
             }
             self.set_state(cx, LoadingModalState::None);
 
@@ -223,6 +223,12 @@ impl LoadingModal {
 }
 
 impl LoadingModalRef {
+    pub fn take_state(&self) -> LoadingModalState {
+        self.borrow_mut()
+            .map(|mut inner| std::mem::take(&mut inner.state))
+            .unwrap_or(LoadingModalState::None)
+    }
+
     pub fn set_state(&self, cx: &mut Cx, state: LoadingModalState) {
         let Some(mut inner) = self.borrow_mut() else { return }; 
         inner.set_state(cx, state);

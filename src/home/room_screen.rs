@@ -24,7 +24,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::{self, LoadingModalWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -967,8 +967,6 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// The current state of the loading modal: what it is currently being used for. 
-    #[rust] loading_modal_state: LoadingModalState,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
 }
@@ -1054,12 +1052,14 @@ impl Widget for RoomScreen {
                             // We also start the first back pagination request.
                             // The main logic will be handled in `process_timeline_updates()`, which is the only
                             // place where we can receive updates to the timeline from the background tasks.
-                            self.loading_modal_state = LoadingModalState::BackwardsPaginateUntilEvent {
-                                target_event_id: replied_to_event.clone(),
-                                events_paginated: 0,
-                                request_sender: tl.request_sender.clone(),
-                            };
-                            loading_modal_inner.set_state(cx, self.loading_modal_state.clone());
+                            loading_modal_inner.set_state(
+                                cx,
+                                LoadingModalState::BackwardsPaginateUntilEvent {
+                                    target_event_id: replied_to_event.clone(),
+                                    events_paginated: 0,
+                                    request_sender: tl.request_sender.clone(),
+                                },
+                            );
                             loading_modal.open(cx);
 
                             tl.request_sender.send_if_modified(|requests| {
@@ -1198,7 +1198,6 @@ impl Widget for RoomScreen {
                 }
 
                 if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.loading_modal_state = LoadingModalState::None;
                     self.modal(id!(loading_modal)).close(cx);
                 }
             }
@@ -1537,18 +1536,9 @@ impl RoomScreen {
                             cx.stop_timer(self.fully_read_timer);
                         }
                     }
-                    // TODO: after an (un)ignore user event, all timelines are cleared.
-                    //       To handle this, we must remember one or more currently-visible events across multiple updates
-                    //       such that we can jump back to the correct (current) position after enough updates have been received
-                    //       to restore the timeline to its previous position of at least one of the previously-existing events
-                    //       having also been found in the new items.
-                    //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
                     //
-                    // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
-                    //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
-                    //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
-                    //     break;
-                    // }
+                    // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
+                    //
                     else {
                         warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
                     }
@@ -1568,16 +1558,13 @@ impl RoomScreen {
                         // then we should update the status message in that loading modal
                         // and then continue paginating backwards until we find the target event.
                         // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
+                        let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+                        let mut loading_modal_state = loading_modal_inner.take_state();
                         if let LoadingModalState::BackwardsPaginateUntilEvent {
                             ref mut events_paginated, target_event_id, ..
-                        } = &mut self.loading_modal_state {
+                        } = &mut loading_modal_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
-                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...\n\n\n");
-                            let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
-                            loading_modal_inner.set_status(cx, &format!(
-                                "Looking for event {target_event_id}\n\n\
-                                Loaded {events_paginated} messages so far...",
-                            ));
+                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
                             // so we need to continue paginating backwards.
                             // If the target event has already been found, it will be handled
@@ -1586,6 +1573,7 @@ impl RoomScreen {
                             // So either way, it's okay to set this to `true` here.
                             should_continue_backwards_pagination = true;
                         }
+                        loading_modal_inner.set_state(cx, loading_modal_state);
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1617,7 +1605,6 @@ impl RoomScreen {
                         loading_modal_inner.set_status(cx, "Successfully found replied-to message!");
                         loading_modal_inner.set_state(cx, LoadingModalState::None);
                         self.view.modal(id!(loading_modal)).close(cx);
-                        self.loading_modal_state = LoadingModalState::None;
 
                         // NOTE: this code was copied from the `ReplyPreviewClicked` action handler;
                         //       we should deduplicate them at some point.
@@ -1933,12 +1920,6 @@ impl RoomScreen {
         let message_input_box = self.text_input(id!(message_input));
         let state = SavedState {
             first_index_and_scroll: Some((first_index, portal_list.scroll_position())),
-            first_event_id: tl.items
-                .get(first_index)
-                .and_then(|item| item
-                    .as_event()
-                    .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-                ),
             message_input_state: message_input_box.save_state(),
             replying_to: tl.replying_to.clone(),
         };
@@ -1954,7 +1935,6 @@ impl RoomScreen {
     fn restore_state(&mut self, cx: &mut Cx, tl_state: &mut TimelineUiState) {
         let SavedState {
             first_index_and_scroll,
-            first_event_id: _,
             message_input_state,
             replying_to,
         } = &mut tl_state.saved_state;
@@ -2252,29 +2232,6 @@ struct TimelineUiState {
     marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
 }
 
-/// The item index, scroll position, and optional unique IDs of the first `N` events
-/// that have been drawn in the most recent draw pass of a timeline's PortalList.
-#[derive(Debug)]
-struct FirstDrawnEvents<const N: usize> {
-    index_and_scroll: [ItemIndexScroll; N],
-    event_ids: [Option<OwnedEventId>; N],
-}
-impl<const N: usize> Default for FirstDrawnEvents<N> {
-    fn default() -> Self {
-        Self {
-            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
-            event_ids: std::array::from_fn(|_| None),
-        }
-    }
-}
-
-///
-#[derive(Clone, Copy, Debug, Default)]
-struct ItemIndexScroll {
-    index: usize,
-    scroll: f64,
-}
-
 #[derive(Default, Debug)]
 enum MessageHighlightAnimationState {
     Pending { item_id: usize },
@@ -2293,8 +2250,6 @@ struct SavedState {
     /// If this is `None`, then the timeline has not yet been scrolled by the user
     /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
-    /// The unique ID of the event that corresponds to the first item visible in the timeline.
-    first_event_id: Option<OwnedEventId>,
 
     /// The content of the message input box.
     message_input_state: TextInputState,
