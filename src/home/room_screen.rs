@@ -1995,7 +1995,6 @@ impl RoomScreen {
         self.room_name = room_name;
         self.room_id = Some(room_id);
         self.show_timeline(cx);
-        self.label(id!(room_name)).set_text(&self.room_name);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
