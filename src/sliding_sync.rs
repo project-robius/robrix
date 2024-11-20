@@ -1031,7 +1031,7 @@ async fn async_main_loop(
         Some(new_login) => new_login,
         None => {
             let homeserver_url = cli.homeserver.clone()
-                .unwrap_or(String::from("https://matrix-client.matrix.org/"));
+                .unwrap_or_else(|| String::from("https://matrix-client.matrix.org/"));
             let mut login_types = vec![];
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
