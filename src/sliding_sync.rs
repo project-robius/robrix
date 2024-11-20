@@ -1018,7 +1018,7 @@ async fn async_main_loop(
                 let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
-                let mut login_types = Vec::new();
+                let mut login_types: Vec<LoginType> = Vec::new();
                 let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
                 if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                     error!("Populating Login types failed: {e:?}");
@@ -1047,7 +1047,7 @@ async fn async_main_loop(
         Some(new_login) => new_login,
         None => {
             let homeserver_url = cli.homeserver.as_deref()
-                .unwrap_or_else(|| "https://matrix-client.matrix.org/");
+                .unwrap_or_else(|| DEFAULT_HOMESERVER);
             let mut login_types = Vec::new();
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
