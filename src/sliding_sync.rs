@@ -325,7 +325,8 @@ pub enum MatrixRequest {
     },
     /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
     ///
-    /// This request will disable anymore attempts of spawning SSO server.
+    /// While an SSO request is in flight, the login screen will temporarily prevent the user
+    /// from submitting another redundant request, until this request has succeeded or failed.
     SpawnSSOServer{
         id: String,
         homeserver_url: String,
