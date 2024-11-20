@@ -49,12 +49,15 @@ The following table shows which host systems can currently be used to build Robr
    sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
-3. Then, build and run Robrix (you can optionally add `--release` after `run`):
-```sh
-cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
-```
+3. Then, build and run Robrix (you can optionally add `--release`):
+   ```sh
+   cargo run
+   ```
+   If you want to provide a username and password for fast auto-login, you can do that on the command line like so. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user's ID or password.
+   ```sh
+   cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
+   ```
     * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
-    * If you created your Matrix account using a third-party Single Sign On (SSO) like a Google account, you can set a standard password by using [Element's password reset form](https://app.element.io/#/forgot_password).
     * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
     * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
 
@@ -112,7 +115,7 @@ These are generally sorted in order of priority. If you're interested in helping
 ### Auxiliary/admin features: login, registration, settings
 - [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
-- [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
+- [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
