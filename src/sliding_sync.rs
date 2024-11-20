@@ -967,7 +967,7 @@ fn username_to_full_user_id(
         .try_into()
         .ok()
         .or_else(|| {
-            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
+            let homeserver_url = homeserver.unwrap_or_else( || DEFAULT_HOMESERVER);
             let user_id_str = if username.starts_with("@") {
                 format!("{}:{}", username, homeserver_url)
             } else {
@@ -1873,13 +1873,12 @@ async fn spawn_sso_server(
     Cx::post_action(LoginAction::SsoPending(true));
     Cx::post_action(LoginAction::Status(format!("Opening Browser ...")));
     let mut cli = Cli::default();
-    cli.homeserver = if homeserver_url.is_empty() {
-        None
-    } else {
-        Some(homeserver_url)
-    };
+    cli.homeserver = (!homeserver_url.is_empty()).then_some(homeserver_url);
     Handle::current().spawn(async move {
-        let (client, client_session) = build_client(&cli, app_data_dir()).await.unwrap();
+        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else { 
+            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string())); 
+            return; 
+        }; 
         let mut is_logged_in = false;
         match client
             .matrix_auth()
@@ -1908,10 +1907,12 @@ async fn spawn_sso_server(
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
-                    login_sender
-                        .send(LoginRequest::LoginBySSOSuccess(client, client_session))
-                        .await
-                        .unwrap();
+                    if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
+                        error!("Error sending login request to login_sender: {e:?}");
+                        Cx::post_action(LoginAction::LoginFailure(String::from(
+                            "BUG: failed to send login request to async worker thread."
+                        )));
+                    }
                     enqueue_rooms_list_update(RoomsListUpdate::Status {
                         status: format!(
                             "Logged in as {:?}. Loading rooms...",
@@ -1922,8 +1923,8 @@ async fn spawn_sso_server(
             }
             Err(e) => {
                 if !is_logged_in {
-                    error!("Login failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                    error!("Login by SSO failed: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {}", e.to_string())));
                 }
             }
         }
