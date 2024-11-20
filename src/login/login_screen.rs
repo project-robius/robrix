@@ -1,7 +1,7 @@
 use std::ops::Not;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
+use matrix_sdk::ruma::{api::client::session::get_login_types::v3::IdentityProvider, UserId};
 
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
@@ -343,11 +343,17 @@ impl MatchEvent for LoginScreen {
             let user_id = user_id_input.text();
             let password = password_input.text();
             let homeserver = homeserver_input.text();
+            let is_valid_user_id = UserId::parse(&user_id).is_ok();
             if user_id.is_empty() || password.is_empty() {
                 status_label.apply_over(cx, live!{
                     draw_text: { color: (COLOR_DANGER_RED) }
                 });
                 status_label.set_text("Please enter both User ID and Password.");
+            } else if !is_valid_user_id {
+                status_label.apply_over(cx, live!{
+                    draw_text: { color: (COLOR_DANGER_RED) }
+                });
+                status_label.set_text("User ID is invalid");
             } else {
                 status_label.apply_over(cx, live!{
                     draw_text: { color: (MESSAGE_TEXT_COLOR) }
@@ -470,7 +476,8 @@ impl MatchEvent for LoginScreen {
                     if let Some(_) = view_ref.finger_up(&actions) {
                         if !self.sso_pending {
                             submit_async_request(MatrixRequest::SpawnSSOServer{
-                                id: ip.id.clone(),
+                                identity_provider_id: ip.id.clone(),
+                                brand: brand.to_string(),
                                 homeserver_url: homeserver_input.text()
                             });
                         }
