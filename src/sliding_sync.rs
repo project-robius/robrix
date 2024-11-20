@@ -137,14 +137,7 @@ async fn build_client(
 ///
 /// This function is used by the login screen to log in to the Matrix server.
 ///
-/// The function returns the client and an optional error message if the login fails.
-/// If the login succeeds, the function returns `None` for the error message.
-/// 
-/// The second returned value is sync token
-///
-/// The third returned value is a boolean indicating whether the login was successful.
-/// This value is used by the login screen to determine whether to show the login form again
-/// or to show the main app UI after a successful login.
+/// Upon success, this function returns the logged-in client and an optional sync token.
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
