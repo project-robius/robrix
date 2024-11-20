@@ -8,12 +8,47 @@ live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
     import crate::shared::styles::*;
+    import crate::shared::avatar::Avatar;
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
     // HTML_LINE_SPACING = 6.0
     // HTML_TEXT_HEIGHT_FACTOR = 1.1
 
+    RobrixPillTag = {{RobrixPillTag}} {
+        visible: false,
+        width: Fit, height: Fit,
+        show_bg: true,
+        draw_bg: {
+            color: #FF7043
+        }
+
+        align: { y: 0.5 },
+
+        padding: {left: 5.0, right: 5.0, top: 3.0, bottom: 2.0},
+
+        spacing: 5.0,
+
+        avatar = <Avatar> {
+            height: 20.0, width: 20.0,
+        }
+
+        title = <Label> {
+            text: "RobrixPill placeholder",
+            draw_text: {
+                wrap: Word,
+                color: #f,
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 12.0 },
+            }
+        }
+    }
+
+    RoomTag = <RobrixPillTag> {
+        visible: true,
+        title = {
+            text: "RoomTag placeholder",
+        }
+    }
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
@@ -28,6 +63,12 @@ live_design! {
         }
         text: "MatrixHtmlSpan placeholder",
 
+    }
+
+    RobrixHtmlLink = {{RobrixHtmlLink}} {
+        width: Fit, height: Fit,
+
+        room_tag = <RoomTag> {}
     }
 
     // A centralized widget where we define styles and custom elements for HTML
@@ -57,7 +98,7 @@ live_design! {
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
 
-        a = {
+        a = <RobrixHtmlLink> {
             padding: {left: 1.0, right: 1.5},
             // draw_text: {
             //     text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE), height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING), top_drop: 1.2, },
@@ -177,6 +218,54 @@ impl LiveHook for MatrixHtmlSpan {
     }
 }
 
+#[derive(Live, Widget)]
+pub struct RobrixHtmlLink {
+    #[deref] view: View,
+
+    #[live] pub text: ArcStringMut,
+    #[live] pub url: String,
+}
+
+impl LiveHook for RobrixHtmlLink {
+    fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
+        match apply.from {
+            ApplyFrom::NewFromDoc { .. } => {
+                let scope = apply.scope.as_ref().unwrap();
+                let doc = scope.props.get::<HtmlDoc>().unwrap();
+                let mut walker = doc.new_walker_with_index(scope.index + 1);
+
+                if let Some((lc, attr)) = walker.while_attr_lc() {
+                    match lc {
+                        live_id!(href)=> {
+                            self.url = attr.into()
+                        }
+                        _=>()
+                    }
+                }
+            }
+            _ => ()
+        }
+    }
+}
+
+impl Widget for RobrixHtmlLink {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.label(id!(room_tag.title)).set_text_and_redraw(cx, self.text.as_ref());
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn text(&self) -> String {
+        self.text.as_ref().to_string()
+    }
+
+    fn set_text(&mut self, v: &str) {
+        self.text.as_mut_empty().push_str(v);
+    }
+}
 
 
 #[derive(LiveHook, Live, Widget)]
@@ -224,4 +313,23 @@ impl HtmlOrPlaintextRef {
             inner.show_html(html_body);
         }
     }
+}
+
+#[derive(LiveHook, Live, Widget)]
+pub struct RobrixPillTag {
+    #[deref] view: View,
+}
+
+impl Widget for RobrixPillTag {
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl RobrixPillTag {
 }
