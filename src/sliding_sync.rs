@@ -30,8 +30,8 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync:
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        self, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
-    }, login::{login_screen::LoginAction}, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
+    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
@@ -194,12 +194,12 @@ async fn login(
 }
 
 async fn populate_login_types(
-    homeserver_url: String,
+    homeserver_url: &str,
     login_types: &mut Vec<LoginType>,
 ) -> Result<()> {
     Cx::post_action(LoginAction::Status(format!("Fetching Login Types ...")));
     let homeserver_url = if homeserver_url.is_empty() {
-        DEFAULT_HOMESERVER.to_string()
+        DEFAULT_HOMESERVER
     } else {
         homeserver_url
     };
@@ -1020,7 +1020,7 @@ async fn async_main_loop(
                 Cx::post_action(LoginAction::Status(status_str));
                 let mut login_types = Vec::new();
                 let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-                if let Err(e) = populate_login_types(homeserver_url.to_string(), &mut login_types).await {
+                if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                     error!("Populating Login types failed: {e:?}");
                     Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {e:?}")));
                 }
@@ -1046,11 +1046,11 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.clone()
-                .unwrap_or_else(|| String::from("https://matrix-client.matrix.org/"));
+            let homeserver_url = cli.homeserver.as_deref()
+                .unwrap_or_else(|| "https://matrix-client.matrix.org/");
             let mut login_types = Vec::new();
             // Display the available Identity providers by fetching the login types
-            if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
+            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                 error!("Populating Login types failed for {homeserver_url}: {e:?}");
                 Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed for {homeserver_url} {e:?}")));
             }
@@ -1059,7 +1059,7 @@ async fn async_main_loop(
                 match login_receiver.recv().await {
                     Some(login_request) => {
                         if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
-                            if let Err(e) = populate_login_types(homeserver_url.clone(), &mut login_types).await {
+                            if let Err(e) = populate_login_types(&homeserver_url, &mut login_types).await {
                                 error!("Populating Login types failed: {e:?}");
                                 Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {e:?}")));
                             }

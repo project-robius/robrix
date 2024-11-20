@@ -313,7 +313,6 @@ pub struct LoginScreen {
 
 
 impl Widget for LoginScreen {
-
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
         self.match_event(cx, event);
