@@ -156,8 +156,11 @@ impl TypingAnimationRef {
         }
     }
 
-    pub fn stop_animation(&self) {
+    pub fn stop_animation(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
+            if let Some(timer) = inner.timer.take() {
+                cx.stop_timer(timer);
+            }
             inner.timer = None;
         }
     }
