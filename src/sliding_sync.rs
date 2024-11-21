@@ -1507,7 +1507,7 @@ async fn timeline_subscriber_handler(
                         // Instead, we have no choice but to start from the end of the timeline.
                         timeline_items.len()
                     };
-                    log!("Received new request to search for event {new_target_event_id} in room {room_id} starting from index {starting_index} (tl len {}).", timeline_items.len());
+                    // log!("Received new request to search for event {new_target_event_id} in room {room_id} starting from index {starting_index} (tl len {}).", timeline_items.len());
                     // Search backwards for the target event in the timeline, starting from the given index.
                     if let Some(target_event_tl_index) = timeline_items
                         .focus()
@@ -1520,10 +1520,11 @@ async fn timeline_subscriber_handler(
                         )
                         .map(|i| starting_index.saturating_sub(i).saturating_sub(1))
                     {
+                        // log!("Found existing target event {new_target_event_id} in room {room_id} at index {target_event_tl_index}.");
+
                         // Nice! We found the target event in the current timeline items,
                         // so there's no need to actually proceed with backwards pagination;
                         // thus, we can clear the locally-tracked target event ID.
-                        log!("Found existing target event {new_target_event_id} in room {room_id} at index {target_event_tl_index}.");
                         target_event_id = None;
                         found_target_event_id = None;
                         timeline_update_sender.send(
@@ -1538,9 +1539,10 @@ async fn timeline_subscriber_handler(
                         SignalToUI::set_ui_signal();
                     }
                     else {
+                        // log!("Target event not in timeline. Starting backwards pagination in room {room_id} to find target event {new_target_event_id} starting from index {starting_index}.");
+
                         // If we didn't find the target event in the current timeline items,
                         // we need to start loading previous items into the timeline.
-                        log!("Target event not in timeline. Starting backwards pagination in room {room_id} to find target event {new_target_event_id} starting from index {starting_index}.");
                         submit_async_request(MatrixRequest::PaginateRoomTimeline {
                             room_id: room_id.clone(),
                             num_events: 50,
