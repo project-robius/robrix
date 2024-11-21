@@ -1964,7 +1964,12 @@ impl RoomScreen {
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(&mut self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(
+        &mut self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        room_name: String,
+    ) {
         // If the room is already being displayed, then do nothing.
         if let Some(current_room_id) = &self.room_id {
             if current_room_id.eq(&room_id) {
@@ -2081,9 +2086,14 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room(&self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(
+        &self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        room_name: String,
+    ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_displayed_room(cx, room_name, room_id);
+        inner.set_displayed_room(cx, room_id, room_name);
     }
 }
 

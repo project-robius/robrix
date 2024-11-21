@@ -157,8 +157,8 @@ impl LiveHook for RoomPreview {
         self.view
             .adaptive_view(id!(adaptive_preview))
             .set_variant_selector(cx, |_cx, parent_size| match parent_size.x {
-                x if x <= 100. => live_id!(OnlyIcon),
-                x if x <= 250. => live_id!(IconAndName),
+                width if width <= 70.0  => live_id!(OnlyIcon),
+                width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
             });
     }
