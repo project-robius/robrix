@@ -1020,36 +1020,44 @@ impl Widget for RoomScreen {
                         };
                         let tl_idx = reply_message_item_id as usize;
 
+                        /// The maximum number of items to search through when looking for the replied-to message.
+                        /// This is a safety measure to prevent the main UI thread from getting stuck in a
+                        /// long-running loop if the replied-to message is not found quickly.
+                        const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
+
                         // Attempt to find the index of replied-to message in the timeline.
                         // Start from the current item's index (`tl_idx`)and search backwards,
                         // since we know the replied-to message must come before the current item.
+                        let mut num_items_searched = 0;
                         let replied_to_msg_tl_index = tl.items
                             .focus()
                             .narrow(..tl_idx)
                             .into_iter()
-                            .rposition(|i| i.as_event()
-                                .and_then(|e| e.event_id())
-                                .is_some_and(|ev_id| ev_id == &replied_to_event)
-                            );
+                            .rev()
+                            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+                            .position(|i| {
+                                num_items_searched += 1;
+                                i.as_event()
+                                    .and_then(|e| e.event_id())
+                                    .is_some_and(|ev_id| ev_id == &replied_to_event)
+                            })
+                            .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
 
                         if let Some(index) = replied_to_msg_tl_index {
-                            let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-                            let base_speed = 10.0;
-                            // apply a scaling based on the distance
-                            let scaled_speed = base_speed * (distance * distance);
-                            // Scroll to the message right before the replied-to message.
-                            // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                            log!("The replied-to message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
+                            let speed = 50.0;
+                            // Scroll to the message right *before* the replied-to message.
+                            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
                             //       so that we can scroll to the replied-to message and have it
                             //       appear beneath the top of the viewport.
-                            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), scaled_speed, None);
+                            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
                             // start highlight animation.
                             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                                 item_id: index
                             };
                         } else {
-                            log!("The replied-to message {replied_to_event} was not yet available in room timeline {}, fetching it now...", tl.room_id);
+                            log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
                             // Here, we set the state of the loading modal and display it to the user.
-                            // We also start the first back pagination request.
                             // The main logic will be handled in `process_timeline_updates()`, which is the only
                             // place where we can receive updates to the timeline from the background tasks.
                             loading_modal_inner.set_state(
@@ -1071,16 +1079,17 @@ impl Widget for RoomScreen {
                                     requests.push(BackwardsPaginateUntilEventRequest {
                                         room_id: tl.room_id.clone(),
                                         target_event_id: replied_to_event,
+                                        // avoid re-searching through items we already searched through.
+                                        starting_index: tl_idx.saturating_sub(num_items_searched),
+                                        current_tl_len: tl.items.len(),
                                     });
                                 }
                                 true
                             });
 
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: tl.room_id.clone(),
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
-                            });
+                            // Don't unconditionally start backwards pagination here, because we want to give the
+                            // background `timeline_subscriber_handler` task a chance to process the request first
+                            // and search our locally-known timeline history for the replied-to message.
                         }
                         self.redraw(cx);
                     }
