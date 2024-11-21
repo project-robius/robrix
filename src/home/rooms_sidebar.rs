@@ -10,7 +10,6 @@ live_design! {
     import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
-    import crate::shared::cached_widget::CachedWidget;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
