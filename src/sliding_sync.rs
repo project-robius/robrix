@@ -9,10 +9,10 @@ use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, MediaSource
+                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevelsEventContent, MediaSource
             }, FullStateEventContent
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Room, Error
+    }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -102,7 +102,7 @@ async fn build_client(
     let homeserver_url = cli.homeserver.as_deref()
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
-    
+
     let mut builder = Client::builder()
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
@@ -180,7 +180,7 @@ async fn login(
                 bail!("Failed to login as {}: {login_result:?}", cli.username);
             }
         }
-       
+
         LoginRequest::LoginBySSOSuccess(client, client_session) => {
             if let Err(e) = persistent_state::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
@@ -226,7 +226,7 @@ async fn populate_login_types(
 }
 
 /// Which direction to paginate in.
-/// 
+///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
 ///    which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
@@ -349,6 +349,10 @@ pub enum MatrixRequest {
     FullyReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
+    },
+    /// Sends checking that if user has permission to post in the given room upon entering.
+    CheckUserPostPermission{
+        room_id: OwnedRoomId,
     }
 }
 
@@ -366,7 +370,7 @@ pub enum LoginRequest{
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
-    
+
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -766,7 +770,30 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            },
+
+            MatrixRequest::CheckUserPostPermission { room_id } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for fetch members request {room_id}");
+                        continue;
+                    };
+
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let Some(client) = CLIENT.get() else { continue };
+                let Some(user_id) = client.user_id() else { continue };
+
+                let _check_user_send_permission_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+                    let can_user_post_message = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(true);
+                    if let Err(_) = sender.send(TimelineUpdate::PostPermission(can_user_post_message)) {
+                        error!("Failed to send the result of user send permission")
+                    }
+                });
+            }
         }
     }
 
@@ -790,7 +817,7 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
-    
+
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
@@ -933,7 +960,7 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 
 
 /// Returns three channel endpoints related to the timeline for the given room.
-/// 
+///
 /// 1. A timeline update sender.
 /// 2. The timeline update receiver, which is a singleton, and can only be taken once.
 /// 3. A `tokio::watch` sender that can be used to send requests to the timeline subscriber handler.
@@ -1256,7 +1283,7 @@ async fn update_room(
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event);
+                    (room_avatar_changed, _) = update_latest_event(new_room_id.clone(), &new_latest_event);
                 }
             }
         }
@@ -1615,7 +1642,7 @@ async fn timeline_subscriber_handler(
                             } else {
                                 found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value));
                             }
-                            
+
                             clear_cache = true;
                             timeline_items.push_front(value);
                             reobtain_latest_event |= latest_event.is_none();
@@ -1694,7 +1721,7 @@ async fn timeline_subscriber_handler(
                                 if index <= *i {
                                     *i = i.saturating_sub(1);
                                 }
-                            } 
+                            }
                             timeline_items.remove(index);
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
@@ -1721,16 +1748,16 @@ async fn timeline_subscriber_handler(
                         }
                     }
                 }
-        
+
                 if num_updates > 0 {
                     let new_latest_event = if reobtain_latest_event {
                         timeline.latest_event().await
                     } else {
                         None
                     };
-        
+
                     let changed_indices = index_of_first_change..index_of_last_change;
-        
+
                     if LOG_TIMELINE_DIFFS {
                         log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
                     }
@@ -1756,14 +1783,17 @@ async fn timeline_subscriber_handler(
 
                     // Send a Makepad-level signal to update this room's timeline UI view.
                     SignalToUI::set_ui_signal();
-                
+
                     // Update the latest event for this room.
                     if let Some(new_latest) = new_latest_event {
                         if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                            let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
+                            let (room_avatar_changed, can_user_post_message) = update_latest_event(room_id.clone(), &new_latest);
                             latest_event = Some(new_latest);
                             if room_avatar_changed {
                                 spawn_fetch_room_avatar(room.clone());
+                            }
+                            if let Err(_) = timeline_update_sender.send(TimelineUpdate::PostPermission(can_user_post_message)) {
+                                error!("Failed to send the result of user send permission")
                             }
                         }
                     }
@@ -1793,8 +1823,9 @@ async fn timeline_subscriber_handler(
 fn update_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
-) -> bool {
+) -> (bool, bool) {
     let mut room_avatar_changed = false;
+    let mut can_user_post_message = true;
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
 
@@ -1810,6 +1841,9 @@ fn update_latest_event(
             AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                 room_avatar_changed = true;
             }
+            AnyOtherFullStateEventContent::RoomPowerLevels(user_power_level_event) => {
+                can_user_post_message = check_post_permission_from_event(user_power_level_event)
+            }
             _ => { }
         }
         _ => { }
@@ -1819,7 +1853,7 @@ fn update_latest_event(
         timestamp,
         latest_message_text,
     });
-    room_avatar_changed
+    (room_avatar_changed, can_user_post_message)
 }
 
 
@@ -1875,10 +1909,10 @@ async fn spawn_sso_server(
     let mut cli = Cli::default();
     cli.homeserver = (!homeserver_url.is_empty()).then_some(homeserver_url);
     Handle::current().spawn(async move {
-        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else { 
-            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string())); 
-            return; 
-        }; 
+        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else {
+            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string()));
+            return;
+        };
         let mut is_logged_in = false;
         match client
             .matrix_auth()
@@ -1930,4 +1964,26 @@ async fn spawn_sso_server(
         }
         Cx::post_action(LoginAction::SsoPending(false));
     });
+}
+
+/// Check if user can post message from event.
+fn check_post_permission_from_event(full_state_event_content: &FullStateEventContent<RoomPowerLevelsEventContent>) -> bool {
+    let mut can_user_post_message = true;
+
+    match full_state_event_content {
+        FullStateEventContent::Original { content, prev_content: _ } => {
+            if let Some(client) = CLIENT.get() {
+                if let Some(user_id) = client.user_id() {
+                    if let Some(power) = content.users.get(user_id)  {
+                       if power.is_negative() {
+                           can_user_post_message = false
+                       }
+                    }
+                }
+            };
+        },
+        _ => { }
+    }
+
+    can_user_post_message
 }
