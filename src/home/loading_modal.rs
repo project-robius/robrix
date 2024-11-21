@@ -194,10 +194,10 @@ impl LoadingModal {
                 events_paginated,
                 ..
             } => {
-                self.set_title(cx, "Loading older messages...");
+                self.set_title(cx, "Searching older messages...");
                 self.set_status(cx, &format!(
                     "Looking for event {target_event_id}\n\n\
-                    Loaded {events_paginated} messages so far...",
+                    Fetched {events_paginated} messages so far...",
                 ));
                 cancel_button.set_text_and_redraw(cx, "Cancel");
             }
