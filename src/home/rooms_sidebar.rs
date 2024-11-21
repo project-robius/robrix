@@ -10,7 +10,6 @@ live_design! {
     import crate::shared::adaptive_view::AdaptiveView;
 
     import crate::home::rooms_list::RoomsList;
-    import crate::shared::cached_widget::CachedWidget;
 
     RoomsView = {{RoomsView}} {
         show_bg: true,

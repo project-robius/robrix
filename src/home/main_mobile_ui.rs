@@ -10,7 +10,6 @@ live_design! {
     import makepad_draw::shader::std::*;
 
     import crate::shared::styles::*;
-    import crate::shared::cached_widget::CachedWidget;
 
     import crate::home::room_screen::RoomScreen;
     import crate::home::welcome_screen::WelcomeScreen;
