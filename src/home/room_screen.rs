@@ -12,8 +12,7 @@ use matrix_sdk::{
                 FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
-        },
-        matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, RoomId, UserId
+        }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
     },
     OwnedServerName,
 };
@@ -25,17 +24,16 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt},
-        html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
-        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-        typing_animation::TypingAnimationWidgetExt,
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, PaginationDirection}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
+
+use super::loading_modal::{LoadingModalAction, LoadingModalState};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -52,7 +50,9 @@ live_design! {
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
-    import crate::shared::icon_button::RobrixIconButton;
+    import crate::shared::icon_button::*;
+    import crate::shared::jump_to_bottom_button::*;
+    import crate::home::loading_modal::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -63,16 +63,10 @@ live_design! {
     ICO_USER = dep("crate://self/resources/icon_user.svg")
     ICO_ADD = dep("crate://self/resources/icon_add.svg")
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
-    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
     COLOR_BG = #xfff8ee
-    COLOR_BRAND = #x5
-    COLOR_BRAND_HOVER = #x3
-    COLOR_META_TEXT = #xaaa
-    COLOR_META = #xccc
-    COLOR_META_INV = #xfffa
     COLOR_OVERLAY_BG = #x000000d8
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
@@ -81,51 +75,6 @@ live_design! {
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
-
-
-    IconButton = <Button> {
-        draw_text: {
-            instance hover: 0.0
-            instance pressed: 0.0
-            text_style: {
-                font_size: 11.0
-            }
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META_TEXT),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        draw_icon: {
-            svg_file: (ICO_FAV),
-            fn get_color(self) -> vec4 {
-                return mix(
-                    mix(
-                        (COLOR_META),
-                        (COLOR_BRAND),
-                        self.hover
-                    ),
-                    (COLOR_BRAND_HOVER),
-                    self.pressed
-                )
-            }
-        }
-        icon_walk: {width: 7.5, height: Fit, margin: {left: 5.0}}
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                return sdf.result
-            }
-        }
-        padding: 9.0
-        text: ""
-    }
 
     Timestamp = <Label> {
         width: Fit, height: Fit
@@ -309,16 +258,35 @@ live_design! {
         draw_bg: {
             instance highlight: 0.0
             instance hover: 0.0
+            color: #ffffff  // default color
+
+            instance mentions_bar_color: #ffffff
+            instance mentions_bar_width: 4.0
+
             fn pixel(self) -> vec4 {
-                return mix(
-                    mix(
-                        #ffffff,
-                        #fafafa,
-                        self.hover
-                    ),
-                    #c5d6fa, // light blue
+                let base_color = mix(
+                    self.color,
+                    #fafafa,
+                    self.hover
+                );
+
+                let with_highlight = mix(
+                    base_color,
+                    #c5d6fa,
                     self.highlight
-                )
+                );
+
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
+                // draw bg
+                sdf.rect(0., 0., self.rect_size.x, self.rect_size.y);
+                sdf.fill(with_highlight);
+
+                // draw the left vertical line
+                sdf.rect(0., 0., self.mentions_bar_width, self.rect_size.y);
+                sdf.fill(self.mentions_bar_color);
+
+                return sdf.result;
             }
         }
 
@@ -646,33 +614,9 @@ live_design! {
             ReadMarker = <ReadMarker> {}
         }
 
-        // A jump to bottom button that appears when the timeline is not at the bottom.
-        jump_to_bottom_view = <View> {
-            width: Fill,
-            height: Fill,
-            flow: Down,
-            align: {x: 1.0, y: 1.0},
-            margin: {right: 15.0, bottom: 15.0},
-            visible: false,
-
-            jump_to_bottom_button = <IconButton> {
-                width: 50, height: 50,
-                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-                // draw a circular background for the button
-                draw_bg: {
-                    instance background_color: #edededee,
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        let c = self.rect_size * 0.5;
-                        sdf.circle(c.x, c.x, c.x)
-                        sdf.fill_keep(self.background_color);
-                        return sdf.result
-                    }
-                }
-            }
-        }
-
+        // A jump to bottom button (with an unread message badge) that is shown
+        // when the timeline is not at the bottom.
+        jump_to_bottom = <JumpToBottomButton> { }
     }
 
     LocationPreview = {{LocationPreview}} {
@@ -973,7 +917,8 @@ live_design! {
             // The top space should be displayed on top of the timeline
             top_space = <TopSpace> { }
 
-            // The user profile sliding pane should be displayed on top of all other subviews.
+            // The user profile sliding pane should be displayed on top of other "static" subviews
+            // (on top of all other views that are always visible).
             <View> {
                 width: Fill,
                 height: Fill,
@@ -981,6 +926,14 @@ live_design! {
                 flow: Right,
 
                 user_profile_sliding_pane = <UserProfileSlidingPane> { }
+            }
+
+            // A pop-up modal that appears while the user must wait for something
+            // in the room to finish loading, e.g., when loading an older replied-to message.
+            loading_modal = <Modal> {
+                content: {
+                    loading_modal_inner = <LoadingModal> {}
+                }
             }
         }
 
@@ -1002,7 +955,7 @@ live_design! {
     }
 }
 
-/// A simple deref wrapper around the `RoomScreen` widget that enables us to handle its events.
+/// The main widget that displays a single Matrix room.
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomScreen {
     #[deref] view: View,
@@ -1012,7 +965,7 @@ pub struct RoomScreen {
     #[rust] room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room.
     #[rust] room_name: String,
-    /// The UI-relevant states for the room that this widget is currently displaying.
+    /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
@@ -1045,7 +998,7 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
-                    MessageAction::MessageReply(item_id) => {
+                    MessageAction::MessageReplyButtonClicked(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
@@ -1060,41 +1013,85 @@ impl Widget for RoomScreen {
                         }
                     }
                     MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
+                        let loading_modal_inner = self.loading_modal(id!(loading_modal_inner));
+                        let loading_modal = self.modal(id!(loading_modal));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
                         let tl_idx = reply_message_item_id as usize;
 
-                        // Attempt to find the index of replied-to message on the timeline.
+                        /// The maximum number of items to search through when looking for the replied-to message.
+                        /// This is a safety measure to prevent the main UI thread from getting stuck in a
+                        /// long-running loop if the replied-to message is not found quickly.
+                        const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
+
+                        // Attempt to find the index of replied-to message in the timeline.
                         // Start from the current item's index (`tl_idx`)and search backwards,
                         // since we know the replied-to message must come before the current item.
+                        let mut num_items_searched = 0;
                         let replied_to_msg_tl_index = tl.items
                             .focus()
                             .narrow(..tl_idx)
                             .into_iter()
-                            .rposition(|i| i.as_event()
-                                .and_then(|e| e.event_id())
-                                .is_some_and(|ev_id| ev_id == &replied_to_event)
-                            );
+                            .rev()
+                            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+                            .position(|i| {
+                                num_items_searched += 1;
+                                i.as_event()
+                                    .and_then(|e| e.event_id())
+                                    .is_some_and(|ev_id| ev_id == &replied_to_event)
+                            })
+                            .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
 
                         if let Some(index) = replied_to_msg_tl_index {
-                            let distance = (index as isize - portal_list.first_id() as isize).abs() as f64;
-                            let base_speed = 10.0;
-                            // apply a scaling based on the distance
-                            let scaled_speed = base_speed * (distance * distance);
-                            // Scroll to the message right before the replied-to message.
-                            // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                            // log!("The replied-to message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
+                            let speed = 50.0;
+                            // Scroll to the message right *before* the replied-to message.
+                            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
                             //       so that we can scroll to the replied-to message and have it
                             //       appear beneath the top of the viewport.
-                            portal_list.smooth_scroll_to(cx, index - 1, scaled_speed);
+                            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
                             // start highlight animation.
                             tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
                                 item_id: index
                             };
-                            self.redraw(cx);
                         } else {
-                            log!("TODO: the replied-to message was not yet available in the timeline.");
+                            // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
+                            // Here, we set the state of the loading modal and display it to the user.
+                            // The main logic will be handled in `process_timeline_updates()`, which is the only
+                            // place where we can receive updates to the timeline from the background tasks.
+                            loading_modal_inner.set_state(
+                                cx,
+                                LoadingModalState::BackwardsPaginateUntilEvent {
+                                    target_event_id: replied_to_event.clone(),
+                                    events_paginated: 0,
+                                    request_sender: tl.request_sender.clone(),
+                                },
+                            );
+                            loading_modal.open(cx);
+
+                            tl.request_sender.send_if_modified(|requests| {
+                                if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                    warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
+                                    // We might as well re-use this existing request...
+                                    existing.target_event_id = replied_to_event;
+                                } else {
+                                    requests.push(BackwardsPaginateUntilEventRequest {
+                                        room_id: tl.room_id.clone(),
+                                        target_event_id: replied_to_event,
+                                        // avoid re-searching through items we already searched through.
+                                        starting_index: tl_idx.saturating_sub(num_items_searched),
+                                        current_tl_len: tl.items.len(),
+                                    });
+                                }
+                                true
+                            });
+
+                            // Don't unconditionally start backwards pagination here, because we want to give the
+                            // background `timeline_subscriber_handler` task a chance to process the request first
+                            // and search our locally-known timeline history for the replied-to message.
                         }
+                        self.redraw(cx);
                     }
                     _ => {}
                 }
@@ -1202,10 +1199,15 @@ impl Widget for RoomScreen {
                     }
 
                     if !link_was_handled {
+                        log!("Opening URL \"{}\"", url);
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
                         }
                     }
+                }
+
+                if let LoadingModalAction::Close = action.as_widget_action().cast() {
+                    self.modal(id!(loading_modal)).close(cx);
                 }
             }
 
@@ -1254,10 +1256,15 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked.
-            if self.button(id!(send_message_button)).clicked(&actions) {
-                let msg_input_widget = self.text_input(id!(message_input));
-                let entered_text = msg_input_widget.text();
+            // Handle the send message button being clicked and enter key being pressed.
+            let msg_input_widget = self.text_input(id!(message_input));
+            let send_message_shortcut_pressed = msg_input_widget
+                .key_down_unhandled(&actions)
+                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
+            if send_message_shortcut_pressed
+                || self.button(id!(send_message_button)).clicked(&actions)
+            {
+                let entered_text = msg_input_widget.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
@@ -1283,25 +1290,11 @@ impl Widget for RoomScreen {
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            {
-                let jump_to_bottom_view = self.view(id!(jump_to_bottom_view));
-                if portal_list.scrolled(&actions) {
-                    // TODO: is_at_end() isn't perfect, see: <https://github.com/makepad/makepad/issues/517>
-                    jump_to_bottom_view.set_visible(!portal_list.is_at_end());
-                }
-
-                const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
-                const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
-                if self.button(id!(jump_to_bottom_button)).clicked(&actions) {
-                    portal_list.smooth_scroll_to_end(
-                        cx,
-                        SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
-                        SCROLL_TO_BOTTOM_SPEED,
-                    );
-                    jump_to_bottom_view.set_visible(false);
-                    self.redraw(cx);
-                }
-            }
+            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
+                cx,
+                &portal_list,
+                actions,
+            );
 
             // Handle a typing action on the message input box.
             if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
@@ -1328,7 +1321,7 @@ impl Widget for RoomScreen {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
-        
+
         // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
         // if the user profile sliding pane is not visible.
         if event.requires_visibility() && pane.is_currently_shown(cx) {
@@ -1477,17 +1470,31 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
+        let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
         let mut done_loading = false;
+        let mut should_continue_backwards_pagination = false;
         let mut num_updates = 0;
         let mut typing_users = Vec::new();
 
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::NewItems { new_items, changed_indices, clear_cache } => {
+                TimelineUpdate::FirstUpdate { initial_items } => {
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
+                    tl.fully_paginated = false;
+                    // Set the portal list to the very bottom of the timeline.
+                    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
+                    portal_list.set_tail_range(true);
+                    jump_to_bottom.update_visibility(true);
+
+                    tl.items = initial_items;
+                    done_loading = true;
+                }
+                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1526,6 +1533,7 @@ impl RoomScreen {
                         log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
+                        jump_to_bottom.update_visibility(true);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
@@ -1537,26 +1545,44 @@ impl RoomScreen {
                             cx.stop_timer(self.fully_read_timer);
                         }
                     }
-                    // TODO: after an (un)ignore user event, all timelines are cleared.
-                    //       To handle this, we must remember one or more currently-visible events across multiple updates
-                    //       such that we can jump back to the correct (current) position after enough updates have been received
-                    //       to restore the timeline to its previous position of at least one of the previously-existing events
-                    //       having also been found in the new items.
-                    //       --> Should we only do this if `clear_cache` is true? (e.g., after an (un)ignore event)
                     //
-                    // else if tl.saved_state.first_event_id.as_deref() == Some(item_event_id) {
-                    //     log!("Timeline::handle_event(): jumping view from saved first event ID to index {idx}");
-                    //     portal_list.set_first_id_and_scroll(idx, scroll_from_first_id);
-                    //     break;
-                    // }
+                    // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
+                    //
                     else {
                         warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                    }
+
+                    // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
+                    if is_append && !portal_list.is_at_end() {
+                        // log!("is_append was true, showing unread message badge on the jump to bottom button visible");
+                        jump_to_bottom.show_unread_message_badge(1);
                     }
 
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
                         tl.fully_paginated = false;
+
+                        // If this RoomScreen is showing the loading modal and has an ongoing backwards pagination request,
+                        // then we should update the status message in that loading modal
+                        // and then continue paginating backwards until we find the target event.
+                        // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
+                        let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+                        let mut loading_modal_state = loading_modal_inner.take_state();
+                        if let LoadingModalState::BackwardsPaginateUntilEvent {
+                            ref mut events_paginated, target_event_id, ..
+                        } = &mut loading_modal_state {
+                            *events_paginated += new_items.len().saturating_sub(tl.items.len());
+                            log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
+                            // Here, we assume that we have not yet found the target event,
+                            // so we need to continue paginating backwards.
+                            // If the target event has already been found, it will be handled
+                            // in the `TargetEventFound` match arm below, which will set
+                            // `should_continue_backwards_pagination` to `false`.
+                            // So either way, it's okay to set this to `true` here.
+                            should_continue_backwards_pagination = true;
+                        }
+                        loading_modal_inner.set_state(cx, loading_modal_state);
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1565,9 +1591,63 @@ impl RoomScreen {
                     tl.items = new_items;
                     done_loading = true;
                 }
+                TimelineUpdate::TargetEventFound { target_event_id, index } => {
+                    // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.room_id);
+                    tl.request_sender.send_if_modified(|requests| {
+                        requests.retain(|r| r.room_id != tl.room_id);
+                        // no need to notify/wake-up all receivers for a completed request
+                        false
+                    });
+
+                    // sanity check: ensure the target event is in the timeline at the given `index`.
+                    let item = tl.items.get(index);
+                    let is_valid = item.is_some_and(|item|
+                        item.as_event()
+                            .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
+                    );
+                    let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+
+                    // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
+                    if is_valid {
+                        // We successfully found the target event, so we can close the loading modal,
+                        // reset the loading modal state to `None`, and stop issuing backwards pagination requests.
+                        loading_modal_inner.set_status(cx, "Successfully found replied-to message!");
+                        loading_modal_inner.set_state(cx, LoadingModalState::None);
+                        self.view.modal(id!(loading_modal)).close(cx);
+
+                        // NOTE: this code was copied from the `ReplyPreviewClicked` action handler;
+                        //       we should deduplicate them at some point.
+                        let speed = 50.0;
+                        // Scroll to the message right above the replied-to message.
+                        // FIXME: `smooth_scroll_to` should accept a scroll offset parameter too,
+                        //       so that we can scroll to the replied-to message and have it
+                        //       appear beneath the top of the viewport.
+                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+                        // start highlight animation.
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                            item_id: index
+                        };
+                    }
+                    else {
+                        // Here, the target event was not found in the current timeline,
+                        // or we found it previously but it is no longer in the timeline (or has moved),
+                        // which means we encountered an error and are unable to jump to the target event.
+                        error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
+                        // Show this error in the loading modal, which should already be open.
+                        loading_modal_inner.set_state(cx, LoadingModalState::Error(
+                            format!("Unable to find replied-to message; it may have been deleted."),
+                        ));
+                    }
+
+                    should_continue_backwards_pagination = false;
+
+                    // redraw now before any other items get added to the timeline list.
+                    self.view.redraw(cx);
+                }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
                         top_space.set_visible(true);
+                        done_loading = false;
                     } else {
                         error!("Unexpected PaginationRunning update in the Forwards direction");
                     }
@@ -1578,8 +1658,12 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
                     if direction == PaginationDirection::Backwards {
-                        done_loading = true;
+                        // Don't set `done_loading` to `true`` here, because we want to keep the top space visible
+                        // (with the "loading" message) until the corresponding `NewItems` update is received.
                         tl.fully_paginated = fully_paginated;
+                        if fully_paginated {
+                            done_loading = true;
+                        }
                     } else {
                         error!("Unexpected PaginationIdle update in the Forwards direction");
                     }
@@ -1611,6 +1695,14 @@ impl RoomScreen {
                     typing_users = users;
                 }
             }
+        }
+
+        if should_continue_backwards_pagination {
+            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                room_id: tl.room_id.clone(),
+                num_events: 50,
+                direction: PaginationDirection::Backwards,
+            });
         }
 
         if done_loading {
@@ -1734,7 +1826,7 @@ impl RoomScreen {
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
-            let (update_sender, update_receiver) = take_timeline_update_receiver(&room_id)
+            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
@@ -1744,6 +1836,7 @@ impl RoomScreen {
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
+                request_sender,
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
@@ -1802,14 +1895,20 @@ impl RoomScreen {
 
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
-        if let Some(room_id) = self.room_id.clone() {
-            self.save_state();
-            self.location_preview(id!(location_preview)).clear();
-            submit_async_request(MatrixRequest::SubscribeToTypingNotices {
-                room_id,
-                subscribe: false,
-            });
-        }
+        let Some(room_id) = self.room_id.clone() else { return };
+
+        self.save_state();
+
+        // When closing a room view, we do the following with non-persistent states:
+        // * Unsubscribe from typing notices, since we don't care about them
+        //   when a given room isn't visible.
+        // * Clear the location preview. We don't save this to the TimelineUiState
+        //   because the location might change by the next time the user opens this same room.
+        self.location_preview(id!(location_preview)).clear();
+        submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+            room_id,
+            subscribe: false,
+        });
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -1827,12 +1926,6 @@ impl RoomScreen {
         let message_input_box = self.text_input(id!(message_input));
         let state = SavedState {
             first_index_and_scroll: Some((first_index, portal_list.scroll_position())),
-            first_event_id: tl.items
-                .get(first_index)
-                .and_then(|item| item
-                    .as_event()
-                    .and_then(|ev| ev.event_id().map(|i| i.to_owned()))
-                ),
             message_input_state: message_input_box.save_state(),
             replying_to: tl.replying_to.clone(),
         };
@@ -1848,7 +1941,6 @@ impl RoomScreen {
     fn restore_state(&mut self, cx: &mut Cx, tl_state: &mut TimelineUiState) {
         let SavedState {
             first_index_and_scroll,
-            first_event_id: _,
             message_input_state,
             replying_to,
         } = &mut tl_state.saved_state;
@@ -1872,7 +1964,12 @@ impl RoomScreen {
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(&mut self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(
+        &mut self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        room_name: String,
+    ) {
         // If the room is already being displayed, then do nothing.
         if let Some(current_room_id) = &self.room_id {
             if current_room_id.eq(&room_id) {
@@ -1881,10 +1978,14 @@ impl RoomScreen {
         }
 
         self.hide_timeline();
+        let loading_modal = self.modal(id!(loading_modal));
+        if loading_modal.is_open() {
+            // this will also reset the state of the inner loading modal
+            loading_modal.close(cx);
+        }
         self.room_name = room_name;
         self.room_id = Some(room_id);
         self.show_timeline(cx);
-        self.label(id!(room_name)).set_text(&self.room_name);
     }
 
     /// Sends read receipts based on the current scroll position of the timeline.
@@ -1985,15 +2086,25 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room(&self, cx: &mut Cx, room_name: String, room_id: OwnedRoomId) {
+    pub fn set_displayed_room(
+        &self,
+        cx: &mut Cx,
+        room_id: OwnedRoomId,
+        room_name: String,
+    ) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_displayed_room(cx, room_name, room_id);
+        inner.set_displayed_room(cx, room_id, room_name);
     }
 }
 
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
+    /// The very first update a given room's timeline receives.
+    FirstUpdate {
+        /// The initial list of timeline items (events) for a room.
+        initial_items: Vector<Arc<TimelineItem>>,
+    },
     /// The content of a room's timeline was updated in the background.
     NewItems {
         /// The entire list of timeline items (events) for a room.
@@ -2002,9 +2113,20 @@ pub enum TimelineUpdate {
         /// and thus must be removed from any caches of drawn items in the timeline.
         /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
         changed_indices: Range<usize>,
+        /// An optimization that informs the UI whether the changes to the timeline
+        /// resulted in new items being *appended to the end* of the timeline.
+        is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
         /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
+    },
+    /// The target event ID was found at the given `index` in the timeline items vector.
+    ///
+    /// This means that the RoomScreen widget can scroll the timeline up to this event,
+    /// and the background `timeline_subscriber_handler` async task can stop looking for this event.
+    TargetEventFound {
+        target_event_id: OwnedEventId,
+        index: usize,
     },
     /// A notice that the background task doing pagination for this room is currently running
     /// a pagination request in the given direction, and is waiting for that request to complete.
@@ -2046,6 +2168,11 @@ pub enum TimelineUpdate {
 static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineUiState>> = Mutex::new(BTreeMap::new());
 
 /// The UI-side state of a single room's timeline, which is only accessed/updated by the UI thread.
+///
+/// This struct should only include states that need to be persisted for a given room
+/// across multiple `Hide`/`Show` cycles of that room's timeline within a RoomScreen.
+/// If a state is more temporary and shouldn't be persisted when the timeline is hidden,
+/// then it should be stored in the RoomScreen widget itself, not in this struct.
 struct TimelineUiState {
     /// The ID of the room that this timeline is for.
     room_id: OwnedRoomId,
@@ -2085,6 +2212,10 @@ struct TimelineUiState {
     /// which is okay because a sender on an unbounded channel never needs to block.
     update_receiver: crossbeam_channel::Receiver<TimelineUpdate>,
 
+    /// The sender for timeline requests from a RoomScreen showing this room
+    /// to the background async task that handles this room's timeline updates.
+    request_sender: TimelineRequestSender,
+
     /// The cache of media items (images, videos, etc.) that appear in this timeline.
     ///
     /// Currently this excludes avatars, as those are shared across multiple rooms.
@@ -2117,29 +2248,6 @@ struct TimelineUiState {
     marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
 }
 
-/// The item index, scroll position, and optional unique IDs of the first `N` events
-/// that have been drawn in the most recent draw pass of a timeline's PortalList.
-#[derive(Debug)]
-struct FirstDrawnEvents<const N: usize> {
-    index_and_scroll: [ItemIndexScroll; N],
-    event_ids: [Option<OwnedEventId>; N],
-}
-impl<const N: usize> Default for FirstDrawnEvents<N> {
-    fn default() -> Self {
-        Self {
-            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
-            event_ids: std::array::from_fn(|_| None),
-        }
-    }
-}
-
-///
-#[derive(Clone, Copy, Debug, Default)]
-struct ItemIndexScroll {
-    index: usize,
-    scroll: f64,
-}
-
 #[derive(Default, Debug)]
 enum MessageHighlightAnimationState {
     Pending { item_id: usize },
@@ -2158,8 +2266,6 @@ struct SavedState {
     /// If this is `None`, then the timeline has not yet been scrolled by the user
     /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
-    /// The unique ID of the event that corresponds to the first item visible in the timeline.
-    first_event_id: Option<OwnedEventId>,
 
     /// The content of the message input box.
     message_input_state: TextInputState,
@@ -2257,7 +2363,7 @@ fn populate_message_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     message: &timeline::Message,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2406,7 +2512,8 @@ fn populate_message_view(
         event_tl_item.can_be_replied_to(),
         item_id,
         replied_to_event_id,
-        room_screen_widget_uid
+        room_screen_widget_uid,
+        does_message_mention_current_user(message),
     );
 
     // Set the timestamp.
@@ -2424,6 +2531,23 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
+}
+
+
+/// Returns `true` if the given message mentions the current user.
+fn does_message_mention_current_user(
+    message: &timeline::Message,
+) -> bool {
+    let Some(client) = get_client() else {
+        return false;
+    };
+    let Some(current_user_id) = client.user_id() else {
+        return false;
+    };
+
+    // This covers both direct mentions ("@user") and a replied-to message.
+    message.mentions()
+        .is_some_and(|mentions| mentions.user_ids.contains(current_user_id))
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -2560,7 +2684,7 @@ fn populate_location_message_content(
 fn draw_replied_to_message(
     cx: &mut Cx2d,
     replied_to_message_view: &ViewRef,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     message: &timeline::Message,
     message_event_id: Option<&EventId>,
 ) -> (bool, Option<OwnedEventId>) {
@@ -2837,7 +2961,7 @@ fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     event_content: &impl SmallStateEventContent,
     item_drawn_status: ItemDrawnStatus,
@@ -2934,7 +3058,7 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
 fn set_avatar_and_get_username(
     cx: &mut Cx,
     avatar: AvatarRef,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     sender_user_id: &UserId,
     sender_profile: &TimelineDetails<Profile>,
     event_id: Option<&EventId>,
@@ -3118,12 +3242,12 @@ impl LocationPreviewRef {
 }
 
 
-/// Actions that can be performed on a message.
+/// Actions related to a specific message within a room timeline.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum MessageAction {
-    /// The user clicked the reply button on the message,
-    /// indicating that they want to reply to this message.
-    MessageReply(usize),
+    /// The user clicked a message's reply button, indicating that they want to
+    /// reply to this message (the message at the given timeline item index).
+    MessageReplyButtonClicked(usize),
     /// The user clicked the inline reply preview above a message
     /// indicating that they want to jump upwards to the replied-to message shown in the preview.
     ReplyPreviewClicked {
@@ -3133,7 +3257,7 @@ pub enum MessageAction {
         /// The event ID of the replied-to message (the target of the reply).
         replied_to_event: OwnedEventId,
     },
-    /// The message with the given item ID should be highlighted.
+    /// The message at the given item index in the timeline should be highlighted.
     MessageHighlight(usize),
     None,
 }
@@ -3143,6 +3267,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
+    #[rust(false)] mentions_user: bool,
 
     #[rust] can_be_replied_to: bool,
     #[rust] item_id: usize,
@@ -3170,7 +3295,7 @@ impl Widget for Message {
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
-                    MessageAction::MessageReply(self.item_id),
+                    MessageAction::MessageReplyButtonClicked(self.item_id),
                 );
             }
         }
@@ -3225,6 +3350,17 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.mentions_user {
+            self.view.apply_over(
+                cx, live!(
+                    draw_bg: {
+                        color: (vec4(1.0, 1.0, 0.82, 1.0))
+                        mentions_bar_color: #ffd54f
+                    }
+                )
+            )
+        }
+
         self.view
             .button(id!(reply_button))
             .set_visible(self.can_be_replied_to);
@@ -3239,12 +3375,14 @@ impl Message {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         self.can_be_replied_to = can_be_replied_to;
         self.item_id = item_id;
         self.replied_to_event_id = replied_to_event_id;
         self.room_screen_widget_uid = Some(room_screen_widget_uid);
+        self.mentions_user = mentions_user;
     }
 }
 
@@ -3254,10 +3392,11 @@ impl MessageRef {
         can_be_replied_to: bool,
         item_id: usize,
         replied_to_event_id: Option<OwnedEventId>,
-        room_screen_widget_uid: WidgetUid
+        room_screen_widget_uid: WidgetUid,
+        mentions_user: bool
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid);
+            inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
 }

@@ -4,7 +4,7 @@ authors = [
     "Kevin Boos <kevinaboos@gmail.com>",
     "Robius Project Maintainers",
 ]
-description = "A Matrix chat client written using the Robius app dev framework in Rust."
+description = "A Matrix chat client written using Makepad + Robius app dev framework in Rust."
 documentation = "https://docs.rs/robrix"
 edition = "2021"
 homepage = "https://robius.rs/"
@@ -16,7 +16,7 @@ version = "0.0.1-pre-alpha"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "widget_uid_hashable" }
+makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
@@ -37,7 +37,7 @@ htmlize = "1.0.5"
 imbl = { version = "3.0.0", features = ["serde"] }  # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "experimental-sliding-sync", "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite" ] }
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "experimental-sliding-sync", "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
