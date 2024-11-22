@@ -28,6 +28,7 @@ live_design! {
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
+
     StatusLabel = <View> {
         width: Fill, height: Fit,
         align: { x: 0.5, y: 0.5 }

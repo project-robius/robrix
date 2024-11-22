@@ -34,9 +34,9 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client,
+    shared::popup_list::enqueue_popup_notification
 };
-use crate::shared::popup_list::enqueue_popup_notification;
 
 #[derive(Parser, Debug, Default)]
 struct Cli {
@@ -814,7 +814,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(format!("Rooms list update {e:?}"));
+                            enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -832,7 +832,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(format!("Rooms list update {e:?}"));
+                            enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1036,7 +1036,7 @@ async fn async_main_loop(
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: format!("Login failed: {e:?}"),
                         });
-                        enqueue_popup_notification(format!("Rooms list update {e:?}"));
+                        enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                         None
                     }
                 }
@@ -1080,7 +1080,7 @@ async fn async_main_loop(
                                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                                     status: format!("Login failed: {e:?}"),
                                 });
-                                enqueue_popup_notification(format!("Rooms list update {e:?}"));
+                                enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                     }
                         }
                     },
