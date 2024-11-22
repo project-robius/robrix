@@ -5,35 +5,37 @@ live_design! {
     import makepad_widgets::theme_desktop_dark::*;
     import makepad_draw::shader::std::*;
 
-    ANIMATION_DURATION = 0.65
-
     TypingAnimation = {{TypingAnimation}} {
         width: 24,
         height: 15,
         flow: Down,
         show_bg: true,
         draw_bg: {
-            uniform freq: 5.0
+            uniform freq: 5.0,
+            uniform phase_offset: 90.0,
+            uniform dot_radius: 1.6,
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = vec4(0.0, 0.0, 0.0, 1.0);
-                // // Create three circle SDFs
+                let amplitude = self.rect_size.y * 0.3;
+                let center_y = self.rect_size.y * 0.4;
+                // Create three circle SDFs
                 sdf.circle(
                     self.rect_size.x * 0.25, 
-                    self.rect_size.y * 0.3 * sin(self.time * self.freq) + self.rect_size.y * 0.4, 
-                    1.6
+                    amplitude * sin(self.time * self.freq) + center_y, 
+                    self.dot_radius
                 );
                 sdf.fill(color);
                 sdf.circle(
                     self.rect_size.x * 0.5, 
-                    self.rect_size.y * 0.3 * sin(self.time * self.freq + 90.0) + self.rect_size.y * 0.4, 
-                    1.6
+                    amplitude * sin(self.time * self.freq + self.phase_offset) + center_y, 
+                    self.dot_radius
                 );
                 sdf.fill(color);
                 sdf.circle(
                     self.rect_size.x * 0.75, 
-                    self.rect_size.y * 0.3 * sin(self.time * self.freq + 180.0) + self.rect_size.y * 0.4, 
-                    1.6
+                    amplitude * sin(self.time * self.freq + self.phase_offset * 2) + center_y, 
+                    self.dot_radius
                 );
                 sdf.fill(color);
                 return sdf.result;
@@ -49,11 +51,11 @@ pub struct TypingAnimation {
     #[rust] next_frame: NextFrame,
     #[rust] is_play: bool,
 }
-
 impl Widget for TypingAnimation {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Some(ne) = self.next_frame.is_event(event) {
-            self.time = (ne.frame % 360) as f32;
+            self.time += ne.time as f32;       
+            self.time = (self.time.round() as u32 % 360) as f32;
             self.redraw(cx);
             if !self.is_play {
                 return
