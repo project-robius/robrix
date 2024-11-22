@@ -4,7 +4,6 @@ use makepad_widgets::*;
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 pub fn enqueue_popup_notification(update: String) {
     POPUP_NOTIFICATION.push(update);
-    SignalToUI::set_ui_signal();
 }
 
 live_design! {
@@ -160,6 +159,9 @@ impl WidgetMatchEvent for PopupList {
 }
 
 impl PopupListRef {
+    /// Add a new popup to the list. The popup's content is a string given by the `message` parameter.
+    /// The popup will be displayed in the order it was added. The popup will be removed from the list
+    /// when it is closed by the user. The list will be redrawn after pushing a new popup.
     pub fn push(&self, cx: &mut Cx, message: String) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.push(cx, message);
