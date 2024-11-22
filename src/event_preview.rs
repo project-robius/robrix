@@ -121,7 +121,7 @@ pub fn text_preview_of_message(
             }
         ),
         MessageType::Emote(emote) => format!(
-            "<i>{} {}</i>",
+            "* {} {}",
             sender_username,
             if let Some(formatted_body) = emote.formatted.as_ref() {
                 &formatted_body.body

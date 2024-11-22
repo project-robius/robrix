@@ -2535,6 +2535,35 @@ fn populate_message_view(
                 (item, false)
             }
         }
+        MessageType::VerificationRequest(verification) => {
+            let template = live_id!(Message);
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                // Use `FormattedBody` to hold our custom summary of this verification request.
+                let formatted = FormattedBody {
+                    format: MessageFormat::Html,
+                    body: format!(
+                        "<i>Sent a <b>verification request</b> to {}.\n(Supported methods: {})</i>",
+                        verification.to,
+                        verification.methods
+                            .iter()
+                            .map(|m| m.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                };
+
+                populate_text_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    &verification.body,
+                    Some(&formatted),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
         other => {
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
             if existed && item_drawn_status.content_drawn {
