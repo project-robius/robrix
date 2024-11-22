@@ -182,7 +182,9 @@ impl MatchEvent for App {
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
         self.update_login_visibility();
-        
+        // Open the popup notification overlay on startup
+        // as the overlay content is a list of notifications.
+        // Nothing will be shown until there is a notification in the list.
         self.ui.popup_notification(id!(popup)).open(cx);
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();

@@ -142,7 +142,7 @@ impl PopupList {
     }
 }
 impl WidgetMatchEvent for PopupList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let mut removed = false;
         for (i, view) in self.popups.iter().enumerate() {
             if view.button(id!(close_button)).clicked(actions) {

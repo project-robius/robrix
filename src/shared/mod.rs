@@ -25,6 +25,6 @@ pub fn live_design(cx: &mut Cx) {
     html_or_plaintext::live_design(cx);
     adaptive_view::live_design(cx);
     typing_animation::live_design(cx);
-    jump_to_bottom_button::live_design(cx);;
+    jump_to_bottom_button::live_design(cx);
     popup_list::live_design(cx);
 }

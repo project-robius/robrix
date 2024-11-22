@@ -814,7 +814,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(e.to_string());
+                            enqueue_popup_notification(format!("Rooms list update {e:?}"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -832,7 +832,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(e.to_string());
+                            enqueue_popup_notification(format!("Rooms list update {e:?}"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1036,7 +1036,7 @@ async fn async_main_loop(
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: format!("Login failed: {e:?}"),
                         });
-                        enqueue_popup_notification(e.to_string());
+                        enqueue_popup_notification(format!("Rooms list update {e:?}"));
                         None
                     }
                 }
@@ -1080,7 +1080,7 @@ async fn async_main_loop(
                                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                                     status: format!("Login failed: {e:?}"),
                                 });
-                                enqueue_popup_notification(e.to_string());
+                                enqueue_popup_notification(format!("Rooms list update {e:?}"));
                     }
                         }
                     },
@@ -1098,7 +1098,9 @@ async fn async_main_loop(
     enqueue_rooms_list_update(RoomsListUpdate::Status {
         status: format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()),
     });
-    enqueue_popup_notification(format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()));
+    if let Some(user_id) = client.user_id() {
+        enqueue_popup_notification(format!("Logged in as {}. Loading rooms...", user_id));
+    }
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
