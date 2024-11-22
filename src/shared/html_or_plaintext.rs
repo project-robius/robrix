@@ -64,15 +64,6 @@ live_design! {
         body: "[<i> HTML message placeholder</i>]",
     }
 
-    // A version of `MessageHtml` that's used for notices (automated messages from bots).
-    NoticeHtml = <MessageHtml> {
-        font_color: (MESSAGE_NOTICE_TEXT_COLOR),
-        draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-        draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-        draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-        draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-    }
-
     // A view container that displays either plaintext s(a simple `Label`)
     // or rich HTML content (an instance of `MessageHtml`).
     //
