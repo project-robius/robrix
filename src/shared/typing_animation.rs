@@ -26,13 +26,13 @@ live_design! {
                 sdf.fill(color);
                 sdf.circle(
                     self.rect_size.x * 0.5, 
-                    self.rect_size.y * 0.3 * sin(self.time * self.freq + 180.0) + self.rect_size.y * 0.4, 
+                    self.rect_size.y * 0.3 * sin(self.time * self.freq + 90.0) + self.rect_size.y * 0.4, 
                     1.6
                 );
                 sdf.fill(color);
                 sdf.circle(
                     self.rect_size.x * 0.75, 
-                    self.rect_size.y * 0.3 * sin(self.time * self.freq) + self.rect_size.y * 0.4, 
+                    self.rect_size.y * 0.3 * sin(self.time * self.freq + 180.0) + self.rect_size.y * 0.4, 
                     1.6
                 );
                 sdf.fill(color);
