@@ -2545,7 +2545,7 @@ fn populate_message_view(
                 let formatted = FormattedBody {
                     format: MessageFormat::Html,
                     body: format!(
-                        "<i>Sent a Verification Request to {}.\n(Supported methods: {})</i>",
+                        "<i>Sent a <b>verification request</b> to {}.\n(Supported methods: {})</i>",
                         verification.to,
                         verification.methods
                             .iter()
