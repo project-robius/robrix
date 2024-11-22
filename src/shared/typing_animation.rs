@@ -11,9 +11,9 @@ live_design! {
         flow: Down,
         show_bg: true,
         draw_bg: {
-            uniform freq: 5.0,
-            uniform phase_offset: 90.0,
-            uniform dot_radius: 1.6,
+            uniform freq: 5.0,  // Animation frequency
+            uniform phase_offset: 90.0, // Phase difference
+            uniform dot_radius: 1.6, // Dot radius
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = vec4(0.0, 0.0, 0.0, 1.0);
