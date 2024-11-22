@@ -9,7 +9,7 @@ use matrix_sdk::{
     ruma::{
         events::room::{
             message::{
-                FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
+                EmoteMessageEventContent, FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
         }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
@@ -36,6 +36,8 @@ use rangemap::RangeSet;
 use super::loading_modal::{LoadingModalAction, LoadingModalState};
 
 const GEO_URI_SCHEME: &str = "geo:";
+
+const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -227,7 +229,7 @@ live_design! {
         height: Fit,
         padding: {top: 5.0}
 
-        html_content = <RobrixHtml> {
+        html_content = <MessageHtml> {
             width: Fill,
             height: Fit,
             padding: { bottom: 5.0, top: 0.0 },
@@ -2375,6 +2377,8 @@ fn populate_message_view(
 
     let ts_millis = event_tl_item.timestamp();
 
+    let mut is_notice = false; // whether this message is a Notice
+
     // Determine whether we can use a more compact UI view that hides the user's profile info
     // if the previous message was sent by the same user within 10 minutes.
     let use_compact_view = match prev_event.map(|p| p.kind()) {
@@ -2391,9 +2395,12 @@ fn populate_message_view(
         _ => false,
     };
 
+    // Sometimes we need to call this up-front, so we save the result in this variable
+    // to avoid having to call it twice.
+    let mut set_username_and_get_avatar_retval = None;
+
     let (item, used_cached_item) = match message.msgtype() {
-        MessageType::Text(TextMessageEventContent { body, formatted, .. })
-        | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+        MessageType::Text(TextMessageEventContent { body, formatted, .. }) => {
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -2408,6 +2415,84 @@ fn populate_message_view(
                     &body,
                     formatted.as_ref(),
                 );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        // A notice message is just a message sent by an automated bot,
+        // so we treat it just like a message but use a different font color.
+        MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+            is_notice = true;
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                html_or_plaintext_ref.apply_over(cx, live!(
+                    html_view = {
+                        html = {
+                            font_color: (MESSAGE_NOTICE_TEXT_COLOR),
+                            draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                        }
+                    }
+                ));
+                populate_text_message_content(
+                    &html_or_plaintext_ref,
+                    &body,
+                    formatted.as_ref(),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        // An emote is just like a message but is prepended with the user's name
+        // to indicate that it's an "action" that the user is performing.
+        MessageType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                // Draw the profile up front here because we need the username for the emote body.
+                let (username, profile_drawn) = set_avatar_and_get_username(
+                    cx,
+                    item.avatar(id!(profile.avatar)),
+                    room_id,
+                    event_tl_item.sender(),
+                    event_tl_item.sender_profile(),
+                    event_tl_item.event_id(),
+                );
+
+                // Prepend a "* <username> " to the emote body, as suggested by the Matrix spec.
+                let (body, formatted) = if let Some(fb) = formatted.as_ref() {
+                    (
+                        Cow::from(&fb.body),
+                        Some(FormattedBody {
+                            format: fb.format.clone(),
+                            body: format!("* {} {}", &username, &fb.body),
+                        })
+                    )
+                } else {
+                    (Cow::from(format!("* {} {}", &username, body)), None)
+                };
+                populate_text_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    &body,
+                    formatted.as_ref(),
+                );
+                set_username_and_get_avatar_retval = Some((username, profile_drawn));
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -2490,15 +2575,25 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let (username, profile_drawn) = set_avatar_and_get_username(
-            cx,
-            item.avatar(id!(profile.avatar)),
-            room_id,
-            event_tl_item.sender(),
-            event_tl_item.sender_profile(),
-            event_tl_item.event_id(),
+        let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
+            set_avatar_and_get_username(
+                cx,
+                item.avatar(id!(profile.avatar)),
+                room_id,
+                event_tl_item.sender(),
+                event_tl_item.sender_profile(),
+                event_tl_item.event_id(),
+            )
         );
-        item.label(id!(content.username)).set_text(&username);
+        let username_label = item.label(id!(content.username));
+        if is_notice {
+            username_label.apply_over(cx, live!(
+                draw_text: {
+                    color: (MESSAGE_NOTICE_TEXT_COLOR),
+                }
+            ));
+        }
+        username_label.set_text(&username);
         new_drawn_status.profile_drawn = profile_drawn;
     }
 
@@ -2556,7 +2651,7 @@ fn populate_text_message_content(
     body: &str,
     formatted_body: Option<&FormattedBody>,
 ) {
-    if let Some(formatted_body) = formatted_body
+    if let Some(formatted_body) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
     {
         message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
