@@ -170,7 +170,7 @@ async fn login(
                     status: format!("Logged in as {}. Loading rooms...", cli.username),
                 });
                 enqueue_popup_notification(format!("Logged in as {}. Loading rooms...", &cli.username));
-        if let Err(e) = persistent_state::save_session(&client, client_session).await {
+                if let Err(e) = persistent_state::save_session(&client, client_session).await {
                     error!("Failed to save session state to storage: {e:?}");
                 }
                 Ok((client, None))
@@ -179,7 +179,7 @@ async fn login(
                     status: format!("Failed to login as {}: {:?}", cli.username, login_result),
                 });
                 enqueue_popup_notification(format!("Failed to login as {}: {:?}", &cli.username, login_result));
-        bail!("Failed to login as {}: {login_result:?}", cli.username);
+                bail!("Failed to login as {}: {login_result:?}", cli.username);
             }
         }
        

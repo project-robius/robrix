@@ -135,9 +135,7 @@ live_design! {
                         }
                     }
                 }
-                
             } // end of body
-            
         }
     }
 }

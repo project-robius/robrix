@@ -45,7 +45,6 @@ live_design! {
         }
     }
 
-
     RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
