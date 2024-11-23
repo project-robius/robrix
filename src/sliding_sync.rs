@@ -730,6 +730,7 @@ async fn async_worker(
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
                     };
+                    // If the new fully read event is older than the existing one, do not send the receipt
                     if let Some((_existing_event_id, existing_timestamp)) = &room_info.fully_read_event {
                         if timestamp < *existing_timestamp {
                             continue;
@@ -1359,6 +1360,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
+
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
         .remove(&room_id);

@@ -937,6 +937,7 @@ live_design! {
                 }
             }
         }
+
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -971,7 +972,7 @@ pub struct RoomScreen {
     /// 
     /// 5 secs timer starts when user scrolled down and scrolled_past_read_marker is true
     /// Last displayed event will be sent as fully read receipt
-    #[rust] fully_read_timer: Option<Timer>,
+    #[rust] fully_read_timer: Timer,
 
 }
 impl Drop for RoomScreen {
@@ -1300,23 +1301,20 @@ impl Widget for RoomScreen {
             }
         }
         // Send fully read receipt for last displayed event 5 Seconds after user scrolled past the read marker
-        if let Some(timer) = self.fully_read_timer {
-            if timer.is_event(event).is_some() {
-                if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
-                    if let Some((event_id, timestamp)) = tl_state
-                        .last_display_event
-                        .take()
-                    {
-                        submit_async_request(MatrixRequest::FullyReadReceipt {
-                            room_id: room_id.clone(),
-                            event_id,
-                            timestamp,
-                        });
-                    }
+        if self.fully_read_timer.is_event(event).is_some() && !self.fully_read_timer.is_empty() {
+            if let (Some(ref mut tl_state), Some(ref room_id)) = (&mut self.tl_state, &self.room_id) {
+                if let Some((event_id, timestamp)) = tl_state
+                    .last_display_event
+                    .take()
+                {
+                    submit_async_request(MatrixRequest::FullyReadReceipt {
+                        room_id: room_id.clone(),
+                        event_id,
+                        timestamp,
+                    });
                 }
-                cx.stop_timer(timer);
-                self.fully_read_timer = None;
             }
+            cx.stop_timer(self.fully_read_timer);
         }
 
         if self.animator_handle_event(cx, event).must_redraw() {
@@ -1544,10 +1542,7 @@ impl RoomScreen {
                             portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
                             tl.prev_first_index = Some(new_item_idx);
                             // Reset the fully read timer when we jump to a new event
-                            if let Some(timer) = self.fully_read_timer {
-                                cx.stop_timer(timer);
-                            }
-                            self.fully_read_timer = None;
+                            cx.stop_timer(self.fully_read_timer);
                             tl.scrolled_past_read_marker = false;
                         }
                     }
@@ -2031,10 +2026,7 @@ impl RoomScreen {
             // to detect change of scroll when scroll ends
             if *index != first_index {
                 // Any scrolling, resets the fully_read_timer
-                if let Some(timer) = self.fully_read_timer {
-                    cx.stop_timer(timer);
-                }
-                self.fully_read_timer = None;
+                cx.stop_timer(self.fully_read_timer);
                 if first_index >= *index {
                     // Get event_id and timestamp for the last visible event
                     let Some((last_event_id, last_timestamp)) = tl_state.items.get(first_index + portal_list.visible_items())
@@ -2043,13 +2035,13 @@ impl RoomScreen {
                         submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: last_event_id.to_owned() });
                     // If scrolled_past_read_marker is true, set last_display_event to last_event_id and start the timer
                     if tl_state.scrolled_past_read_marker {
-                        self.fully_read_timer = Some(cx.start_timeout(5.0));
+                        self.fully_read_timer = cx.start_timeout(5.0);
                         tl_state.last_display_event = Some((last_event_id.to_owned(), last_timestamp));
                     } else {
                         // Get event_id and timestamp for the first visible event
                         // If scrolled_past_read_marker is false, check if the saved fully read event's timestamp in between the first and last visible event
                         // If true, set scrolled_past_read_marker to true
-                        // If true, set last_display_event to last_event_id
+                        // If true, set last_event_id to last_display_event
                         // If true, start the 5 seconds timer
                         let Some((_fully_read_event, fully_read_timestamp)) = take_fully_read_event(&room_id) else { *index = first_index; return;};
                         let Some((_first_event_id, first_timestamp)) = tl_state.items.get(first_index)
@@ -2058,7 +2050,7 @@ impl RoomScreen {
                         if fully_read_timestamp >= first_timestamp && fully_read_timestamp <= last_timestamp {
                             tl_state.scrolled_past_read_marker = true;
                             tl_state.last_display_event = Some((last_event_id.to_owned(), last_timestamp));
-                            self.fully_read_timer = Some(cx.start_timeout(5.0));
+                            self.fully_read_timer = cx.start_timeout(5.0);
                         }
                     }
                 }
@@ -2263,6 +2255,8 @@ struct TimelineUiState {
     /// In between, any scrolling or new message comming in will reset the timer
     scrolled_past_read_marker: bool,
     /// EventId and timestamp of the last displayed event in the timeline
+    /// 
+    /// To be send as fully read receipt
     last_display_event: Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)>,
 }
 
