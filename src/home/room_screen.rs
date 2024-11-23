@@ -3,13 +3,14 @@
 
 use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::{Instant, SystemTime}};
 
+use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
         events::room::{
             message::{
-                EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
+                AudioMessageEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             },
             MediaSource,
         }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
@@ -2545,11 +2546,44 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                populate_file_message_content(
+                new_drawn_status.content_drawn = populate_file_message_content(
                     &item.html_or_plaintext(id!(content.message)),
                     file_content,
                 );
-                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
+        MessageType::Audio(audio) => {
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                new_drawn_status.content_drawn = populate_audio_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    audio,
+                );
+                (item, false)
+            }
+        }
+        MessageType::Video(video) => {
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                new_drawn_status.content_drawn = populate_video_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    video,
+                );
                 (item, false)
             }
         }
@@ -2563,7 +2597,7 @@ fn populate_message_view(
                 let formatted = FormattedBody {
                     format: MessageFormat::Html,
                     body: format!(
-                        "<i>Sent a <b>verification request</b> to {}.\n(Supported methods: {})</i>",
+                        "<i>Sent a <b>verification request</b> to {}.<br>(Supported methods: {})</i>",
                         verification.to,
                         verification.methods
                             .iter()
@@ -2791,17 +2825,97 @@ fn populate_file_message_content(
         .info
         .as_ref()
         .and_then(|info| info.size)
-        .map(|bytes| format!("  ({})", bytesize::ByteSize::b(bytes.into())))
+        .map(|bytes| format!("  ({})", ByteSize::b(bytes.into())))
         .unwrap_or_default();
     let caption = file_content.formatted_caption()
-        .map(|fb| format!("\n<i>{}</i>", fb.body))
-        .or_else(|| file_content.caption().map(|c| format!("\n<i>{c}</i>")))
+        .map(|fb| format!("<br><i>{}</i>", fb.body))
+        .or_else(|| file_content.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
 
     // TODO: add a button to download the file
 
     message_content_widget.show_html(format!(
-        "<b>{filename}</b>{size}{caption}<br><i>File download not yet supported.</i>"
+        "<b>{filename}</b>{size}{caption}<br> → <i>File download not yet supported.</i>"
+    ));
+    true
+}
+
+/// Draws an audio message's content into the given `message_content_widget`.
+///
+/// Returns whether the audio message content was fully drawn.
+fn populate_audio_message_content(
+    message_content_widget: &HtmlOrPlaintextRef,
+    audio: &AudioMessageEventContent,
+) -> bool {
+    // Display the file name, human-readable size, caption, and a button to download it.
+    let filename = audio.filename();
+    let (duration, mime, size) = audio
+        .info
+        .as_ref()
+        .map(|info| (
+            info.duration
+                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                .unwrap_or_default(),
+            info.mimetype
+                .as_ref()
+                .map(|m| format!("  {m},"))
+                .unwrap_or_default(),
+            info.size
+                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .unwrap_or_default(),
+        ))
+        .unwrap_or_default();
+    let caption = audio.formatted_caption()
+        .map(|fb| format!("<br><i>{}</i>", fb.body))
+        .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
+        .unwrap_or_default();
+
+    // TODO: add an audio to play the audio file
+
+    message_content_widget.show_html(format!(
+        "Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"
+    ));
+    true
+}
+
+
+/// Draws a video message's content into the given `message_content_widget`.
+///
+/// Returns whether the video message content was fully drawn.
+fn populate_video_message_content(
+    message_content_widget: &HtmlOrPlaintextRef,
+    video: &VideoMessageEventContent,
+) -> bool {
+    // Display the file name, human-readable size, caption, and a button to download it.
+    let filename = video.filename();
+    let (duration, mime, size, dimensions) = video
+        .info
+        .as_ref()
+        .map(|info| (
+            info.duration
+                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                .unwrap_or_default(),
+            info.mimetype
+                .as_ref()
+                .map(|m| format!("  {m},"))
+                .unwrap_or_default(),
+            info.size
+                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .unwrap_or_default(),
+            info.width.and_then(|width|
+                info.height.map(|height| format!("  {width}x{height},"))
+            ).unwrap_or_default(),
+        ))
+        .unwrap_or_default();
+    let caption = video.formatted_caption()
+        .map(|fb| format!("<br><i>{}</i>", fb.body))
+        .or_else(|| video.caption().map(|c| format!("<br><i>{c}</i>")))
+        .unwrap_or_default();
+
+    // TODO: add an video to play the video file
+
+    message_content_widget.show_html(format!(
+        "Video: <b>{filename}</b>{mime}{duration}{size}{dimensions}{caption}<br> → <i>Video playback not yet supported.</i>"
     ));
     true
 }
