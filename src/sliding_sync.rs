@@ -6,8 +6,8 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
+    config::RequestConfig, deserialized_responses::TimelineEventKind, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
+        api::{client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}}, events::{
             fully_read::FullyReadEventContent,
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
@@ -227,6 +227,9 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
+    GetFullyReadEvent{
+        room_id: OwnedRoomId,
+    },
     /// Request to ignore/block or unignore/unblock a user.
     IgnoreUser {
         /// Whether to ignore (`true`) or unignore (`false`) the user.
@@ -288,6 +291,7 @@ pub enum MatrixRequest {
     FullyReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
+        timestamp: MilliSecondsSinceUnixEpoch
     }
 }
 
@@ -483,7 +487,46 @@ async fn async_worker(
                     }
                 });
             }
-
+            MatrixRequest::GetFullyReadEvent { room_id } => {
+                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                    error!("BUG: client/room not found for Get Fully Read Event {room_id}");
+                    continue;
+                };
+                
+                let _get_fully_read_event_task = Handle::current().spawn(async move {
+                    async fn fetch_fully_read_event(room: &Room, room_id: &OwnedRoomId) -> Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
+                        let fully_read_event =  room
+                            .account_data_static::<FullyReadEventContent>().await?
+                            .and_then(|f| f.deserialize().ok())
+                            .and_then(|f| Some(f.content.event_id));
+                        if let Some(event_id) = fully_read_event {
+                            let event = room.event(&event_id, None).await?;
+                            match event.kind {
+                                TimelineEventKind::Decrypted(decrypted_room_event) => {
+                                    return decrypted_room_event.event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into());
+                                }
+                                TimelineEventKind::PlainText { event } => {
+                                    return event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into());
+                                }
+                                _ => {
+                                    bail!("Failed to fetch fully read event for room {room_id} because there is no TimelineEventKind::Decrypted");
+                                }
+                            }
+                        } else {
+                            bail!("Failed to fetch fully read event for room {room_id} because there is no fully read event");
+                        }
+                    }
+                    match fetch_fully_read_event(&room, &room_id).await {
+                        Ok((event_id, timestamp)) => {
+                            log!("Successfully fetched fully read event for room {room_id} at {timestamp:?} for {event_id}");
+                            set_fully_read_event(&room_id, event_id, timestamp);
+                        }
+                        Err(e) => {
+                            log!("{}", e.to_string());
+                        }
+                    }
+                });
+            }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _ignore_task = Handle::current().spawn(async move {
@@ -680,20 +723,25 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::FullyReadReceipt { room_id, event_id }=>{
+            MatrixRequest::FullyReadReceipt { room_id, event_id, timestamp }=>{
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
                     };
+                    if let Some((_existing_event_id, existing_timestamp)) = &room_info.fully_read_event {
+                        if timestamp < *existing_timestamp {
+                            continue;
+                        }
+                    }
                     room_info.timeline.clone()
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     let receipt = Receipts::new().fully_read_marker(event_id.clone());
                     match timeline.send_multiple_receipts(receipt).await {
                         Ok(()) => {
-                            set_fully_read_event(&room_id, event_id.clone());
+                            set_fully_read_event(&room_id, event_id.clone(), timestamp);
                             log!("Sent fully read receipt to room {room_id}, event {event_id}")
                         },
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
@@ -811,8 +859,8 @@ struct RoomInfo {
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
-    /// event_id for read marker
-    fully_read_event: Option<OwnedEventId>,
+    /// Event_id and timestamp for read marker
+    fully_read_event: Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)>,
 }
 impl Drop for RoomInfo {
     fn drop(&mut self) {
@@ -892,26 +940,36 @@ pub fn take_timeline_endpoints(
 }
 
 
-/// Return an option of user's fully read event id for a given room using Mutex Lock
+/// Return an option of user's fully read event id and timestamp for a given room using Mutex Lock
 /// 
 /// Gets the fully read event for the given room
 /// Returns `None` if there is no fully read event
-pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<OwnedEventId> {
+pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)> {
     let result = ALL_ROOM_INFO
         .lock()
-        .unwrap()
-        .get(room_id)
-        .and_then(|ri| ri.fully_read_event.clone());
+        .map(|guard| {
+            guard
+                .get(room_id)
+                .and_then(|ri| ri.fully_read_event.clone())
+        })
+        .unwrap_or_else(|_| None);
     result
 }
-/// Update fully read event inside all Room Info after sending out read_receipt
-fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId) {
-    if let Some(ref mut room_info) = ALL_ROOM_INFO
-        .lock()
-        .unwrap()
-        .get_mut(room_id) {
-            room_info.fully_read_event = Some(read_event)
-        }
+/// Update fully read event inside Room Info after sending out read_receipt
+fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId, timestamp: MilliSecondsSinceUnixEpoch) {
+    let _ = ALL_ROOM_INFO
+    .lock()
+    .map(|mut guard| {
+        if let Some(room_info) = guard
+            .get_mut(room_id) {
+                room_info.fully_read_event = Some((read_event, timestamp));
+                return Ok(());
+            } else {
+                return Err(anyhow::anyhow!("Cannot find room info for room {}", room_id));
+            }
+    }).map_err(|e|{
+        error!("Error updating fully read event: {e:?}");
+    });
 }
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
@@ -1301,11 +1359,6 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
-    let fully_read_event = room
-        .account_data_static::<FullyReadEventContent>()
-        .await?
-        .and_then(|f| f.deserialize().ok())
-        .and_then(|f| Some(f.content.event_id));
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
         .remove(&room_id);
@@ -1321,7 +1374,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
-            fully_read_event
+            fully_read_event: None
         },
     );
     Ok(())
