@@ -9,7 +9,7 @@ use matrix_sdk::{
     ruma::{
         events::room::{
             message::{
-                EmoteMessageEventContent, FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
+                EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, TextMessageEventContent
             },
             MediaSource,
         }, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
@@ -2535,6 +2535,24 @@ fn populate_message_view(
                 (item, false)
             }
         }
+        MessageType::File(file_content) => {
+            let template = if use_compact_view {
+                live_id!(CondensedMessage)
+            } else {
+                live_id!(Message)
+            };
+            let (item, existed) = list.item_with_existed(cx, item_id, template);
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                populate_file_message_content(
+                    &item.html_or_plaintext(id!(content.message)),
+                    file_content,
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+        }
         MessageType::VerificationRequest(verification) => {
             let template = live_id!(Message);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
@@ -2758,6 +2776,37 @@ fn populate_image_message_content(
         }
     }
 }
+
+
+/// Draws a file message's content into the given `message_content_widget`.
+///
+/// Returns whether the file message content was fully drawn.
+fn populate_file_message_content(
+    message_content_widget: &HtmlOrPlaintextRef,
+    file_content: &FileMessageEventContent,
+) -> bool {
+    // Display the file name, human-readable size, caption, and a button to download it.
+    let filename = file_content.filename();
+    let size = file_content
+        .info
+        .as_ref()
+        .and_then(|info| info.size)
+        .map(|bytes| format!("  ({})", bytesize::ByteSize::b(bytes.into())))
+        .unwrap_or_default();
+    let caption = file_content.formatted_caption()
+        .map(|fb| format!("\n<i>{}</i>", fb.body))
+        .or_else(|| file_content.caption().map(|c| format!("\n<i>{c}</i>")))
+        .unwrap_or_default();
+
+    // TODO: add a button to download the file
+
+    message_content_widget.show_html(format!(
+        "<b>{filename}</b>{size}{caption}<br><i>File download not yet supported.</i>"
+    ));
+    true
+}
+
+
 
 /// Draws the given location message's content into the `message_content_widget`.
 ///
