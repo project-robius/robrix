@@ -1565,8 +1565,8 @@ impl RoomScreen {
                             }
                         }
                     }
-                    // When new messages are appended to the end of the timeline, user sees them.
-                    // We want to send the read receipt
+                    // When new messages are added to the end of the timeline, 
+                    // we want to send the read receipt when the user sees them.
                     if is_append && portal_list.is_at_end() {
                         let last_displayed_event = new_items.last().and_then(|f| f.as_event()).and_then(|f| f.event_id());
                         if let (Some(event_id), Some(room_id)) = (last_displayed_event, &self.room_id) {
@@ -2020,8 +2020,12 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-        let Some(tl_state) = self.tl_state.as_mut() else { return };
-        let Some(room_id) = self.room_id.as_ref() else { return };
+        let Some(tl_state) = self.tl_state.as_mut() else {
+            return;
+        };
+        let Some(room_id) = self.room_id.as_ref() else {
+            return;
+        };
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
@@ -2029,10 +2033,19 @@ impl RoomScreen {
                 cx.stop_timer(self.fully_read_timer);
                 if first_index >= *index {
                     // Get event_id and timestamp for the last visible event
-                    let Some((last_event_id, last_timestamp)) = tl_state.items.get(first_index + portal_list.visible_items())
-                        .and_then(|f| f.as_event() )
-                        .and_then(|f| f.event_id().map(|e| (e, f.timestamp())) ) else { *index = first_index; return };
-                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id: last_event_id.to_owned() });
+                    let Some((last_event_id, last_timestamp)) = tl_state
+                        .items
+                        .get(first_index + portal_list.visible_items())
+                        .and_then(|f| f.as_event())
+                        .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                    else {
+                        *index = first_index;
+                        return;
+                    };
+                    submit_async_request(MatrixRequest::ReadReceipt {
+                        room_id: room_id.clone(),
+                        event_id: last_event_id.to_owned(),
+                    });
                     // If scrolled_past_read_marker is true, set last_display_event to last_event_id and start the timer
                     if tl_state.scrolled_past_read_marker {
                         self.fully_read_timer = cx.start_timeout(5.0);
@@ -2043,13 +2056,27 @@ impl RoomScreen {
                         // If true, set scrolled_past_read_marker to true
                         // If true, set last_event_id to last_display_event
                         // If true, start the 5 seconds timer
-                        let Some((_fully_read_event, fully_read_timestamp)) = take_fully_read_event(&room_id) else { *index = first_index; return;};
-                        let Some((_first_event_id, first_timestamp)) = tl_state.items.get(first_index)
-                            .and_then(|f| f.as_event() )
-                            .and_then(|f| f.event_id().map(|e| (e, f.timestamp())) ) else { *index = first_index; return;};
-                        if fully_read_timestamp >= first_timestamp && fully_read_timestamp <= last_timestamp {
+                        let Some((_fully_read_event, fully_read_timestamp)) =
+                            take_fully_read_event(&room_id)
+                        else {
+                            *index = first_index;
+                            return;
+                        };
+                        let Some((_first_event_id, first_timestamp)) = tl_state
+                            .items
+                            .get(first_index)
+                            .and_then(|f| f.as_event())
+                            .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                        else {
+                            *index = first_index;
+                            return;
+                        };
+                        if fully_read_timestamp >= first_timestamp
+                            && fully_read_timestamp <= last_timestamp
+                        {
                             tl_state.scrolled_past_read_marker = true;
-                            tl_state.last_display_event = Some((last_event_id.to_owned(), last_timestamp));
+                            tl_state.last_display_event =
+                                Some((last_event_id.to_owned(), last_timestamp));
                             self.fully_read_timer = cx.start_timeout(5.0);
                         }
                     }
@@ -2252,8 +2279,9 @@ struct TimelineUiState {
     /// Value is determined by comparing the fully read event with the event id of read receipt being sent out
     /// When scrolling down, if scrolled_past_read_marker is true, a 5 seconds timer is started.
     /// Once the countdown ends, the app will send out last visible event's fully read receipt which will be stored as RoomInfo's fully_read_event
-    /// In between, any scrolling or new message comming in will reset the timer
+    /// In between, any scrolling or new message coming in will reset the timer
     scrolled_past_read_marker: bool,
+
     /// EventId and timestamp of the last displayed event in the timeline
     /// 
     /// To be send as fully read receipt

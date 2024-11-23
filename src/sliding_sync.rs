@@ -706,7 +706,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::ReadReceipt { room_id, event_id }=>{
+            MatrixRequest::ReadReceipt { room_id, event_id } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -723,7 +723,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::FullyReadReceipt { room_id, event_id, timestamp }=>{
+            MatrixRequest::FullyReadReceipt { room_id, event_id, timestamp } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
