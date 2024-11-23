@@ -149,7 +149,7 @@ pub fn text_preview_of_message(
             "[Location]: <i>{}</i>",
             location.body,
         ),
-        MessageType::Notice(notice) => format!("[Notice]: <i>{}</i>",
+        MessageType::Notice(notice) => format!("<i>{}</i>",
             if let Some(formatted_body) = notice.formatted.as_ref() {
                 &formatted_body.body
             } else {
@@ -169,8 +169,7 @@ pub fn text_preview_of_message(
                 .unwrap_or_else(|| utils::linkify(&text.body).to_string())
         }
         MessageType::VerificationRequest(verification) => format!(
-            "[Verification Request] <i>from device {} to user {}</i>",
-            verification.from_device,
+            "[Verification Request] <i>to user {}</i>",
             verification.to,
         ),
         MessageType::Video(video) => format!(
