@@ -197,3 +197,32 @@ appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",
     "$LOCALAPPDATA/$PRODUCTNAME",
 ]
+
+[lints.rust]
+keyword_idents_2024 = "forbid"
+non_ascii_idents = "forbid"
+non_local_definitions = "forbid"
+unsafe_op_in_unsafe_fn = "forbid"
+
+unexpected_cfgs = "warn"
+unnameable_types = "warn"
+unused_import_braces = "warn"
+
+[lints.clippy]
+correctness = "warn"
+suspicious = "warn"
+complexity = "warn"
+perf = "warn"
+needless_lifetimes = "warn"
+too_many_arguments = "warn"
+
+cast_possible_truncation = "warn"
+collection_is_never_read = "warn"
+dbg_macro = "warn"
+infinite_loop = "warn"
+large_include_file = "warn"
+large_stack_arrays = "warn"
+match_same_arms = "warn"
+mismatching_type_param_order = "warn"
+partial_pub_fields = "warn"
+return_self_not_must_use = "warn"
