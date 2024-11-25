@@ -57,6 +57,20 @@ live_design! {
 
                     main_content_view = <StackNavigationView> {
                         width: Fill, height: Fill
+                        header = {
+                            content = {
+                                button_container = {
+                                    padding: {left: 14}
+                                }
+                                title_container = {
+                                    title = {
+                                        draw_text: {
+                                            color: (ROOM_NAME_TEXT_COLOR)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         body = {
                             main_content = <MainMobileUI> {}
                         }
