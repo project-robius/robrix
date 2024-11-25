@@ -3387,6 +3387,7 @@ name = "robrix"
 version = "0.0.1-pre-alpha"
 dependencies = [
  "anyhow",
+ "bytesize",
  "chrono",
  "clap",
  "crossbeam-channel",
