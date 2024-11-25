@@ -522,7 +522,7 @@ async fn async_worker(
                             set_fully_read_event(&room_id, event_id, timestamp);
                         }
                         Err(e) => {
-                            log!("{}", e.to_string());
+                            log!("Failed to fetch fully read event for room {room_id} {e:?}");
                         }
                     }
                 });

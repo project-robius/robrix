@@ -2020,10 +2020,7 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-        let Some(tl_state) = self.tl_state.as_mut() else {
-            return;
-        };
-        let Some(room_id) = self.room_id.as_ref() else {
+        let (Some(tl_state), Some(room_id)) = (self.tl_state.as_mut(), self.room_id.as_ref()) else {
             return;
         };
         if let Some(ref mut index) = tl_state.prev_first_index {
