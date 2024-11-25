@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use std::collections::HashMap;
 
-const MIN_DESKTOP_WIDTH: f64 = 860.;
+const MIN_DESKTOP_WIDTH: f64 = 650.0;
 
 live_design! {
     import makepad_widgets::base::*;
