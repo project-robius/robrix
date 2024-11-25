@@ -138,7 +138,7 @@ impl PopupList {
                 self.popups.push(View::new_from_ptr(cx, meta));
             }
         }
-        cx.redraw_all();
+        cx.redraw_area(self.area());
     }
 }
 impl WidgetMatchEvent for PopupList {
