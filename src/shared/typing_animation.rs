@@ -13,40 +13,46 @@ live_design! {
         draw_bg: {
             uniform freq: 3.0,  // Animation frequency
             uniform dot_radius: 1.6, // Dot radius
+            uniform phase_diff: 45.0, // Phase difference between dots
+            uniform hole_direction: -1.0 // Hole direction: negative is towards right
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = vec4(0.0, 0.0, 0.0, 1.0);
-                let center_y = self.rect_size.y * 0.5;
+                let center_y = self.rect_size.y * 0.7;
                 // Creates dotting animation to right using Sine function
-                let phi = sin(self.time * self.freq);
+                let phi1 = abs(sin( self.time * self.freq));
+                let phi2 = abs(sin( self.time * self.freq + self.hole_direction * self.phase_diff));
+                let phi3 = abs(sin( self.time * self.freq + 2 * self.hole_direction * self.phase_diff));
                 // Create three circle SDFs
-                if phi < 0.02 {
-                    return sdf.result;
+                // The threshold slightly greater than sin(phase_diff)
+                // For example sin(45) will make two out of three dots appear at any time,
+                // hence forming hole moving towards right
+                if phi1 < sin(self.phase_diff) + 0.1 {
+                    sdf.circle(
+                        self.rect_size.x * 0.25, 
+                        center_y, 
+                        self.dot_radius
+                    );
+                    sdf.fill(color);
                 }
-                sdf.circle(
-                    self.rect_size.x * 0.25, 
-                    center_y, 
-                    self.dot_radius
-                );
-                sdf.fill(color);
-                if phi < 0.4 {
-                    return sdf.result;
+                
+                if phi2 < sin(self.phase_diff) + 0.1 {
+                    sdf.circle(
+                        self.rect_size.x * 0.5, 
+                        center_y, 
+                        self.dot_radius
+                    );
+                    sdf.fill(color);
                 }
-                sdf.circle(
-                    self.rect_size.x * 0.5, 
-                    center_y, 
-                    self.dot_radius
-                );
-                sdf.fill(color);
-                if phi < 0.75 {
-                    return sdf.result;
+                
+                if phi3 < sin(self.phase_diff) + 0.1 {
+                    sdf.circle(
+                        self.rect_size.x * 0.75, 
+                        center_y, 
+                        self.dot_radius
+                    );
+                    sdf.fill(color);
                 }
-                sdf.circle(
-                    self.rect_size.x * 0.75, 
-                    center_y, 
-                    self.dot_radius
-                );
-                sdf.fill(color);
                 return sdf.result;
             }
         }
