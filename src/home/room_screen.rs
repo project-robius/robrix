@@ -793,15 +793,21 @@ live_design! {
 
                     typing_label = <Label> {
                         align: {x: 0.0, y: 0.5},
-                        padding: {left: 5.0}
+                        padding: {left: 5.0, right: 0.0}
                         draw_text: {
                             color: (TYPING_NOTICE_TEXT_COLOR),
                             text_style: <REGULAR_TEXT>{font_size: 9}
                         }
-                        text: "Someone is typing..."
+                        text: "Someone is typing"
                     }
 
-                    typing_animation = <TypingAnimation> {}
+                    typing_animation = <TypingAnimation> {
+                        margin: {top: 1.1, left: -4 }
+                        padding: 0.0,
+                        draw_bg: {
+                            color: (TYPING_NOTICE_TEXT_COLOR),
+                        }
+                    }
                 }
 
                 // Below that, display a preview of the current location that a user is about to send.
