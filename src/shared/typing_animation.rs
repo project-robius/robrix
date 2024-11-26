@@ -11,7 +11,7 @@ live_design! {
         flow: Down,
         show_bg: true,
         draw_bg: {
-            uniform freq: 3.0,  // Animation frequency
+            uniform freq: 2.0,  // Animation frequency
             uniform dot_radius: 1.6, // Dot radius
             uniform phase_diff: 45.0, // Phase difference between dots
             uniform hole_direction: -1.0 // Hole direction: negative is towards right
