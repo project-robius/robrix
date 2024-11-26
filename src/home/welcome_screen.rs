@@ -29,7 +29,7 @@ live_design! {
             }
 
             // Using the HTML widget to taking advantage of embedding a link within text with proper vertical alignment
-            <RobrixHtml> {
+            <MessageHtml> {
                 padding: {top: 12, left: 0.}
                 font_size: 14.
                 font_color: (WELCOME_TEXT_COLOR)
