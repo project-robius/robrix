@@ -784,15 +784,21 @@ live_design! {
 
                     typing_label = <Label> {
                         align: {x: 0.0, y: 0.5},
-                        padding: {left: 5.0}
+                        padding: {left: 5.0, right: 0.0}
                         draw_text: {
                             color: (TYPING_NOTICE_TEXT_COLOR),
                             text_style: <REGULAR_TEXT>{font_size: 9}
                         }
-                        text: "Someone is typing..."
+                        text: "Someone is typing"
                     }
 
-                    typing_animation = <TypingAnimation> {}
+                    typing_animation = <TypingAnimation> {
+                        margin: {top: 1.1, left: -4 }
+                        padding: 0.0,
+                        draw_bg: {
+                            color: (TYPING_NOTICE_TEXT_COLOR),
+                        }
+                    }
                 }
 
                 // Below that, display a preview of the current location that a user is about to send.
@@ -1745,6 +1751,8 @@ impl RoomScreen {
         } else {
             // Animate out the typing notice view (sliding it out towards the bottom).
             self.animator_play(cx, id!(typing_notice_animator.hide));
+            let typing_animation = self.view.typing_animation(id!(typing_animation));
+            typing_animation.stop_animation();
         }
 
         if num_updates > 0 {
