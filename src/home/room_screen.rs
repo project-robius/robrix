@@ -2640,6 +2640,7 @@ fn populate_message_view(
                     cx,
                     &item.text_or_image(id!(content.message)),
                     image_info,
+                    message.body(),
                     media_cache,
                 );
                 new_drawn_status.content_drawn = is_image_fully_drawn;
@@ -2883,6 +2884,7 @@ fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<(Option<ImageInfo>, MediaSource)>,
+    body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
@@ -2899,7 +2901,7 @@ fn populate_image_message_content(
         if ImageFormat::from_mimetype(mime).is_none() {
             log!("populate_image_message_content: unsupported image mimetype: {mime:?}");
             text_or_image_ref.show_text(&format!(
-                "Images/Stickers of type {mime:?} are not yet supported.",
+                "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
             return true;
         }
@@ -2915,7 +2917,7 @@ fn populate_image_message_content(
                             .map(|()| img.size_in_pixels(cx).unwrap())
                     });
                     if let Err(e) = show_image_result {
-                        let err_str = format!("Failed to display image: {e:?}");
+                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
                         error!("{err_str}");
                         text_or_image_ref.show_text(&err_str);
                     }
@@ -2924,13 +2926,13 @@ fn populate_image_message_content(
                     true
                 }
                 MediaCacheEntry::Requested => {
-                    text_or_image_ref.show_text(&format!("Fetching image from {:?}", mxc_uri));
+                    text_or_image_ref.show_text(&format!("{body}\n\nFetching image from {:?}", mxc_uri));
                     // Do not consider this image as being fully drawn, as we're still fetching it.
                     false
                 }
                 MediaCacheEntry::Failed => {
                     text_or_image_ref
-                        .show_text(&format!("Failed to fetch image from {:?}", mxc_uri));
+                        .show_text(&format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                     // For now, we consider this as being "complete". In the future, we could support
                     // retrying to fetch the image on a user click/tap.
                     true
@@ -2939,14 +2941,14 @@ fn populate_image_message_content(
         }
         Some(MediaSource::Encrypted(encrypted)) => {
             text_or_image_ref.show_text(&format!(
-                "[TODO] fetch encrypted image at {:?}",
+                "{body}\n\n[TODO] fetch encrypted image at {:?}",
                 encrypted.url
             ));
             // We consider this as "fully drawn" since we don't yet support encryption.
             true
         }
         None => {
-            text_or_image_ref.show_text("Image message had no source URL.");
+            text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
             true
         }
 
