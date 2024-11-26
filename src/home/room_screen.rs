@@ -1370,7 +1370,7 @@ impl Widget for RoomScreen {
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
-                                let prev_event = tl_items.get(tl_idx.saturating_sub(1));
+                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                 populate_message_view(
                                     cx,
                                     list,
@@ -1385,7 +1385,7 @@ impl Widget for RoomScreen {
                                 )
                             }
                             TimelineItemContent::Sticker(sticker) => {
-                                let prev_event = tl_items.get(tl_idx.saturating_sub(1));
+                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                 populate_message_view(
                                     cx,
                                     list,
@@ -2613,7 +2613,7 @@ fn populate_message_view(
                 (item, false)
             }
         }
-        // Handle images and sticker messages that are static images
+        // Handle images and sticker messages that are static images.
         mtype @ MessageOrStickerType::Image(_) | mtype @ MessageOrStickerType::Sticker(_) => {
             let template = if use_compact_view {
                 live_id!(CondensedImageMessage)
@@ -2625,11 +2625,6 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let image_info = mtype.get_image_info();
-                log!("populate_image_message: mimetype: {:?}, event ID: {:?}",
-                    image_info.as_ref().and_then(|(info, _)| info.as_ref().and_then(|i| i.mimetype.clone())),
-                    event_tl_item.event_id(),
-                );
-
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
                     &item.text_or_image(id!(content.message)),
@@ -2893,7 +2888,6 @@ fn populate_image_message_content(
     // then show a message about it being unsupported.
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
-            log!("populate_image_message_content: unsupported image mimetype: {mime:?}");
             text_or_image_ref.show_text(&format!(
                 "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
