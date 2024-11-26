@@ -436,10 +436,7 @@ live_design! {
         body = {
             content = {
                 padding: { left: 10.0 }
-                message = <TextOrImage> {
-                    width: Fill, height: 300,
-                    image_view = { image = { fit: Horizontal } }
-                }
+                message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
             }
         }
@@ -451,10 +448,7 @@ live_design! {
     CondensedImageMessage = <CondensedMessage> {
         body = {
             content = {
-                message = <TextOrImage> {
-                    width: Fill, height: 300,
-                    image_view = { image = { fit: Horizontal } }
-                }
+                message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
             }
         }
