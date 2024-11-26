@@ -396,7 +396,7 @@ impl Widget for RoomsList {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Override the current active room index if the app state has a different selected room
         if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
-            if let Some(room_index) = self.displayed_rooms.iter().position(|r| r == &room.id) {
+            if let Some(room_index) = self.displayed_rooms.iter().position(|r| r == &room.room_id) {
                 self.current_active_room_index = Some(room_index);
             }
         } else {

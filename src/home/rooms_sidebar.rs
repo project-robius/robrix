@@ -13,7 +13,6 @@ live_design! {
 
     import crate::home::rooms_list::RoomsList;
     import crate::shared::cached_widget::CachedWidget;
-    import crate::shared::search_bar::SearchBar;
 
     ICON_COLLAPSE = dep("crate://self/resources/icons/collapse.svg")
     ICON_ADD = dep("crate://self/resources/icons/add.svg")
@@ -110,7 +109,7 @@ live_design! {
             }
         }
         <Label> {
-            text: "Home"
+            text: "Rooms"
             draw_text: {
                 color: #x0
                 text_style: <TITLE_TEXT>{}
@@ -119,41 +118,6 @@ live_design! {
         <SearchBar> {
             input = {
                 empty_message: "Search for rooms..."
-            }
-        }
-        <View> {
-            flow: Down, spacing: 20
-            padding: {top: 20}
-            width: Fill, height: Fit
-            <CollapsableTitle> {
-                title = {
-                    text: "People"
-                    draw_text: {
-                        color: (COLOR_TEXT_IDLE)
-                    }
-                }
-            }
-            <CollapsableTitle> {
-                title = {
-                    text: "Channels"
-                    draw_text: {
-                        color: (COLOR_TEXT_IDLE)
-                    }
-                }
-            }
-            <CollapsableTitle> {
-                title = {
-                    text: "Rooms"
-                    draw_text: {
-                        color: #666666
-                    }
-                }
-                collapse_icon = {
-                    draw_icon: { rotation_angle: 0. }
-                }
-                add_icon = {
-                    visible: true
-                }
             }
         }
         <CachedWidget> {
