@@ -16,7 +16,6 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = vec4(0.0, 0.0, 0.0, 1.0);
-                let amplitude = self.rect_size.y * 0.3;
                 let center_y = self.rect_size.y * 0.5;
                 // Creates dotting animation to right using Sine function
                 let phi = sin(self.time * self.freq);
