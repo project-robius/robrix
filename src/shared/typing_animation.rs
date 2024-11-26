@@ -7,34 +7,44 @@ live_design! {
 
     TypingAnimation = {{TypingAnimation}} {
         width: 24,
-        height: 15,
+        height: 20,
         flow: Down,
         show_bg: true,
         draw_bg: {
-            uniform freq: 5.0,  // Animation frequency
-            uniform phase_offset: 90.0, // Phase difference
+            uniform freq: 3.0,  // Animation frequency
             uniform dot_radius: 1.6, // Dot radius
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let color = vec4(0.0, 0.0, 0.0, 1.0);
                 let amplitude = self.rect_size.y * 0.3;
-                let center_y = self.rect_size.y * 0.4;
+                let center_y = self.rect_size.y * 0.5;
+                // Creates dotting animation to right using Sine function
+                let phi = sin(self.time * self.freq);
                 // Create three circle SDFs
+                if phi < 0.02 {
+                    return sdf.result;
+                }
                 sdf.circle(
                     self.rect_size.x * 0.25, 
-                    amplitude * sin(self.time * self.freq) + center_y, 
+                    center_y, 
                     self.dot_radius
                 );
                 sdf.fill(color);
+                if phi < 0.4 {
+                    return sdf.result;
+                }
                 sdf.circle(
                     self.rect_size.x * 0.5, 
-                    amplitude * sin(self.time * self.freq + self.phase_offset) + center_y, 
+                    center_y, 
                     self.dot_radius
                 );
                 sdf.fill(color);
+                if phi < 0.75 {
+                    return sdf.result;
+                }
                 sdf.circle(
                     self.rect_size.x * 0.75, 
-                    amplitude * sin(self.time * self.freq + self.phase_offset * 2) + center_y, 
+                    center_y, 
                     self.dot_radius
                 );
                 sdf.fill(color);
