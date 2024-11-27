@@ -75,6 +75,8 @@ live_design! {
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
+    NO_POST_PERMISSIOM_NOTICE = "You don't have permission to post to this room."
+
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
@@ -919,18 +921,18 @@ live_design! {
                     visible: false
                     show_bg: true
                     draw_bg: {
-                        color: #EFEFEF
+                        color: (COLOR_SECONDARY)
                     }
                     padding: {left: 75}
                     align: {y: 0.5}
-                    width: Fill, height: 31,
+                    width: Fill, height: 32
 
-                    <Label> {
+                    text = <Label> {
                         draw_text: {
-                            color: #111111
+                            color: (COLOR_TEXT)
                             text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
                         }
-                        text: "You don't have permission to post to this room"
+                        text: (NO_POST_PERMISSIOM_NOTICE)
                     }
                 }
             }
