@@ -945,7 +945,7 @@ pub fn take_timeline_endpoints(
 /// 
 /// Gets the fully read event for the given room
 /// Returns `None` if there is no fully read event
-pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)> {
+pub fn get_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)> {
     let result = ALL_ROOM_INFO
         .lock()
         .map(|guard| {
