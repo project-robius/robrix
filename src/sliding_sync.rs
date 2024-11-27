@@ -498,7 +498,7 @@ async fn async_worker(
                         let fully_read_event =  room
                             .account_data_static::<FullyReadEventContent>().await?
                             .and_then(|f| f.deserialize().ok())
-                            .and_then(|f| Some(f.content.event_id));
+                            .map(|f| f.content.event_id);
                         if let Some(event_id) = fully_read_event {
                             let event = room.event(&event_id, None).await?;
                             match event.kind {
@@ -936,7 +936,7 @@ pub fn take_timeline_endpoints(
 /// 
 /// Gets the fully read event for the given room
 /// Returns `None` if there is no fully read event
-pub fn take_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)> {
+pub fn get_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)> {
     let result = ALL_ROOM_INFO
         .lock()
         .map(|guard| {
