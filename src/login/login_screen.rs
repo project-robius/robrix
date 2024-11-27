@@ -368,7 +368,7 @@ impl MatchEvent for LoginScreen {
             self.redraw(cx);
         }
         
-        let button_vec = ["apple", "facebook", "github", "gitlab", "google"];
+        let provider_brands = ["apple", "facebook", "github", "gitlab", "google"];
         let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
             match action.downcast_ref() {
@@ -441,7 +441,7 @@ impl MatchEvent for LoginScreen {
                     self.redraw(cx);
                 }
                 Some(LoginAction::IdentityProvider(identity_providers)) => {
-                    for (view_ref, brand) in self.view_set(button_set).iter().zip(button_vec.iter()) {
+                    for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
                         for ip in identity_providers.iter() {
                             if ip.id.contains(brand) {
                                 view_ref.set_visible(true);
@@ -469,7 +469,7 @@ impl MatchEvent for LoginScreen {
             }
             self.redraw(cx);
         }
-        for (view_ref, brand) in self.view_set(button_set).iter().zip(button_vec.iter()) {
+        for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
             for ip in self.identity_providers.iter() {
                 if ip.id.contains(brand) {
                     if view_ref.finger_up(actions).is_some() && !self.sso_pending {
