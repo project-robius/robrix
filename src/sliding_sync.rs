@@ -1,4 +1,4 @@
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -9,9 +9,9 @@ use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevelsEventContent, MediaSource
+                message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
-        }, Int, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
@@ -351,7 +351,7 @@ pub enum MatrixRequest {
         event_id: OwnedEventId,
     },
     /// Sends user permission's checking once user entered room.
-    CheckUserPermission{
+    CheckUserPostPermission{
         room_id: OwnedRoomId,
     }
 }
@@ -772,7 +772,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::CheckUserPermission { room_id } => {
+            MatrixRequest::CheckUserPostPermission { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -789,12 +789,9 @@ async fn async_worker(
                 let _check_user_send_permission_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
-                    let can_user_post_message = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(true);
+                    let can_user_post = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(true);
 
-                    // It's a temporary solution while a little not rigorous, but I can't find anything better.
-                    let user_permission = if can_user_post_message { PermissionInRoom::default() } else { PermissionInRoom::Ban };
-
-                    if let Err(_) = sender.send(TimelineUpdate::PermissionInRoom(user_permission)) {
+                    if let Err(_) = sender.send(TimelineUpdate::CanUserPost(can_user_post)) {
                         error!("Failed to send the result of user send permission")
                     }
                 });
@@ -1288,7 +1285,7 @@ async fn update_room(
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    (room_avatar_changed, _) = update_latest_event(new_room_id.clone(), &new_latest_event);
+                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event);
                 }
             }
         }
@@ -1855,13 +1852,10 @@ async fn timeline_subscriber_handler(
                     // Update the latest event for this room.
                     if let Some(new_latest) = new_latest_event {
                         if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                            let (room_avatar_changed, user_permission) = update_latest_event(room_id.clone(), &new_latest);
+                            let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
                             latest_event = Some(new_latest);
                             if room_avatar_changed {
                                 spawn_fetch_room_avatar(room.clone());
-                            }
-                            if let Err(_) = timeline_update_sender.send(TimelineUpdate::PermissionInRoom(user_permission)) {
-                                error!("Failed to send the result of user permission")
                             }
                         }
                     }
@@ -1891,9 +1885,8 @@ async fn timeline_subscriber_handler(
 fn update_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
-) -> (bool, PermissionInRoom) {
+) -> bool {
     let mut room_avatar_changed = false;
-    let mut user_permission_in_room = PermissionInRoom::default();
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
 
@@ -1909,10 +1902,9 @@ fn update_latest_event(
             AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                 room_avatar_changed = true;
             }
-            AnyOtherFullStateEventContent::RoomPowerLevels(user_power_level_event) => {
-                if let Ok(permission_in_room) = check_user_permission_in_room(user_power_level_event) {
-                    user_permission_in_room = permission_in_room
-                }
+            AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
+                let id = room_id.clone();
+                submit_async_request(MatrixRequest::CheckUserPostPermission { room_id: id })
             }
             _ => { }
         }
@@ -1923,7 +1915,7 @@ fn update_latest_event(
         timestamp,
         latest_message_text,
     });
-    (room_avatar_changed, user_permission_in_room)
+    room_avatar_changed
 }
 
 
@@ -2034,44 +2026,4 @@ async fn spawn_sso_server(
         }
         Cx::post_action(LoginAction::SsoPending(false));
     });
-}
-
-#[derive(Debug, Clone, Default)]
-pub enum PermissionInRoom {
-    Ban,
-    /// Common member
-    #[default]
-    Common,
-    /// Administrator
-    Admin,
-    /// Owner of the room
-    Owner,
-}
-
-/// Check user perssion in given room.
-fn check_user_permission_in_room(full_state_event_content: &FullStateEventContent<RoomPowerLevelsEventContent>) -> Result<PermissionInRoom> {
-    match full_state_event_content {
-        FullStateEventContent::Original { content, prev_content: _ } => {
-            let client = CLIENT.get().ok_or(Error::AuthenticationRequired)?;
-            let user_id = client.user_id().ok_or(Error::AuthenticationRequired)?;
-            let permission_int = content.users.get(user_id).ok_or(Error::AuthenticationRequired)?;
-            let (admin, owner) = (Int::new_saturating(50), Int::new_saturating(100));
-
-            let permission = if permission_int.is_negative() {
-                PermissionInRoom::Ban
-            } else if &admin == permission_int {
-                PermissionInRoom::Admin
-            } else if &owner == permission_int {
-                PermissionInRoom::Owner
-            } else {
-                PermissionInRoom::default()
-            };
-
-            Ok(permission)
-        },
-        _ => {
-           error!("Not Original content.");
-           Err(anyhow!("Not Original content."))
-        }
-    }
 }

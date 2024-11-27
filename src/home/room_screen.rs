@@ -30,7 +30,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{PermissionInRoom, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1719,11 +1719,8 @@ impl RoomScreen {
                     typing_users = users;
                 }
 
-                TimelineUpdate::PermissionInRoom(permission) => {
-                    let (bottom_input_visible, no_send_permisson_notice_visible) = match permission {
-                        PermissionInRoom::Ban => (false, true),
-                        _ => (true, false)
-                    };
+                TimelineUpdate::CanUserPost(can_user_post) => {
+                    let (bottom_input_visible, no_send_permisson_notice_visible) = if can_user_post { (true, false) } else { (false, true) };
 
                     bottom_input.set_visible(bottom_input_visible);
                     no_send_permisson_notice.set_visible(no_send_permisson_notice_visible)
@@ -2122,7 +2119,7 @@ impl RoomScreen {
     /// Send request as `MatrixRequest` to check post permission.
     fn check_user_post_permission(&self) {
         if let Some(room_id) = self.room_id.clone() {
-            submit_async_request(MatrixRequest::CheckUserPermission { room_id })
+            submit_async_request(MatrixRequest::CheckUserPostPermission { room_id })
         }
     }
 }
@@ -2205,7 +2202,7 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
-    PermissionInRoom (PermissionInRoom)
+    CanUserPost (bool)
 }
 
 /// The global set of all timeline states, one entry per room.
