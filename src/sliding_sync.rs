@@ -498,7 +498,7 @@ async fn async_worker(
                         let fully_read_event =  room
                             .account_data_static::<FullyReadEventContent>().await?
                             .and_then(|f| f.deserialize().ok())
-                            .and_then(|f| Some(f.content.event_id));
+                            .map(|f| f.content.event_id);
                         if let Some(event_id) = fully_read_event {
                             let event = room.event(&event_id, None).await?;
                             match event.kind {
