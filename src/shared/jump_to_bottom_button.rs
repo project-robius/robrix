@@ -117,11 +117,16 @@ impl JumpToBottomButton {
         if unread_message_count > 0 {
             self.visible = true;
             self.view(id!(unread_message_badge)).set_visible(true);
-            self.label(id!(unread_messages_count)).set_text(&format!("{}", unread_message_count));
+            self.label(id!(unread_messages_count)).set_text(&format!(
+                "{}{}",
+                std::cmp::min(unread_message_count, 99),
+                if unread_message_count > 99 { "+" } else { "" }
+            ));
         } else {
             self.visible = false;
             self.view(id!(unread_message_badge)).set_visible(false);
-            self.label(id!(unread_messages_count)).set_text(&format!("{}", ""));
+            self.label(id!(unread_messages_count))
+                .set_text(&format!("{}", ""));
         }
     }
 

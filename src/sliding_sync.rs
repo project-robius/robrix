@@ -730,22 +730,13 @@ async fn async_worker(
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
                     };
-                    // If the new fully read event is older than the existing one, do not send the receipt
-                    if let Some((_existing_event_id, existing_timestamp)) = &room_info.fully_read_event {
-                        if timestamp < *existing_timestamp {
-                            continue;
-                        }
-                    }
                     room_info.timeline.clone()
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
-                    let receipt = Receipts::new().fully_read_marker(event_id.clone());
-                    match timeline.send_multiple_receipts(receipt).await {
-                        Ok(()) => {
-                            set_fully_read_event(&room_id, event_id.clone(), timestamp);
-                            log!("Sent fully read receipt to room {room_id}, event {event_id}")
-                        },
-                        Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
+                    let receipt_type = ReceiptType::FullyRead;
+                    match timeline.send_single_receipt(receipt_type, ReceiptThread::Unthreaded, event_id.clone()).await {
+                        Ok(sent) => log!("{} send fully read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
+                        Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
                 });
             }    
