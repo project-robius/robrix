@@ -166,7 +166,7 @@ impl LiveHook for RoomPreview {
 
 impl Widget for RoomPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid().clone();
+        let uid = self.widget_uid();
 
         match event.hits(cx, self.view.area()) {
             Hit::FingerDown(_fe) => {

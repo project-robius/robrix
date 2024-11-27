@@ -279,9 +279,9 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            let was_displayed = (self.display_filter)(&room);
+                            let was_displayed = (self.display_filter)(room);
                             room.room_name = Some(new_room_name);
-                            let should_display = (self.display_filter)(&room);
+                            let should_display = (self.display_filter)(room);
                             match (was_displayed, should_display) {
                                 (true, true) | (false, false) => {
                                     // No need to update the displayed rooms list.

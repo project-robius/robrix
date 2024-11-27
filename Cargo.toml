@@ -197,3 +197,13 @@ appdata_paths = [
     "$APPDATA/$PUBLISHER/$PRODUCTNAME",
     "$LOCALAPPDATA/$PRODUCTNAME",
 ]
+
+
+## Configuration for clippy
+[lints.clippy]
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+too_many_arguments = "allow"
+blocks_in_conditions = "allow"
+used_underscore_binding = "allow"
+module_name_repetitions = "allow"

@@ -1020,7 +1020,7 @@ impl Widget for RoomScreen {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
-                        let tl_idx = reply_message_item_id as usize;
+                        let tl_idx = reply_message_item_id;
 
                         /// The maximum number of items to search through when looking for the replied-to message.
                         /// This is a safety measure to prevent the main UI thread from getting stuck in a
@@ -1041,7 +1041,7 @@ impl Widget for RoomScreen {
                                 num_items_searched += 1;
                                 i.as_event()
                                     .and_then(|e| e.event_id())
-                                    .is_some_and(|ev_id| ev_id == &replied_to_event)
+                                    .is_some_and(|ev_id| ev_id == replied_to_event)
                             })
                             .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
 
@@ -1219,13 +1219,13 @@ impl Widget for RoomScreen {
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
             // Handle the cancel reply button being clicked.
-            if self.button(id!(cancel_reply_button)).clicked(&actions) {
+            if self.button(id!(cancel_reply_button)).clicked(actions) {
                 self.clear_replying_to();
                 self.redraw(cx);
             }
 
             // Handle the add location button being clicked.
-            if self.button(id!(location_button)).clicked(&actions) {
+            if self.button(id!(location_button)).clicked(actions) {
                 log!("Add location button clicked; requesting current location...");
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
@@ -1234,7 +1234,7 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send location button being clicked.
-            if self.button(id!(location_preview.send_location_button)).clicked(&actions) {
+            if self.button(id!(location_preview.send_location_button)).clicked(actions) {
                 let location_preview = self.location_preview(id!(location_preview));
                 if let Some((coords, _system_time_opt)) = location_preview.get_current_data() {
                     let geo_uri = format!("{}{},{}", GEO_URI_SCHEME, coords.latitude, coords.longitude);
@@ -1261,10 +1261,10 @@ impl Widget for RoomScreen {
             // Handle the send message button being clicked and enter key being pressed.
             let msg_input_widget = self.text_input(id!(message_input));
             let send_message_shortcut_pressed = msg_input_widget
-                .key_down_unhandled(&actions)
+                .key_down_unhandled(actions)
                 .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
             if send_message_shortcut_pressed
-                || self.button(id!(send_message_button)).clicked(&actions)
+                || self.button(id!(send_message_button)).clicked(actions)
             {
                 let entered_text = msg_input_widget.text().trim().to_string();
                 if !entered_text.is_empty() {
@@ -1359,7 +1359,7 @@ impl Widget for RoomScreen {
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
-                    let tl_idx = item_id as usize;
+                    let tl_idx = item_id;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1451,7 +1451,7 @@ impl Widget for RoomScreen {
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
                             let item = list.item(cx, item_id, live_id!(DayDivider));
-                            let text = unix_time_millis_to_datetime(&millis)
+                            let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
@@ -1553,7 +1553,7 @@ impl RoomScreen {
                         jump_to_bottom.update_visibility(true);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        find_new_item_matching_current_item(cx, &portal_list, curr_first_id, &tl.items, &new_items)
+                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
@@ -1652,7 +1652,7 @@ impl RoomScreen {
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
                         // Show this error in the loading modal, which should already be open.
                         loading_modal_inner.set_state(cx, LoadingModalState::Error(
-                            format!("Unable to find replied-to message; it may have been deleted."),
+                            String::from("Unable to find replied-to message; it may have been deleted.")
                         ));
                     }
 
@@ -2035,12 +2035,9 @@ impl RoomScreen {
                         if let Some(v) = tl_state.items.get(r) {
                             if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
                                 read_receipt_event = Some(e.to_owned());
-                                if !tl_state.read_event_hashmap.contains_key(&e.to_string()) {
-                                    tl_state.read_event_hashmap.insert(
-                                        e.to_string(),
-                                        (room_id.clone(), e.to_owned(), time_now, false),
-                                    );
-                                }
+                                tl_state.read_event_hashmap
+                                    .entry(e.to_string())
+                                    .or_insert_with(|| (room_id.clone(), e.to_owned(), time_now, false));
                             }
                         }
                     }
@@ -2050,7 +2047,7 @@ impl RoomScreen {
                     let mut fully_read_receipt_event = None;
                     // Implements sending fully read receipts when message is scrolled out of first row
                     for r in *index..first_index {
-                        if let Some(v) = tl_state.items.get(r).clone() {
+                        if let Some(v) = tl_state.items.get(r) {
                             if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
                                 let mut to_remove = vec![];
                                 for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
@@ -2334,7 +2331,7 @@ fn find_new_item_matching_current_item(
         };
         if let Some((idx_curr, _)) = curr_items_with_ids
             .iter()
-            .find(|(_, ev_id)| ev_id == &event_id)
+            .find(|(_, ev_id)| ev_id == event_id)
         {
             // Not all items in the portal list are guaranteed to have a position offset,
             // some may be zeroed-out, so we need to account for that possibility by only
@@ -2539,7 +2536,7 @@ fn populate_message_view(
             } else {
                 populate_text_message_content(
                     &item.html_or_plaintext(id!(content.message)),
-                    &body,
+                    body,
                     formatted.as_ref(),
                 );
                 new_drawn_status.content_drawn = true;
@@ -2573,7 +2570,7 @@ fn populate_message_view(
                 ));
                 populate_text_message_content(
                     &html_or_plaintext_ref,
-                    &body,
+                    body,
                     formatted.as_ref(),
                 );
                 new_drawn_status.content_drawn = true;
@@ -3267,7 +3264,7 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(widget_out, &body, formatted.as_ref());
+                return populate_text_message_content(widget_out, body, formatted.as_ref());
             }
             _ => { } // fall through to the general case for all timeline items below.
         }
@@ -3605,13 +3602,13 @@ fn set_avatar_and_get_username(
     // Set the sender's avatar image, or use the username if no image is available.
     avatar_img_data_opt.and_then(|data|
         avatar.show_image(
-            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone())),
+            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone()).into()),
             |img| utils::load_png_or_jpg(&img, cx, &data)
         )
         .ok()
     )
     .unwrap_or_else(|| avatar.show_text(
-        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned())),
+        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
         &username,
     ));
     (username, profile_drawn)
@@ -3640,13 +3637,13 @@ impl Widget for LocationPreview {
             for action in actions {
                 match action.downcast_ref() {
                     Some(LocationAction::Update(LocationUpdate { coordinates, time })) => {
-                        self.coords = Some(Ok(coordinates.clone()));
-                        self.timestamp = time.clone();
+                        self.coords = Some(Ok(*coordinates));
+                        self.timestamp = *time;
                         self.button(id!(send_location_button)).set_enabled(true);
                         needs_redraw = true;
                     }
                     Some(LocationAction::Error(e)) => {
-                        self.coords = Some(Err(e.clone()));
+                        self.coords = Some(Err(*e));
                         self.timestamp = None;
                         self.button(id!(send_location_button)).set_enabled(false);
                         needs_redraw = true;
@@ -3659,7 +3656,7 @@ impl Widget for LocationPreview {
             //       in the RoomScreen handle_event function.
 
             // Handle the cancel location button being clicked.
-            if self.button(id!(cancel_location_button)).clicked(&actions) {
+            if self.button(id!(cancel_location_button)).clicked(actions) {
                 self.clear();
                 needs_redraw = true;
             }
@@ -3682,7 +3679,7 @@ impl Widget for LocationPreview {
                 // }
             }
             Some(Err(e)) => format!("Error getting location: {e:?}"),
-            None => format!("Current location is not yet available."),
+            None => String::from("Current location is not yet available."),
         };
         self.label(id!(location_label)).set_text(&text);
         self.view.draw_walk(cx, scope, walk)
@@ -3709,8 +3706,8 @@ impl LocationPreview {
     pub fn get_current_data(&self) -> Option<(Coordinates, Option<SystemTime>)> {
         self.coords
             .as_ref()
-            .and_then(|res| res.ok().clone())
-            .map(|c| (c, self.timestamp.clone()))
+            .and_then(|res| res.ok())
+            .map(|c| (c, self.timestamp))
     }
 }
 
