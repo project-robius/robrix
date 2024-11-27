@@ -222,19 +222,17 @@ impl MatchEvent for App {
                 RoomsPanelAction::FocusNone => {
                     self.app_state.rooms_panel.selected_room = None;
                 }
-                _ => { }
+                RoomsPanelAction::None => { }
             }
 
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
-            match action.downcast_ref() {
-                Some(VerificationAction::RequestReceived(state)) => {
-                    self.ui.verification_modal(id!(verification_modal_inner))
-                        .initialize_with_data(state.clone());
-                    self.ui.modal(id!(verification_modal)).open(cx);
-                }
-                // other verification actions are handled by the verification modal itself.
-                _ => { }
+            //
+            // Note: other verification actions are handled by the verification modal itself.
+            if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
+                self.ui.verification_modal(id!(verification_modal_inner))
+                    .initialize_with_data(state.clone());
+                self.ui.modal(id!(verification_modal)).open(cx);
             }
 
             if let VerificationModalAction::Close = action.as_widget_action().cast() {

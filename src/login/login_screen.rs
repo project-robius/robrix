@@ -361,14 +361,14 @@ impl MatchEvent for LoginScreen {
                 submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
-                    homeserver: homeserver.is_empty().not().then(|| homeserver),
+                    homeserver: homeserver.is_empty().not().then_some(homeserver),
                 })));
             }
             sso_search_button.set_enabled(self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
         
-        let button_vec = vec!["apple", "facebook", "github", "gitlab", "google"];
+        let button_vec = ["apple", "facebook", "github", "gitlab", "google"];
         let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
             match action.downcast_ref() {
@@ -472,14 +472,12 @@ impl MatchEvent for LoginScreen {
         for (view_ref, brand) in self.view_set(button_set).iter().zip(button_vec.iter()) {
             for ip in self.identity_providers.iter() {
                 if ip.id.contains(brand) {
-                    if let Some(_) = view_ref.finger_up(&actions) {
-                        if !self.sso_pending {
-                            submit_async_request(MatrixRequest::SpawnSSOServer{
-                                identity_provider_id: ip.id.clone(),
-                                brand: brand.to_string(),
-                                homeserver_url: homeserver_input.text()
-                            });
-                        }
+                    if view_ref.finger_up(actions).is_some() && !self.sso_pending {
+                        submit_async_request(MatrixRequest::SpawnSSOServer{
+                            identity_provider_id: ip.id.clone(),
+                            brand: brand.to_string(),
+                            homeserver_url: homeserver_input.text()
+                        });
                     }
                     break;
                 }
