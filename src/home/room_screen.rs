@@ -2620,9 +2620,6 @@ fn populate_message_view(
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
-            // set the avatar image to a red exclamation mark
-
-            // maybe test with a room that has been upgraded? Office of the Matrix Foundation has been recently upgraded
         }
         // An emote is just like a message but is prepended with the user's name
         // to indicate that it's an "action" that the user is performing.
