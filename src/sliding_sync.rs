@@ -13,7 +13,7 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Room
+    }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -21,16 +21,17 @@ use matrix_sdk_ui::{
     timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
     Timeline,
 };
+use robius_open::Uri;
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
-
+use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -38,7 +39,7 @@ use crate::{
 };
 
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user name that should be used for the login.
     #[clap(value_parser)]
@@ -64,8 +65,8 @@ struct Cli {
     #[clap(short, long, action)]
     verbose: bool,
 }
-impl From<LoginRequest> for Cli {
-    fn from(login: LoginRequest) -> Self {
+impl From<LoginByPassword> for Cli {
+    fn from(login: LoginByPassword) -> Self {
         Self {
             username: login.user_id,
             password: login.password,
@@ -133,45 +134,97 @@ async fn build_client(
     ))
 }
 
-
-async fn login(cli: Cli) -> Result<(Client, Option<String>)> {
-    let (client, client_session) = build_client(&cli, app_data_dir()).await?;
-
-    // Query the server for supported login types.
-    let login_kinds = client.matrix_auth().get_login_types().await?;
-    if !login_kinds.flows.iter().any(|flow| matches!(flow, LoginType::Password(_))) {
-        bail!("Homeserver does not support username + password login flow.");
-    }
-
-    // Attempt to login using the CLI-provided username & password.
-    let login_result = client
-        .matrix_auth()
-        .login_username(&cli.username, &cli.password)
-        .initial_device_display_name("robrix-un-pw")
-        .send()
-        .await?;
-
-    log!("Login result: {login_result:?}");
-    if client.logged_in() {    
-        log!("Logged in successfully? {:?}", client.logged_in());
-        enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: format!("Logged in as {}. Loading rooms...", &cli.username),
-        });
-        if let Err(e) = persistent_state::save_session(
-            &client,
-            client_session,
-        ).await {
-            error!("Failed to save session state to storage: {e:?}");
+/// Logs in to the given Matrix homeserver using the given username and password.
+///
+/// This function is used by the login screen to log in to the Matrix server.
+///
+/// Upon success, this function returns the logged-in client and an optional sync token.
+async fn login(
+    cli: &Cli,
+    login_request: LoginRequest,
+    login_types: &Vec<LoginType>,
+) -> Result<(Client, Option<String>)> {
+    match login_request {
+        LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
+            let cli = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
+                &Cli::from(login_by_password)
+            } else {
+                &cli
+            };
+            let (client, client_session) = build_client(cli, app_data_dir()).await?;
+            if !login_types
+                .iter()
+                .any(|flow| matches!(flow, LoginType::Password(_)))
+            {
+                bail!("Homeserver does not support username + password login flow.");
+            }
+            // Attempt to login using the CLI-provided username & password.
+            let login_result = client
+                .matrix_auth()
+                .login_username(&cli.username.clone(), &cli.password.clone())
+                .initial_device_display_name("robrix-un-pw")
+                .send()
+                .await?;
+            if client.logged_in() {
+                log!("Logged in successfully? {:?}", client.logged_in());
+                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                    status: format!("Logged in as {}. Loading rooms...", cli.username),
+                });
+                if let Err(e) = persistent_state::save_session(&client, client_session).await {
+                    error!("Failed to save session state to storage: {e:?}");
+                }
+                Ok((client, None))
+            } else {
+                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                    status: format!("Failed to login as {}: {:?}", cli.username, login_result),
+                });
+                bail!("Failed to login as {}: {login_result:?}", cli.username);
+            }
         }
-        Ok((client, None))
-    } else {
-        enqueue_rooms_list_update(RoomsListUpdate::Status {
-            status: format!("Failed to login as {}: {:?}", &cli.username, login_result),
-        });
-        bail!("Failed to login as {}: {login_result:?}", &cli.username)
+       
+        LoginRequest::LoginBySSOSuccess(client, client_session) => {
+            if let Err(e) = persistent_state::save_session(&client, client_session).await {
+                error!("Failed to save session state to storage: {e:?}");
+            }
+            Ok((client, None))
+        }
+        LoginRequest::HomeserverLoginTypesQuery(_) => {
+            bail!("LoginRequest::HomeserverLoginTypesQuery not handled earlier");
+        }
     }
 }
 
+async fn populate_login_types(
+    homeserver_url: &str,
+    login_types: &mut Vec<LoginType>,
+) -> Result<()> {
+    Cx::post_action(LoginAction::Status(format!("Fetching Login Types ...")));
+    let homeserver_url = if homeserver_url.is_empty() {
+        DEFAULT_HOMESERVER
+    } else {
+        homeserver_url
+    };
+    let client = Client::builder()
+        .server_name_or_homeserver_url(homeserver_url)
+        .build()
+        .await?;
+    match client.matrix_auth().get_login_types().await {
+        Ok(login_types_res) => {
+            *login_types = login_types_res.flows;
+            let identity_providers = login_types.iter().fold(Vec::new(), |mut acc, login_type| {
+                if let LoginType::Sso(sso_type) = login_type {
+                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
+                }
+                acc
+            });
+            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
+            return Ok(());
+        }
+        Err(e) => {
+            return Err(e.into());
+        }
+    }
+}
 
 /// Which direction to paginate in.
 /// 
@@ -274,6 +327,15 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         typing: bool,
     },
+    /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
+    ///
+    /// While an SSO request is in flight, the login screen will temporarily prevent the user
+    /// from submitting another redundant request, until this request has succeeded or failed.
+    SpawnSSOServer{
+        brand: String,
+        homeserver_url: String,
+        identity_provider_id: String,
+    },
     /// Subscribe to typing notices for the given room.
     ///
     /// This request does not return a response or notify the UI thread.
@@ -303,9 +365,16 @@ pub fn submit_async_request(req: MatrixRequest) {
         .expect("BUG: async worker task receiver has died!");
 }
 
-
+/// Details of a login request that get submitted within [`MatrixRequest::Login`].
+pub enum LoginRequest{
+    LoginByPassword(LoginByPassword),
+    LoginBySSOSuccess(Client, ClientSessionPersisted),
+    LoginByCli,
+    HomeserverLoginTypesQuery(String),
+    
+}
 /// Information needed to log in to a Matrix homeserver.
-pub struct LoginRequest {
+pub struct LoginByPassword {
     pub user_id: String,
     pub password: String,
     pub homeserver: Option<String>,
@@ -642,7 +711,9 @@ async fn async_worker(
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
-
+            MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
+                spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
+            }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
@@ -765,7 +836,6 @@ pub fn start_matrix_tokio() -> Result<()> {
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
     
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
-
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
@@ -973,7 +1043,7 @@ fn username_to_full_user_id(
         .try_into()
         .ok()
         .or_else(|| {
-            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
+            let homeserver_url = homeserver.unwrap_or_else( || DEFAULT_HOMESERVER);
             let user_id_str = if username.starts_with("@") {
                 format!("{}:{}", username, homeserver_url)
             } else {
@@ -1020,18 +1090,23 @@ async fn async_main_loop(
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
 
-            if let Ok(cli) = cli_parse_result {
+            if let Ok(cli) = &cli_parse_result {
                 let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
                 log!("{status_str}");
                 Cx::post_action(LoginAction::Status(status_str));
-
-                match login(cli).await {
+                let mut login_types: Vec<LoginType> = Vec::new();
+                let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
+                if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
+                    error!("Populating Login types failed: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {e:?}")));
+                }
+                match login(cli, LoginRequest::LoginByCli, &login_types).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(e.to_string()));
+                        Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
+                            status: format!("Login failed: {e:?}"),
                         });
                         None
                     }
@@ -1043,26 +1118,47 @@ async fn async_main_loop(
     } else {
         None
     };
-
+    let cli: Cli = cli_parse_result.unwrap_or(Cli::default());
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
-        None => loop {
-            log!("Waiting for login request...");
-            if let Some(login_request) = login_receiver.recv().await {
-                log!("Received login request for user {}", login_request.user_id);
-                match login(Cli::from(login_request)).await {
-                    Ok(new_login) => break new_login,
-                    Err(e) => {
-                        error!("Login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(e.to_string()));
-                        enqueue_rooms_list_update(RoomsListUpdate::Status {
-                            status: e.to_string(),
-                        });
+        None => {
+            let homeserver_url = cli.homeserver.as_deref()
+                .unwrap_or_else(|| DEFAULT_HOMESERVER);
+            let mut login_types = Vec::new();
+            // Display the available Identity providers by fetching the login types
+            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
+                error!("Populating Login types failed for {homeserver_url}: {e:?}");
+                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed for {homeserver_url} {e:?}")));
+            }
+            loop {
+                log!("Waiting for login request...");
+                match login_receiver.recv().await {
+                    Some(login_request) => {
+                        if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
+                            if let Err(e) = populate_login_types(&homeserver_url, &mut login_types).await {
+                                error!("Populating Login types failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {e:?}")));
+                            }
+                            continue
+                        }
+                        match login(&cli, login_request, &login_types).await {
+                            Ok((client, sync_token)) => {
+                                break (client, sync_token);
+                            }
+                            Err(e) => {
+                                error!("Login failed: {e:?}");
+                                Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
+                                enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                    status: format!("Login failed: {e:?}"),
+                                });
+                            }
+                        }
+                    },
+                    None => {
+                        error!("BUG: login_receiver hung up unexpectedly");
+                        return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
                     }
                 }
-            } else {
-                error!("BUG: login_receiver hung up unexpectedly");
-                return Err(anyhow::anyhow!("BUG: login_receiver hung up unexpectedly"));
             }
         }
     };
@@ -1256,6 +1352,13 @@ async fn update_room(
                 });
             }
         }
+
+        if let Ok(new_tags) = new_room.tags().await {
+            enqueue_rooms_list_update(RoomsListUpdate::Tags {
+                room_id: new_room_id.clone(),
+                new_tags,
+            });
+        }
         Ok(())
     }
     else {
@@ -1340,9 +1443,10 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         |ev| get_latest_event_details(ev, &room_id)
     );
 
-    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
+    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
         room_id: room_id.clone(),
         latest,
+        tags: room.tags().await.ok().flatten(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
@@ -1490,9 +1594,16 @@ fn get_latest_event_details(
 }
 
 
+/// A request to search backwards for a specific event in a room's timeline.
 pub struct BackwardsPaginateUntilEventRequest {
     pub room_id: OwnedRoomId,
     pub target_event_id: OwnedEventId,
+    /// The index in the timeline where a backwards search should begin.
+    pub starting_index: usize,
+    /// The number of items in the timeline at the time of the request,
+    /// which is used to detect if the timeline has changed since the request was made,
+    /// meaning that the `starting_index` can no longer be relied upon.
+    pub current_tl_len: usize,
 }
 
 const LOG_TIMELINE_DIFFS: bool = false;
@@ -1545,20 +1656,85 @@ async fn timeline_subscriber_handler(
 
     let mut latest_event = timeline.latest_event().await;
 
+    // the event ID to search for while loading previous items into the timeline.
     let mut target_event_id = None;
-    let mut found_target_event_id = None;
+    // the timeline index and event ID of the target event, if it has been found.
+    let mut found_target_event_id: Option<(usize, OwnedEventId)> = None;
 
     loop { tokio::select! {
         // we must check for new requests before handling new timeline updates.
         biased;
 
+        // Handle updates to the current backwards pagination requests.
         Ok(()) = request_receiver.changed() => {
-            target_event_id = request_receiver
+            let prev_target_event_id = target_event_id.clone();
+            let new_request_details = request_receiver
                 .borrow_and_update()
                 .iter()
-                .find_map(|req| (req.room_id == room_id).then(|| req.target_event_id.clone()));
+                .find_map(|req| req.room_id
+                    .eq(&room_id)
+                    .then(|| (req.target_event_id.clone(), req.starting_index, req.current_tl_len))
+                );
+
+            target_event_id = new_request_details.as_ref().map(|(ev, ..)| ev.clone());
+
+            // If we received a new request, start searching backwards for the target event.
+            if let Some((new_target_event_id, starting_index, current_tl_len)) = new_request_details {
+                if prev_target_event_id.as_ref() != Some(&new_target_event_id) {
+                    let starting_index = if current_tl_len == timeline_items.len() {
+                        starting_index
+                    } else {
+                        // The timeline has changed since the request was made, so we can't rely on the `starting_index`.
+                        // Instead, we have no choice but to start from the end of the timeline.
+                        timeline_items.len()
+                    };
+                    // log!("Received new request to search for event {new_target_event_id} in room {room_id} starting from index {starting_index} (tl len {}).", timeline_items.len());
+                    // Search backwards for the target event in the timeline, starting from the given index.
+                    if let Some(target_event_tl_index) = timeline_items
+                        .focus()
+                        .narrow(..starting_index)
+                        .into_iter()
+                        .rev()
+                        .position(|i| i.as_event()
+                            .and_then(|e| e.event_id())
+                            .is_some_and(|ev_id| ev_id == &new_target_event_id)
+                        )
+                        .map(|i| starting_index.saturating_sub(i).saturating_sub(1))
+                    {
+                        // log!("Found existing target event {new_target_event_id} in room {room_id} at index {target_event_tl_index}.");
+
+                        // Nice! We found the target event in the current timeline items,
+                        // so there's no need to actually proceed with backwards pagination;
+                        // thus, we can clear the locally-tracked target event ID.
+                        target_event_id = None;
+                        found_target_event_id = None;
+                        timeline_update_sender.send(
+                            TimelineUpdate::TargetEventFound {
+                                target_event_id: new_target_event_id.clone(),
+                                index: target_event_tl_index,
+                            }
+                        ).unwrap_or_else(
+                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({new_target_event_id}, {target_event_tl_index}) to room {room_id}!")
+                        );
+                        // Send a Makepad-level signal to update this room's timeline UI view.
+                        SignalToUI::set_ui_signal();
+                    }
+                    else {
+                        // log!("Target event not in timeline. Starting backwards pagination in room {room_id} to find target event {new_target_event_id} starting from index {starting_index}.");
+
+                        // If we didn't find the target event in the current timeline items,
+                        // we need to start loading previous items into the timeline.
+                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                            room_id: room_id.clone(),
+                            num_events: 50,
+                            direction: PaginationDirection::Backwards,
+                        });
+                    }
+                }
+            }
         }
 
+        // Handle updates to the actual timeline content.
         batch_opt = subscriber.next() => {
             if let Some(batch) = batch_opt {
                 let mut num_updates = 0;
@@ -1571,6 +1747,7 @@ async fn timeline_subscriber_handler(
                 // whether the changes include items being appended to the end of the timeline
                 let mut is_append = false;
                 for diff in batch {
+                    num_updates += 1;
                     match diff {
                         VectorDiff::Append { values } => {
                             let _values_len = values.len();
@@ -1580,14 +1757,12 @@ async fn timeline_subscriber_handler(
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
                             is_append = true;
-                            num_updates += 1;
                         }
                         VectorDiff::Clear => {
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Clear"); }
                             clear_cache = true;
                             timeline_items.clear();
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                         VectorDiff::PushFront { value } => {
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushFront"); }
@@ -1600,7 +1775,6 @@ async fn timeline_subscriber_handler(
                             clear_cache = true;
                             timeline_items.push_front(value);
                             reobtain_latest_event |= latest_event.is_none();
-                            num_updates += 1;
                         }
                         VectorDiff::PushBack { value } => {
                             index_of_first_change = min(index_of_first_change, timeline_items.len());
@@ -1609,7 +1783,6 @@ async fn timeline_subscriber_handler(
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
                             is_append = true;
-                            num_updates += 1;
                         }
                         VectorDiff::PopFront => {
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopFront"); }
@@ -1619,7 +1792,6 @@ async fn timeline_subscriber_handler(
                                 *i = i.saturating_sub(1); // account for the first item being removed.
                             }
                             // This doesn't affect whether we should reobtain the latest event.
-                            num_updates += 1;
                         }
                         VectorDiff::PopBack => {
                             timeline_items.pop_back();
@@ -1627,7 +1799,6 @@ async fn timeline_subscriber_handler(
                             index_of_last_change = usize::MAX;
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                         VectorDiff::Insert { index, value } => {
                             if index == 0 {
@@ -1653,7 +1824,6 @@ async fn timeline_subscriber_handler(
                             timeline_items.insert(index, value);
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                         VectorDiff::Set { index, value } => {
                             index_of_first_change = min(index_of_first_change, index);
@@ -1661,7 +1831,6 @@ async fn timeline_subscriber_handler(
                             timeline_items.set(index, value);
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                         VectorDiff::Remove { index } => {
                             if index == 0 {
@@ -1679,7 +1848,6 @@ async fn timeline_subscriber_handler(
                             timeline_items.remove(index);
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                         VectorDiff::Truncate { length } => {
                             if length == 0 {
@@ -1691,14 +1859,12 @@ async fn timeline_subscriber_handler(
                             timeline_items.truncate(length);
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                         VectorDiff::Reset { values } => {
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Reset, new length {}", values.len()); }
                             clear_cache = true; // we must assume all items have changed.
                             timeline_items = values;
                             reobtain_latest_event = true;
-                            num_updates += 1;
                         }
                     }
                 }
@@ -1724,14 +1890,15 @@ async fn timeline_subscriber_handler(
 
                     // We must send this update *after* the actual NewItems update,
                     // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
-                    if let Some((index, target_event_id)) = found_target_event_id.take() {
+                    if let Some((index, found_event_id)) = found_target_event_id.take() {
+                        target_event_id = None;
                         timeline_update_sender.send(
                             TimelineUpdate::TargetEventFound {
-                                target_event_id: target_event_id.clone(),
+                                target_event_id: found_event_id.clone(),
                                 index,
                             }
                         ).unwrap_or_else(
-                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({target_event_id}, {index}) to room {room_id}!")
+                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}!")
                         );
                     }
 
@@ -1835,4 +2002,80 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
             .map(ToString::to_string)
             .unwrap_or_default()
     )
+}
+
+/// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
+///
+/// This function will post a `LoginAction::SsoPending(true)` to the main thread, and another
+/// `LoginAction::SsoPending(false)` once the async task has either successfully logged in or
+/// failed to do so.
+///
+/// If the login attempt is successful, the resulting `Client` and `ClientSession` will be sent
+/// to the login screen using the `login_sender`.
+async fn spawn_sso_server(
+    brand: String,
+    homeserver_url: String,
+    identity_provider_id: String,
+    login_sender: Sender<LoginRequest>,
+) {
+    Cx::post_action(LoginAction::SsoPending(true));
+    Cx::post_action(LoginAction::Status(format!("Opening Browser ...")));
+    let mut cli = Cli::default();
+    cli.homeserver = (!homeserver_url.is_empty()).then_some(homeserver_url);
+    Handle::current().spawn(async move {
+        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else { 
+            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string())); 
+            return; 
+        }; 
+        let mut is_logged_in = false;
+        match client
+            .matrix_auth()
+            .login_sso(|sso_url: String| async move {
+                Uri::new(&sso_url).open().map_err(|err| {
+                    Error::UnknownError(
+                        Box::new(io::Error::new(
+                            io::ErrorKind::Other,
+                            format!("Unable to open SSO login url. Error: {:?}", err),
+                        ))
+                        .into(),
+                    )
+                })
+            })
+            .identity_provider_id(&identity_provider_id)
+            .initial_device_display_name(&format!("robrix-sso-{brand}"))
+            .await
+            .map(|response| {
+                if let Some(client) = get_client() {
+                    if client.logged_in() {
+                        is_logged_in = true;
+                        log!("Already logged in, ignore login with sso");
+                    }
+                }
+                response
+            }) {
+            Ok(identity_provider_res) => {
+                if !is_logged_in {
+                    if let Err(e) = login_sender.send(LoginRequest::LoginBySSOSuccess(client, client_session)).await {
+                        error!("Error sending login request to login_sender: {e:?}");
+                        Cx::post_action(LoginAction::LoginFailure(String::from(
+                            "BUG: failed to send login request to async worker thread."
+                        )));
+                    }
+                    enqueue_rooms_list_update(RoomsListUpdate::Status {
+                        status: format!(
+                            "Logged in as {:?}. Loading rooms...",
+                            &identity_provider_res.user_id
+                        ),
+                    });
+                }
+            }
+            Err(e) => {
+                if !is_logged_in {
+                    error!("Login by SSO failed: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {}", e.to_string())));
+                }
+            }
+        }
+        Cx::post_action(LoginAction::SsoPending(false));
+    });
 }

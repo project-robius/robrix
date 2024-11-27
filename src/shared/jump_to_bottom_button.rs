@@ -1,6 +1,5 @@
 use makepad_widgets::*;
 
-const SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS: usize = 30;
 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
 
 live_design! {
@@ -151,8 +150,8 @@ impl JumpToBottomButton {
         if self.button(id!(jump_to_bottom_button)).clicked(actions) {
             portal_list.smooth_scroll_to_end(
                 cx,
-                SCROLL_TO_BOTTOM_NUM_ANIMATION_ITEMS,
                 SCROLL_TO_BOTTOM_SPEED,
+                None,
             );
             self.update_visibility(false);
         } else {

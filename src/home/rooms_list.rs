@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Deref};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
+use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
@@ -80,7 +80,7 @@ pub enum RoomsListUpdate {
     /// the max number of rooms that will ever be loaded.
     LoadedRooms{ max_rooms: Option<u32> },
     /// Add a new room to the list of all rooms.
-    AddRoom(RoomPreviewEntry),
+    AddRoom(RoomsListEntry),
     /// Clear all rooms in the list of all rooms.
     ClearRooms,
     /// Update the latest event content and timestamp for the given room.
@@ -102,6 +102,11 @@ pub enum RoomsListUpdate {
     },
     /// Remove the given room from the list of all rooms.
     RemoveRoom(OwnedRoomId),
+    /// Update the tags for the given room.
+    Tags {
+        room_id: OwnedRoomId,
+        new_tags: Option<Tags>,
+    },
     /// Update the status label at the bottom of the list of all rooms.
     Status {
         status: String,
@@ -132,11 +137,15 @@ pub enum RoomListAction {
 }
 
 #[derive(Debug)]
-pub struct RoomPreviewEntry {
+pub struct RoomsListEntry {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The tags associated with this room, if any.
+    /// This includes things like is_favourite, is_low_priority,
+    /// whether the room is a server notice room, etc.
+    pub tags: Option<Tags>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
@@ -179,14 +188,14 @@ impl Default for RoomPreviewAvatar {
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
-pub struct RoomDisplayFilter(Box<dyn Fn(&RoomPreviewEntry) -> bool>);
+pub struct RoomDisplayFilter(Box<dyn Fn(&RoomsListEntry) -> bool>);
 impl Default for RoomDisplayFilter {
     fn default() -> Self {
         RoomDisplayFilter(Box::new(|_| true))
     }
 }
 impl Deref for RoomDisplayFilter {
-    type Target = Box<dyn Fn(&RoomPreviewEntry) -> bool>;
+    type Target = Box<dyn Fn(&RoomsListEntry) -> bool>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -197,7 +206,7 @@ pub struct RoomsList {
     #[deref] view: View,
 
     /// The single set of all known rooms and their cached preview info.
-    #[rust] all_rooms: HashMap<OwnedRoomId, RoomPreviewEntry>,
+    #[rust] all_rooms: HashMap<OwnedRoomId, RoomsListEntry>,
 
     /// The currently-active filter function for the list of rooms.
     ///
@@ -323,6 +332,13 @@ impl Widget for RoomsList {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
                     }
+                    RoomsListUpdate::Tags { room_id, new_tags } => {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            room.tags = new_tags;
+                        } else {
+                            error!("Error: couldn't find room {room_id} to update tags");
+                        }
+                    }
                     RoomsListUpdate::Status { status } => {
                         self.status = status;
                     }
@@ -376,7 +392,7 @@ impl Widget for RoomsList {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Override the current active room index if the app state has a different selected room
         if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
-            if let Some(room_index) = self.displayed_rooms.iter().position(|r| r == &room.id) {
+            if let Some(room_index) = self.displayed_rooms.iter().position(|r| r == &room.room_id) {
                 self.current_active_room_index = Some(room_index);
             }
         } else {

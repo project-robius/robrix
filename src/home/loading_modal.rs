@@ -145,7 +145,7 @@ impl Widget for LoadingModal {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk.with_abs_pos(DVec2 { x: 0., y: 0. }))
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
@@ -194,10 +194,10 @@ impl LoadingModal {
                 events_paginated,
                 ..
             } => {
-                self.set_title(cx, "Loading older messages...");
+                self.set_title(cx, "Searching older messages...");
                 self.set_status(cx, &format!(
                     "Looking for event {target_event_id}\n\n\
-                    Loaded {events_paginated} messages so far...",
+                    Fetched {events_paginated} messages so far...",
                 ));
                 cancel_button.set_text_and_redraw(cx, "Cancel");
             }
