@@ -9,7 +9,7 @@ use crate::{
     utils::{self, relative_format},
 };
 
-use super::rooms_list::{RoomPreviewAvatar, RoomPreviewEntry};
+use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -209,7 +209,7 @@ impl Widget for RoomPreviewContent {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let Some(room_info) = scope.props.get::<RoomPreviewEntry>() {
+        if let Some(room_info) = scope.props.get::<RoomsListEntry>() {
             if let Some(ref name) = room_info.room_name {
                 self.view.label(id!(room_name)).set_text(name);
             }

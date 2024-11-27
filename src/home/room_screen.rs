@@ -36,6 +36,8 @@ use super::loading_modal::{LoadingModalAction, LoadingModalState};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
+const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
+
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -2502,6 +2504,7 @@ fn populate_message_view(
     let ts_millis = event_tl_item.timestamp();
 
     let mut is_notice = false; // whether this message is a Notice
+    let mut is_server_notice = false; // whether this message is a Server Notice
 
     // Determine whether we can use a more compact UI view that hides the user's profile info
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
@@ -2576,6 +2579,50 @@ fn populate_message_view(
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
+        }
+        MessageOrStickerType::ServerNotice(sn) => {
+            is_server_notice = true;
+            let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            if existed && item_drawn_status.content_drawn {
+                (item, true)
+            } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                html_or_plaintext_ref.apply_over(cx, live!(
+                    html_view = {
+                        html = {
+                            font_color: (COLOR_DANGER_RED),
+                            draw_normal:      { color: (COLOR_DANGER_RED), }
+                            draw_italic:      { color: (COLOR_DANGER_RED), }
+                            draw_bold:        { color: (COLOR_DANGER_RED), }
+                            draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                        }
+                    }
+                ));
+                let formatted = format!(
+                    "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
+                    sn.body,
+                    sn.server_notice_type.as_str(),
+                    sn.limit_type.as_ref()
+                        .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
+                        .unwrap_or_default(),
+                    sn.admin_contact.as_ref()
+                        .map(|c| format!("\n<i>Admin contact:</i> {}", c))
+                        .unwrap_or_default(),
+                );
+                populate_text_message_content(
+                    &html_or_plaintext_ref,
+                    &sn.body,
+                    Some(&FormattedBody {
+                        format: MessageFormat::Html,
+                        body: formatted,
+                    }),
+                );
+                new_drawn_status.content_drawn = true;
+                (item, false)
+            }
+            // set the avatar image to a red exclamation mark
+
+            // maybe test with a room that has been upgraded? Office of the Matrix Foundation has been recently upgraded
         }
         // An emote is just like a message but is prepended with the user's name
         // to indicate that it's an "action" that the user is performing.
@@ -2782,26 +2829,46 @@ fn populate_message_view(
         new_drawn_status.profile_drawn = true;
     } else {
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
-        let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-            set_avatar_and_get_username(
-                cx,
-                item.avatar(id!(profile.avatar)),
-                room_id,
-                event_tl_item.sender(),
-                event_tl_item.sender_profile(),
-                event_tl_item.event_id(),
-            )
-        );
         let username_label = item.label(id!(content.username));
-        if is_notice {
-            username_label.apply_over(cx, live!(
-                draw_text: {
-                    color: (MESSAGE_NOTICE_TEXT_COLOR),
+
+        if !is_server_notice { // the normal case
+            let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
+                set_avatar_and_get_username(
+                    cx,
+                    item.avatar(id!(profile.avatar)),
+                    room_id,
+                    event_tl_item.sender(),
+                    event_tl_item.sender_profile(),
+                    event_tl_item.event_id(),
+                )
+            );
+            if is_notice {
+                username_label.apply_over(cx, live!(
+                    draw_text: {
+                        color: (MESSAGE_NOTICE_TEXT_COLOR),
+                    }
+                ));
+            }
+            username_label.set_text(&username);
+            new_drawn_status.profile_drawn = profile_drawn;
+        }
+        else {
+            // Server notices are drawn with a red color avatar background and username.
+            let avatar = item.avatar(id!(profile.avatar));
+            avatar.show_text(None, "⚠");
+            avatar.apply_over(cx, live!(
+                text_view = {
+                    draw_bg: { background_color: (COLOR_DANGER_RED), }
                 }
             ));
+            username_label.set_text("Server notice");
+            username_label.apply_over(cx, live!(
+                draw_text: {
+                    color: (COLOR_DANGER_RED),
+                }
+            ));
+            new_drawn_status.profile_drawn = true;
         }
-        username_label.set_text(&username);
-        new_drawn_status.profile_drawn = profile_drawn;
     }
 
     // If we've previously drawn the item content, skip all other steps.
