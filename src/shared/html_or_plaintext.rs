@@ -32,7 +32,7 @@ live_design! {
 
     // A centralized widget where we define styles and custom elements for HTML
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
-    RobrixHtml = <Html> {
+    MessageHtml = <Html> {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
         font_size: (MESSAGE_FONT_SIZE),
@@ -59,19 +59,13 @@ live_design! {
 
         a = {
             padding: {left: 1.0, right: 1.5},
-            // draw_text: {
-            //     text_style: <MESSAGE_TEXT_STYLE> { font_size: (MESSAGE_FONT_SIZE), height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING), top_drop: 1.2, },
-            //     color: #00f,
-            //     color_pressed: #f00,
-            //     color_hover: #0f0,
-            // }
         }
 
         body: "[<i> HTML message placeholder</i>]",
     }
 
     // A view container that displays either plaintext s(a simple `Label`)
-    // or rich HTML content (an instance of `RobrixHtml`).
+    // or rich HTML content (an instance of `MessageHtml`).
     //
     // Key Usage Notes:
     // * Labels need their width to be Fill *and* all of their parent views
@@ -101,7 +95,7 @@ live_design! {
         html_view = <View> {
             visible: false,
             width: Fill, height: Fit, // see above comment
-            html = <RobrixHtml> {}
+            html = <MessageHtml> {}
         }
     }
 }

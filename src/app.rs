@@ -159,7 +159,11 @@ impl LiveRegister for App {
     }
 }
 
-impl LiveHook for App { }
+impl LiveHook for App {
+    fn after_update_from_doc(&mut self, _cx:&mut Cx) {
+        self.update_login_visibility();
+    }
+}
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, _cx: &mut Cx) {
@@ -168,8 +172,7 @@ impl MatchEvent for App {
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        log!("Showing login view");
-        self.set_login_visible(true);
+        self.update_login_visibility();
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
@@ -179,7 +182,8 @@ impl MatchEvent for App {
         for action in actions {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.set_login_visible(false);
+                self.app_state.logged_in = true;
+                self.update_login_visibility();
                 self.ui.redraw(cx);
             }
 
@@ -190,28 +194,30 @@ impl MatchEvent for App {
                     room_index: _,
                     room_name,
                 } => {
+
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
-                        id: room_id.clone(),
-                        name: room_name.clone(),
+                        room_id: room_id.clone(),
+                        room_name: room_name.clone(),
                     });
 
                     let widget_uid = self.ui.widget_uid();
+                    // Navigate to the main content view
                     cx.widget_action(
                         widget_uid,
                         &Scope::default().path,
                         StackNavigationAction::NavigateTo(live_id!(main_content_view))
                     );
+                    // Update the Stack Navigation header with the room name
+                    self.ui.label(id!(main_content_view.header.content.title_container.title))
+                        .set_text(&room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
                 RoomListAction::None => { }
             }
 
             match action.as_widget_action().cast() {
-                RoomsPanelAction::RoomFocused(room_id) => {
-                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
-                        id: room_id.clone(),
-                        name: None
-                    });
+                RoomsPanelAction::RoomFocused(selected_room) => {
+                    self.app_state.rooms_panel.selected_room = Some(selected_room.clone());
                 }
                 RoomsPanelAction::FocusNone => {
                     self.app_state.rooms_panel.selected_room = None;
@@ -272,15 +278,17 @@ impl AppMain for App {
 }
 
 impl App {
-    fn set_login_visible(&self, visibility: bool) {
-        self.ui.view(id!(login_screen_view)).set_visible(visibility);
-        self.ui.view(id!(home_screen_view)).set_visible(!visibility);
+    fn update_login_visibility(&self) {
+        let login_visible = !self.app_state.logged_in;
+        self.ui.view(id!(login_screen_view)).set_visible(login_visible);
+        self.ui.view(id!(home_screen_view)).set_visible(!login_visible);
     }
 }
 
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    pub logged_in: bool,
 }
 
 #[derive(Default, Debug)]
@@ -288,9 +296,18 @@ pub struct RoomsPanelState {
     pub selected_room: Option<SelectedRoom>,
 }
 
-#[derive(Debug)]
+/// Represents a room currently or previously selected by the user.
+///
+/// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
+#[derive(Clone, Debug)]
 pub struct SelectedRoom {
-    pub id: OwnedRoomId,
-    pub name: Option<String>,
+    pub room_id: OwnedRoomId,
+    pub room_name: Option<String>,
 }
+impl PartialEq for SelectedRoom {
+    fn eq(&self, other: &Self) -> bool {
+        self.room_id == other.room_id
+    }
+}
+impl Eq for SelectedRoom {}
 

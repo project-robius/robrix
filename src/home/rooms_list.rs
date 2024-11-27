@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId};
+use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
@@ -52,6 +52,7 @@ live_design! {
 
         list = <PortalList> {
             keep_invisible: false
+            auto_tail: false
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
 
@@ -79,7 +80,7 @@ pub enum RoomsListUpdate {
     /// the max number of rooms that will ever be loaded.
     LoadedRooms{ max_rooms: Option<u32> },
     /// Add a new room to the list of all rooms.
-    AddRoom(RoomPreviewEntry),
+    AddRoom(RoomsListEntry),
     /// Clear all rooms in the list of all rooms.
     ClearRooms,
     /// Update the latest event content and timestamp for the given room.
@@ -101,6 +102,11 @@ pub enum RoomsListUpdate {
     },
     /// Remove the given room from the list of all rooms.
     RemoveRoom(OwnedRoomId),
+    /// Update the tags for the given room.
+    Tags {
+        room_id: OwnedRoomId,
+        new_tags: Option<Tags>,
+    },
     /// Update the status label at the bottom of the list of all rooms.
     Status {
         status: String,
@@ -131,11 +137,15 @@ pub enum RoomListAction {
 }
 
 #[derive(Debug)]
-pub struct RoomPreviewEntry {
+pub struct RoomsListEntry {
     /// The matrix ID of this room.
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The tags associated with this room, if any.
+    /// This includes things like is_favourite, is_low_priority,
+    /// whether the room is a server notice room, etc.
+    pub tags: Option<Tags>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
@@ -161,22 +171,63 @@ impl Default for RoomPreviewAvatar {
     }
 }
 
+/// A filter function that is called for each room to determine whether it should be displayed.
+///
+/// If the function returns `true`, the room is displayed; otherwise, it is not shown.
+/// The default value is a filter function that always returns `true`.
+///
+/// ## Example
+/// The following example shows how to create and apply a filter function
+/// that only displays rooms that have a displayable name starting with the letter "M":
+/// ```rust,norun
+/// rooms_list.display_filter = RoomDisplayFilter(Box::new(
+///     |room| room.room_name.as_ref().is_some_and(|n| n.starts_with("M"))
+/// ));
+/// rooms_list.displayed_rooms = rooms_list.all_rooms.iter()
+///    .filter(|(_, room)| (rooms_list.display_filter)(room))
+///    .collect();
+/// // Then redraw the rooms_list widget.
+/// ```
+pub struct RoomDisplayFilter(Box<dyn Fn(&RoomsListEntry) -> bool>);
+impl Default for RoomDisplayFilter {
+    fn default() -> Self {
+        RoomDisplayFilter(Box::new(|_| true))
+    }
+}
+impl Deref for RoomDisplayFilter {
+    type Target = Box<dyn Fn(&RoomsListEntry) -> bool>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
 
-    /// The list of all known rooms and their cached preview info.
-    //
-    // TODO: change this into a hashmap keyed by room ID.
-    #[rust] all_rooms: Vec<RoomPreviewEntry>,
-    /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `all_rooms` vector.
-    #[rust] rooms_list_map: HashMap<u64, usize>,
-    /// Maps the OwnedRoomId to the index of the room in the `all_rooms` vector.
-    #[rust] rooms_list_owned_room_id_map: HashMap<OwnedRoomId, usize>,
+    /// The single set of all known rooms and their cached preview info.
+    #[rust] all_rooms: HashMap<OwnedRoomId, RoomsListEntry>,
+
+    /// The currently-active filter function for the list of rooms.
+    ///
+    /// Note: for performance reasons, this does not get automatically applied
+    /// when its value changes. Instead, you must manually invoke it on the set of `all_rooms`
+    /// in order to update the set of `displayed_rooms` accordingly.
+    #[rust] display_filter: RoomDisplayFilter,
+    
+    /// The list of rooms currently displayed in the UI, in order from top to bottom.
+    /// This must be a strict subset of the rooms present in `all_rooms`, and should be determined
+    /// by applying the `display_filter` to the set of `all_rooms``.
+    #[rust] displayed_rooms: Vec<OwnedRoomId>,
+
+    /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `displayed_rooms` vector.
+    ///
+    /// NOTE: this should only be modified by the draw routine, not anything else.
+    #[rust] displayed_rooms_map: HashMap<WidgetUid, usize>,
+
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
-    /// The index of the currently selected room
+    /// The index of the currently-selected room.
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
@@ -201,40 +252,78 @@ impl Widget for RoomsList {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
-                        let room_index = self.all_rooms.len();
-                        self.rooms_list_owned_room_id_map.insert(room.room_id.clone(), room_index);
-                        self.all_rooms.push(room);
+                        let room_id = room.room_id.clone();
+                        let should_display = (self.display_filter)(&room);
+                        let _replaced = self.all_rooms.insert(room_id.clone(), room);
+                        if let Some(_old_room) = _replaced {
+                            error!("BUG: Added room {room_id} that already existed");
+                        } else {
+                            if should_display {
+                                self.displayed_rooms.push(room_id);
+                            }
+                        }
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             room.avatar = avatar;
                         } else {
                             error!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
                     RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             room.latest = Some((timestamp, latest_message_text));
                         } else {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
-                        if let Some(room) = self.all_rooms.iter_mut().find(|r| &r.room_id == &room_id) {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            let was_displayed = (self.display_filter)(&room);
                             room.room_name = Some(new_room_name);
+                            let should_display = (self.display_filter)(&room);
+                            match (was_displayed, should_display) {
+                                (true, true) | (false, false) => {
+                                    // No need to update the displayed rooms list.
+                                }
+                                (true, false) => {
+                                    // Room was displayed but should no longer be displayed.
+                                    self.displayed_rooms.retain(|r| r != &room_id);
+                                }
+                                (false, true) => {
+                                    // Room was not displayed but should now be displayed.
+                                    self.displayed_rooms.push(room_id);
+                                }
+                            }
                         } else {
                             error!("Error: couldn't find room {room_id} to update room name");
                         }
                     }
                     RoomsListUpdate::RemoveRoom(room_id) => {
-                        if let Some(idx) = self.all_rooms.iter().position(|r| &r.room_id == &room_id) {
-                            self.all_rooms.remove(idx);
-                        } else {
-                            error!("Error: couldn't find room {room_id} to remove room");
-                        }
+                        self.all_rooms
+                            .remove(&room_id)
+                            .and_then(|_removed|
+                                self.displayed_rooms.iter().position(|r| r == &room_id)
+                            )
+                            .map(|index_to_remove| {
+                                // Remove the room from the list of displayed rooms.
+                                self.displayed_rooms.remove(index_to_remove);
+                            })
+                            .unwrap_or_else(|| {
+                                error!("Error: couldn't find room {room_id} to remove room");
+                            });
+
+                        // TODO: send an action to the RoomScreen to hide this room
+                        //       if it is currently being displayed,
+                        //       and also ensure that the room's TimelineUIState is preserved
+                        //       and saved (if the room has not been left),
+                        //       and also that it's MediaCache instance is put into a special state
+                        //       where its internal update sender gets replaced upon next usage
+                        //       (that is, upon the next time that same room is opened by the user).
                     }
                     RoomsListUpdate::ClearRooms => {
                         self.all_rooms.clear();
+                        self.displayed_rooms.clear();
                     }
                     RoomsListUpdate::NotLoaded => {
                         self.status = "Loading rooms (waiting for homeserver)...".to_string();
@@ -242,6 +331,13 @@ impl Widget for RoomsList {
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
+                    }
+                    RoomsListUpdate::Tags { room_id, new_tags } => {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            room.tags = new_tags;
+                        } else {
+                            error!("Error: couldn't find room {room_id} to update tags");
+                        }
                     }
                     RoomsListUpdate::Status { status } => {
                         self.status = status;
@@ -260,43 +356,50 @@ impl Widget for RoomsList {
             if let RoomPreviewAction::Click = list_action.as_widget_action().cast() {
                 let widget_action = list_action.as_widget_action();
 
-                if let Some(room_index) = self.rooms_list_map
+                let Some(displayed_room_index) = self.displayed_rooms_map
                     .iter()
-                    .find(|&(&room_widget_uid, _)| widget_action.widget_uid_eq(WidgetUid(room_widget_uid)).is_some())
+                    .find(|&(&room_widget_uid, _)| widget_action.widget_uid_eq(room_widget_uid).is_some())
                     .map(|(_, &room_index)| room_index)
-                {
-                    let room_details = &self.all_rooms[room_index];
-                    self.current_active_room_index = Some(room_index);
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        RoomListAction::Selected {
-                            room_index,
-                            room_id: room_details.room_id.to_owned(),
-                            room_name: room_details.room_name.clone(),
-                        }
-                    );
-                    self.redraw(cx);
-                }
+                else {
+                    error!("BUG: couldn't find displayed index of clicked room for widget action {widget_action:?}");
+                    continue;
+                };
+                let Some(room_details) = self.displayed_rooms
+                    .get(displayed_room_index)
+                    .and_then(|room_id| self.all_rooms.get(room_id))
+                else {
+                    error!("BUG: couldn't get room details for room at displayed index {displayed_room_index}");
+                    continue;
+                };
+
+                self.current_active_room_index = Some(displayed_room_index);
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    RoomListAction::Selected {
+                        room_index: displayed_room_index,
+                        room_id: room_details.room_id.to_owned(),
+                        room_name: room_details.room_name.clone(),
+                    }
+                );
+                self.redraw(cx);
             }
         }
     }
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-
-        // TODO: sort list of `all_rooms` by alphabetic, most recent message, grouped by spaces, etc
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Override the current active room index if the app state has a different selected room
         if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
-            if let Some(room_index) = self.rooms_list_owned_room_id_map.get(&room.id) {
-                self.current_active_room_index = Some(*room_index);
+            if let Some(room_index) = self.displayed_rooms.iter().position(|r| r == &room.room_id) {
+                self.current_active_room_index = Some(room_index);
             }
         } else {
             self.current_active_room_index = None;
         }
 
-        let count = self.all_rooms.len();
+        let count = self.displayed_rooms.len();
         let status_label_id = count;
 
         // Start the actual drawing procedure.
@@ -311,10 +414,13 @@ impl Widget for RoomsList {
             while let Some(item_id) = list.next_visible_item(cx) {
                 let mut scope = Scope::empty();
 
-                // Draw the room preview for each room.
-                let item = if let Some(room_info) = self.all_rooms.get_mut(item_id) {
+                // Draw the room preview for each room in the `displayed_rooms` list.
+                let room_to_draw = self.displayed_rooms
+                    .get(item_id)
+                    .and_then(|room_id| self.all_rooms.get_mut(room_id));
+                let item = if let Some(room_info) = room_to_draw {
                     let item = list.item(cx, item_id, live_id!(room_preview));
-                    self.rooms_list_map.insert(item.widget_uid().0, item_id);
+                    self.displayed_rooms_map.insert(item.widget_uid(), item_id);
                     room_info.is_selected = self.current_active_room_index == Some(item_id);
 
                     // Paginate the room if it hasn't been paginated yet.
@@ -327,9 +433,8 @@ impl Widget for RoomsList {
                         });
                     }
 
-                    // Pass the room info through Scope down to the RoomPreview widget.
+                    // Pass the room info down to the RoomPreview widget via Scope.
                     scope = Scope::with_props(&*room_info);
-
                     item
                 }
                 // Draw the status label as the bottom entry.

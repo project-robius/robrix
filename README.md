@@ -12,12 +12,12 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 
 Check out our most recent talks and presentations for more info:
   * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
-    * Videos: (YouTube link coming soon)
+    * Videos: [YouTube link](https://www.youtube.com/watch?v=DO5C7aITVyU)
     * Slides:
       [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
       [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
-    * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g)
+    * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g), [BiliBili link](https://www.bilibili.com/video/BV1oS411N7k6/)
     * Slides:
       [PowerPoint (22MB)](https://github.com/project-robius/files/raw/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206,%202024.pptx),
       [PDF version (16MB)](https://github.com/project-robius/files/blob/3ac0a9d2e9f3c78ea51b4875abe02d288fa3685f/RustNL%202024%20and%20GOSIM%20Europe%202024/Robrix%20Talk%20GOSIM%20Europe%20May%206%2C%202024.pdf)
@@ -49,16 +49,17 @@ The following table shows which host systems can currently be used to build Robr
    sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
-3. Then, build and run Robrix (you can optionally add `--release` after `run`):
-```sh
-cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
-```
-
-* Robrix only supports a standard username + password login currently.
-    * Note the usage of **single quotes** (not double quotes), which will prevent your shell from treating certain symbols as globs/regex patterns.
-    * If you created your Matrix account using a third-party Single Sign On (SSO) like a Google account, you can set a standard password by using [Element's password reset form](https://app.element.io/#/forgot_password).
-* The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
-   * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
+3. Then, build and run Robrix (you can optionally add `--release`):
+   ```sh
+   cargo run
+   ```
+   If you want to provide a username and password for fast auto-login, you can do that on the command line like so. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user's ID or password.
+   ```sh
+   cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
+   ```
+    * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
+    * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
+    * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
 
 
 ### Building Robrix for Android
@@ -114,7 +115,7 @@ These are generally sorted in order of priority. If you're interested in helping
 ### Auxiliary/admin features: login, registration, settings
 - [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
-- [ ] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
+- [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [ ] User settings screen
@@ -132,4 +133,73 @@ These are generally sorted in order of priority. If you're interested in helping
 
 ## Known problems/issues
  - Matrix-specific links are not yet fully handled (https://matrix.to/...)
- - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport is not maintained
+ - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport position is not maintained
+
+
+## Packaging Robrix for Distribution on Desktop Platforms
+
+> [!TIP]
+> We already have [pre-built releases of Robrix](https://github.com/project-robius/robrix/releases) available for download.
+
+
+1. Install `cargo-packager`:
+```sh
+rustup update stable  ## Rust version 1.79 or higher is required
+cargo +stable install --force --locked cargo-packager
+```
+For posterity, these instructions have been tested on `cargo-packager` version 0.10.1, which requires Rust v1.79.
+
+2. Install the `robius-packaging-commands` crate with the `makepad` feature enabled:
+```sh
+cargo install --locked --git https://github.com/project-robius/robius-packaging-commands.git
+```
+
+3. Then run the packaging command, which must build in release mode:
+```sh
+cargo packager --release ## --verbose is optional
+```
+
+
+### Platform-specific considerations
+Note that due to platform restrictions, you can currently only build:
+* Linux packages on a Linux OS machine
+* Windows installer executables on a Windows OS machine
+* macOS disk images / app bundles on a macOS machine
+* iOS apps on a macOS machine.
+* Android, on a machine with any OS!
+
+There are some additional considerations when packaging Robrix for macOS:
+
+> [!IMPORTANT]
+> You will see a .dmg window pop up — please leave it alone, it will auto-close once the packaging procedure has completed.
+
+> [!TIP]
+> If you receive the following error:
+>
+> ```
+> ERROR cargo_packager::cli: Error running create-dmg script: File exists (os error 17)
+> ```
+>
+> then open Finder and unmount any Robrix-related disk images, then try the above `cargo packager` command again.
+
+> [!TIP]
+> If you receive an error like so:
+>
+> ```
+> Creating disk image...
+> hdiutil: create failed - Operation not permitted
+> could not access /Volumes/Robrix/Robrix.app - Operation not permitted
+> ```
+>
+> then you need to grant "App Management" permissions to the app in which you ran the `cargo packager` command, e.g., Terminal, Visual Studio Code, etc.
+> To do this, open `System Preferences` → `Privacy & Security` → `App Management`,
+> and then click the toggle switch next to the relevant app to enable that permission.
+> Then, try the above `cargo packager` command again.
+
+After the command completes, you should see both the `Robrix.app` and the `.dmg` in the `dist/` directory.
+You can immediately double-click the `Robrix.app` bundle to run it, or you can double-click the `.dmg` file to
+
+> Note that the `.dmg` is what should be distributed for installation on other machines, not the `.app`.
+
+If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
+
