@@ -349,12 +349,12 @@ pub enum MatrixRequest {
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
-    ReadReceipt {
+    ReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
-    FullyReadReceipt {
+    FullyReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
@@ -792,11 +792,11 @@ async fn async_worker(
                     room_info.timeline.clone()
                 };
                 
-                let _send_message_task = Handle::current().spawn(async move {
+                let _toggle_reaction_task = Handle::current().spawn(async move {
                     log!("Toggle Reaction to room {room_id}: ...");
                     match timeline.toggle_reaction(&timeline_event_id, &reaction_key).await {
-                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id}."),
-                        Err(_e) => error!("Failed to send toggle reaction to room {room_id}; error: {_e:?}"),
+                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id} {reaction_key}."),
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction_key}; error: {_e:?}"),
                     }
                 });
             }

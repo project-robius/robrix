@@ -231,23 +231,25 @@ impl ReactionListRef {
         timeline_event_item_id: TimelineEventItemId,
     ) {
         if let Some(mut instance) = self.borrow_mut() {
-            let mut text_to_display_vec = Vec::with_capacity(event_tl_item_reactions.len());
+            instance.event_reaction_list = Vec::with_capacity(event_tl_item_reactions.len());
             for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
                 // Just take the first char of the emoji, which ignores any variant selectors.
                 let reaction_str_option = reaction_raw.chars().next().map(|c| c.to_string());
                 let reaction_str = reaction_str_option.as_deref().unwrap_or(reaction_raw);
                 let text_to_display = emojis::get(reaction_str)
                     .and_then(|e| e.shortcode())
-                    .unwrap_or(reaction_raw);
+                    .unwrap_or_else(|| {
+                        log!("Failed to parse emoji: {}", reaction_raw);
+                        reaction_raw
+                    });
                 let count = reaction_senders.len();
                 let tooltip_header_arr:Vec<&str> = reaction_senders.iter().map(|(sender, _react_info)|{
                     sender.as_str()
                 }).collect();
                 let tooltip_header = human_readable_list(tooltip_header_arr);
-                
-                text_to_display_vec.push((text_to_display.to_string(), count, tooltip_header, 0.0));
+                instance.event_reaction_list.push((text_to_display.to_string(), count, tooltip_header, 0.0));
             }
-            instance.event_reaction_list = text_to_display_vec;
+            //instance.event_reaction_list = text_to_display_vec;
             instance.room_id = Some(room_id);
             instance.timeline_event_id = Some(timeline_event_item_id);
             instance.width_calculated = false;
@@ -255,6 +257,14 @@ impl ReactionListRef {
         }
     }
 }
+/// Converts a list of names into a human-readable string.
+///
+/// # Examples
+/// ```
+/// assert_eq!(human_readable_list(vec!["Alice"]), "Alice");
+/// assert_eq!(human_readable_list(vec!["Alice", "Bob"]), "Alice and Bob");
+/// assert_eq!(human_readable_list(vec!["Alice", "Bob", "Charlie"]), "Alice, Bob and Charlie");
+/// ```
 fn human_readable_list(names: Vec<&str>) -> String {
     match names.len() {
         0 => String::new(),
