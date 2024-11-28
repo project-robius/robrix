@@ -18,10 +18,10 @@ use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
 
 pub fn add_verification_event_handlers_and_sync_client(client: Client) {
-    let mut verficiation_state_subscriber = client.encryption().verification_state();
-    log!("Initial verification state is {:?}", verficiation_state_subscriber.get());
+    let mut verification_state_subscriber = client.encryption().verification_state();
+    log!("Initial verification state is {:?}", verification_state_subscriber.get());
     Handle::current().spawn(async move {
-        while let Some(state) = verficiation_state_subscriber.next().await {
+        while let Some(state) = verification_state_subscriber.next().await {
             log!("Received a verification state update: {state:?}");
             // TODO: send an update to the main top-level app instance
             //       such that we can display the verification state as an icon badge

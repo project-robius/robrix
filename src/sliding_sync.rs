@@ -1861,7 +1861,7 @@ async fn timeline_subscriber_handler(
 
 /// Updates the latest event for the given room.
 ///
-/// This function handles room name changes and checks for (but does not direclty handle)
+/// This function handles room name changes and checks for (but does not directly handle)
 /// room avatar changes.
 ///
 /// Returns `true` if this latest event indicates that the room's avatar has changed

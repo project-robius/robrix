@@ -2133,7 +2133,7 @@ pub enum TimelineUpdate {
         /// resulted in new items being *appended to the end* of the timeline.
         is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
-        /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
+        /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
     },
     /// The target event ID was found at the given `index` in the timeline items vector.
@@ -2250,7 +2250,7 @@ struct TimelineUiState {
     /// a reply preview, ends. so we keep a small state for it.
     /// By default, it starts in Off.
     /// Once the scrolling is started, the state becomes Pending.
-    /// If the animation was trigged, the state goes back to Off.
+    /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
 
     /// The index of the timeline item that was most recently scrolled up past it.
@@ -2293,7 +2293,7 @@ struct SavedState {
 /// of a visible item in the given `curr_items` list.
 ///
 /// This info includes a tuple of:
-/// 1. the index of the item in the currennt items list,
+/// 1. the index of the item in the current items list,
 /// 2. the index of the item in the new items list,
 /// 3. the positional "scroll" offset of the corresponding current item in the portal list,
 /// 4. the unique event ID of the item.
@@ -2870,7 +2870,7 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Set the Message widget's metatdata for reply-handling purposes.
+    // Set the Message widget's metadata for reply-handling purposes.
     item.as_message().set_data(
         event_tl_item.can_be_replied_to(),
         item_id,
@@ -3286,7 +3286,7 @@ fn draw_reactions(
         return;
     }
 
-    // The message annotaions view is invisible by default, so we must set it to visible
+    // The message annotations view is invisible by default, so we must set it to visible
     // now that we know there are reactions to show.
     message_item
         .view(id!(content.message_annotations))
