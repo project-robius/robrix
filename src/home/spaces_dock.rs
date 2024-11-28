@@ -1,13 +1,13 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::adaptive_view::AdaptiveView;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -102,7 +102,7 @@ live_design! {
         }
     }
 
-    SpacesDock = <AdaptiveView> {
+    pub SpacesDock = <AdaptiveView> {
         Desktop = {
             flow: Down, spacing: 15
             align: {x: 0.5}

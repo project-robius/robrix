@@ -4,10 +4,10 @@ use std::collections::HashMap;
 const MIN_DESKTOP_WIDTH: f64 = 650.0;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::widgets::*;
 
-    AdaptiveView = {{AdaptiveView}} {
+    pub AdaptiveView = {{AdaptiveView}} {
         width: Fill, height: Fill
         
         Mobile = <View> {}

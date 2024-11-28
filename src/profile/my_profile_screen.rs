@@ -1,13 +1,14 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::helpers::FillerX;
-    import crate::shared::helpers::Divider;
-    import crate::shared::search_bar::SearchBar;
-    import crate::shared::styles::*;
+    use crate::shared::helpers::FillerX;
+    use crate::shared::helpers::Divider;
+    use crate::shared::search_bar::SearchBar;
+    use crate::shared::styles::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     IMG_QR = dep("crate://self/resources/img/qr_icon.png")
@@ -58,7 +59,7 @@ live_design! {
         padding: 0, spacing: 0., flow: Down
     }
 
-    MyProfileScreen = <View> {
+    pub MyProfileScreen = <View> {
         width: Fill, height: Fill
         flow: Down, spacing: 10.
         show_bg: true,
