@@ -39,9 +39,7 @@ env:
     CARGO_INCREMENTAL: "0"  # Disable incremental compilation in CI
     RUST_BACKTRACE: 1
     # Enable warnings as errors for strict checks
-    RUSTFLAGS: "-A warnings"
-    # For special compile
-    rust_nightly: nightly-2024-10-20
+    RUSTFLAGS: "-D warnings"
 
 jobs:
   # Basic compilation check to ensure code builds
@@ -76,3 +74,12 @@ jobs:
       # Run clippy with custom configuration for makepad DSL
       # Allow pedantic / needless_lifetimes / too_many_arguments
       - run: cargo clippy --workspace --examples --tests --all-features --all-targets
+
+  typos:
+    if: github.event.pull_request.draft == false
+    name: Check for typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for typos
+        uses: crate-ci/typos@master
