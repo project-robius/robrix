@@ -155,7 +155,7 @@ impl JumpToBottomButton {
             self.visible = false;
             self.view(id!(unread_message_badge)).set_visible(false);
             self.label(id!(unread_messages_count))
-                .set_text(&format!("{}", ""));
+                .set_text("");
         }
     }
 

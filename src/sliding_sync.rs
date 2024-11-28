@@ -586,10 +586,10 @@ async fn async_worker(
                             let event = room.event(&event_id, None).await?;
                             match event.kind {
                                 TimelineEventKind::Decrypted(decrypted_room_event) => {
-                                    return decrypted_room_event.event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into());
+                                    decrypted_room_event.event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
                                 }
                                 TimelineEventKind::PlainText { event } => {
-                                    return event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into());
+                                    event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
                                 }
                                 _ => {
                                     bail!("Failed to fetch fully read event for room {room_id} because there is no TimelineEventKind::Decrypted");
@@ -1065,9 +1065,9 @@ fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId, timesta
         if let Some(room_info) = guard
             .get_mut(room_id) {
                 room_info.fully_read_event = Some((read_event, timestamp));
-                return Ok(());
+                Ok(())
             } else {
-                return Err(anyhow::anyhow!("Cannot find room info for room {}", room_id));
+                Err(anyhow::anyhow!("Cannot find room info for room {}", room_id))
             }
     }).map_err(|e|{
         error!("Error updating fully read event: {e:?}");

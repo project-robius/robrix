@@ -2071,7 +2071,7 @@ impl RoomScreen {
                         // If true, set last_event_id to last_display_event
                         // If true, start the 5 seconds timer
                         let Some((_fully_read_event, fully_read_timestamp)) =
-                            get_fully_read_event(&room_id)
+                            get_fully_read_event(room_id)
                         else {
                             *index = first_index;
                             return;
