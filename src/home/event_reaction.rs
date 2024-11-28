@@ -10,13 +10,9 @@ live_design! {
     import crate::shared::styles::*;
     COLOR_BUTTON_DARKER = #454343
     ReactionList = {{ReactionList}} {
-        margin: {
-            top:3,
-            bottom:3,
-            left:3,
-            right:3
-
-        },
+        width: Fill, 
+        height: Fit, 
+        margin: {top: (5.0)}
         padding:{
             right:30
         }
@@ -225,7 +221,7 @@ impl ReactionListRef {
     /// Required by Matrix API
     pub fn set_list(
         &mut self,
-        cx: &mut Cx,
+        _cx: &mut Cx,
         event_tl_item_reactions: &ReactionsByKeyBySender,
         room_id: OwnedRoomId,
         timeline_event_item_id: TimelineEventItemId,
@@ -253,7 +249,6 @@ impl ReactionListRef {
             instance.room_id = Some(room_id);
             instance.timeline_event_id = Some(timeline_event_item_id);
             instance.width_calculated = false;
-            instance.redraw(cx);
         }
     }
 }

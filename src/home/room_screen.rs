@@ -368,11 +368,7 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
-                reaction_list = <ReactionList> {
-                    width: Fill, 
-                    height: Fit, 
-                    margin: {top: (5.0)}
-                }
+                reaction_list = <ReactionList> { }
             }
 
             message_menu = <MessageMenu> {}
@@ -412,11 +408,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                reaction_list = <ReactionList> {
-                    width: Fill, 
-                    height: Fit, 
-                    margin: {top: (5.0)}
-                }
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -427,15 +419,8 @@ live_design! {
         body = {
             content = {
                 padding: { left: 10.0 }
-                message = <TextOrImage> {
-                    width: Fill, height: 300,
-                    image_view = { image = { fit: Horizontal } }
-                }
-                reaction_list = <ReactionList> {
-                    width: Fill, 
-                    height: Fit, 
-                    margin: {top: (5.0)}
-                }
+                message = <TextOrImage> { }
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -446,15 +431,8 @@ live_design! {
     CondensedImageMessage = <CondensedMessage> {
         body = {
             content = {
-                message = <TextOrImage> {
-                    width: Fill, height: 300,
-                    image_view = { image = { fit: Horizontal } }
-                }
-                reaction_list = <ReactionList> {
-                    width: Fill, 
-                    height: Fit, 
-                    margin: {top: (5.0)}
-                }
+                message = <TextOrImage> { }
+                reaction_list = <ReactionList> { }
             }
         }
     }
