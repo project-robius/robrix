@@ -602,7 +602,9 @@ async fn async_worker(
                     match fetch_fully_read_event(&room, &room_id).await {
                         Ok((event_id, timestamp)) => {
                             log!("Successfully fetched fully read event for room {room_id} at {timestamp:?} for {event_id}");
-                            set_fully_read_event(&room_id, event_id, timestamp);
+                            if let Err(e) = set_fully_read_event(&room_id, event_id, timestamp) {
+                                error!("Failed to set fully read event for room {room_id}: {e:?}");
+                            }
                         }
                         Err(e) => {
                             log!("Failed to fetch fully read event for room {room_id} {e:?}");
@@ -1058,20 +1060,16 @@ pub fn get_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, Mill
     result
 }
 /// Update fully read event inside Room Info after sending out read_receipt
-fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId, timestamp: MilliSecondsSinceUnixEpoch) {
-    let _ = ALL_ROOM_INFO
-    .lock()
-    .map(|mut guard| {
-        if let Some(room_info) = guard
-            .get_mut(room_id) {
-                room_info.fully_read_event = Some((read_event, timestamp));
-                Ok(())
-            } else {
-                Err(anyhow::anyhow!("Cannot find room info for room {}", room_id))
-            }
-    }).map_err(|e|{
-        error!("Error updating fully read event: {e:?}");
-    });
+fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId, timestamp: MilliSecondsSinceUnixEpoch) -> Result<(), anyhow::Error> {
+    ALL_ROOM_INFO
+        .lock()
+        .map_err(|e| anyhow::anyhow!("Failed to lock ALL_ROOM_INFO: {}", e))?
+        .get_mut(room_id)
+        .map(|room_info| {
+            room_info.fully_read_event = Some((read_event, timestamp));
+            Ok(())
+        })
+        .unwrap_or(Err(anyhow::anyhow!("Cannot find room info for room {}", room_id)))
 }
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 

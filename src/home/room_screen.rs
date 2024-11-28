@@ -2297,7 +2297,7 @@ struct TimelineUiState {
     /// 
     /// Used to send fully read receipt after user scrolled pass the read marker
     /// Read marker is referred to Red marker in the UI or also known as latest fully read receipt 
-    /// Value is determined by comparing the fully read event with the event id of read receipt being sent out
+    /// Value is determined by comparing the fully read event's timestamp with the first and last timestamp of displayed events in the timeline
     /// When scrolling down, if scrolled_past_read_marker is true, a 5 seconds timer is started.
     /// Once the countdown ends, the app will send out last visible event's fully read receipt which will be stored as RoomInfo's fully_read_event
     /// In between, any scrolling or new message coming in will reset the timer
