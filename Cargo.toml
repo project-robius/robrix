@@ -209,12 +209,17 @@ unnameable_types = "warn"
 unused_import_braces = "warn"
 
 [lints.clippy]
+collapsible_if = "allow"
+collapsible_else_if = "allow"
+too_many_arguments = "allow"
+blocks_in_conditions = "allow"
+used_underscore_binding = "allow"
+module_name_repetitions = "allow"
 correctness = "warn"
 suspicious = "warn"
 complexity = "warn"
 perf = "warn"
 needless_lifetimes = "warn"
-too_many_arguments = "warn"
 
 cast_possible_truncation = "warn"
 collection_is_never_read = "warn"
