@@ -6,12 +6,12 @@ use matrix_sdk::ruma::{api::client::session::get_login_types::v3::IdentityProvid
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::*;
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::*;
 
     IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
@@ -127,7 +127,7 @@ live_design! {
         }
     }
 
-    LoginScreen = {{LoginScreen}} {
+    pub LoginScreen = {{LoginScreen}} {
         width: Fill, height: Fill
         show_bg: true,
         draw_bg: {

@@ -1,15 +1,15 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::adaptive_view::AdaptiveView;
 
-    import crate::home::rooms_list::RoomsList;
+    use crate::home::rooms_list::RoomsList;
 
     RoomsView = {{RoomsView}} {
         show_bg: true,
@@ -39,7 +39,7 @@ live_design! {
         }
     }
 
-    RoomsSideBar = <AdaptiveView> {
+    pub RoomsSideBar = <AdaptiveView> {
         Desktop = <RoomsView> {
             padding: {top: 20., left: 10., right: 10.}
             flow: Down, spacing: 10

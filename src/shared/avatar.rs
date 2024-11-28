@@ -17,11 +17,11 @@ use crate::{
 };
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -30,7 +30,7 @@ live_design! {
     // once it is available.
     //
     // The Avatar view (either text or image) is masked by a circle.
-    Avatar = {{Avatar}} {
+    pub Avatar = {{Avatar}} {
         width: 36.0,
         height: 36.0,
         // centered horizontally and vertically.

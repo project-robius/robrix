@@ -1,10 +1,10 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::widgets::*;
 
-    ClickableView = {{ClickableView}} {
+    pub ClickableView = {{ClickableView}} {
         width: Fit, height: Fit
     }
 }

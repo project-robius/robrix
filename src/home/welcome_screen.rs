@@ -1,16 +1,16 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::html_or_plaintext::*;
+    use crate::shared::styles::*;
+    use crate::shared::html_or_plaintext::*;
 
     WELCOME_TEXT_COLOR: #x4
 
-    WelcomeScreen = <View> {
+    pub WelcomeScreen = <View> {
         width: Fill, height: Fill
         align: {x: 0.0, y: 0.5}
         welcome_message = <RoundedView> {

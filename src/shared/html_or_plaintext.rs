@@ -3,11 +3,11 @@
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+    
+    use crate::shared::styles::*;
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
@@ -17,7 +17,7 @@ live_design! {
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
-    MatrixHtmlSpan = {{MatrixHtmlSpan}}<Label> {
+    pub MatrixHtmlSpan = {{MatrixHtmlSpan}}<Label> {
         width: Fit,
         height: Fit,
 
@@ -32,7 +32,7 @@ live_design! {
 
     // A centralized widget where we define styles and custom elements for HTML
     // message content. This is a wrapper around Makepad's built-in `Html` widget.
-    MessageHtml = <Html> {
+    pub MessageHtml = <Html> {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
         font_size: (MESSAGE_FONT_SIZE),
@@ -74,7 +74,7 @@ live_design! {
     // * They also need their height to be Fit along with all of their parent views,
     //   otherwise their total height will be zero (when a Fit is inside of a Fill),
     //   resulting in nothing being displayed.
-    HtmlOrPlaintext = {{HtmlOrPlaintext}} {
+    pub HtmlOrPlaintext = {{HtmlOrPlaintext}} {
         width: Fill, height: Fit, // see above comment
         flow: Overlay
 

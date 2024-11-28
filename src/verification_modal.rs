@@ -6,14 +6,13 @@ use matrix_sdk::encryption::verification::Verification;
 use crate::verification::{VerificationAction, VerificationRequestActionState, VerificationUserResponse};
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::RobrixIconButton;
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::RobrixIconButton;
 
-    VerificationModal = {{VerificationModal}} {
+    pub VerificationModal = {{VerificationModal}} {
         width: Fit
         height: Fit
 

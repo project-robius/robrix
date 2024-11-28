@@ -5,17 +5,17 @@ use crate::app::{AppState, SelectedRoom};
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::home::light_themed_dock::*;
-    import crate::home::welcome_screen::WelcomeScreen;
-    import crate::home::rooms_sidebar::RoomsSideBar;
-    import crate::home::room_screen::RoomScreen;
+    use crate::shared::styles::*;
+    use crate::home::light_themed_dock::*;
+    use crate::home::welcome_screen::WelcomeScreen;
+    use crate::home::rooms_sidebar::RoomsSideBar;
+    use crate::home::room_screen::RoomScreen;
 
-    MainDesktopUI = {{MainDesktopUI}} {
+   pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
             width: Fill,
             height: Fill,

@@ -12,16 +12,15 @@ use crate::{
 use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -103,7 +102,7 @@ live_design! {
         }
     }
 
-    RoomPreview = {{RoomPreview}} {
+    pub RoomPreview = {{RoomPreview}} {
         // Wraps the RoomPreviewContent in an AdaptiveView
         // to change the displayed content (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {

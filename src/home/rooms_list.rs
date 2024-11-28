@@ -13,18 +13,17 @@ use super::room_preview::RoomPreviewAction;
 const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::search_bar::SearchBar;
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    use crate::shared::search_bar::SearchBar;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     
-    import crate::home::room_preview::*;
+    use crate::home::room_preview::*;
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -46,7 +45,7 @@ live_design! {
         }
     }
 
-    RoomsList = {{RoomsList}} {
+    pub RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
 

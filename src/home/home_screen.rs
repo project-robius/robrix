@@ -1,23 +1,23 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::home::main_mobile_ui::MainMobileUI;
-    import crate::home::rooms_sidebar::RoomsSideBar;
-    import crate::home::spaces_dock::SpacesDock;
-    import crate::shared::styles::*;
-    import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::search_bar::SearchBar;
-    import crate::home::main_desktop_ui::MainDesktopUI;
+    use crate::home::main_mobile_ui::MainMobileUI;
+    use crate::home::rooms_sidebar::RoomsSideBar;
+    use crate::home::spaces_dock::SpacesDock;
+    use crate::shared::styles::*;
+    use crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::search_bar::SearchBar;
+    use crate::home::main_desktop_ui::MainDesktopUI;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
     }
 
-    HomeScreen = <AdaptiveView> {
+    pub HomeScreen = <AdaptiveView> {
         Desktop = {
             show_bg: true
             draw_bg: {
