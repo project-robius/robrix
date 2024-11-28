@@ -112,7 +112,7 @@ impl JumpToBottomButton {
     ///
     /// This does not automatically redraw any views.
     /// If unread_message_count is `0`, the unread message badge is hidden.
-    pub fn show_unread_message_badge(&mut self, unread_message_count: usize) {
+    pub fn show_unread_message_badge(&mut self, unread_message_count: u64) {
         if unread_message_count > 0 {
             self.visible = true;
             self.view(id!(unread_message_badge)).set_visible(true);
@@ -174,7 +174,7 @@ impl JumpToBottomButtonRef {
     }
 
     /// See [`JumpToBottomButton::show_unread_message_badge()`].
-    pub fn show_unread_message_badge(&self, unread_message_count: usize) {
+    pub fn show_unread_message_badge(&self, unread_message_count: u64) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_unread_message_badge(unread_message_count);
         }

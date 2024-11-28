@@ -280,7 +280,12 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
-    GetFullyReadEvent{
+    /// Request to fetch the fully read event in the given room's timeline.
+    GetFullyReadEvent {
+        room_id: OwnedRoomId,
+    },
+    /// Request to fetch the number of unread messages in the given room.
+    GetNumOfUnReadMessages {
         room_id: OwnedRoomId,
     },
     /// Request to ignore/block or unignore/unblock a user.
@@ -345,12 +350,12 @@ pub enum MatrixRequest {
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
-    ReadReceipt{
+    ReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
-    FullyReadReceipt{
+    FullyReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
         timestamp: MilliSecondsSinceUnixEpoch
@@ -556,6 +561,7 @@ async fn async_worker(
                     }
                 });
             }
+            
             MatrixRequest::GetFullyReadEvent { room_id } => {
                 let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
                     error!("BUG: client/room not found for Get Fully Read Event {room_id}");
@@ -592,6 +598,31 @@ async fn async_worker(
                         }
                         Err(e) => {
                             log!("Failed to fetch fully read event for room {room_id} {e:?}");
+                        }
+                    }
+                });
+            }
+            MatrixRequest::GetNumOfUnReadMessages { room_id } => {
+                let (_, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
+                        continue;
+                    };
+
+                    let timeline_ref = room_info.timeline.clone();
+                    let sender = room_info.timeline_update_sender.clone();
+                    (timeline_ref, sender)
+                };
+                let _fetch_task = Handle::current().spawn(async move {
+                    if let Some(unread_messages_count) = get_client()
+                        .and_then(|c| c.get_room(&room_id))
+                        .map(|room| Some(room.num_unread_messages()))
+                    {
+                        if let Err(e) = sender.send(TimelineUpdate::NewItems { new_items: Vec::new().into(), changed_indices: 0..1, is_append: false, clear_cache: false, unread_messages_count }) {
+                            log!("Failed to send timeline update: {e:?} for NumOfUnReadMessages request for room {room_id}");
+                        } else {
+                            SignalToUI::set_ui_signal();
                         }
                     }
                 });
@@ -794,7 +825,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::FullyReadReceipt { room_id, event_id, timestamp } => {
+            MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -1886,6 +1917,7 @@ async fn timeline_subscriber_handler(
                         changed_indices,
                         clear_cache,
                         is_append,
+                        unread_messages_count: None
                     }).expect("Error: timeline update sender couldn't send update with new items!");
 
                     // We must send this update *after* the actual NewItems update,

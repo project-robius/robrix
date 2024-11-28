@@ -1519,7 +1519,7 @@ impl RoomScreen {
                     tl.items = initial_items;
                     done_loading = true;
                 }
-                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache, unread_messages_count } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1581,28 +1581,15 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        // Set the number of unread messages to unread_notification_badge
                         if let Some(room_id) = &self.room_id {
-                            if let Some(num_unread) = get_client()
-                                .and_then(|c| c.get_room(room_id))
-                                .map(|room| room.num_unread_messages())
-                            {
-                                jump_to_bottom.show_unread_message_badge(num_unread as usize);
-                            }
+                            // Set the number of unread messages to unread_notification_badge by async request to avoid locking in the Main UI thread
+                            submit_async_request(MatrixRequest::GetNumOfUnReadMessages{ room_id: room_id.clone() });
                         }
                     }
-                    // When new messages are added to the end of the timeline, 
-                    // we want to send the read receipt when the user sees them.
-                    if is_append && portal_list.is_at_end() {
-                        let last_displayed_event = new_items.last().and_then(|f| f.as_event()).and_then(|f| f.event_id());
-                        if let (Some(event_id), Some(room_id)) = (last_displayed_event, &self.room_id) {
-                            submit_async_request(MatrixRequest::ReadReceipt {
-                                room_id: room_id.clone(),
-                                event_id: event_id.to_owned(),
-                            });
-                        }
+                    if let Some(unread_messages_count) = unread_messages_count {
+                        jump_to_bottom.show_unread_message_badge(unread_messages_count);
+                        continue;
                     }
-
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
@@ -2177,6 +2164,8 @@ pub enum TimelineUpdate {
         /// Whether to clear the entire cache of drawn items in the timeline.
         /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
+        /// The updated number of unread messages in the room.
+        unread_messages_count: Option<u64>
     },
     /// The target event ID was found at the given `index` in the timeline items vector.
     ///
