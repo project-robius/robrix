@@ -17,7 +17,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent},
     Timeline,
 };
 use robius_open::Uri;
@@ -350,9 +350,12 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
+    /// Toggle a reaction on the given event in the given room.
+    /// 
+    /// Either add to or substract from the reaction count.
     ToggleReaction {
         room_id: OwnedRoomId,
-        unique_id: String,
+        timeline_event_id: TimelineEventItemId,
         reaction_key: String,
     }
 }
@@ -771,7 +774,7 @@ async fn async_worker(
                     }
                 });
             },
-            MatrixRequest::ToggleReaction { room_id, unique_id, reaction_key } => {
+            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction_key } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -783,7 +786,7 @@ async fn async_worker(
                 
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Toggle Reaction to room {room_id}: ...");
-                    match timeline.toggle_reaction(&unique_id, &reaction_key).await {
+                    match timeline.toggle_reaction(&timeline_event_id, &reaction_key).await {
                         Ok(_send_handle) => log!("Sent toggle reaction to room {room_id}."),
                         Err(_e) => error!("Failed to send toggle reaction to room {room_id}; error: {_e:?}"),
                     }

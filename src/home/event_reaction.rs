@@ -1,7 +1,7 @@
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-use matrix_sdk_ui::timeline::ReactionsByKeyBySender;
+use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 
 live_design! {
     import makepad_widgets::base::*;
@@ -10,6 +10,16 @@ live_design! {
     import crate::shared::styles::*;
     COLOR_BUTTON_DARKER = #454343
     ReactionList = {{ReactionList}} {
+        margin: {
+            top:3,
+            bottom:3,
+            left:3,
+            right:3
+
+        },
+        padding:{
+            right:30
+        }
         item: <Button> {
             width: Fit,
             height: Fit,
@@ -28,13 +38,19 @@ live_design! {
                 instance border_width: 0.0
                 instance border_color: #D0D5DD
                 instance radius: 3.0
-
+                // The first draw is to get the width of the button, so that we can use it in the second draw
+                // If hide >= 0.5, the button is hidden.
+                // Without hidding, the buttons layout may appear glitch at the start
+                instance hide: 0.0
                 fn get_color(self) -> vec4 {
                     return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
                 }
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    if self.hide >= 0.5 {
+                        return sdf.result;
+                    }
                     sdf.box(
                         self.border_width,
                         self.border_width,
@@ -74,7 +90,7 @@ live_design! {
     }
 }
 
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct ReactionList {
     #[redraw]
     #[rust]
@@ -87,46 +103,84 @@ pub struct ReactionList {
     layout: Layout,
     #[walk]
     walk: Walk,
+    // A list of tuples of (emoji, it's sender count, tooltip_header, it's width)
+    // After the first draw, the buttons' will be stored in this vector
+    // TODO: Add Tooltip display over the reaction buttons after https://github.com/project-robius/robrix/pull/162 is merged
     #[rust]
-    pub list: Vec<(String, usize)>,
+    event_reaction_list: Vec<(String, usize, String, f64)>,
     #[rust]
-    pub room_id: Option<OwnedRoomId>,
+    room_id: Option<OwnedRoomId>,
     #[rust]
-    pub unique_id: Option<String>,
+    timeline_event_id: Option<TimelineEventItemId>,
+    // Has the width of the emoji buttons already been drawn and calculated beforehand?
+    #[rust]
+    width_calculated: bool
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         let rect = cx.turtle().rect();
-        let width: f64 = rect.size.x - 50.0;
-        let mut acc_width: f64 = 0.0;
-        let mut acc_height = 0.0;
-        for (index, (emoji, count)) in self.list.iter().enumerate() {
-            let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
-                WidgetRef::new_from_ptr(cx, self.item).as_button()
-            });
-            target.set_text(&format!("{} {}", emoji, count));
-            target.draw_all(cx, scope);
-            let used = cx.turtle().used();
-            acc_width = used.x;
-            if acc_width > width {
-                cx.turtle_new_line();
-                target.redraw(cx);
+        let width: f64 = rect.size.x;
+        if !self.width_calculated {
+            // Records the buttons' width after the first draw
+            let mut prev_width: f64 = 0.0;
+            for (index, (emoji, count, _tooltip, item_width)) in
+                self.event_reaction_list.iter_mut().enumerate()
+            {
+                let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
+                    WidgetRef::new_from_ptr(cx, self.item).as_button()
+                });
+                target.set_text(&format!("{} {}", emoji, count));
+                // Hide the button until the first draw
+                target.apply_over(
+                    cx,
+                    live! {
+                        draw_bg: { hide: 1.0 }
+                    },
+                );
+                target.draw_all(cx, scope);
                 let used = cx.turtle().used();
-                acc_height = used.y;
-                cx.turtle_mut().set_used(0.0, used.y);
+                *item_width = used.x - prev_width;
+                prev_width = used.x;
             }
-            if acc_height == 0.0 {
-                acc_height = used.y;
+    
+            self.width_calculated = true;
+        } else {
+            let mut acc_width: f64 = 0.0;
+            for (index, (emoji, count, _tooltip, item_width)) in
+                self.event_reaction_list.iter().enumerate()
+            {
+                let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
+                    WidgetRef::new_from_ptr(cx, self.item).as_button()
+                });
+                target.set_text(&format!("{} {}", emoji, count));
+                // Unhide the button as we have the width of the buttons
+                target.apply_over(
+                    cx,
+                    live! {
+                        draw_bg: { hide: 0.0 }
+                    },
+                );
+                acc_width += item_width;
+                // Creates a new line if the accumulated width exceeds the available space
+                if acc_width > width {
+                    cx.turtle_new_line();
+                    acc_width = *item_width;
+                    let used: DVec2 = cx.turtle().used();
+                    // Resets the turtle's width after each new line
+                    cx.turtle_mut().set_used(0.0, used.y);
+                }
+                target.draw_all(cx, scope);
             }
         }
+    
         cx.end_turtle();
         self.children.retain_visible();
         DrawStep::done()
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let Some(room_id) = &self.room_id else { return };
-        let Some(unique_id) = &self.unique_id else {
+        let Some(timeline_event_id) = &self.timeline_event_id else {
             return;
         };
         self.children
@@ -144,7 +198,7 @@ impl Widget for ReactionList {
                             if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
                                 submit_async_request(MatrixRequest::ToggleReaction {
                                     room_id: room_id.clone(),
-                                    unique_id: unique_id.clone(),
+                                    timeline_event_id: timeline_event_id.clone(),
                                     reaction_key: key.as_str().to_string(),
                                 });
                             }
@@ -153,34 +207,63 @@ impl Widget for ReactionList {
                     _ => {}
                 }
             });
-    }
-}
-impl LiveHook for ReactionList {
-    fn before_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {}
+    }    
 }
 
 impl ReactionListRef {
+    /// Set the list of reactions and their counts to display in the ReactionList widget,
+    /// along with the room ID and event ID that these reactions are for.
+    ///
+    /// This will clear any existing list of reactions and replace it with the given one.
+    ///
+    /// The given `event_tl_item_reactions` is a map from each reaction's raw string (including any variant selectors)
+    /// to the list of users who have reacted with that reaction.
+    ///
+    /// The given `room_id` is the ID of the room that these reactions are for.
+    ///
+    /// The given `timeline_event_item_id` is the ID of the event that these reactions are for.
+    /// Required by Matrix API
     pub fn set_list(
         &mut self,
-        looper: &ReactionsByKeyBySender,
+        cx: &mut Cx,
+        event_tl_item_reactions: &ReactionsByKeyBySender,
         room_id: OwnedRoomId,
-        unique_id: &str,
+        timeline_event_item_id: TimelineEventItemId,
     ) {
         if let Some(mut instance) = self.borrow_mut() {
-            let mut text_to_display_vec = Vec::with_capacity(looper.len());
-            for (reaction_raw, reaction_senders) in looper.iter() {
+            let mut text_to_display_vec = Vec::with_capacity(event_tl_item_reactions.len());
+            for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
                 // Just take the first char of the emoji, which ignores any variant selectors.
-                let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-                let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
+                let reaction_str_option = reaction_raw.chars().next().map(|c| c.to_string());
+                let reaction_str = reaction_str_option.as_deref().unwrap_or(reaction_raw);
                 let text_to_display = emojis::get(reaction_str)
                     .and_then(|e| e.shortcode())
                     .unwrap_or(reaction_raw);
                 let count = reaction_senders.len();
-                text_to_display_vec.push((text_to_display.to_string(), count));
+                let tooltip_header_arr:Vec<&str> = reaction_senders.iter().map(|(sender, _react_info)|{
+                    sender.as_str()
+                }).collect();
+                let tooltip_header = human_readable_list(tooltip_header_arr);
+                
+                text_to_display_vec.push((text_to_display.to_string(), count, tooltip_header, 0.0));
             }
-            instance.list = text_to_display_vec;
+            instance.event_reaction_list = text_to_display_vec;
             instance.room_id = Some(room_id);
-            instance.unique_id = Some(unique_id.to_string());
+            instance.timeline_event_id = Some(timeline_event_item_id);
+            instance.width_calculated = false;
+            instance.redraw(cx);
+        }
+    }
+}
+fn human_readable_list(names: Vec<&str>) -> String {
+    match names.len() {
+        0 => String::new(),
+        1 => names[0].to_string(),
+        2 => format!("{} and {}", names[0], names[1]),
+        _ => {
+            let last = names.last().unwrap();
+            let rest = &names[..names.len() - 1];
+            format!("{}, and {}", rest.join(", "), last)
         }
     }
 }

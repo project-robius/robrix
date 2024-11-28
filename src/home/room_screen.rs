@@ -17,7 +17,7 @@ use matrix_sdk::{
     OwnedServerName,
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
@@ -29,6 +29,7 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
+use crate::home::event_reaction::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
 use super::loading_modal::{LoadingModalAction, LoadingModalState};
@@ -1386,7 +1387,6 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
-                                    timeline_item.unique_id(),
                                     event_tl_item,
                                     MessageOrSticker::Message(message),
                                     prev_event,
@@ -2494,7 +2494,7 @@ fn populate_message_view(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
-    room_id: &RoomId,
+    room_id: &OwnedRoomId,
     event_tl_item: &EventTimelineItem,
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2808,7 +2808,7 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list))
-            .set_list(event_tl_item.reactions(), room_id.to_owned(), unique_id);
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier());
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
