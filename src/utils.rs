@@ -57,7 +57,7 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         path.push(filename);
         path.set_extension("unknown");
         error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
-        std::fs::write(path, &data)
+        std::fs::write(path, data)
             .expect("Failed to write user avatar image to disk");
     }
     res
@@ -119,8 +119,7 @@ pub fn user_name_first_letter(user_name: &str) -> Option<&str> {
     use unicode_segmentation::UnicodeSegmentation;
     user_name
         .graphemes(true)
-        .filter(|&g| g != "@")
-        .next()
+        .find(|&g| g != "@")
 }
 
 
@@ -192,7 +191,7 @@ pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail
 
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
+pub fn linkify(text: &str) -> Cow<'_, str> {
     use linkify::{LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
@@ -218,14 +217,14 @@ pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
             );
         } else {
             match link.kind() {
-                &LinkKind::Url => {
+                LinkKind::Url => {
                     linkified_text = format!(
                         "{linkified_text}{}<a href=\"{link_txt}\">{}</a>",
                         text.get(last_end_index..link.start()).unwrap_or_default(),
                         htmlize::escape_attribute(link_txt),
                     );
                 }
-                &LinkKind::Email => {
+                LinkKind::Email => {
                     linkified_text = format!(
                         "{linkified_text}{}<a href=\"mailto:{link_txt}\">{}</a>",
                         text.get(last_end_index..link.start()).unwrap_or_default(),
@@ -255,7 +254,7 @@ pub fn ends_with_href(text: &str) -> bool {
     let mut substr = text.trim_end();
     // Search backwards for a single quote, double quote, or an equals sign.
     match substr.as_bytes().last() {
-        Some(b'\'') | Some(b'"') => {
+        Some(b'\'' | b'"') => {
             if substr
                 .get(.. substr.len().saturating_sub(1))
                 .map(|s| {
