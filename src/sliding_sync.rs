@@ -6,8 +6,8 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, deserialized_responses::TimelineEventKind, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
-        api::{client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}}, events::{
+    config::RequestConfig, deserialized_responses::TimelineEventKind, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             fully_read::FullyReadEventContent,
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource

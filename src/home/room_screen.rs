@@ -1587,7 +1587,7 @@ impl RoomScreen {
                         }
                     }
                     if let Some(unread_messages_count) = unread_messages_count {
-                        jump_to_bottom.show_unread_message_badge(unread_messages_count);
+                        jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                         continue;
                     }
                     if clear_cache {

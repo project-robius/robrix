@@ -40,8 +40,8 @@ live_design! {
 
         // A badge overlay on the jump to bottom button showing unread messages
         unread_message_badge = <View> {
-            width: 20, height: 20,
-            margin: {right: 28.0, bottom: 8.0},
+            width: 25, height: 20,
+            margin: {right: 22.0, bottom: 8.0},
             align: {
                 x: 0.5,
                 y: 0.5
@@ -51,11 +51,25 @@ live_design! {
             show_bg: true,
             draw_bg: {
                 color: (COLOR_UNREAD_MESSAGE_BADGE)
+                instance radius: 4.0
+                // Adjust this to width/height ratio will render a circle as the width becomes equal to height
+                // Adjust this to 1.0 will render a horizontal oval as it retains the original width which is longer than height
+                instance width_retention_ratio: 0.8
+                instance border_width: 0.0
+                instance border_color: #D0D5DD
                 fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x);
-                    sdf.fill_keep(self.color);
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        0.0,
+                        self.border_width,
+                        self.rect_size.x * self.width_retention_ratio - (self.border_width * 2.0),
+                        self.rect_size.y - (self.border_width * 2.0),
+                        max(1.0, self.radius)
+                    )
+                    sdf.fill_keep(self.color)
+                    if self.border_width > 0.0 {
+                        sdf.stroke(self.border_color, self.border_width)
+                    }
                     return sdf.result;
                 }
             }
@@ -64,7 +78,9 @@ live_design! {
             unread_messages_count = <Label> {
                 width: Fit,
                 height: Fit,
+                padding: { left: 0.0, right: 2.0 }
                 text: "",
+               
                 draw_text: {
                     color: #ffffff,
                     text_style: {font_size: 8.0},
@@ -112,7 +128,7 @@ impl JumpToBottomButton {
     ///
     /// This does not automatically redraw any views.
     /// If unread_message_count is `0`, the unread message badge is hidden.
-    pub fn show_unread_message_badge(&mut self, unread_message_count: u64) {
+    pub fn show_unread_message_badge(&mut self, cx: &mut Cx, unread_message_count: u64) {
         if unread_message_count > 0 {
             self.visible = true;
             self.view(id!(unread_message_badge)).set_visible(true);
@@ -121,6 +137,20 @@ impl JumpToBottomButton {
                 std::cmp::min(unread_message_count, 99),
                 if unread_message_count > 99 { "+" } else { "" }
             ));
+            if unread_message_count > 99 {
+                self.view(id!(unread_message_badge)).apply_over(cx, live!{
+                    draw_bg: {
+                        width_retention_ratio: 1.0
+                    }
+                });
+            } else {
+                self.view(id!(unread_message_badge)).apply_over(cx, live!{
+                    //margin: {right: 26.0},
+                    draw_bg: {
+                        width_retention_ratio: 0.8
+                    }
+                });
+            }
         } else {
             self.visible = false;
             self.view(id!(unread_message_badge)).set_visible(false);
@@ -174,9 +204,9 @@ impl JumpToBottomButtonRef {
     }
 
     /// See [`JumpToBottomButton::show_unread_message_badge()`].
-    pub fn show_unread_message_badge(&self, unread_message_count: u64) {
+    pub fn show_unread_message_badge(&self, cx: &mut Cx, unread_message_count: u64) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_unread_message_badge(unread_message_count);
+            inner.show_unread_message_badge(cx, unread_message_count);
         }
     }
 
