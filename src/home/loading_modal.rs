@@ -156,8 +156,7 @@ impl WidgetMatchEvent for LoadingModal {
 
         let modal_dismissed = actions
             .iter()
-            .find(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
-            .is_some();
+            .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         if cancel_button.clicked(actions) || modal_dismissed {
             log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });

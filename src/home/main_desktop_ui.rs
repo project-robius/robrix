@@ -242,15 +242,12 @@ impl MatchEvent for MainDesktopUI {
                 }
                 // When dropping a tab, move it to the new position
                 DockAction::Drop(drop_event) => {
+                    // from inside the dock, otherwise it's an external file
                     if let DragItem::FilePath {
-                        path: _,
-                        internal_id,
-                    } = &drop_event.items[0]
-                    {
-                        // from inside the dock, otherwise it's an external file
-                        if let Some(internal_id) = internal_id {
-                            dock.drop_move(cx, drop_event.abs, *internal_id);
-                        }
+                        internal_id: Some(internal_id),
+                        ..
+                    } = &drop_event.items[0] {
+                        dock.drop_move(cx, drop_event.abs, *internal_id);
                     }
                 }
                 _ => (),

@@ -88,7 +88,7 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
 pub async fn restore_session(
     user_id: Option<OwnedUserId>
 ) -> anyhow::Result<(Client, Option<String>)> {
-    let Some(user_id) = user_id.or_else(|| most_recent_user_id()) else {
+    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
         log!("Could not find previous latest User ID");
         bail!("Could not find previous latest User ID");
     };
