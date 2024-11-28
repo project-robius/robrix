@@ -67,7 +67,7 @@ pub struct AdaptiveView {
     #[walk]
     walk: Walk,
 
-    /// Wether to retain the widget variant state when it goes unused.
+    /// Whether to retain the widget variant state when it goes unused.
     /// While it avoids creating new widgets and keeps their state, be mindful of the memory usage and potential memory leaks.
     #[live]
     retain_unused_variants: bool,
@@ -126,7 +126,7 @@ impl WidgetNode for AdaptiveView {
     fn find_widgets(&self, path: &[LiveId], cached: WidgetCache, results: &mut WidgetSet) {
         if let Some(active_widget) = self.active_widget.as_ref() {
             // Currently we cannot rely on querying nested elements (e.g. `self.ui.button(id!(my_button))`) within an AdaptiveView, 
-            // from a non-AdaptiveView parent. This is becuase higher up in the UI tree other widgets have cached the search result.
+            // from a non-AdaptiveView parent. This is because higher up in the UI tree other widgets have cached the search result.
             // Makepad should support a way to prevent caching for scenarios like this. 
             // TODO(Julian): We'll add a mechanism in Makepad to clear the cache upawards on template change (e.g. InvalidateCache action).
             active_widget.widget_ref.find_widgets(path, cached, results);
@@ -208,7 +208,7 @@ impl WidgetMatchEvent for AdaptiveView {
                 if cx.has_global::<DisplayContext>() {
                     let current_context = cx.get_global::<DisplayContext>();
                     // TODO(Julian): Optimize this by skipping the update on the same event id for different instances
-                    // We should add an accesor in Makepad for cx.event_id  
+                    // We should add an accessor in Makepad for cx.event_id  
                     // if current_context.updated_on_event_id == event_id { return }
                     if current_context.screen_size != ce.new_geom.inner_size {
                         current_context.updated_on_event_id = redraw_id;
@@ -326,7 +326,7 @@ type ParentSize = DVec2;
 /// A context that is used to determine which view to display in an `AdaptiveView` widget.
 /// DisplayContext is stored in a global context so that they can be accessed from multiple `AdaptiveView` widget instances.
 /// This will soon be replaced by having this context directly in Makepad's Cx.
-/// Later to be expanded with more context data like platfrom information, accessibility settings, etc.
+/// Later to be expanded with more context data like platform information, accessibility settings, etc.
 #[derive(Clone, Debug)]
 pub struct DisplayContext {
     pub updated_on_event_id: u64,

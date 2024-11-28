@@ -54,7 +54,7 @@ live_design! {
 
     Home = <RoundedView> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is becase the icon is not correctly centered
+        // FIXME: the extra padding on the right is because the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         show_bg: true
@@ -79,7 +79,7 @@ live_design! {
 
     Settings = <View> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is becase the icon is not correctly centered
+        // FIXME: the extra padding on the right is because the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
