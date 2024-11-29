@@ -799,7 +799,7 @@ async fn async_worker(
 
                     let can_user_post = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(true);
 
-                    if let Err(_) = sender.send(TimelineUpdate::CanUserPost(can_user_post)) {
+                    if sender.send(TimelineUpdate::CanUserPost(can_user_post)).is_err() {
                         error!("Failed to send the result of user send permission")
                     }
                 });
