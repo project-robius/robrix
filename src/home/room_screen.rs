@@ -74,6 +74,8 @@ live_design! {
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
+    NO_POST_PERMISSION_NOTICE = "You don't have permission to post to this room."
+
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
@@ -807,7 +809,7 @@ live_design! {
                 location_preview = <LocationPreview> { }
 
                 // Below that, display a view that holds the message input bar and send button.
-                <View> {
+                bottom_input = <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {y: 0.5},
@@ -912,6 +914,24 @@ live_design! {
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
                         icon_walk: {width: 18.0, height: Fit},
+                    }
+                }
+                no_send_permission_notice = <View> {
+                    visible: false
+                    show_bg: true
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
+                    padding: {left: 75}
+                    align: {y: 0.3}
+                    width: Fill, height: 37.5
+
+                    text = <Label> {
+                        draw_text: {
+                            color: (COLOR_TEXT)
+                            text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                        }
+                        text: (NO_POST_PERMISSION_NOTICE)
                     }
                 }
             }
@@ -1486,6 +1506,9 @@ impl RoomScreen {
     ///
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+        let bottom_input = self.view(id!(bottom_input));
+        let no_send_permission_notice = self.view(id!(no_send_permission_notice));
+
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
@@ -1711,6 +1734,13 @@ impl RoomScreen {
                     // if the list of typing users gets updated many times in a row.
                     typing_users = users;
                 }
+
+                TimelineUpdate::CanUserPost(can_user_post) => {
+                    let (bottom_input_visible, no_send_permission_notice_visible) = if can_user_post { (true, false) } else { (false, true) };
+
+                    bottom_input.set_visible(bottom_input_visible);
+                    no_send_permission_notice.set_visible(no_send_permission_notice_visible)
+                }
             }
         }
 
@@ -1834,6 +1864,8 @@ impl RoomScreen {
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
+        self.check_user_post_permission();
+
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
         // just an optional sanity check
@@ -2098,6 +2130,13 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+
+    /// Send request as `MatrixRequest` to check post permission.
+    fn check_user_post_permission(&self) {
+        if let Some(room_id) = self.room_id.clone() {
+            submit_async_request(MatrixRequest::CheckUserPostPermission { room_id })
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2178,6 +2217,7 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    CanUserPost (bool)
 }
 
 /// The global set of all timeline states, one entry per room.
