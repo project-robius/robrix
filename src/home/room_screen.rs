@@ -2172,7 +2172,7 @@ pub enum TimelineUpdate {
         /// resulted in new items being *appended to the end* of the timeline.
         is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
-        /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
+        /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
     },
     /// The target event ID was found at the given `index` in the timeline items vector.
@@ -2290,7 +2290,7 @@ struct TimelineUiState {
     /// a reply preview, ends. so we keep a small state for it.
     /// By default, it starts in Off.
     /// Once the scrolling is started, the state becomes Pending.
-    /// If the animation was trigged, the state goes back to Off.
+    /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
 
     /// The index of the timeline item that was most recently scrolled up past it.
@@ -2333,7 +2333,7 @@ struct SavedState {
 /// of a visible item in the given `curr_items` list.
 ///
 /// This info includes a tuple of:
-/// 1. the index of the item in the currennt items list,
+/// 1. the index of the item in the current items list,
 /// 2. the index of the item in the new items list,
 /// 3. the positional "scroll" offset of the corresponding current item in the portal list,
 /// 4. the unique event ID of the item.
@@ -2910,7 +2910,7 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Set the Message widget's metatdata for reply-handling purposes.
+    // Set the Message widget's metadata for reply-handling purposes.
     item.as_message().set_data(
         event_tl_item.can_be_replied_to(),
         item_id,
@@ -2997,7 +2997,7 @@ fn populate_image_message_content(
     // then show a message about it being unsupported.
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
-            text_or_image_ref.show_text(&format!(
+            text_or_image_ref.show_text(format!(
                 "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
             return true;
@@ -3023,13 +3023,13 @@ fn populate_image_message_content(
                     true
                 }
                 MediaCacheEntry::Requested => {
-                    text_or_image_ref.show_text(&format!("{body}\n\nFetching image from {:?}", mxc_uri));
+                    text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
                     // Do not consider this image as being fully drawn, as we're still fetching it.
                     false
                 }
                 MediaCacheEntry::Failed => {
                     text_or_image_ref
-                        .show_text(&format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                        .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                     // For now, we consider this as being "complete". In the future, we could support
                     // retrying to fetch the image on a user click/tap.
                     true
@@ -3037,7 +3037,7 @@ fn populate_image_message_content(
             }
         }
         Some(MediaSource::Encrypted(encrypted)) => {
-            text_or_image_ref.show_text(&format!(
+            text_or_image_ref.show_text(format!(
                 "{body}\n\n[TODO] fetch encrypted image at {:?}",
                 encrypted.url
             ));
@@ -3326,7 +3326,7 @@ fn draw_reactions(
         return;
     }
 
-    // The message annotaions view is invisible by default, so we must set it to visible
+    // The message annotations view is invisible by default, so we must set it to visible
     // now that we know there are reactions to show.
     message_item
         .view(id!(content.message_annotations))

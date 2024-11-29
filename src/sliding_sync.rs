@@ -1890,7 +1890,7 @@ async fn timeline_subscriber_handler(
 
 /// Updates the latest event for the given room.
 ///
-/// This function handles room name changes and checks for (but does not direclty handle)
+/// This function handles room name changes and checks for (but does not directly handle)
 /// room avatar changes.
 ///
 /// Returns `true` if this latest event indicates that the room's avatar has changed
@@ -2006,14 +2006,13 @@ async fn spawn_sso_server(
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))
             .await
-            .map(|response| {
+            .inspect(|_| {
                 if let Some(client) = get_client() {
                     if client.logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
                     }
                 }
-                response
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
