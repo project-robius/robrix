@@ -74,7 +74,7 @@ live_design! {
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
-    NO_POST_PERMISSIOM_NOTICE = "You don't have permission to post to this room."
+    NO_POST_PERMISSION_NOTICE = "You don't have permission to post to this room."
 
     FillerY = <View> {width: Fill}
 
@@ -916,22 +916,22 @@ live_design! {
                         icon_walk: {width: 18.0, height: Fit},
                     }
                 }
-                no_send_permisson_notice = <View> {
+                no_send_permission_notice = <View> {
                     visible: false
                     show_bg: true
                     draw_bg: {
                         color: (COLOR_SECONDARY)
                     }
                     padding: {left: 75}
-                    align: {y: 0.5}
-                    width: Fill, height: 32
+                    align: {y: 0.3}
+                    width: Fill, height: 37.5
 
                     text = <Label> {
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
                         }
-                        text: (NO_POST_PERMISSIOM_NOTICE)
+                        text: (NO_POST_PERMISSION_NOTICE)
                     }
                 }
             }
@@ -1507,7 +1507,7 @@ impl RoomScreen {
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let bottom_input = self.view(id!(bottom_input));
-        let no_send_permisson_notice = self.view(id!(no_send_permisson_notice));
+        let no_send_permission_notice = self.view(id!(no_send_permission_notice));
 
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
@@ -1736,10 +1736,10 @@ impl RoomScreen {
                 }
 
                 TimelineUpdate::CanUserPost(can_user_post) => {
-                    let (bottom_input_visible, no_send_permisson_notice_visible) = if can_user_post { (true, false) } else { (false, true) };
+                    let (bottom_input_visible, no_send_permission_notice_visible) = if can_user_post { (true, false) } else { (false, true) };
 
                     bottom_input.set_visible(bottom_input_visible);
-                    no_send_permisson_notice.set_visible(no_send_permisson_notice_visible)
+                    no_send_permission_notice.set_visible(no_send_permission_notice_visible)
                 }
             }
         }
