@@ -29,7 +29,6 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
             log!("Received a verification state update: {state:?}");
             Cx::post_action(VerificationStateAction::Update(state));
             if let VerificationState::Verified = state {
-                log!("9a999");
                 break;
             }
         }
