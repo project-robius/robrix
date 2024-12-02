@@ -25,7 +25,7 @@ live_design! {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust, no_run, ignore
 /// live_design! {
 ///     // ...
 ///     adaptive = <AdaptiveView> {

@@ -179,7 +179,7 @@ impl Default for RoomPreviewAvatar {
 /// ## Example
 /// The following example shows how to create and apply a filter function
 /// that only displays rooms that have a displayable name starting with the letter "M":
-/// ```rust,norun
+/// ```rust, no_run, ignore
 /// rooms_list.display_filter = RoomDisplayFilter(Box::new(
 ///     |room| room.room_name.as_ref().is_some_and(|n| n.starts_with("M"))
 /// ));
