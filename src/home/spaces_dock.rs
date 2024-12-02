@@ -72,21 +72,8 @@ live_design! {
                 icon_unk = <IconUnk> {}
             }
         }
-        verification_notice = <View> {
-            visible: false
-            align: { x: 0.5, y: 0.5 }
+        verification_notice = <Tooltip> {
             width: Fit, height: Fit
-            show_bg: true
-            draw_bg: {
-                color: #0000008F
-            }
-            text = <Label> {
-                draw_text: {
-                    color: #FFFFFF
-                    text_style:  { font_size: (SMALL_STATE_FONT_SIZE) }
-                }
-                text: ""
-            }
         }
     }
 
@@ -192,6 +179,21 @@ live_design! {
         }
     }
 }
+struct VerificationNotice {
+    yes: String,
+    no: String,
+    unk: String,
+}
+
+impl Default for VerificationNotice{
+    fn default() -> Self {
+        Self {
+            yes: String::from("This device is fully verified."),
+            no: String::from("This device is unverified. To view your encrypted message history, please verify it from another client."),
+            unk: String::from("Verification state is unknown."),
+        }
+    }
+}
 
 #[derive(Live, LiveHook, Widget)]
 pub struct Profile {
@@ -199,10 +201,27 @@ pub struct Profile {
     view: View,
     #[rust(VerificationState::Unknown)]
     verification_state: VerificationState,
+    #[rust]
+    verification_notice: VerificationNotice,
 }
 
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::MouseMove(e) = event {
+            if self.view(id!(verification_icon)).area().rect(cx).contains(e.abs) {
+                let text = match self.verification_state {
+                    VerificationState::Unknown => &self.verification_notice.unk,
+                    VerificationState::Unverified => &self.verification_notice.no,
+                    VerificationState::Verified => &self.verification_notice.yes
+                };
+                let pos = DVec2 { x: 0.9, y: 0.9 };
+                self.tooltip(id!(verification_notice)).show_with_options(cx, pos, text)
+            }
+            else {
+                self.tooltip(id!(verification_notice)).hide(cx)
+            }
+        }
+
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope)
     }
