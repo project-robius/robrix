@@ -12,8 +12,8 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Error, Room
+        }, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
+    }, sliding_sync::VersionBuilder, sync::RoomUpdate, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -357,6 +357,14 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
+    /// Subscribe to Updates for the given room.
+    ///
+    /// This request does not return a response or notify the UI thread.
+    SubscribeToUpdates {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe to Updates for this room.
+        subscribe: bool,
+    },
     /// Sends a read receipt for the given event in the given room.
     ReadReceipt {
         room_id: OwnedRoomId,
@@ -583,20 +591,9 @@ async fn async_worker(
                             .and_then(|f| f.deserialize().ok())
                             .map(|f| f.content.event_id);
                         if let Some(event_id) = fully_read_event {
-                            let event = room.event(&event_id, None).await?;
-                            match event.kind {
-                                TimelineEventKind::Decrypted(decrypted_room_event) => {
-                                    decrypted_room_event.event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
-                                }
-                                TimelineEventKind::PlainText { event } => {
-                                    event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
-                                }
-                                _ => {
-                                    bail!("Failed to fetch fully read event for room {room_id} because there is no TimelineEventKind::Decrypted");
-                                }
-                            }
+                            get_event_timestamp(room, room_id, event_id).await
                         } else {
-                            bail!("Failed to fetch fully read event for room {room_id} because there is no fully read event");
+                            bail!("There is no fully read event");
                         }
                     }
                     match fetch_fully_read_event(&room, &room_id).await {
@@ -750,6 +747,64 @@ async fn async_worker(
                         SignalToUI::set_ui_signal();
                     }
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
+                });
+            }
+            MatrixRequest::SubscribeToUpdates { room_id, subscribe } => {
+                let (_room, _timeline_update_sender, mut update_receiver) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
+                        continue;
+                    };
+                    let (room, recv) = if subscribe {
+                        if room_info.update_subscriber.is_some() {
+                            warning!("Note: room {room_id} is already subscribed to updates.");
+                            continue;
+                        } else {
+                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                                error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
+                                continue;
+                            };
+                            let recv = room.subscribe_to_updates();
+                            //room_info.update_subscriber = Some(recv);
+                            (room, recv)
+                        }
+                    } else {
+                        room_info.typing_notice_subscriber.take();
+                        continue;
+                    };
+                    // Here: we don't have an existing subscriber running, so we fall through and start one.
+                    (room, room_info.timeline_update_sender.clone(), recv)
+                };
+                
+                let _to_trump_task = Handle::current().spawn(async move {
+                    while let Ok(room_update) = update_receiver.recv().await {
+                        match room_update {
+                            RoomUpdate::Joined { room, .. } => {
+                                if let Some(latest_active) = serde_json::to_value(&room.read_receipts())
+                                    .unwrap_or_default()
+                                    .get("latest_active")
+                                    .unwrap_or(&serde_json::Value::Null)
+                                    .get("event_id") {
+                                    let updated_event_id = latest_active.to_string().replace("\"", "");
+                                    let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
+                                    if let Some((event_id, _)) = fully_read_event {
+                                        let Ok(updated_event_id) = EventId::parse(updated_event_id.clone()).map_err(|e|{
+                                            error!("Error: couldn't parse event id {updated_event_id}: {e:?}");
+                                        }) else { continue };
+                                        if event_id != updated_event_id {
+                                            if let Err(e) = get_event_timestamp(&room, &room_id, event_id).await.map(|(read_event, timestamp)| {
+                                                set_fully_read_event(&room_id, read_event, timestamp)
+                                            }) {
+                                                error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
                 });
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
@@ -961,6 +1016,8 @@ struct RoomInfo {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
+    /// A drop guard for the event handler that represents a subscription to typing notices for this room.
+    update_subscriber: Option<tokio::sync::broadcast::Receiver<RoomUpdate>>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
     /// Event_id and timestamp for read marker
@@ -1066,7 +1123,8 @@ fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId, timesta
         .map_err(|e| anyhow::anyhow!("Failed to lock ALL_ROOM_INFO: {}", e))?
         .get_mut(room_id)
         .map(|room_info| {
-            room_info.fully_read_event = Some((read_event, timestamp));
+            room_info.fully_read_event = Some((read_event.clone(), timestamp));
+            log!("Set fully read event for room {:?} read_event {:?}", room_id, read_event);
             Ok(())
         })
         .unwrap_or(Err(anyhow::anyhow!("Cannot find room info for room {}", room_id)))
@@ -1404,7 +1462,39 @@ async fn update_room(
     }
 }
 
-
+/// Asynchronously retrieves the timestamp of a given event in a room.
+///
+/// This function fetches the specified event from the provided room and extracts
+/// its origin server timestamp. It handles both decrypted and plain text timeline
+/// event kinds. In the case of an unsupported event kind, or if the event cannot
+/// be fetched or deserialized, an error is returned.
+///
+/// # Arguments
+///
+/// * `room` - The room from which to retrieve the event.
+/// * `room_id` - The ID of the room.
+/// * `event_id` - The ID of the event whose timestamp is to be retrieved.
+///
+/// # Returns
+///
+/// * `Ok((OwnedEventId, MilliSecondsSinceUnixEpoch))` - A tuple containing the
+///   event ID and its origin server timestamp if successful.
+/// * `Err(anyhow::Error)` - An error if the event cannot be fetched or is of
+///   an unsupported timeline event kind.
+async fn get_event_timestamp(room: &Room, room_id: &OwnedRoomId, event_id: OwnedEventId) -> Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
+    let event = room.event(&event_id, None).await?;
+    match event.kind {
+        TimelineEventKind::Decrypted(decrypted_room_event) => {
+            decrypted_room_event.event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
+        }
+        TimelineEventKind::PlainText { event } => {
+            event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
+        }
+        _ => {
+           bail!("Failed to fetch fully read event for room {room_id} because there is no TimelineEventKind::Decrypted")
+        }
+    }
+}
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &room_list_service::Room) {
     ALL_ROOM_INFO.lock().unwrap().remove(room.room_id());
@@ -1504,6 +1594,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
+            update_subscriber: None,
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
             fully_read_event: None
         },

@@ -1894,7 +1894,7 @@ impl RoomScreen {
 
         // Query for User's fully read event
         submit_async_request(MatrixRequest::GetFullyReadEvent { room_id: room_id.clone() });
-
+        submit_async_request(MatrixRequest::SubscribeToUpdates { room_id: room_id.clone(), subscribe: true });
         // Kick off a back pagination request for this room. This is "urgent",
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
