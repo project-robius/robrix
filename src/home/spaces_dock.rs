@@ -1,4 +1,7 @@
 use makepad_widgets::*;
+use matrix_sdk::encryption::VerificationState;
+
+use crate::verification::VerificationStateAction;
 
 live_design! {
     import makepad_widgets::base::*;
@@ -8,6 +11,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::adaptive_view::AdaptiveView;
+    import crate::shared::verification_icon::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -16,21 +20,30 @@ live_design! {
         height: Fill, width: Fill
     }
 
-    Profile = <View> {
+    Profile = {{Profile}} {
+        flow: Overlay
         width: Fit, height: Fit
         align: { x: 0.5, y: 0.5 }
 
         text_view = <View> {
-            width: 45., height: 45.,
+            flow: Overlay
+            width: 60, height: 60,
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
-
             draw_bg: {
                 instance background_color: (COLOR_AVATAR_BG_IDLE),
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
+                    //The center of the circle we are going to draw.
                     let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x)
+
+                    //The radius of the circle
+                    let r = self.rect_size * 0.38;
+
+                    //We just keeping the center position of sdf fixed, which is equal to center of the cisrcle,
+                    //while reducing the circle's radius.
+                    sdf.circle(c.x, c.x, r.x);
                     sdf.fill_keep(self.background_color);
                     return sdf.result
                 }
@@ -46,6 +59,35 @@ live_design! {
                 text: "U"
             }
         }
+        <View> {
+            align: {x: 0.999, y: 0.001}
+
+            verification_icon = <View> {
+                flow: Overlay
+                align:{x: 0.5, y: 0.5}
+                width: 31, height: 31
+
+                icon_yes = <IconYes> {}
+                icon_no = <IconNo> {}
+                icon_unk = <IconUnk> {}
+            }
+        }
+        verification_notice = <View> {
+            visible: false
+            align: { x: 0.5, y: 0.5 }
+            width: Fit, height: Fit
+            show_bg: true
+            draw_bg: {
+                color: #0000008F
+            }
+            text = <Label> {
+                draw_text: {
+                    color: #FFFFFF
+                    text_style:  { font_size: (SMALL_STATE_FONT_SIZE) }
+                }
+                text: ""
+            }
+        }
     }
 
     Separator = <LineH> {
@@ -54,7 +96,7 @@ live_design! {
 
     Home = <RoundedView> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is because the icon is not correctly centered
+        // FIXME: the extra padding on the right is becase the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         show_bg: true
@@ -79,7 +121,7 @@ live_design! {
 
     Settings = <View> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is because the icon is not correctly centered
+        // FIXME: the extra padding on the right is becase the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
@@ -118,7 +160,7 @@ live_design! {
             <Separator> {}
 
             <Home> {}
-            
+
             <Filler> {}
 
             <Settings> {}
@@ -137,16 +179,57 @@ live_design! {
             <Filler> {}
 
             <Profile> {}
-    
+
             <Filler> {}
-    
+
             <Home> {}
-            
+
             <Filler> {}
-    
+
             <Settings> {}
-    
+
             <Filler> {}
+        }
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct Profile {
+    #[deref]
+    view: View,
+    #[rust(VerificationState::Unknown)]
+    verification_state: VerificationState,
+}
+
+impl Widget for Profile {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.match_event(cx, event);
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+impl MatchEvent for Profile {
+    fn handle_action(&mut self, cx: &mut Cx, action:&Action) {
+        if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+            if self.verification_state != *state {
+                self.verification_state = *state;
+
+                // Update visibility states
+                let (yes_visible, no_visible, unk_visible) = match self.verification_state {
+                    VerificationState::Unknown => (false, false, true),
+                    VerificationState::Unverified => (false, true, false),
+                    VerificationState::Verified => (true, false, false),
+                };
+
+                self.view(id!(icon_yes)).set_visible(yes_visible);
+                self.view(id!(icon_no)).set_visible(no_visible);
+                self.view(id!(icon_unk)).set_visible(unk_visible);
+
+                self.redraw(cx);
+            }
         }
     }
 }
