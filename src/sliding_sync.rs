@@ -750,42 +750,36 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SubscribeToUpdates { room_id, subscribe } => {
-                let (_room, _timeline_update_sender, mut update_receiver) = {
+                let mut update_receiver = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
+                    let Some(_room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for subscribe to updates, room {room_id}");
                         continue;
                     };
-                    let (room, recv) = if subscribe {
-                        if room_info.update_subscriber.is_some() {
-                            warning!("Note: room {room_id} is already subscribed to updates.");
+                    let recv = if subscribe {
+                        let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                            error!("BUG: client/room not found when subscribing to updates, room: {room_id}");
                             continue;
-                        } else {
-                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                                error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
-                                continue;
-                            };
-                            let recv = room.subscribe_to_updates();
-                            //room_info.update_subscriber = Some(recv);
-                            (room, recv)
-                        }
+                        };
+                        room.subscribe_to_updates()
                     } else {
-                        room_info.typing_notice_subscriber.take();
                         continue;
                     };
-                    // Here: we don't have an existing subscriber running, so we fall through and start one.
-                    (room, room_info.timeline_update_sender.clone(), recv)
+                    recv
                 };
-                
-                let _to_trump_task = Handle::current().spawn(async move {
+
+                let _to_updates_task = Handle::current().spawn(async move {
                     while let Ok(room_update) = update_receiver.recv().await {
                         match room_update {
                             RoomUpdate::Joined { room, .. } => {
+                                // Using Serde_json to obtain the latest_active event_id  
+                                // Room's read receipt's latest_active event is not public, but the ReadReceipts struct is serializable 
                                 if let Some(latest_active) = serde_json::to_value(&room.read_receipts())
                                     .unwrap_or_default()
                                     .get("latest_active")
                                     .unwrap_or(&serde_json::Value::Null)
                                     .get("event_id") {
+                                    // The event_id contains double quotes, hence there is a string replacement code to remove them 
                                     let updated_event_id = latest_active.to_string().replace("\"", "");
                                     let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
                                     if let Some((event_id, _)) = fully_read_event {
@@ -1016,8 +1010,6 @@ struct RoomInfo {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// A drop guard for the event handler that represents a subscription to typing notices for this room.
-    update_subscriber: Option<tokio::sync::broadcast::Receiver<RoomUpdate>>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
     /// Event_id and timestamp for read marker
@@ -1594,7 +1586,6 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
-            update_subscriber: None,
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
             fully_read_event: None
         },
