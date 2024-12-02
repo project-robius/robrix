@@ -90,6 +90,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Optimize disk space
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with: # speed things up a bit
+          large-packages: false
+          docker-images: false
+          swap-storage: false
+      # Install the necessary makepad system-level dependencies
+      - run: sudo apt-get update
+      - run: sudo apt install libxcursor-dev libasound2-dev libpulse-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
