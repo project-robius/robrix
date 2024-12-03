@@ -85,7 +85,7 @@ impl Widget for AvatarRow {
         }
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, _walk: Walk) -> DrawStep {
         for v in self.buttons.iter_mut() {
             let _ = v.draw(cx, scope);
         }
@@ -97,18 +97,6 @@ impl Widget for AvatarRow {
         }
         DrawStep::done()
     }
-
-    fn widget_to_data(
-        &self,
-        cx: &mut Cx,
-        actions: &Actions,
-        nodes: &mut LiveNodeVec,
-        path: &[LiveId],
-    ) -> bool {
-        false
-    }
-
-    fn data_to_widget(&mut self, cx: &mut Cx, nodes: &[LiveNode], path: &[LiveId]) {}
 }
 impl AvatarRow {
     fn set_range(&mut self, cx: &mut Cx, total_num_seen: usize) {

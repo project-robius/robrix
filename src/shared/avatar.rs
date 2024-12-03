@@ -410,15 +410,15 @@ pub fn set_avatar_and_get_username(
                         avatar_user_id.to_owned(),
                         username_opt.clone(),
                         room_id.to_owned(),
-                        data.clone(),
-                    )),
+                        data.clone()).into(),
+                    ),
                     |img| utils::load_png_or_jpg(&img, cx, &data),
                 )
                 .ok()
         })
         .unwrap_or_else(|| {
             avatar.show_text(
-                Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned())),
+                Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
                 &username,
             )
         });
