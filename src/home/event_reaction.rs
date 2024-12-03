@@ -181,26 +181,22 @@ impl Widget for ReactionList {
         };
         self.children
             .iter()
-            .enumerate()
-            .for_each(|(_index, (_id, widget_ref))| {
+            .for_each(|(_id, widget_ref)| {
                 widget_ref.handle_event(cx, event, scope);
-                match event {
-                    Event::Actions(actions) => {
-                        if widget_ref.clicked(actions) {
-                            let text = widget_ref.text().clone();
-                            let mut reaction_string_arr: Vec<&str> = text.split(" ").collect();
-                            reaction_string_arr.pop();
-                            let reaction_string = reaction_string_arr.join(" ");
-                            if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
-                                submit_async_request(MatrixRequest::ToggleReaction {
-                                    room_id: room_id.clone(),
-                                    timeline_event_id: timeline_event_id.clone(),
-                                    reaction_key: key.as_str().to_string(),
-                                });
-                            }
+                if let Event::Actions(actions) = event {
+                    if widget_ref.clicked(actions) {
+                        let text = widget_ref.text().clone();
+                        let mut reaction_string_arr: Vec<&str> = text.split(" ").collect();
+                        reaction_string_arr.pop();
+                        let reaction_string = reaction_string_arr.join(" ");
+                        if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
+                            submit_async_request(MatrixRequest::ToggleReaction {
+                                room_id: room_id.clone(),
+                                timeline_event_id: timeline_event_id.clone(),
+                                reaction_key: key.as_str().to_string(),
+                            });
                         }
                     }
-                    _ => {}
                 }
             });
     }    
