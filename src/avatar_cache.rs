@@ -10,7 +10,7 @@ thread_local! {
     /// A cache of Avatar images, indexed by Matrix URI.
     ///
     /// To be of any use, this cache must only be accessed by the main UI thread.
-    static AVATAR_NEW_CACHE: RefCell<BTreeMap<OwnedMxcUri, AvatarCacheEntry>> = RefCell::new(BTreeMap::new());
+    static AVATAR_NEW_CACHE: RefCell<BTreeMap<OwnedMxcUri, AvatarCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 /// An entry in the avatar cache.

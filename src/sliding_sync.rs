@@ -12,7 +12,7 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Room, Error
+    }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -26,11 +26,11 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -141,14 +141,14 @@ async fn build_client(
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
-    login_types: &Vec<LoginType>,
+    login_types: &[LoginType],
 ) -> Result<(Client, Option<String>)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
             let cli = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
                 &Cli::from(login_by_password)
             } else {
-                &cli
+                cli
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
             if !login_types
@@ -160,7 +160,7 @@ async fn login(
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
-                .login_username(&cli.username.clone(), &cli.password.clone())
+                .login_username(&cli.username, &cli.password)
                 .initial_device_display_name("robrix-un-pw")
                 .send()
                 .await?;
@@ -197,7 +197,7 @@ async fn populate_login_types(
     homeserver_url: &str,
     login_types: &mut Vec<LoginType>,
 ) -> Result<()> {
-    Cx::post_action(LoginAction::Status(format!("Fetching Login Types ...")));
+    Cx::post_action(LoginAction::Status(String::from("Fetching Login Types ...")));
     let homeserver_url = if homeserver_url.is_empty() {
         DEFAULT_HOMESERVER
     } else {
@@ -217,10 +217,10 @@ async fn populate_login_types(
                 acc
             });
             Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-            return Ok(());
+            Ok(())
         }
         Err(e) => {
-            return Err(e.into());
+            Err(e.into())
         }
     }
 }
@@ -244,6 +244,14 @@ impl std::fmt::Display for PaginationDirection {
         }
     }
 }
+
+/// The function signature for the callback that gets invoked when media is fetched.
+pub type OnMediaFetchedFn = fn(
+    &Mutex<MediaCacheEntry>,
+    MediaRequest,
+    matrix_sdk::Result<Vec<u8>>,
+    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+);
 
 
 /// The set of requests for async work that can be made to the worker thread.
@@ -304,7 +312,7 @@ pub enum MatrixRequest {
     /// the result of the media fetch, and the `update_sender`.
     FetchMedia {
         media_request: MediaRequest,
-        on_fetched: fn(&Mutex<MediaCacheEntry>, MediaRequest, matrix_sdk::Result<Vec<u8>>, Option<crossbeam_channel::Sender<TimelineUpdate>>),
+        on_fetched: OnMediaFetchedFn,
         destination: Arc<Mutex<MediaCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
@@ -800,6 +808,7 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
 
+        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
                 result = &mut main_loop_join_handle => {
@@ -967,7 +976,7 @@ fn username_to_full_user_id(
         .try_into()
         .ok()
         .or_else(|| {
-            let homeserver_url = homeserver.unwrap_or_else( || DEFAULT_HOMESERVER);
+            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
             let user_id_str = if username.starts_with("@") {
                 format!("{}:{}", username, homeserver_url)
             } else {
@@ -1007,7 +1016,7 @@ async fn async_main_loop(
         log!("Trying to restore session for user: {:?}",
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
-        if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
+        if let Ok(session) = persistent_state::restore_session(specified_username).await {
             Some(session)
         } else {
             let status_err = "Failed to restore previous user session. Please login again.";
@@ -1046,8 +1055,7 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.as_deref()
-                .unwrap_or_else(|| DEFAULT_HOMESERVER);
+            let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
             let mut login_types = Vec::new();
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
@@ -1131,7 +1139,7 @@ async fn async_main_loop(
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in &new_rooms {
-                        add_new_room(&new_room).await?;
+                        add_new_room(new_room).await?;
                     }
                     all_known_rooms.append(new_rooms);
                 }
@@ -1187,18 +1195,15 @@ async fn async_main_loop(
                         // We treat this as a simple `Set` operation (`update_room()`),
                         // which is way more efficient.
                         let mut next_diff_was_handled = false;
-                        match peekable_diffs.peek() {
-                            Some(VectorDiff::Insert { index: insert_index, value: new_room }) => {
-                                if room.room_id() == new_room.room_id() {
-                                    if LOG_ROOM_LIST_DIFFS {
-                                        log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
-                                    }
-                                    update_room(&room, new_room).await?;
-                                    all_known_rooms.insert(*insert_index, new_room.clone());
-                                    next_diff_was_handled = true;
+                        if let Some(VectorDiff::Insert { index: insert_index, value: new_room }) = peekable_diffs.peek() {
+                            if room.room_id() == new_room.room_id() {
+                                if LOG_ROOM_LIST_DIFFS {
+                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
                                 }
+                                update_room(&room, new_room).await?;
+                                all_known_rooms.insert(*insert_index, new_room.clone());
+                                next_diff_was_handled = true;
                             }
-                            _ => {}
                         }
                         if next_diff_was_handled {
                             peekable_diffs.next(); // consume the next diff
@@ -1232,7 +1237,7 @@ async fn async_main_loop(
                     ALL_ROOM_INFO.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
-                        add_new_room(&room).await?;
+                        add_new_room(room).await?;
                     }
                     all_known_rooms = new_rooms;
                 }
@@ -1251,7 +1256,7 @@ async fn update_room(
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
     let mut room_avatar_changed = false;
-    if old_room.room_id() == &new_room_id {
+    if old_room.room_id() == new_room_id {
         if let Some(new_latest_event) = new_room.latest_event().await {
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
@@ -1275,6 +1280,13 @@ async fn update_room(
                     new_room_name,
                 });
             }
+        }
+
+        if let Ok(new_tags) = new_room.tags().await {
+            enqueue_rooms_list_update(RoomsListUpdate::Tags {
+                room_id: new_room_id.clone(),
+                new_tags,
+            });
         }
         Ok(())
     }
@@ -1360,9 +1372,10 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         |ev| get_latest_event_details(ev, &room_id)
     );
 
-    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
+    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
         room_id: room_id.clone(),
         latest,
+        tags: room.tags().await.ok().flatten(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
@@ -1612,7 +1625,7 @@ async fn timeline_subscriber_handler(
                         .rev()
                         .position(|i| i.as_event()
                             .and_then(|e| e.event_id())
-                            .is_some_and(|ev_id| ev_id == &new_target_event_id)
+                            .is_some_and(|ev_id| ev_id == new_target_event_id)
                         )
                         .map(|i| starting_index.saturating_sub(i).saturating_sub(1))
                     {
@@ -1848,7 +1861,7 @@ async fn timeline_subscriber_handler(
 
 /// Updates the latest event for the given room.
 ///
-/// This function handles room name changes and checks for (but does not direclty handle)
+/// This function handles room name changes and checks for (but does not directly handle)
 /// room avatar changes.
 ///
 /// Returns `true` if this latest event indicates that the room's avatar has changed
@@ -1862,8 +1875,8 @@ fn update_latest_event(
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
 
     // Check for relevant state events: a changed room name or avatar.
-    match event_tl_item.content() {
-        TimelineItemContent::OtherState(other) => match other.content() {
+    if let TimelineItemContent::OtherState(other) = event_tl_item.content() {
+        match other.content() {
             AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
                 rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: room_id.clone(),
@@ -1875,7 +1888,6 @@ fn update_latest_event(
             }
             _ => { }
         }
-        _ => { }
     }
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
         room_id,
@@ -1934,9 +1946,11 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
-    Cx::post_action(LoginAction::Status(format!("Opening Browser ...")));
-    let mut cli = Cli::default();
-    cli.homeserver = (!homeserver_url.is_empty()).then_some(homeserver_url);
+    Cx::post_action(LoginAction::Status(String::from("Opening Browser ...")));
+    let cli = Cli {
+        homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
+        ..Default::default()
+    };
     Handle::current().spawn(async move {
         let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else { 
             Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string())); 
@@ -1959,14 +1973,13 @@ async fn spawn_sso_server(
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))
             .await
-            .map(|response| {
+            .inspect(|_| {
                 if let Some(client) = get_client() {
                     if client.logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
                     }
                 }
-                response
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
@@ -1987,7 +2000,7 @@ async fn spawn_sso_server(
             Err(e) => {
                 if !is_logged_in {
                     error!("Login by SSO failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {}", e.to_string())));
+                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {e}")));
                 }
             }
         }
