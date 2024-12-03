@@ -36,7 +36,7 @@ live_design! {
                 instance radius: 3.0
                 // The first draw is to get the width of the button, so that we can use it in the second draw
                 // If hide >= 0.5, the button is hidden.
-                // Without hidding, the buttons layout may appear glitch at the start
+                // Without hiding, the buttons layout may appear glitched at the start
                 instance hide: 0.0
                 fn get_color(self) -> vec4 {
                     return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -186,7 +186,7 @@ impl Widget for ReactionList {
                 widget_ref.handle_event(cx, event, scope);
                 match event {
                     Event::Actions(actions) => {
-                        if widget_ref.clicked(&actions) {
+                        if widget_ref.clicked(actions) {
                             let text = widget_ref.text().clone();
                             let mut reaction_string_arr: Vec<&str> = text.split(" ").collect();
                             reaction_string_arr.pop();
