@@ -32,6 +32,8 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
+use crate::shared::avatar::set_avatar_and_get_username;
+use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
 use super::loading_modal::{LoadingModalAction, LoadingModalState};
@@ -2488,7 +2490,7 @@ fn populate_message_view(
                     item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 );
 
@@ -2678,7 +2680,7 @@ fn populate_message_view(
                 item.avatar(id!(profile.avatar)),
                 room_id,
                 event_tl_item.sender(),
-                event_tl_item.sender_profile(),
+                Some(event_tl_item.sender_profile()),
                 event_tl_item.event_id(),
             )
         );
