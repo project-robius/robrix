@@ -618,8 +618,7 @@ async fn async_worker(
                         continue;
                     };
 
-                    let sender = room_info.timeline_update_sender.clone();
-                    sender
+                    room_info.timeline_update_sender.clone()
                 };
                 let _fetch_task = Handle::current().spawn(async move {
                     if let Some(unread_messages_count) = get_client()
