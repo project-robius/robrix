@@ -585,7 +585,8 @@ async fn async_worker(
                 };
                 
                 let _get_fully_read_event_task = Handle::current().spawn(async move {
-                    async fn fetch_fully_read_event(room: &Room, room_id: &OwnedRoomId) -> Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
+                    async fn fetch_fully_read_event(room: &Room, room_id: &OwnedRoomId) -> 
+                        Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
                         let fully_read_event =  room
                             .account_data_static::<FullyReadEventContent>().await?
                             .and_then(|f| f.deserialize().ok())
@@ -626,7 +627,8 @@ async fn async_worker(
                         .and_then(|c| c.get_room(&room_id))
                         .map(|room| Some(room.num_unread_messages()))
                     {
-                        if let Err(e) = sender.send(TimelineUpdate::NewItems { new_items: Vec::new().into(), changed_indices: 0..1, is_append: false, clear_cache: false, unread_messages_count }) {
+                        if let Err(e) = sender.send(TimelineUpdate::NewItems { new_items: Vec::new().into(), changed_indices: 0..1, 
+                            is_append: false, clear_cache: false, unread_messages_count }) {
                             log!("Failed to send timeline update: {e:?} for NumOfUnReadMessages request for room {room_id}");
                         } else {
                             SignalToUI::set_ui_signal();
@@ -770,33 +772,32 @@ async fn async_worker(
 
                 let _to_updates_task = Handle::current().spawn(async move {
                     while let Ok(room_update) = update_receiver.recv().await {
-                        match room_update {
-                            RoomUpdate::Joined { room, .. } => {
-                                // Using Serde_json to obtain the latest_active event_id  
-                                // Room's read receipt's latest_active event is not public, but the ReadReceipts struct is serializable 
-                                if let Some(latest_active) = serde_json::to_value(&room.read_receipts())
-                                    .unwrap_or_default()
-                                    .get("latest_active")
-                                    .unwrap_or(&serde_json::Value::Null)
-                                    .get("event_id") {
-                                    // The event_id contains double quotes, hence there is a string replacement code to remove them 
-                                    let updated_event_id = latest_active.to_string().replace("\"", "");
-                                    let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
-                                    if let Some((event_id, _)) = fully_read_event {
-                                        let Ok(updated_event_id) = EventId::parse(updated_event_id.clone()).map_err(|e|{
-                                            error!("Error: couldn't parse event id {updated_event_id}: {e:?}");
-                                        }) else { continue };
-                                        if event_id != updated_event_id {
-                                            if let Err(e) = get_event_timestamp(&room, &room_id, event_id).await.map(|(read_event, timestamp)| {
-                                                set_fully_read_event(&room_id, read_event, timestamp)
-                                            }) {
-                                                error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
-                                            }
+                        if let RoomUpdate::Joined { room, updates: _ } = room_update {
+                            // Using Serde_json to obtain the latest_active event_id  
+                            // Room's read receipt's latest_active event is not public, but the ReadReceipt struct 
+                            // is serializable 
+                            if let Some(latest_active) = serde_json::to_value(room.read_receipts())
+                                .unwrap_or_default()
+                                .get("latest_active")
+                                .unwrap_or(&serde_json::Value::Null)
+                                .get("event_id") {
+                                // The event_id contains double quotes, hence there is a string replacement code to remove them 
+                                let updated_event_id = latest_active.to_string().replace("\"", "");
+                                let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
+                                if let Some((event_id, _)) = fully_read_event {
+                                    let Ok(updated_event_id) = EventId::parse(updated_event_id.clone()).map_err(|e|{
+                                        error!("Error: couldn't parse event id {updated_event_id}: {e:?}");
+                                    }) else { continue };
+                                    if event_id != updated_event_id {
+                                        if let Err(e) = get_event_timestamp(&room, &room_id, event_id).await
+                                            .map(|(read_event, timestamp)| {
+                                            set_fully_read_event(&room_id, read_event, timestamp)
+                                        }) {
+                                            error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
                                         }
                                     }
                                 }
                             }
-                            _ => {}
                         }
                     }
                 });
@@ -894,13 +895,14 @@ async fn async_worker(
                     room_info.timeline.clone()
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
-                    let receipt_type = ReceiptType::FullyRead;
-                    match timeline.send_single_receipt(receipt_type, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} send fully read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
+                    match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
+                        Ok(sent) => log!("{} send fully read receipt to room {room_id} for event {event_id}", 
+                            if sent { "Sent" } else { "Already sent" }
+                        ),
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            }
         }
     }
 
