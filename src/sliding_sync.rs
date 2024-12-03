@@ -1999,14 +1999,13 @@ async fn spawn_sso_server(
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))
             .await
-            .map(|response| {
+            .inspect(|_| {
                 if let Some(client) = get_client() {
                     if client.logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
                     }
                 }
-                response
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {

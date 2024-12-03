@@ -2939,7 +2939,7 @@ fn populate_image_message_content(
     // then show a message about it being unsupported.
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
-            text_or_image_ref.show_text(&format!(
+            text_or_image_ref.show_text(format!(
                 "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
             return true;
@@ -2965,13 +2965,13 @@ fn populate_image_message_content(
                     true
                 }
                 MediaCacheEntry::Requested => {
-                    text_or_image_ref.show_text(&format!("{body}\n\nFetching image from {:?}", mxc_uri));
+                    text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
                     // Do not consider this image as being fully drawn, as we're still fetching it.
                     false
                 }
                 MediaCacheEntry::Failed => {
                     text_or_image_ref
-                        .show_text(&format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                        .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                     // For now, we consider this as being "complete". In the future, we could support
                     // retrying to fetch the image on a user click/tap.
                     true
@@ -2979,7 +2979,7 @@ fn populate_image_message_content(
             }
         }
         Some(MediaSource::Encrypted(encrypted)) => {
-            text_or_image_ref.show_text(&format!(
+            text_or_image_ref.show_text(format!(
                 "{body}\n\n[TODO] fetch encrypted image at {:?}",
                 encrypted.url
             ));
