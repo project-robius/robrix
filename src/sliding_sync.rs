@@ -611,16 +611,15 @@ async fn async_worker(
                 });
             }
             MatrixRequest::GetNumOfUnReadMessages { room_id } => {
-                let (_, sender) = {
+                let sender = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
 
-                    let timeline_ref = room_info.timeline.clone();
                     let sender = room_info.timeline_update_sender.clone();
-                    (timeline_ref, sender)
+                    sender
                 };
                 let _fetch_task = Handle::current().spawn(async move {
                     if let Some(unread_messages_count) = get_client()
@@ -754,15 +753,20 @@ async fn async_worker(
             MatrixRequest::SubscribeToUpdates { room_id, subscribe } => {
                 let mut update_receiver = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(_room_info) = all_room_info.get_mut(&room_id) else {
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to updates, room {room_id}");
                         continue;
                     };
                     let recv = if subscribe {
+                        if room_info.update_subscriber_initialised {
+                            warning!("Note: room {room_id} is already subscribed to updates.");
+                            continue
+                        }
                         let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
                             error!("BUG: client/room not found when subscribing to updates, room: {room_id}");
                             continue;
                         };
+                        room_info.update_subscriber_initialised = true;
                         room.subscribe_to_updates()
                     } else {
                         continue;
@@ -1012,6 +1016,8 @@ struct RoomInfo {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
+    /// A broadcast receiver for room updates.
+    update_subscriber_initialised: bool,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
     /// Event_id and timestamp for read marker
@@ -1588,6 +1594,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
+            update_subscriber_initialised: false,
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
             fully_read_event: None
         },
