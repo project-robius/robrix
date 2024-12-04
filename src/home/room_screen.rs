@@ -29,6 +29,8 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
+use crate::shared::avatar::set_avatar_and_get_username;
+use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
 use super::loading_modal::{LoadingModalAction, LoadingModalState};
@@ -50,6 +52,7 @@ live_design! {
     import crate::shared::avatar::Avatar;
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
+    import crate::home::room_read_receipt::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
     import crate::shared::typing_animation::TypingAnimation;
     import crate::shared::icon_button::*;
@@ -389,7 +392,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-
+            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (12.0) }, hover_actions_enabled:true }
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -710,7 +713,7 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-
+        
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -938,7 +941,37 @@ live_design! {
                 }
             }
         }
-
+        
+        tooltip = <Tooltip> {
+            content: <View> {
+                flow: Overlay
+                width: Fit
+                height: Fit
+    
+                <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+    
+                    padding: {left:10, top: 19, right: 10, bottom: 10},
+    
+                    draw_bg: {
+                        color: #fff,
+                        border_width: 1.0,
+                        border_color: #D0D5DD,
+                        radius: 2.
+                    }
+    
+                    tooltip_label = <Label> {
+                        width: 30,
+                        draw_text: {
+                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                            text_wrap: Word,
+                            color: #000
+                        }
+                    }
+                }
+            }
+        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -997,6 +1030,17 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let mut tooltip = self.tooltip(id!(tooltip));
+            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
+                let seq = wr.avatar_row(id!(avatar_row));
+                let num_seen = seq.total_num_seen();
+                if let Some(rect) = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, rect.pos, &format!("Seen by {num_seen}"));
+                }
+                if seq.hover_out(&actions) {
+                    tooltip.hide(cx);
+                }
+            });     
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -1789,7 +1833,7 @@ impl RoomScreen {
             replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
-            replying_to.0.sender_profile(),
+            Some(replying_to.0.sender_profile()),
             replying_to.0.event_id(),
         );
 
@@ -2496,6 +2540,7 @@ fn populate_message_view(
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
+    let receipts = event_tl_item.read_receipts();
     let mut new_drawn_status = item_drawn_status;
 
     let ts_millis = event_tl_item.timestamp();
@@ -2531,6 +2576,9 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            let receipts_len = receipts.len();
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), receipts_len, receipts.iter());
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2636,7 +2684,7 @@ fn populate_message_view(
                     item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 );
 
@@ -2832,7 +2880,7 @@ fn populate_message_view(
                     item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 )
             );
@@ -3189,10 +3237,10 @@ fn draw_replied_to_message(
                 let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
                     cx,
                     replied_to_message_view
-                        .avatar(id!(replied_to_message_content.reply_preview_avatar)),
+                    .avatar(id!(replied_to_message_content.reply_preview_avatar)),
                     room_id,
                     replied_to_event.sender(),
-                    replied_to_event.sender_profile(),
+                    Some(replied_to_event.sender_profile()),
                     Some(in_reply_to_details.event_id.as_ref()),
                 );
 
@@ -3474,12 +3522,13 @@ fn populate_small_state_event(
 
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
+        let avatar_ref = item.avatar(id!(avatar));
         let (username, profile_drawn) = set_avatar_and_get_username(
             cx,
-            item.avatar(id!(avatar)),
+            avatar_ref,
             room_id,
             event_tl_item.sender(),
-            event_tl_item.sender_profile(),
+            Some(event_tl_item.sender_profile()),
             event_tl_item.event_id(),
         );
         // Draw the timestamp as part of the profile.
@@ -3516,102 +3565,6 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
         item.label(live_id_path)
             .set_text(&format!("{}", timestamp.get()));
     }
-}
-
-/// Sets the given avatar and returns a displayable username based on the
-/// given profile and user ID of the sender of the event with the given event ID.
-///
-/// If the sender profile is not ready, this function will submit an async request
-/// to fetch the sender profile from the server, but only if the event ID is `Some`.
-///
-/// This function will always choose a nice, displayable username and avatar.
-///
-/// The specific behavior is as follows:
-/// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
-///   will be the user's display name and avatar image, if available.
-///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
-/// * If no avatar image is available, then the `avatar` will be set to the first character
-///   of the user's display name, if available.
-/// * If the user's display name is not available or has not been set, the user ID
-///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
-///   our user profile cache , then the `username` and `avatar`  will be the user ID
-///   and the first character of that user ID, respectively.
-///
-/// ## Return
-/// Returns a tuple of:
-/// 1. The displayable username that should be used to populate the username field.
-/// 2. A boolean indicating whether the user's profile info has been completely drawn
-///    (for purposes of caching it to avoid future redraws).
-fn set_avatar_and_get_username(
-    cx: &mut Cx,
-    avatar: AvatarRef,
-    room_id: &OwnedRoomId,
-    sender_user_id: &UserId,
-    sender_profile: &TimelineDetails<Profile>,
-    event_id: Option<&EventId>,
-) -> (String, bool) {
-    // Get the display name and avatar URL from the sender's profile, if available,
-    // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let (username_opt, avatar_state) = match sender_profile {
-        TimelineDetails::Ready(profile) => (
-            profile.display_name.clone(),
-            AvatarState::Known(profile.avatar_url.clone()),
-        ),
-        not_ready => {
-            if matches!(not_ready, TimelineDetails::Unavailable) {
-                if let Some(event_id) = event_id {
-                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        event_id: event_id.to_owned(),
-                    });
-                }
-            }
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, sender_user_id, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-            })
-            .unwrap_or((None, AvatarState::Unknown))
-        }
-    };
-
-    let (avatar_img_data_opt, profile_drawn) = match avatar_state {
-        AvatarState::Loaded(data) => (Some(data), true),
-        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-            AvatarCacheEntry::Loaded(data) => (Some(data), true),
-            AvatarCacheEntry::Failed => (None, true),
-            AvatarCacheEntry::Requested => (None, false),
-        },
-        AvatarState::Known(None) | AvatarState::Failed => (None, true),
-        AvatarState::Unknown => (None, false),
-    };
-
-    // Set sender to the display name if available, otherwise the user id.
-    let username = username_opt
-        .clone()
-        .unwrap_or_else(|| sender_user_id.to_string());
-
-    // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt.and_then(|data|
-        avatar.show_image(
-            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone()).into()),
-            |img| utils::load_png_or_jpg(&img, cx, &data)
-        )
-        .ok()
-    )
-    .unwrap_or_else(|| avatar.show_text(
-        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
-        &username,
-    ));
-    (username, profile_drawn)
 }
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
