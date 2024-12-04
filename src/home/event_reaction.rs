@@ -20,7 +20,7 @@ live_design! {
             width: Fit,
             height: Fit,
             spacing: 20,
-            padding: {top: 3, bottom: 3, left: 3, right: 3}
+            padding: {top: 3, bottom: 3, left: 5, right: 5}
             margin: {
                 top:3,
                 bottom:3,
