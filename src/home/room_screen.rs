@@ -713,7 +713,7 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-
+        
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -941,7 +941,37 @@ live_design! {
                 }
             }
         }
-
+        
+        tooltip = <Tooltip> {
+            content: <View> {
+                flow: Overlay
+                width: Fit
+                height: Fit
+    
+                <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+    
+                    padding: {left:10, top: 19, right: 10, bottom: 10},
+    
+                    draw_bg: {
+                        color: #fff,
+                        border_width: 1.0,
+                        border_color: #D0D5DD,
+                        radius: 2.
+                    }
+    
+                    tooltip_label = <Label> {
+                        width: 30,
+                        draw_text: {
+                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                            text_wrap: Word,
+                            color: #000
+                        }
+                    }
+                }
+            }
+        }
         animator: {
             typing_notice_animator = {
                 default: show,
