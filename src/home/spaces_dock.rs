@@ -60,11 +60,11 @@ live_design! {
             }
         }
         <View> {
-            align: {x: 0.999, y: 0.001}
+            align: { x: 1.0, y: 0.0 }
 
             verification_icon = <View> {
                 flow: Overlay
-                align:{x: 0.5, y: 0.5}
+                align:{ x: 0.5, y: 0.5 }
                 width: 31, height: 31
 
                 icon_yes = <IconYes> {}
@@ -214,8 +214,9 @@ impl Widget for Profile {
                     VerificationState::Unverified => &self.verification_notice.no,
                     VerificationState::Verified => &self.verification_notice.yes
                 };
-                let pos = DVec2 { x: 0.9, y: 0.9 };
-                self.tooltip(id!(verification_notice)).show_with_options(cx, pos, text)
+
+                self.tooltip(id!(verification_notice)).set_text(text);
+                self.tooltip(id!(verification_notice)).show(cx)
             }
             else {
                 self.tooltip(id!(verification_notice)).hide(cx)
