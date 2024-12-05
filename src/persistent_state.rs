@@ -9,7 +9,7 @@ use matrix_sdk::{
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::{app_data_dir, login::login_screen::{ LoginAction, SessionFileAction }};
+use crate::{app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Serialize, Deserialize)]
@@ -98,8 +98,8 @@ pub async fn restore_session(
         bail!("Could not find previous session file");
     }
     else {
-        // Hide components required for login via this action.
-        Cx::post_action(SessionFileAction::FileExists);
+        // Hide components required for login via this variant.
+        Cx::post_action(LoginAction::SessionFileExists);
     }
     let status_str = format!("Loading previous session file for {user_id}...");
     log!("{status_str}: '{}'", session_file.display());

@@ -102,7 +102,7 @@ async fn build_client(
     let homeserver_url = cli.homeserver.as_deref()
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
-    
+
     let mut builder = Client::builder()
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
@@ -180,7 +180,7 @@ async fn login(
                 bail!("Failed to login as {}: {login_result:?}", cli.username);
             }
         }
-       
+
         LoginRequest::LoginBySSOSuccess(client, client_session) => {
             if let Err(e) = persistent_state::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
@@ -226,7 +226,7 @@ async fn populate_login_types(
 }
 
 /// Which direction to paginate in.
-/// 
+///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
 ///    which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
@@ -374,7 +374,7 @@ pub enum LoginRequest{
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
-    
+
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -774,7 +774,7 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            }
         }
     }
 
@@ -798,7 +798,7 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
-    
+
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
@@ -942,7 +942,7 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 
 
 /// Returns three channel endpoints related to the timeline for the given room.
-/// 
+///
 /// 1. A timeline update sender.
 /// 2. The timeline update receiver, which is a singleton, and can only be taken once.
 /// 3. A `tokio::watch` sender that can be used to send requests to the timeline subscriber handler.
@@ -1019,6 +1019,7 @@ async fn async_main_loop(
         if let Ok(session) = persistent_state::restore_session(specified_username).await {
             Some(session)
         } else {
+            Cx::post_action(LoginAction::ProcessSessionFailure);
             let status_err = "Failed to restore previous user session. Please login again.";
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
@@ -1699,7 +1700,7 @@ async fn timeline_subscriber_handler(
                             } else {
                                 found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value));
                             }
-                            
+
                             clear_cache = true;
                             timeline_items.push_front(value);
                             reobtain_latest_event |= latest_event.is_none();
@@ -1772,7 +1773,7 @@ async fn timeline_subscriber_handler(
                                 if index <= *i {
                                     *i = i.saturating_sub(1);
                                 }
-                            } 
+                            }
                             timeline_items.remove(index);
                             if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
                             reobtain_latest_event = true;
@@ -1796,16 +1797,16 @@ async fn timeline_subscriber_handler(
                         }
                     }
                 }
-        
+
                 if num_updates > 0 {
                     let new_latest_event = if reobtain_latest_event {
                         timeline.latest_event().await
                     } else {
                         None
                     };
-        
+
                     let changed_indices = index_of_first_change..index_of_last_change;
-        
+
                     if LOG_TIMELINE_DIFFS {
                         log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
                     }
@@ -1832,7 +1833,7 @@ async fn timeline_subscriber_handler(
 
                     // Send a Makepad-level signal to update this room's timeline UI view.
                     SignalToUI::set_ui_signal();
-                
+
                     // Update the latest event for this room.
                     if let Some(new_latest) = new_latest_event {
                         if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
@@ -1952,10 +1953,10 @@ async fn spawn_sso_server(
         ..Default::default()
     };
     Handle::current().spawn(async move {
-        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else { 
-            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string())); 
-            return; 
-        }; 
+        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else {
+            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string()));
+            return;
+        };
         let mut is_logged_in = false;
         match client
             .matrix_auth()

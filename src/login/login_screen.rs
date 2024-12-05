@@ -375,11 +375,17 @@ impl MatchEvent for LoginScreen {
         let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
             // Here we hide the components required for login if session file exists.
-            if let Some(SessionFileAction::FileExists) = action.downcast_ref() {
+            if let Some(LoginAction::SessionFileExists) = action.downcast_ref() {
                 components_required_for_login.set_visible_and_redraw(cx, false)
             }
 
             match action.downcast_ref() {
+                Some(LoginAction::SessionFileExists) => {
+                    components_required_for_login.set_visible_and_redraw(cx, false)
+                }
+                Some(LoginAction::ProcessSessionFailure) => {
+                    components_required_for_login.set_visible_and_redraw(cx, true)
+                }
                 Some(LoginAction::AutofillInfo { .. }) => {
                     todo!("set user_id, password, and homeserver inputs");
                 }
@@ -498,6 +504,10 @@ impl MatchEvent for LoginScreen {
 /// Actions sent to or from the login screen.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LoginAction {
+    /// Reshow the components required for login via it.
+    ProcessSessionFailure,
+    /// Hide the components required for login via it.
+    SessionFileExists,
     /// A positive response from the backend Matrix task to the login screen.
     ///
     /// This is not handled by the login screen itself, but by the main app.
@@ -526,11 +536,5 @@ pub enum LoginAction {
     /// This is sent from the backend async task to the login screen in order to
     /// inform the login screen which SSO identity providers it should display to the user.
     IdentityProvider(Vec<IdentityProvider>),
-    None,
-}
-
-#[derive(Clone, DefaultNone, Debug)]
-pub enum SessionFileAction {
-    FileExists,
     None,
 }
