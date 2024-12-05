@@ -136,7 +136,7 @@ live_design! {
         align: {x: 0.5, y: 0.5}
 
         <RoundedView> {
-            width: Fit, height: Fit
+            width: Fit, height: Fill
             flow: Down
             align: {x: 0.5, y: 0.5}
 
@@ -152,6 +152,7 @@ live_design! {
             }
 
             components_required_for_login = <View> {
+                visible: false,
                 width: Fit, height: Fit
                 flow: Down
                 align: {x: 0.5, y: 0.5}
@@ -301,7 +302,6 @@ live_design! {
             }
         }
     }
-
 }
 
 static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";

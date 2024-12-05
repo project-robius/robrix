@@ -1050,6 +1050,7 @@ async fn async_main_loop(
             }
         }
     } else {
+        Cx::post_action(LoginAction::ProcessSessionFailure);
         None
     };
     let cli: Cli = cli_parse_result.unwrap_or(Cli::default());
