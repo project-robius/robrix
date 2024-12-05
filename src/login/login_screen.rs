@@ -139,8 +139,6 @@ live_design! {
             width: Fit, height: Fit
             flow: Down
             align: {x: 0.5, y: 0.5}
-            padding: 30
-            spacing: 15.0
 
             show_bg: true,
             draw_bg: {
@@ -154,6 +152,17 @@ live_design! {
             }
 
             components_required_for_login = <View> {
+                width: Fit, height: Fit
+                flow: Down
+                align: {x: 0.5, y: 0.5}
+                padding: 30
+                spacing: 15.0
+
+                show_bg: true,
+                draw_bg: {
+                    color: (COLOR_SECONDARY)
+                }
+
                 title = <Label> {
                     width: Fit, height: Fit
                     margin: { bottom: 10 }
@@ -374,11 +383,6 @@ impl MatchEvent for LoginScreen {
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google"];
         let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
-            // Here we hide the components required for login if session file exists.
-            if let Some(LoginAction::SessionFileExists) = action.downcast_ref() {
-                components_required_for_login.set_visible_and_redraw(cx, false)
-            }
-
             match action.downcast_ref() {
                 Some(LoginAction::SessionFileExists) => {
                     components_required_for_login.set_visible_and_redraw(cx, false)

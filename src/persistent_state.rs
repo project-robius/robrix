@@ -94,6 +94,7 @@ pub async fn restore_session(
     };
     let session_file = session_file_path(&user_id);
     if !session_file.exists() {
+        Cx::post_action(LoginAction::ProcessSessionFailure);
         log!("Could not find previous session file for user {user_id}");
         bail!("Could not find previous session file");
     }
