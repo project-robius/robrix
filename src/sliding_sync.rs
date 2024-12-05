@@ -1049,6 +1049,8 @@ async fn async_main_loop(
             }
         }
     } else {
+
+        // Hide components required for login via this variant.
         Cx::post_action(LoginAction::ProcessSessionFailure);
         None
     };
