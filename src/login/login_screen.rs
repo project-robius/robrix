@@ -15,7 +15,7 @@ live_design! {
 
     IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
-    
+
     LoginTextInput = <TextInput> {
         width: Fill, height: Fit, margin: 0
         align: {y: 0.5}
@@ -193,7 +193,7 @@ live_design! {
                     icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
                 }
             }
-            
+
             <Label> {
                 width: Fit, height: Fit
                 draw_text: {
@@ -251,9 +251,9 @@ live_design! {
                     }
                 }
             }
-                
-            
-            
+
+
+
             status_label = <Label> {
                 width: 250, height: Fit
                 padding: {left: 5, right: 5, top: 10, bottom: 10}
@@ -290,7 +290,7 @@ live_design! {
             }
         }
     }
-    
+
 }
 
 static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
@@ -367,7 +367,7 @@ impl MatchEvent for LoginScreen {
             sso_search_button.set_enabled(self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
-        
+
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google"];
         let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
@@ -412,7 +412,7 @@ impl MatchEvent for LoginScreen {
                             view_ref.apply_over(cx,
                                 live! {
                                     cursor: NotAllowed,
-                                    image = { 
+                                    image = {
                                         draw_bg: {
                                             mask: (1.0)
                                         }
@@ -428,7 +428,7 @@ impl MatchEvent for LoginScreen {
                             view_ref.apply_over(cx,
                                 live! {
                                     cursor: Hand,
-                                    image = { 
+                                    image = {
                                         draw_bg: {
                                             mask: (0.0)
                                         }
@@ -447,7 +447,7 @@ impl MatchEvent for LoginScreen {
                                 view_ref.set_visible(true);
                                 break;
                             }
-                        }  
+                        }
                     }
                     self.identity_providers = identity_providers.clone();
                     sso_search_button.set_enabled(true);
@@ -509,14 +509,20 @@ pub enum LoginAction {
     /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
     ///
     /// Note that an inner value of `false` does *not* imply that the login request has
-    /// successfully finished. 
+    /// successfully finished.
     /// The login screen can use this to prevent the user from submitting
-    /// additional SSO login requests while a previous request is in flight. 
+    /// additional SSO login requests while a previous request is in flight.
     SsoPending(bool),
     /// A list of SSO identity providers supported by the homeserver.
     ///
     /// This is sent from the backend async task to the login screen in order to
     /// inform the login screen which SSO identity providers it should display to the user.
     IdentityProvider(Vec<IdentityProvider>),
+    None,
+}
+
+#[derive(Clone, DefaultNone, Debug)]
+pub enum SessionFileAction {
+    FileExists,
     None,
 }
