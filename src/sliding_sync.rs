@@ -1019,7 +1019,6 @@ async fn async_main_loop(
         if let Ok(session) = persistent_state::restore_session(specified_username).await {
             Some(session)
         } else {
-            Cx::post_action(LoginAction::ProcessSessionFailure);
             let status_err = "Failed to restore previous user session. Please login again.";
             log!("{status_err}");
             Cx::post_action(LoginAction::Status(status_err.to_string()));
