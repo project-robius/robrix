@@ -153,106 +153,133 @@ live_design! {
                 source: (IMG_APP_LOGO),
             }
 
-            title = <Label> {
-                width: Fit, height: Fit
-                margin: { bottom: 10 }
-                draw_text: {
-                    color: (COLOR_TEXT)
-                    text_style: <TITLE_TEXT>{font_size: 16.0}
-                }
-                text: "Login to Robrix"
-            }
-
-            user_id_input = <LoginTextInput> {
-                width: 250, height: 40
-                empty_message: "User ID"
-            }
-
-            password_input = <LoginTextInput> {
-                width: 250, height: 40
-                empty_message: "Password"
-                draw_text: { text_style: { is_secret: true } }
-            }
-            <View> {
-                width: Fit, height: Fit,
-                flow: Right,
-                homeserver_input = <LoginTextInput> {
-                    width: 220, height: 40
-                    margin: {bottom: -10}
-                    empty_message: "matrix.org"
+            components_required_for_login = <View> {
+                title = <Label> {
+                    width: Fit, height: Fit
+                    margin: { bottom: 10 }
                     draw_text: {
-                        text_style: <TITLE_TEXT>{font_size: 9.0}
+                        color: (COLOR_TEXT)
+                        text_style: <TITLE_TEXT>{font_size: 16.0}
+                    }
+                    text: "Login to Robrix"
+                }
+
+                user_id_input = <LoginTextInput> {
+                    width: 250, height: 40
+                    empty_message: "User ID"
+                }
+
+                password_input = <LoginTextInput> {
+                    width: 250, height: 40
+                    empty_message: "Password"
+                    draw_text: { text_style: { is_secret: true } }
+                }
+
+                <View> {
+                    width: Fit, height: Fit,
+                    flow: Right,
+                    homeserver_input = <LoginTextInput> {
+                        width: 220, height: 40
+                        margin: {bottom: -10}
+                        empty_message: "matrix.org"
+                        draw_text: {
+                            text_style: <TITLE_TEXT>{font_size: 9.0}
+                        }
+                    }
+                    sso_search_button = <RobrixIconButton> {
+                        width: 25, height: 25,
+                        margin: {top: 5, left: 5 }
+                        draw_icon: {
+                            svg_file: (ICON_SEARCH)
+                        }
+                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
                     }
                 }
-                sso_search_button = <RobrixIconButton> {
-                    width: 25, height: 25,
-                    margin: {top: 5, left: 5 }
-                    draw_icon: {
-                        svg_file: (ICON_SEARCH)
+
+                <Label> {
+                    width: Fit, height: Fit
+                    draw_text: {
+                        color: #x8c8c8c
+                        text_style: <REGULAR_TEXT>{font_size: 9}
                     }
-                    icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                    text: "Homeserver (optional)"
+                }
+
+                login_button = <RobrixIconButton> {
+                    width: 250, height: 40
+                    margin: {top: 15}
+                    draw_bg: {
+                        color: (COLOR_SELECTED_PRIMARY)
+                    }
+                    draw_text: {
+                        color: (COLOR_PRIMARY)
+                        text_style: <REGULAR_TEXT> {}
+                    }
+                    text: "Login"
+                }
+
+                sso_view = <View> {
+                    spacing: 20,
+                    width: Fit, height: Fit,
+                    flow: Right,
+                    apple_button = <SsoButton> {
+                        image = <SsoImage> {
+                            source: dep("crate://self/resources/img/apple.png")
+                        }
+                    }
+                    facebook_button = <SsoButton> {
+                        image = <SsoImage> {
+                            source: dep("crate://self/resources/img/facebook.png")
+                        }
+                    }
+                    github_button = <SsoButton> {
+                        image = <SsoImage> {
+                            source: dep("crate://self/resources/img/github.png")
+                        }
+                    }
+                    github_button = <SsoButton> {
+                        image = <SsoImage> {
+                            source: dep("crate://self/resources/img/github.png")
+                        }
+                    }
+                    gitlab_button = <SsoButton> {
+                        image = <SsoImage> {
+                            source: dep("crate://self/resources/img/gitlab.png")
+                        }
+                    }
+                    google_button = <SsoButton> {
+                        image = <SsoImage> {
+                            source: dep("crate://self/resources/img/google.png")
+                        }
+                    }
+                }
+
+                <Label> {
+                    width: Fit, height: Fit
+                    draw_text: {
+                        color: #x6c6c6c
+                        text_style: <REGULAR_TEXT>{}
+                    }
+                    text: "Don't have an account?"
+                }
+
+                signup_button = <Button> {
+                    width: Fit, height: Fit
+                    margin: {top: -5}
+                    draw_text: {
+                        // color: (MESSAGE_TEXT_COLOR)
+                        fn get_color(self) -> vec4 {
+                            return MESSAGE_TEXT_COLOR
+                        }
+                        text_style: <REGULAR_TEXT>{}
+                    }
+                    draw_bg: {
+                        bodybottom: #DDDDDD
+                    }
+
+                    text: "Sign up here"
                 }
             }
-
-            <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    color: #x8c8c8c
-                    text_style: <REGULAR_TEXT>{font_size: 9}
-                }
-                text: "Homeserver (optional)"
-            }
-
-            login_button = <RobrixIconButton> {
-                width: 250, height: 40
-                margin: {top: 15}
-                draw_bg: {
-                    color: (COLOR_SELECTED_PRIMARY)
-                }
-                draw_text: {
-                    color: (COLOR_PRIMARY)
-                    text_style: <REGULAR_TEXT> {}
-                }
-                text: "Login"
-            }
-
-            sso_view = <View> {
-                spacing: 20,
-                width: Fit, height: Fit,
-                flow: Right,
-                apple_button = <SsoButton> {
-                    image = <SsoImage> {
-                        source: dep("crate://self/resources/img/apple.png")
-                    }
-                }
-                facebook_button = <SsoButton> {
-                    image = <SsoImage> {
-                        source: dep("crate://self/resources/img/facebook.png")
-                    }
-                }
-                github_button = <SsoButton> {
-                    image = <SsoImage> {
-                        source: dep("crate://self/resources/img/github.png")
-                    }
-                }
-                github_button = <SsoButton> {
-                    image = <SsoImage> {
-                        source: dep("crate://self/resources/img/github.png")
-                    }
-                }
-                gitlab_button = <SsoButton> {
-                    image = <SsoImage> {
-                        source: dep("crate://self/resources/img/gitlab.png")
-                    }
-                }
-                google_button = <SsoButton> {
-                    image = <SsoImage> {
-                        source: dep("crate://self/resources/img/google.png")
-                    }
-                }
-            }
-
-
 
             status_label = <Label> {
                 width: 250, height: Fit
@@ -262,31 +289,6 @@ live_design! {
                     text_style: <REGULAR_TEXT> {}
                 }
                 text: ""
-            }
-
-            <Label> {
-                width: Fit, height: Fit
-                draw_text: {
-                    color: #x6c6c6c
-                    text_style: <REGULAR_TEXT>{}
-                }
-                text: "Don't have an account?"
-            }
-            signup_button = <Button> {
-                width: Fit, height: Fit
-                margin: {top: -5}
-                draw_text: {
-                    // color: (MESSAGE_TEXT_COLOR)
-                    fn get_color(self) -> vec4 {
-                        return MESSAGE_TEXT_COLOR
-                    }
-                    text_style: <REGULAR_TEXT>{}
-                }
-                draw_bg: {
-                    bodybottom: #DDDDDD
-                }
-
-                text: "Sign up here"
             }
         }
     }
@@ -325,6 +327,7 @@ impl Widget for LoginScreen {
 
 impl MatchEvent for LoginScreen {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        let components_required_for_login = self.view(id!(components_required_for_login));
         let status_label = self.view.label(id!(status_label));
         let login_button = self.view.button(id!(login_button));
         let signup_button = self.view.button(id!(signup_button));
@@ -371,6 +374,11 @@ impl MatchEvent for LoginScreen {
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google"];
         let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
         for action in actions {
+            // Here we hide the components required for login if session file exists.
+            if let Some(SessionFileAction::FileExists) = action.downcast_ref() {
+                components_required_for_login.set_visible_and_redraw(cx, false)
+            }
+
             match action.downcast_ref() {
                 Some(LoginAction::AutofillInfo { .. }) => {
                     todo!("set user_id, password, and homeserver inputs");
