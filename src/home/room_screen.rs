@@ -12,7 +12,7 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, UserId
     },
     OwnedServerName,
 };
@@ -935,6 +935,36 @@ live_design! {
                 }
             }
         }
+        tooltip = <Tooltip> {
+            content: <View> {
+                flow: Overlay
+                width: Fit
+                height: Fit
+    
+                <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+    
+                    padding: {left:10, top: 19, right: 10, bottom: 10},
+    
+                    draw_bg: {
+                        color: #fff,
+                        border_width: 1.0,
+                        border_color: #D0D5DD,
+                        radius: 2.
+                    }
+    
+                    tooltip_label = <Label> {
+                        width: Fit,
+                        draw_text: {
+                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                            text_wrap: Word,
+                            color: #000
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -952,6 +982,7 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -978,6 +1009,16 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let mut tooltip = self.tooltip(id!(tooltip));
+            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
+                let seq = wr.reaction_list(id!(reaction_list));
+                if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, rect.pos, &tooltip_text);
+                }
+                if seq.hover_out(&actions) {
+                    tooltip.hide(cx);
+                }
+            });
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -1330,6 +1371,7 @@ impl Widget for RoomScreen {
                 return DrawStep::done();
             };
             let room_id = &tl_state.room_id;
+            let client_user_id = &tl_state.client_user_id;
             let tl_items = &tl_state.items;
 
             // Set the portal list's range based on the number of timeline items.
@@ -1365,6 +1407,7 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
+                                    client_user_id,
                                     event_tl_item,
                                     MessageOrSticker::Message(message),
                                     prev_event,
@@ -1380,6 +1423,7 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
+                                    client_user_id,
                                     event_tl_item,
                                     MessageOrSticker::Sticker(sticker.content()),
                                     prev_event,
@@ -1822,7 +1866,7 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
-
+        let Some(client_user_id) = get_client().and_then(|client| client.user_id().and_then(|id| Some(id.to_owned()))) else { return };
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
@@ -1830,6 +1874,7 @@ impl RoomScreen {
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
+                client_user_id,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
@@ -2243,6 +2288,8 @@ struct TimelineUiState {
     prev_first_index: Option<usize>,
     read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
     marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
+    /// The user ID of the logged in user
+    client_user_id: OwnedUserId
 }
 
 #[derive(Default, Debug)]
@@ -2470,6 +2517,7 @@ fn populate_message_view(
     list: &mut PortalList,
     item_id: usize,
     room_id: &OwnedRoomId,
+    user_id: &OwnedUserId,
     event_tl_item: &EventTimelineItem,
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2783,7 +2831,7 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list))
-            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier());
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), user_id.to_owned(), event_tl_item.identifier());
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
