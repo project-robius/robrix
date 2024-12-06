@@ -17,7 +17,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent},
     Timeline,
 };
 use robius_open::Uri;
@@ -357,6 +357,14 @@ pub enum MatrixRequest {
     FullyReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
+    },
+    /// Toggle a reaction on the given event in the given room.
+    /// 
+    /// Either add to or subtract from the reaction count.
+    ToggleReaction {
+        room_id: OwnedRoomId,
+        timeline_event_id: TimelineEventItemId,
+        reaction_key: String,
     }
 }
 
@@ -739,8 +747,7 @@ async fn async_worker(
                     }
                     SignalToUI::set_ui_signal();
                 });
-            }
-
+            },
             MatrixRequest::ReadReceipt { room_id, event_id }=>{
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -774,7 +781,26 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            },
+            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction_key } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for send toggle reaction {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                
+                let _toggle_reaction_task = Handle::current().spawn(async move {
+                    log!("Toggle Reaction to room {room_id}: ...");
+                    match timeline.toggle_reaction(&timeline_event_id, &reaction_key).await {
+                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id} {reaction_key}."),
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction_key}; error: {_e:?}"),
+                    }
+                });
+            }
+
         }
     }
 
