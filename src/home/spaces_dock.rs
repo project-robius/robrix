@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
+use crate::shared::adaptive_view::DisplayContext;
 use crate::verification::VerificationStateAction;
 
 live_design! {
@@ -11,7 +12,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::verification_icon::*;
+    import crate::shared::verification::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -72,9 +73,8 @@ live_design! {
                 icon_unk = <IconUnk> {}
             }
         }
-        verification_notice = <Tooltip> {
-            width: Fit, height: Fit
-        }
+        verification_notice_desktop = <VerificationNoticeDesktop> { }
+        verification_notice_mobile = <VerificationNoticeMobile> { }
     }
 
     Separator = <LineH> {
@@ -208,18 +208,27 @@ pub struct Profile {
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::MouseMove(e) = event {
+            let mut verification_notice_desktop = self.tooltip(id!(verification_notice_desktop));
+            let mut verification_notice_mobile = self.tooltip(id!(verification_notice_mobile));
+
             if self.view(id!(verification_icon)).area().rect(cx).contains(e.abs) {
                 let text = match self.verification_state {
                     VerificationState::Unknown => &self.verification_notice.unk,
                     VerificationState::Unverified => &self.verification_notice.no,
                     VerificationState::Verified => &self.verification_notice.yes
                 };
-
-                self.tooltip(id!(verification_notice)).set_text(text);
-                self.tooltip(id!(verification_notice)).show(cx)
+                if cx.get_global::<DisplayContext>().is_desktop() {
+                    verification_notice_desktop.set_text(text);
+                    verification_notice_desktop.show(cx);
+                }
+                else {
+                    verification_notice_mobile.set_text(text);
+                    verification_notice_mobile.show(cx);
+                }
             }
             else {
-                self.tooltip(id!(verification_notice)).hide(cx)
+                verification_notice_desktop.hide(cx);
+                verification_notice_mobile.hide(cx)
             }
         }
 
