@@ -1015,7 +1015,7 @@ impl Widget for RoomScreen {
                 if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, rect.pos, &tooltip_text);
                 }
-                if seq.hover_out(&actions) {
+                if seq.hover_out(actions) {
                     tooltip.hide(cx);
                 }
             });
@@ -1866,7 +1866,7 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
-        let Some(client_user_id) = get_client().and_then(|client| client.user_id().and_then(|id| Some(id.to_owned()))) else { return };
+        let Some(client_user_id) = get_client().and_then(|client| client.user_id().map(|id| id.to_owned())) else { return };
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {

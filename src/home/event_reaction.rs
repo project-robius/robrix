@@ -219,7 +219,7 @@ impl Widget for ReactionList {
                 .iter()
                 .for_each(|(id, widget_ref)| {
                     // Widget.handle_event here does not cause the button to be highlighted when mouse over
-                    // To make the button hightlighted when mouse over, the iteration over the children needs to be done 
+                    // To make the button highlighted when mouse over, the iteration over the children needs to be done 
                     // outside Event::MouseMove.
                     if widget_ref.area().rect(cx).contains(e.abs) {
                         if let Some((_, _, tooltip_text, _, _)) = self.event_reaction_list.get(id.0 as usize) {
@@ -253,7 +253,7 @@ impl Widget for ReactionList {
                     });
                     // If the mouse does not leave this particular reaction button, post a HoverIn action
                     if !reset_tooltip_state {
-                        cx.widget_action(uid, &scope.path, ReactionListAction::HoverIn(tooltip_area.clone(), tooltip_text.clone()));
+                        cx.widget_action(uid, &scope.path, ReactionListAction::HoverIn(*tooltip_area, tooltip_text.clone()));
                     }
                 }
                 if reset_tooltip_state {
@@ -349,10 +349,7 @@ impl ReactionListRef {
     /// Handles hover out action
     pub fn hover_out(&self, actions: &Actions) -> bool {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
-            match item.cast() {
-                ReactionListAction::HoverOut => true,
-                _ => false,
-            }
+            matches!(item.cast(), ReactionListAction::HoverOut)
         } else {
             false
         }
