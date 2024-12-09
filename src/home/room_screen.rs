@@ -955,7 +955,7 @@ live_design! {
                     }
     
                     tooltip_label = <Label> {
-                        width: Fit,
+                        width: 200,
                         draw_text: {
                             text_style: <THEME_FONT_REGULAR>{font_size: 9},
                             text_wrap: Word,

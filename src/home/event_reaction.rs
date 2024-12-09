@@ -2,7 +2,7 @@ use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
-
+use crate::profile::user_profile_cache::get_user_profile;
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -320,11 +320,14 @@ impl ReactionListRef {
                     });
                 let count = reaction_senders.len();
                 let mut includes_user = false;
-                let tooltip_header_arr:Vec<&str> = reaction_senders.iter().map(|(sender, _react_info)|{
+                let tooltip_header_arr:Vec<String> = reaction_senders.iter().map(|(sender, _react_info)|{
                     if sender == &user_id {
                         includes_user = true;
                     }
-                    sender.as_str()
+                    let sender_name = get_user_profile(_cx, sender).and_then(|profile| {
+                        Some(profile.displayable_name().to_owned())
+                    }).unwrap_or(sender.to_string());
+                    sender_name
                 }).collect();
                 let mut tooltip_header = human_readable_list(tooltip_header_arr);
                 tooltip_header.insert_str(0, &format!("{} \n ", emoji_text));
@@ -363,10 +366,10 @@ impl ReactionListRef {
 /// assert_eq!(human_readable_list(vec!["Alice", "Bob"]), "Alice and Bob");
 /// assert_eq!(human_readable_list(vec!["Alice", "Bob", "Charlie"]), "Alice, Bob and Charlie");
 /// ```
-fn human_readable_list(names: Vec<&str>) -> String {
+fn human_readable_list(names: Vec<String>) -> String {
     match names.len() {
         0 => String::new(),
-        1 => names[0].to_string(),
+        1 => names[0].clone(),
         2 => format!("{} and {}", names[0], names[1]),
         _ => {
             let last = names.last().unwrap();
