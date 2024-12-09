@@ -364,12 +364,7 @@ impl AvatarRef {
     /// 
     /// Hit events could be Hit::FingerUp, Hit::FingerDown, Hit::FingerHoverIn, Hit::FingerHoverOut, etc..
     pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
-        if let Some(mut inner) = self.borrow_mut() {
-            Some(inner.hit(cx, event, sweep_area))
-        } else {
-            None
-        }
-        
+        self.borrow_mut().map(|mut inner| inner.hit(cx, event, sweep_area))
     }
     /// Sets the given avatar and returns a displayable username based on the
     /// given profile and user ID of the sender of the event with the given event ID.

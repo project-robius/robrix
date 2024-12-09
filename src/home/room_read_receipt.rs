@@ -55,7 +55,7 @@ pub struct AvatarRow {
     #[rust]
     label: Option<LabelRef>,
     #[rust]
-    total_num_seen: u32,
+    total_num_seen: usize,
     #[redraw] #[rust] area: Area,
 
 }
@@ -70,7 +70,7 @@ pub enum AvatarRowAction {
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
-
+        if self.total_num_seen == 0 { return; }
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(finger_event) => {
                 let rect = Rect {
@@ -91,9 +91,9 @@ impl Widget for AvatarRow {
         for v in self.buttons.iter_mut() {
             let _ = v.draw(cx, scope);
         }
-        if self.total_num_seen > 5 {
+        if self.total_num_seen > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW {
             if let Some(label) = &mut self.label {
-                label.set_text(&format!(" + {:?}", self.total_num_seen - 5));
+                label.set_text(&format!(" + {:?}", self.total_num_seen - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW));
                 let _ = label.draw(cx, scope);
             }
         }
@@ -115,7 +115,7 @@ impl AvatarRow {
         cx: &mut Cx,
         room_id: &RoomId,
         event_id: Option<&EventId>,
-        receipts_map: IndexMap<OwnedUserId, Receipt>) {
+        receipts_map: &IndexMap<OwnedUserId, Receipt>) {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW, receipts_map.len()) {
@@ -125,8 +125,8 @@ impl AvatarRow {
         self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
     
-        for (avatar_ref, (user_id, _)) in self.iter().zip(receipts_map) {
-            avatar_ref.set_avatar_and_get_username(cx, room_id, &user_id, None, event_id);
+        for (avatar_ref, (user_id, _)) in self.buttons.iter().zip(receipts_map) {
+            avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id);
         }
     }
 }
@@ -145,10 +145,7 @@ impl AvatarRowRef {
     /// Handles hover out action
     pub fn hover_out(&self, actions: &Actions) -> bool {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
-            match item.cast() {
-                AvatarRowAction::HoverOut => true,
-                _ => false,
-            }
+            matches!(item.cast(), AvatarRowAction::HoverOut)
         } else {
             false
         }
