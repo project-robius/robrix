@@ -324,8 +324,8 @@ impl ReactionListRef {
                     if sender == &user_id {
                         includes_user = true;
                     }
-                    let sender_name = get_user_profile(_cx, sender).and_then(|profile| {
-                        Some(profile.displayable_name().to_owned())
+                    let sender_name = get_user_profile(_cx, sender).map(|profile| {
+                        profile.displayable_name().to_owned()
                     }).unwrap_or(sender.to_string());
                     sender_name
                 }).collect();
