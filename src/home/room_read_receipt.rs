@@ -48,8 +48,6 @@ pub struct AvatarRow {
     button: Option<LivePtr>,
     #[layout]
     layout: Layout,
-    #[live(false)]
-    hover_actions_enabled: bool,
     #[live]
     plus: Option<LivePtr>,
     #[rust]

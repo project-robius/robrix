@@ -391,7 +391,11 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (4.0), right: 70.0 }, hover_actions_enabled:true }
+            avatar_row = <AvatarRow> {
+                width: 40,
+                height: 30,
+                margin: { top: (12.0), right: 50.0 },
+            }
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -511,8 +515,11 @@ live_design! {
                 }
                 text: ""
             }
-            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (4.0) , right: 70.0}, hover_actions_enabled:true }
-
+            avatar_row = <AvatarRow> {
+                width: 40,
+                height: 30,
+                margin: { top: (12.0), right: 50.0 },
+            }
         }
     }
 
