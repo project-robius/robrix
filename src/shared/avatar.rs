@@ -209,9 +209,15 @@ impl Avatar {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns a discrete event, Hit, that is based on the user-input interaction with the avatar
+    /// Returns a hit event based on user interaction with the avatar
     /// 
-    /// Hit events could be Hit::FingerUp, Hit::FingerDown, Hit::FingerHoverIn, Hit::FingerHoverOut, etc..
+    /// # Parameters
+    /// - `cx`: The draw context
+    /// - `event`: The input event
+    /// - `sweep_area`: The area to check for hits
+    /// 
+    /// # Returns
+    /// A `Hit` representing the type of interaction (hover, click, etc.)
     fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
         event.hits_with_options(
             cx,
@@ -228,7 +234,6 @@ impl Avatar {
         avatar_profile_opt: Option<&TimelineDetails<Profile>>,
         event_id: Option<&EventId>,
     ) -> (String, bool) {
-        let avatar = self;
         // Get the display name and avatar URL from the user's profile, if available,
         // or if the profile isn't ready, fall back to qeurying our user profile cache.
         let (username_opt, avatar_state) = match avatar_profile_opt {
@@ -303,7 +308,7 @@ impl Avatar {
         // Set the sender's avatar image, or use the username if no image is available.
         avatar_img_data_opt
             .and_then(|data| {
-                avatar
+                self
                     .show_image(
                         Some((
                             avatar_user_id.to_owned(),
@@ -316,7 +321,7 @@ impl Avatar {
                     .ok()
             })
             .unwrap_or_else(|| {
-                avatar.show_text(
+                self.show_text(
                     Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
                     &username,
                 )
@@ -360,9 +365,15 @@ impl AvatarRef {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns a option for discrete event, Hit, that is based on the user-input interaction with the avatar
+    /// Returns a hit event based on user interaction with the avatar
     /// 
-    /// Hit events could be Hit::FingerUp, Hit::FingerDown, Hit::FingerHoverIn, Hit::FingerHoverOut, etc..
+    /// # Parameters
+    /// - `cx`: The draw context
+    /// - `event`: The input event
+    /// - `sweep_area`: The area to check for hits
+    /// 
+    /// # Returns
+    /// A `Hit` representing the type of interaction (hover, click, etc.)
     pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
         self.borrow_mut().map(|mut inner| inner.hit(cx, event, sweep_area))
     }
