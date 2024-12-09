@@ -1,8 +1,9 @@
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
+use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use std::cmp;
-use crate::shared::avatar::set_avatar_and_get_username;
+const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW : usize = 5;
 live_design! {
     import makepad_draw::shader::std::*;
     import makepad_widgets::base::*;
@@ -11,6 +12,7 @@ live_design! {
     import crate::shared::styles::*;
 
     AvatarRow = {{AvatarRow}} {
+        debug: true,
         button: <Avatar> {
             width: 15.0,
             height: 15.0,
@@ -19,8 +21,10 @@ live_design! {
             }}}
         }
         margin: {top: 3, right: 10, bottom: 3, left: 10}
-        width: Fit,
-        height: Fit,
+        // width: Fit,
+        // height: Fit,
+        width: 100,
+        height: 50,
         plus: <Label> {
             draw_text: {
                 color: #x0,
@@ -34,9 +38,6 @@ live_design! {
 #[derive(Live, Widget, LiveHook)]
 pub struct AvatarRow {
     #[redraw]
-    #[rust]
-    area: Area,
-    #[redraw]
     #[live]
     draw_text: DrawText,
     #[deref]
@@ -45,6 +46,8 @@ pub struct AvatarRow {
     walk: Walk,
     #[live]
     button: Option<LivePtr>,
+    #[layout]
+    layout: Layout,
     #[live(false)]
     hover_actions_enabled: bool,
     #[live]
@@ -54,7 +57,8 @@ pub struct AvatarRow {
     #[rust]
     label: Option<LabelRef>,
     #[rust]
-    total_num_seen: usize,
+    total_num_seen: u32,
+    #[redraw] #[rust] area: Area,
 
 }
 
@@ -68,24 +72,24 @@ pub enum AvatarRowAction {
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
-        for button in self.buttons.iter_mut() {
-            match button.hit(cx, event, self.area) {
-                Some(Hit::FingerHoverIn(finger_event)) => {
-                    let rect = Rect {
-                        pos: finger_event.abs,
-                        size: DVec2::new(),
-                    };
-                    cx.widget_action(uid, &scope.path, AvatarRowAction::HoverIn(rect));
-                }
-                Some(Hit::FingerHoverOut(_)) => {
-                    cx.widget_action(uid, &scope.path, AvatarRowAction::HoverOut);
-                }
-                _ => {}
+
+        match event.hits(cx, self.area) {
+            Hit::FingerHoverIn(finger_event) => {
+                let rect = Rect {
+                    pos: finger_event.abs,
+                    size: DVec2::new(),
+                };
+                cx.widget_action(uid, &scope.path, AvatarRowAction::HoverIn(rect));
             }
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(uid, &scope.path, AvatarRowAction::HoverOut);
+            }
+            _ => {}
         }
     }
 
-    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, _walk: Walk) -> DrawStep {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        cx.begin_turtle(walk, Layout::default());
         for v in self.buttons.iter_mut() {
             let _ = v.draw(cx, scope);
         }
@@ -95,23 +99,37 @@ impl Widget for AvatarRow {
                 let _ = label.draw(cx, scope);
             }
         }
+        cx.end_turtle_with_area(&mut self.area);
         DrawStep::done()
     }
 }
 impl AvatarRow {
-    fn set_range(&mut self, cx: &mut Cx, total_num_seen: usize) {
-        if total_num_seen != self.buttons.len() {
+    
+    /// Set a row of Avatars based on receipt iterator
+    ///
+    /// Given a sequence of receipts, this will set each of the first MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW
+    /// Avatars in this row to the corresponding user's avatar, and
+    /// display the given number of total receipts as a label. The
+    /// iterator is expected to yield tuples of (user_id, receipt),
+    /// where the receipt is ignored.
+    fn set_avatar_row(
+        &mut self,
+        cx: &mut Cx,
+        room_id: &RoomId,
+        event_id: Option<&EventId>,
+        receipts_map: IndexMap<OwnedUserId, Receipt>) {
+        if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
-            for _ in 0..cmp::min(5, total_num_seen) {
+            for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW, receipts_map.len()) {
                 self.buttons.push(WidgetRef::new_from_ptr(cx, self.button).as_avatar());
             }
         }
-        self.total_num_seen = total_num_seen;
+        self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
-    }
-
-    fn iter(&self) -> std::slice::Iter<'_, AvatarRef> {
-        self.buttons.iter()
+    
+        for (avatar_ref, (user_id, _)) in self.iter().zip(receipts_map) {
+            avatar_ref.set_avatar_and_get_username(cx, room_id, &user_id, None, event_id);
+        }
     }
 }
 impl AvatarRowRef {
@@ -146,13 +164,9 @@ impl AvatarRowRef {
         }
     }
     /// Set a row of Avatars based on receipt iterator
-    pub fn set_avatar_row<'a, T>(&mut self, cx: &mut Cx, room_id: &RoomId, event_id: Option<&EventId>, receipts_len: usize, receipts_iter: T) 
-        where T:Iterator<Item = (&'a OwnedUserId, &'a Receipt)> {
+    pub fn set_avatar_row(&mut self, cx: &mut Cx, room_id: &RoomId, event_id: Option<&EventId>, receipts_map: &IndexMap<OwnedUserId, Receipt>) {
         if let Some(ref mut inner) = self.borrow_mut() {
-            inner.set_range(cx, receipts_len);
-            for (avatar_ref, (user_id, _)) in inner.iter().zip(receipts_iter) {
-                set_avatar_and_get_username(cx, avatar_ref.clone(), room_id, &user_id, None, event_id);
-            }
+            inner.set_avatar_row(cx, room_id, event_id, receipts_map);
         }
     }
 }

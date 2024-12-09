@@ -209,12 +209,119 @@ impl Avatar {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns Hit event when mouse in
+    /// Returns a discrete event, Hit, that is based on the user-input interaction with the avatar
+    /// 
+    /// Hit events could be Hit::FingerUp, Hit::FingerDown, Hit::FingerHoverIn, Hit::FingerHoverOut, etc..
     fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
         event.hits_with_options(
             cx,
             self.area(),
             HitOptions::new().with_sweep_area(sweep_area))
+    }
+    /// Sets the given avatar and returns a displayable username based on the
+    /// given profile and user ID of the sender of the event with the given event ID.
+    fn set_avatar_and_get_username(
+        &mut self,
+        cx: &mut Cx,
+        room_id: &RoomId,
+        avatar_user_id: &UserId,
+        avatar_profile_opt: Option<&TimelineDetails<Profile>>,
+        event_id: Option<&EventId>,
+    ) -> (String, bool) {
+        let avatar = self;
+        // Get the display name and avatar URL from the user's profile, if available,
+        // or if the profile isn't ready, fall back to qeurying our user profile cache.
+        let (username_opt, avatar_state) = match avatar_profile_opt {
+            Some(TimelineDetails::Ready(profile)) => (
+                profile.display_name.clone(),
+                AvatarState::Known(profile.avatar_url.clone()),
+            ),
+            Some(not_ready) => {
+                if matches!(not_ready, TimelineDetails::Unavailable) {
+                    if let Some(event_id) = event_id {
+                        submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                            room_id: room_id.to_owned(),
+                            event_id: event_id.to_owned(),
+                        });
+                    }
+                }
+                // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
+                user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
+                    room_members
+                        .get(room_id)
+                        .map(|rm| {
+                            (
+                                rm.display_name().map(|n| n.to_owned()),
+                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                            )
+                        })
+                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                })
+                .unwrap_or((None, AvatarState::Unknown))
+            }
+            None => {
+                match user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
+                    room_members
+                        .get(room_id)
+                        .map(|rm| {
+                            (
+                                rm.display_name().map(|n| n.to_owned()),
+                                AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
+                            )
+                        })
+                        .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                }) {
+                    Some((profile_name, avatar_state)) => {
+                        (profile_name, avatar_state)
+                    }
+                    None => {
+                        submit_async_request(MatrixRequest::GetUserProfile { 
+                            user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
+                        });
+                        (None, AvatarState::Unknown)
+                    }
+                }
+            }
+        };
+
+        let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
+            AvatarState::Loaded(data) => (Some(data), true),
+            AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
+                AvatarCacheEntry::Loaded(data) => (Some(data), true),
+                AvatarCacheEntry::Failed => (None, true),
+                AvatarCacheEntry::Requested => (None, false),
+            },
+            AvatarState::Known(None) | AvatarState::Failed => (None, true),
+            AvatarState::Unknown => (None, false),
+        };
+
+        // Set sender to the display name if available, otherwise the user id.
+        let username = username_opt
+            .clone()
+            .unwrap_or_else(|| avatar_user_id.to_string());
+
+        // Set the sender's avatar image, or use the username if no image is available.
+        avatar_img_data_opt
+            .and_then(|data| {
+                avatar
+                    .show_image(
+                        Some((
+                            avatar_user_id.to_owned(),
+                            username_opt.clone(),
+                            room_id.to_owned(),
+                            data.clone()).into(),
+                        ),
+                        |img| utils::load_png_or_jpg(&img, cx, &data),
+                    )
+                    .ok()
+            })
+            .unwrap_or_else(|| {
+                avatar.show_text(
+                    Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
+                    &username,
+                )
+            });
+        (username, profile_drawn)
     }
 }
 
@@ -253,7 +360,9 @@ impl AvatarRef {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns an option of Hit event when mouse in
+    /// Returns a option for discrete event, Hit, that is based on the user-input interaction with the avatar
+    /// 
+    /// Hit events could be Hit::FingerUp, Hit::FingerDown, Hit::FingerHoverIn, Hit::FingerHoverOut, etc..
     pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
         if let Some(mut inner) = self.borrow_mut() {
             Some(inner.hit(cx, event, sweep_area))
@@ -261,6 +370,46 @@ impl AvatarRef {
             None
         }
         
+    }
+    /// Sets the given avatar and returns a displayable username based on the
+    /// given profile and user ID of the sender of the event with the given event ID.
+    ///
+    /// If the user profile is not ready, this function will submit an async request
+    /// to fetch the user profile from the server, but only if the event ID is `Some`.
+    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
+    ///
+    /// This function will always choose a nice, displayable username and avatar.
+    ///
+    /// The specific behavior is as follows:
+    /// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
+    ///   will be the user's display name and avatar image, if available.
+    ///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
+    /// * If no avatar image is available, then the `avatar` will be set to the first character
+    ///   of the user's display name, if available.
+    /// * If the user's display name is not available or has not been set, the user ID
+    ///   will be used for the `username`, and the first character of the user ID for the `avatar`.
+    /// * If the timeline event's sender profile isn't ready and the user ID isn't found in
+    ///   our user profile cache , then the `username` and `avatar`  will be the user ID
+    ///   and the first character of that user ID, respectively.
+    ///
+    /// ## Return
+    /// Returns a tuple of:
+    /// 1. The displayable username that should be used to populate the username field.
+    /// 2. A boolean indicating whether the user's profile info has been completely drawn
+    ///    (for purposes of caching it to avoid future redraws).
+    pub fn set_avatar_and_get_username(
+        &self,
+        cx: &mut Cx,
+        room_id: &RoomId,
+        avatar_user_id: &UserId,
+        avatar_profile_opt: Option<&TimelineDetails<Profile>>,
+        event_id: Option<&EventId>,
+    ) -> (String, bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_avatar_and_get_username(cx, room_id, avatar_user_id, avatar_profile_opt, event_id)
+        } else {
+            (avatar_user_id.to_string(), false)
+        }
     }
 }
 
@@ -295,132 +444,4 @@ impl From<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)> for AvatarImage
     fn from((user_id, username, room_id, img_data): (OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)) -> Self {
         Self { user_id, username, room_id, img_data }
     }
-}
-/// Sets the given avatar and returns a displayable username based on the
-/// given profile and user ID of the sender of the event with the given event ID.
-///
-/// If the user profile is not ready, this function will submit an async request
-/// to fetch the user profile from the server, but only if the event ID is `Some`.
-/// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
-///
-/// This function will always choose a nice, displayable username and avatar.
-///
-/// The specific behavior is as follows:
-/// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
-///   will be the user's display name and avatar image, if available.
-///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
-/// * If no avatar image is available, then the `avatar` will be set to the first character
-///   of the user's display name, if available.
-/// * If the user's display name is not available or has not been set, the user ID
-///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
-///   our user profile cache , then the `username` and `avatar`  will be the user ID
-///   and the first character of that user ID, respectively.
-///
-/// ## Return
-/// Returns a tuple of:
-/// 1. The displayable username that should be used to populate the username field.
-/// 2. A boolean indicating whether the user's profile info has been completely drawn
-///    (for purposes of caching it to avoid future redraws).
-pub fn set_avatar_and_get_username(
-    cx: &mut Cx,
-    avatar: AvatarRef,
-    room_id: &RoomId,
-    avatar_user_id: &UserId,
-    avatar_profile_opt: Option<&TimelineDetails<Profile>>,
-    event_id: Option<&EventId>,
-) -> (String, bool) {
-    // Get the display name and avatar URL from the user's profile, if available,
-    // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let (username_opt, avatar_state) = match avatar_profile_opt {
-        Some(TimelineDetails::Ready(profile)) => (
-            profile.display_name.clone(),
-            AvatarState::Known(profile.avatar_url.clone()),
-        ),
-        Some(not_ready) => {
-            if matches!(not_ready, TimelineDetails::Unavailable) {
-                if let Some(event_id) = event_id {
-                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        event_id: event_id.to_owned(),
-                    });
-                }
-            }
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-            })
-            .unwrap_or((None, AvatarState::Unknown))
-        }
-        None => {
-            match user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
-            }) {
-                Some((profile_name, avatar_state)) => {
-                    (profile_name, avatar_state)
-                }
-                None => {
-                    submit_async_request(MatrixRequest::GetUserProfile { 
-                        user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
-                    });
-                    (None, AvatarState::Unknown)
-                }
-            }
-        }
-    };
-
-    let (avatar_img_data_opt, profile_drawn) = match avatar_state.clone() {
-        AvatarState::Loaded(data) => (Some(data), true),
-        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-            AvatarCacheEntry::Loaded(data) => (Some(data), true),
-            AvatarCacheEntry::Failed => (None, true),
-            AvatarCacheEntry::Requested => (None, false),
-        },
-        AvatarState::Known(None) | AvatarState::Failed => (None, true),
-        AvatarState::Unknown => (None, false),
-    };
-
-    // Set sender to the display name if available, otherwise the user id.
-    let username = username_opt
-        .clone()
-        .unwrap_or_else(|| avatar_user_id.to_string());
-
-    // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt
-        .and_then(|data| {
-            avatar
-                .show_image(
-                    Some((
-                        avatar_user_id.to_owned(),
-                        username_opt.clone(),
-                        room_id.to_owned(),
-                        data.clone()).into(),
-                    ),
-                    |img| utils::load_png_or_jpg(&img, cx, &data),
-                )
-                .ok()
-        })
-        .unwrap_or_else(|| {
-            avatar.show_text(
-                Some((avatar_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
-                &username,
-            )
-        });
-    (username, profile_drawn)
 }

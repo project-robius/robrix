@@ -29,7 +29,6 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
-use crate::shared::avatar::set_avatar_and_get_username;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
@@ -392,7 +391,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (12.0) }, hover_actions_enabled:true }
+            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (4.0), right: 70.0 }, hover_actions_enabled:true }
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
@@ -512,6 +511,8 @@ live_design! {
                 }
                 text: ""
             }
+            avatar_row = <AvatarRow> {width: 40, height: 30, margin: { top: (4.0) , right: 70.0}, hover_actions_enabled:true }
+
         }
     }
 
@@ -1418,7 +1419,6 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
@@ -1828,9 +1828,8 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let (replying_preview_username, _) = set_avatar_and_get_username(
+        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)).set_avatar_and_get_username(
             cx,
-            replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
             Some(replying_to.0.sender_profile()),
@@ -2540,7 +2539,6 @@ fn populate_message_view(
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
-    let receipts = event_tl_item.read_receipts();
     let mut new_drawn_status = item_drawn_status;
 
     let ts_millis = event_tl_item.timestamp();
@@ -2567,7 +2565,6 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
-
     let (item, used_cached_item) = match message.get_type() {
         MessageOrStickerType::Text(TextMessageEventContent { body, formatted, .. }) => {
             let template = if use_compact_view {
@@ -2576,8 +2573,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            let receipts_len = receipts.len();
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), receipts_len, receipts.iter());
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
 
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -2601,6 +2597,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2628,6 +2625,8 @@ fn populate_message_view(
         MessageOrStickerType::ServerNotice(sn) => {
             is_server_notice = true;
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2679,9 +2678,8 @@ fn populate_message_view(
                 (item, true)
             } else {
                 // Draw the profile up front here because we need the username for the emote body.
-                let (username, profile_drawn) = set_avatar_and_get_username(
+                let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
                     Some(event_tl_item.sender_profile()),
@@ -2875,9 +2873,8 @@ fn populate_message_view(
 
         if !is_server_notice { // the normal case
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                set_avatar_and_get_username(
+                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
                     Some(event_tl_item.sender_profile()),
@@ -3234,15 +3231,16 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
-                    cx,
+                let (in_reply_to_username, is_avatar_fully_drawn) = 
                     replied_to_message_view
-                    .avatar(id!(replied_to_message_content.reply_preview_avatar)),
-                    room_id,
-                    replied_to_event.sender(),
-                    Some(replied_to_event.sender_profile()),
-                    Some(in_reply_to_details.event_id.as_ref()),
-                );
+                        .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                        .set_avatar_and_get_username(
+                            cx,
+                            room_id,
+                            replied_to_event.sender(),
+                            Some(replied_to_event.sender_profile()),
+                            Some(in_reply_to_details.event_id.as_ref()),
+                        );
 
                 fully_drawn = is_avatar_fully_drawn;
 
@@ -3503,8 +3501,8 @@ fn populate_small_state_event(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
-
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));    
+    item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
@@ -3523,9 +3521,8 @@ fn populate_small_state_event(
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
         let avatar_ref = item.avatar(id!(avatar));
-        let (username, profile_drawn) = set_avatar_and_get_username(
+        let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
-            avatar_ref,
             room_id,
             event_tl_item.sender(),
             Some(event_tl_item.sender_profile()),
