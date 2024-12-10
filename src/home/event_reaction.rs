@@ -3,6 +3,8 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile;
+use crate::home::room_screen::RoomScreenTooltipActions;
+
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -270,13 +272,13 @@ impl Widget for ReactionList {
                         if !widget_ref.area().rect(cx).contains(e.abs) {
                             if self.event_reaction_list.get(id.0 as usize).is_some() {
                                 reset_tooltip_state = true;
-                                cx.widget_action(uid, &scope.path, ReactionListAction::HoverOut);
+                                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                             }
                         }
                     });
                     // If the mouse does not leave this particular reaction button, post a HoverIn action
                     if !reset_tooltip_state {
-                        cx.widget_action(uid, &scope.path, ReactionListAction::HoverIn(*tooltip_area, tooltip_text.clone()));
+                        cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(*tooltip_area, tooltip_text.clone()));
                     }
                 }
                 if reset_tooltip_state {
@@ -373,7 +375,7 @@ impl ReactionListRef {
     pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String)> {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             match item.cast() {
-                ReactionListAction::HoverIn(rect, tooltip_text) => Some((rect, tooltip_text)),
+                RoomScreenTooltipActions::HoverIn(rect, tooltip_text) => Some((rect, tooltip_text)),
                 _ => None,
             }
         } else {
@@ -383,7 +385,7 @@ impl ReactionListRef {
     /// Handles hover out action
     pub fn hover_out(&self, actions: &Actions) -> bool {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
-            matches!(item.cast(), ReactionListAction::HoverOut)
+            matches!(item.cast(), RoomScreenTooltipActions::HoverOut)
         } else {
             false
         }
@@ -408,11 +410,4 @@ fn human_readable_list(names: Vec<String>) -> String {
             format!("{}, and {}", rest.join(", "), last)
         }
     }
-}
-#[derive(Clone, Debug, DefaultNone)]
-pub enum ReactionListAction {
-    // Tooltip Position and tooltip text to display
-    HoverIn(Rect, String),
-    HoverOut,
-    None,
 }

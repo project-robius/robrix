@@ -2139,6 +2139,18 @@ impl RoomScreenRef {
     }
 }
 
+/// Actions for the room screen's tooltip 
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenTooltipActions {
+    // Mouse over event when the mouse is over the reaction button
+    // First parameter is rect containing tooltip position and its size
+    // Todo! implement tooltip resizing
+    // The second parameter is tooltip text
+    HoverIn(Rect, String),
+    HoverOut,
+    None,
+}
+
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
