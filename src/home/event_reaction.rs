@@ -103,6 +103,17 @@ live_design! {
     }
     
 }
+struct ReactionData {
+    emoji: String,
+    // Total number of people reacted to the emoji
+    total_num_react: usize,
+    // Tooltip text display when mouse over the reaction button
+    tooltip_text: String,
+    // Boolean indicating if the current user is also a sender of the reaction
+    includes_user: bool,
+    // Calculated of the width of the reaction button
+    width: f64
+}
 
 #[derive(Live, LiveHook, Widget)]
 pub struct ReactionList {
@@ -117,11 +128,10 @@ pub struct ReactionList {
     layout: Layout,
     #[walk]
     walk: Walk,
-    // A list of tuples of (emoji, it's sender count, tooltip_header, include user, it's width)
+    // A list of ReactionData which includes data required to draw the reaction buttons and their tooltips
     // After the first draw, the buttons' will be stored in this vector
-    // TODO: Add Tooltip display over the reaction buttons after https://github.com/project-robius/robrix/pull/162 is merged
     #[rust]
-    event_reaction_list: Vec<(String, usize, String, bool, f64)>,
+    event_reaction_list: Vec<ReactionData>,
     #[rust]
     room_id: Option<OwnedRoomId>,
     #[rust]
@@ -141,13 +151,13 @@ impl Widget for ReactionList {
         if !self.width_calculated {
             // Records the buttons' width after the first draw
             let mut prev_width: f64 = 0.0;
-            for (index, (emoji, count, _tooltip, _includes_user, item_width)) in
+            for (index, reaction_data) in
                 self.event_reaction_list.iter_mut().enumerate()
             {
                 let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
                     WidgetRef::new_from_ptr(cx, self.item).as_button()
                 });
-                target.set_text(&format!("{} {}", emoji, count));
+                target.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_num_react));
                 // Hide the button until the first draw
                 target.apply_over(
                     cx,
@@ -157,7 +167,7 @@ impl Widget for ReactionList {
                 );
                 let _ = target.draw(cx, scope);
                 let used = cx.turtle().used();
-                *item_width = used.x - prev_width;
+                reaction_data.width = used.x - prev_width;
                 prev_width = used.x;
             }
     
@@ -165,16 +175,16 @@ impl Widget for ReactionList {
         } else {
             // With the width calculated from the first draw, 
             let mut acc_width: f64 = 0.0;
-            for (index, (emoji, count, _tooltip, includes_user, item_width)) in
+            for (index, reaction_data) in
                 self.event_reaction_list.iter().enumerate()
             {
                 let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
                     WidgetRef::new_from_ptr(cx, self.item).as_button()
                 });
-                target.set_text(&format!("{} {}", emoji, count));
+                target.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_num_react));
                 // Renders Green button for reaction that includes the client user
                 // Renders Grey button for reaction that does not include client user
-                let node_to_apply = if *includes_user {
+                let node_to_apply = if reaction_data.includes_user {
                     live! {
                         draw_bg: { hide: 0.0 , color: (vec4(0.0, 0.6, 0.47, 1.0)) }
                     }
@@ -188,11 +198,11 @@ impl Widget for ReactionList {
                     cx,
                     node_to_apply
                 );
-                acc_width += item_width;
+                acc_width += reaction_data.width;
                 // Creates a new line if the accumulated width exceeds the available space
                 if acc_width > width {
                     cx.turtle_new_line();
-                    acc_width = *item_width;
+                    acc_width = reaction_data.width;
                     let used: DVec2 = cx.turtle().used();
                     // Resets the turtle's width after each new line
                     cx.turtle_mut().set_used(0.0, used.y);
@@ -222,14 +232,27 @@ impl Widget for ReactionList {
                     // To make the button highlighted when mouse over, the iteration over the children needs to be done 
                     // outside Event::MouseMove.
                     if widget_ref.area().rect(cx).contains(e.abs) {
-                        if let Some((_, _, tooltip_text, _, _)) = self.event_reaction_list.get(id.0 as usize) {
-                            let rect = Rect {
-                                pos: e.abs,
-                                size: DVec2::new(),
+                        if let Some(reaction_data) = self.event_reaction_list.get(id.0 as usize) {
+                            // Temporary hack to improve the issue that the tooltip is cut off by the right side of the screen
+                            // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
+                            // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
+                            let rect = if e.abs.x > cx.default_window_size().x - 80.0{
+                                Rect {
+                                    pos: DVec2 {
+                                        x:widget_ref.area().rect(cx).pos.x,
+                                        y:e.abs.y
+                                    },
+                                    size: DVec2::new(),
+                                }
+                            } else {
+                                Rect {
+                                    pos: e.abs,
+                                    size: DVec2::new(),
+                                }
                             };
                             // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state
                             // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction button
-                            self.tooltip_state = Some((id.0, rect, tooltip_text.clone()));
+                            self.tooltip_state = Some((id.0, rect, reaction_data.tooltip_text.clone()));
                         }
                     }
                 });
@@ -318,9 +341,9 @@ impl ReactionListRef {
                         log!("Failed to parse emoji: {}", reaction_raw);
                         reaction_raw
                     });
-                let count = reaction_senders.len();
+                let total_num_react = reaction_senders.len();
                 let mut includes_user = false;
-                let tooltip_header_arr:Vec<String> = reaction_senders.iter().map(|(sender, _react_info)|{
+                let tooltip_text_arr:Vec<String> = reaction_senders.iter().map(|(sender, _react_info)|{
                     if sender == &user_id {
                         includes_user = true;
                     }
@@ -329,10 +352,18 @@ impl ReactionListRef {
                     }).unwrap_or(sender.to_string());
                     sender_name
                 }).collect();
-                let mut tooltip_header = human_readable_list(tooltip_header_arr);
-                tooltip_header.insert_str(0, &format!("{} \n ", emoji_text));
-                // TODO: Manually create new line to manage the tooltip width as it is set as Fit
-                instance.event_reaction_list.push((emoji_text.to_string(), count, tooltip_header, includes_user, 0.0));
+                let mut tooltip_text = human_readable_list(tooltip_text_arr);
+                // Manually create new line to manage the tooltip width as the width is set as Fit
+                // TODO: Find a better way to manage the tooltip width
+                // The tooltip width follows the length of the first line instead of the longest line
+                tooltip_text.insert_str(0, &format!("{} \n ", emoji_text));
+                instance.event_reaction_list.push(ReactionData{
+                    emoji: emoji_text.to_string(),
+                    total_num_react,
+                    tooltip_text,
+                    includes_user,
+                    width: 0.0
+                });
             }
             instance.room_id = Some(room_id);
             instance.timeline_event_id = Some(timeline_event_item_id);
