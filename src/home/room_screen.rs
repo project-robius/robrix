@@ -30,11 +30,13 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst},
+    home::message_context_menu::MessageContextMenuWidgetExt,
+    home::message_context_menu::MessageActionBarWidgetRefExt,
 };
 use rangemap::RangeSet;
 
-use super::loading_modal::{LoadingModalAction, LoadingModalState};
+use super::{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -56,6 +58,7 @@ live_design! {
     import crate::shared::icon_button::*;
     import crate::shared::jump_to_bottom_button::*;
     import crate::home::loading_modal::*;
+    import crate::home::message_context_menu::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -938,6 +941,42 @@ live_design! {
                     loading_modal_inner = <LoadingModal> {}
                 }
             }
+
+            message_context_menu_modal = <Modal> {
+                align: {x: 0.0, y: 0.0}
+                bg_view: {
+                    visible: false
+                }
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+                    message_context_menu = <MessageContextMenu> {}
+                }
+            }
+
+            message_action_bar_modal = <Modal> {
+                align: {x: 0.0, y: 0.0}
+               // witdh: Fit
+               // height: Fit
+                bg_view: {
+                    visible: false
+                }
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+                    message_action_bar = <MessageActionBar> {}
+                }
+            }
         }
 
         animator: {
@@ -1001,6 +1040,28 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
+                    MessageAction::ViewSourceButtonClicked(item_id) => {
+                        let Some(tl) = self.tl_state.as_mut() else {
+                            continue;
+                        };
+
+                        let Some(event_tl_item) = tl.items
+                            .get(item_id)
+                            .and_then(|tl_item| tl_item.as_event().cloned())
+                        else {
+                            continue;
+                        };
+
+
+                        dbg!(event_tl_item.encryption_info());
+                        if let Some(message_event) = event_tl_item.content().as_message() {
+
+                            dbg!(message_event);
+                            
+                        } else {
+                            
+                        }
+                    }
                     MessageAction::MessageReplyButtonClicked(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
@@ -1211,6 +1272,54 @@ impl Widget for RoomScreen {
 
                 if let LoadingModalAction::Close = action.as_widget_action().cast() {
                     self.modal(id!(loading_modal)).close(cx);
+                }
+
+                match action.as_widget_action().cast() {
+                    MessageAction::ContextMenuOpen { item_id, coords } => {
+                        let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
+                        let mut message_context_menu = message_context_menu_modal.message_context_menu(id!(message_context_menu));
+
+                        // the modal (0, 0) point is this view, not the screem, we need to compensate for that
+                        let coords = coords - self.view.area().rect(cx).pos;
+
+                        message_context_menu_modal.apply_over(
+                            cx,
+                            live! {
+                                content: { margin: { left: (coords.x), top: (coords.y) } }
+                            },
+                        );
+                        
+                        message_context_menu.selected(cx, widget_uid, item_id);
+                        message_context_menu_modal.open(cx);
+                    }
+                    MessageAction::ContextMenuClose => {
+                        let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
+                        message_context_menu_modal.close(cx);
+                    }
+                    MessageAction::ActionBarOpen { item_id, message_rect } => {
+                        let message_action_bar_modal = self.modal(id!(message_action_bar_modal));
+                        let mut message_action_bar = message_action_bar_modal.message_action_bar(id!(message_action_bar));
+
+                        let x = message_rect.pos.x + message_rect.size.x - 100.;
+                        let y = message_rect.pos.y + message_rect.size.y + 20.;
+
+                        let coords = vec2(x as f32, y as f32);
+
+                        message_action_bar_modal.apply_over(
+                            cx,
+                            live! {
+                                content: { margin: { left: (coords.x), top: (coords.y) } }
+                            },
+                        );
+
+                        message_action_bar.selected(cx, widget_uid, item_id);
+                        // message_action_bar_modal.open(cx);
+                    }
+                    MessageAction::ActionBarClose => {
+                        let action_bar_modal = self.modal(id!(action_bar_modal));
+                        action_bar_modal.close(cx);
+                    }
+                    _ => {}
                 }
             }
 
@@ -3546,6 +3655,29 @@ pub enum MessageAction {
     },
     /// The message at the given item index in the timeline should be highlighted.
     MessageHighlight(usize),
+    /// The user requested opening the message context menu
+    ContextMenuOpen {
+	item_id: usize,
+	coords: DVec2,
+    },
+    /// The user requested closing the message context menu
+    ContextMenuClose,
+    /// The user requested opening the message action bar
+    ActionBarOpen {
+        /// At the given timeline item index
+        item_id: usize,
+        /// The message rect, so the action bar can be possitioned relative to it
+        message_rect: Rect,
+    },
+    /// The user requested closing the message action bar
+    ActionBarClose,
+    /// The user clicked the view source button,
+    /// requesting to see the message (at the given timeline item index) source
+    ViewSourceButtonClicked(usize),
+    /// The message event source modal should be oppened
+    MessageSourceModalOpen,
+    /// The message event source modal should be clossed
+    MessageSourceModalClose,
     None,
 }
 
@@ -3587,6 +3719,26 @@ impl Widget for Message {
             }
         }
 
+        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            // if right click
+            if fe.device.mouse_button().map_or(false, |button| button == 3) {
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    MessageAction::ContextMenuOpen {
+                        item_id: self.item_id,
+                        coords: fe.abs,
+                    }
+                );
+                // message_context_menu_modal.open(cx);
+                dbg!(&fe);
+            }
+        }
+
+        if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            dbg!("DOWN", fe);
+        }
+
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
                 if let Some(ref replied_to_event) = self.replied_to_event_id {
@@ -3604,6 +3756,7 @@ impl Widget for Message {
             }
         }
 
+
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.as_widget_action().cast() {
@@ -3618,12 +3771,24 @@ impl Widget for Message {
 
         if let Event::MouseMove(e) = event {
             let hovered = self.view.area().rect(cx).contains(e.abs);
-            if (self.hovered != hovered) || (!hovered && self.animator_in_state(cx, id!(hover.on)))
-            {
+            // if hover changed
+            let hover_changed = (self.hovered != hovered) || (!hovered && self.animator_in_state(cx, id!(hover.on)));
+            if hover_changed {
                 self.hovered = hovered;
 
-                // TODO: Once we have a context menu, the messageMenu can be displayed on hover or push only
-                // self.view.view(id!(message_menu)).set_visible(hovered);
+                if !hovered {
+                   cx.widget_action(widget_uid, &scope.path, MessageAction::ActionBarClose) 
+                } else {
+                    cx.widget_action(
+                        widget_uid,
+                        &scope.path,
+                        MessageAction::ActionBarOpen {
+                            item_id: self.item_id,
+                            message_rect: self.view.area().rect(cx)
+                        }
+                    )
+                }
+
                 let hover_animator = if self.hovered {
                     id!(hover.on)
                 } else {

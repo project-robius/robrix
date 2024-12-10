@@ -2,10 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomListAction},
-    verification::VerificationAction,
-    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
-    login::login_screen::LoginAction,
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -240,6 +237,11 @@ impl MatchEvent for App {
             if let VerificationModalAction::Close = action.as_widget_action().cast() {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
+
+	    // FACU TODO: put here stuff for oppening message source modal
+	   // match action.as_widget_action().cast() {
+	   //	MessageAction::
+	   // }
         }
     }
 
@@ -310,4 +312,3 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
-
