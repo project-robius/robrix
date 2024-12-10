@@ -12,12 +12,12 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, UserId
     },
     OwnedServerName,
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
@@ -29,6 +29,7 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
+use crate::home::event_reaction::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
 use super::loading_modal::{LoadingModalAction, LoadingModalState};
@@ -51,6 +52,7 @@ live_design! {
     import crate::shared::text_or_image::TextOrImage;
     import crate::shared::html_or_plaintext::*;
     import crate::profile::user_profile::UserProfileSlidingPane;
+    import crate::home::event_reaction::*;
     import crate::shared::typing_animation::TypingAnimation;
     import crate::shared::icon_button::*;
     import crate::shared::jump_to_bottom_button::*;
@@ -222,27 +224,6 @@ live_design! {
         }
     }
 
-    // An optional view used to show reactions beneath a message.
-    MessageAnnotations = <View> {
-        visible: false,
-        width: Fill,
-        height: Fit,
-        padding: {top: 5.0}
-
-        html_content = <MessageHtml> {
-            width: Fill,
-            height: Fit,
-            padding: { bottom: 5.0, top: 0.0 },
-            font_size: 10.5,
-            font_color: (REACTION_TEXT_COLOR),
-            draw_normal:      { color: (REACTION_TEXT_COLOR) },
-            draw_italic:      { color: (REACTION_TEXT_COLOR) },
-            draw_bold:        { color: (REACTION_TEXT_COLOR) },
-            draw_bold_italic: { color: (REACTION_TEXT_COLOR) },
-            draw_fixed:       { color: (REACTION_TEXT_COLOR) },
-            body: ""
-        }
-    }
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -387,7 +368,7 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
 
             message_menu = <MessageMenu> {}
@@ -427,7 +408,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -439,7 +420,7 @@ live_design! {
             content = {
                 padding: { left: 10.0 }
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -451,7 +432,7 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -954,6 +935,36 @@ live_design! {
                 }
             }
         }
+        room_screen_tooltip = <Tooltip> {
+            content: <View> {
+                flow: Overlay
+                width: Fit
+                height: Fit
+    
+                <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+    
+                    padding: {left:10, top: 19, right: 10, bottom: 10},
+    
+                    draw_bg: {
+                        color: #fff,
+                        border_width: 1.0,
+                        border_color: #D0D5DD,
+                        radius: 2.
+                    }
+    
+                    tooltip_label = <Label> {
+                        width: Fit,
+                        draw_text: {
+                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                            text_wrap: Word,
+                            color: #000
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -971,6 +982,7 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -997,6 +1009,16 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
+            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
+                let seq = wr.reaction_list(id!(reaction_list));
+                if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, rect.pos, &tooltip_text);
+                }
+                if seq.hover_out(actions) {
+                    tooltip.hide(cx);
+                }
+            });
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -1349,6 +1371,7 @@ impl Widget for RoomScreen {
                 return DrawStep::done();
             };
             let room_id = &tl_state.room_id;
+            let client_user_id = &tl_state.client_user_id;
             let tl_items = &tl_state.items;
 
             // Set the portal list's range based on the number of timeline items.
@@ -1384,6 +1407,7 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
+                                    client_user_id,
                                     event_tl_item,
                                     MessageOrSticker::Message(message),
                                     prev_event,
@@ -1399,6 +1423,7 @@ impl Widget for RoomScreen {
                                     list,
                                     item_id,
                                     room_id,
+                                    client_user_id,
                                     event_tl_item,
                                     MessageOrSticker::Sticker(sticker.content()),
                                     prev_event,
@@ -1841,7 +1866,7 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
-
+        let Some(client_user_id) = get_client().and_then(|client| client.user_id().map(|id| id.to_owned())) else { return };
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
@@ -1849,6 +1874,7 @@ impl RoomScreen {
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
+                client_user_id,
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
@@ -2113,6 +2139,18 @@ impl RoomScreenRef {
     }
 }
 
+/// Actions for the room screen's tooltip 
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenTooltipActions {
+    // Mouse over event when the mouse is over the reaction button
+    // First parameter is rect containing tooltip position and its size
+    // Todo! implement tooltip resizing
+    // The second parameter is tooltip text
+    HoverIn(Rect, String),
+    HoverOut,
+    None,
+}
+
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
@@ -2262,6 +2300,8 @@ struct TimelineUiState {
     prev_first_index: Option<usize>,
     read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
     marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
+    /// The user ID of the logged in user
+    client_user_id: OwnedUserId
 }
 
 #[derive(Default, Debug)]
@@ -2489,6 +2529,7 @@ fn populate_message_view(
     list: &mut PortalList,
     item_id: usize,
     room_id: &OwnedRoomId,
+    user_id: &OwnedUserId,
     event_tl_item: &EventTimelineItem,
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
@@ -2801,7 +2842,8 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        item.reaction_list(id!(content.reaction_list))
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), user_id.to_owned(), event_tl_item.identifier());
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3274,45 +3316,6 @@ fn populate_preview_of_timeline_item(
     widget_out.show_html(html);
 }
 
-/// Draws the reactions beneath the given `message_item`.
-fn draw_reactions(
-    _cx: &mut Cx2d,
-    message_item: &WidgetRef,
-    reactions: &ReactionsByKeyBySender,
-    id: usize,
-) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
-    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-        return;
-    }
-
-    // The message annotations view is invisible by default, so we must set it to visible
-    // now that we know there are reactions to show.
-    message_item
-        .view(id!(content.message_annotations))
-        .set_visible(true);
-
-    let mut label_text = String::new();
-    for (reaction_raw, reaction_senders) in reactions.iter() {
-        // Just take the first char of the emoji, which ignores any variant selectors.
-        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-        let text_to_display = emojis::get(reaction_str)
-            .and_then(|e| e.shortcode())
-            .unwrap_or(reaction_raw);
-        let count = reaction_senders.len();
-        // log!("Found reaction {:?} with count {}", text_to_display, count);
-        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
-    }
-
-    // Debugging: draw the item ID as a reaction
-    if DRAW_ITEM_ID_REACTION {
-        label_text = format!("{label_text}<i>ID: {}</i>", id);
-    }
-
-    let html_reaction_view = message_item.html(id!(message_annotations.html_content));
-    html_reaction_view.set_text(&label_text);
-}
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
