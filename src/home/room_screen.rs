@@ -391,7 +391,7 @@ live_design! {
                 message_annotations = <MessageAnnotations> {}
             }
             avatar_row = <AvatarRow> {
-                width: 40,
+                width: Fit,
                 height: 30,
                 margin: { top: (12.0), right: 50.0 },
             }
@@ -515,7 +515,7 @@ live_design! {
                 text: ""
             }
             avatar_row = <AvatarRow> {
-                width: 40,
+                width: Fit,
                 height: 30,
                 margin: { top: (12.0), right: 50.0 },
             }
@@ -720,7 +720,6 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-        
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -949,7 +948,7 @@ live_design! {
             }
         }
         
-        tooltip = <Tooltip> {
+        room_screen_tooltip = <Tooltip> {
             content: <View> {
                 flow: Overlay
                 width: Fit
@@ -969,7 +968,7 @@ live_design! {
                     }
     
                     tooltip_label = <Label> {
-                        width: 30,
+                        width: Fit,
                         draw_text: {
                             text_style: <THEME_FONT_REGULAR>{font_size: 9},
                             text_wrap: Word,
@@ -1037,12 +1036,11 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let mut tooltip = self.tooltip(id!(tooltip));
+            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
-                let num_seen = seq.total_num_seen();
-                if let Some(rect) = seq.hover_in(actions) {
-                    tooltip.show_with_options(cx, rect.pos, &format!("Seen by {num_seen}"));
+                if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, rect.pos, &tooltip_text);
                 }
                 if seq.hover_out(actions) {
                     tooltip.hide(cx);
@@ -2160,6 +2158,18 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+}
+
+/// Actions for the room screen's tooltip 
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenTooltipActions {
+    // Mouse over event when the mouse is over the reaction button
+    // First parameter is rect containing tooltip position and its size
+    // Todo! implement tooltip resizing
+    // The second parameter is tooltip text
+    HoverIn(Rect, String),
+    HoverOut,
+    None,
 }
 
 /// A message that is sent from a background async task to a room's timeline view
@@ -3507,7 +3517,7 @@ fn populate_small_state_event(
     item_drawn_status: ItemDrawnStatus,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));    
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
     item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
