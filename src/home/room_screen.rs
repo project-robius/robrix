@@ -935,7 +935,7 @@ live_design! {
                 }
             }
         }
-        tooltip = <Tooltip> {
+        room_screen_tooltip = <Tooltip> {
             content: <View> {
                 flow: Overlay
                 width: Fit
@@ -1009,7 +1009,7 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let mut tooltip = self.tooltip(id!(tooltip));
+            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.reaction_list(id!(reaction_list));
                 if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
