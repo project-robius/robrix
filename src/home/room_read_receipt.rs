@@ -13,7 +13,6 @@ live_design! {
     import crate::shared::styles::*;
 
     AvatarRow = {{AvatarRow}} {
-        debug: true,
         button: <Avatar> {
             width: 15.0,
             height: 15.0,
@@ -22,8 +21,6 @@ live_design! {
             }}}
         }
         margin: {top: 3, right: 10, bottom: 3, left: 10}
-        // width: Fit,
-        // height: Fit,
         width: 100,
         height: 50,
         plus: <Label> {
