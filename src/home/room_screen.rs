@@ -959,24 +959,30 @@ live_design! {
                 }
             }
 
-            message_action_bar_modal = <Modal> {
-                align: {x: 0.0, y: 0.0}
-               // witdh: Fit
-               // height: Fit
-                bg_view: {
-                    visible: false
-                }
-                content: {
-                    height: Fit,
-                    width: Fit,
-                    show_bg: false,
-                    align: {
-                        x: 0.5,
-                        y: 0.5
-                    }
-                    message_action_bar = <MessageActionBar> {}
-                }
-            }
+	    <View> {
+		flow: Overlay
+		    width: Fit
+		    height:Fit
+		message_action_bar_modal = <Modal> {
+		    align: {x: 0.0, y: 0.0}
+		// witdh: Fit
+		// height: Fit
+		    bg_view: {
+			visible: true
+		    }
+		    bg_color: #123
+		    content: {
+			height: Fit,
+			width: Fit,
+			show_bg: true,
+			align: {
+			    x: 0.5,
+			    y: 0.5
+			}
+			message_action_bar = <MessageActionBar> {}
+		    }
+		}
+	    }
         }
 
         animator: {
@@ -1052,15 +1058,22 @@ impl Widget for RoomScreen {
                             continue;
                         };
 
+                        let Some(message_event) = event_tl_item.content().as_message() else {
+			    continue;
+			};
 
-                        dbg!(event_tl_item.encryption_info());
-                        if let Some(message_event) = event_tl_item.content().as_message() {
+			let original_json: Option<serde_json::Value> = event_tl_item.original_json().map(|raw_event| {
+			    serde_json::to_value(raw_event).ok()
+			}).flatten();
+			let room_id = self.room_id.to_owned();
+			let event_id = event_tl_item.event_id().map(|e| e.to_owned());
 
-                            dbg!(message_event);
-                            
-                        } else {
-                            
-                        }
+			cx.widget_action(
+			    widget_uid,
+			    &scope.path,
+			    MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
+			);
+
                     }
                     MessageAction::MessageReplyButtonClicked(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
@@ -1289,7 +1302,7 @@ impl Widget for RoomScreen {
                             },
                         );
                         
-                        message_context_menu.selected(cx, widget_uid, item_id);
+                        message_context_menu.initialize_with_data(cx, widget_uid, item_id);
                         message_context_menu_modal.open(cx);
                     }
                     MessageAction::ContextMenuClose => {
@@ -1313,7 +1326,8 @@ impl Widget for RoomScreen {
                         );
 
                         message_action_bar.selected(cx, widget_uid, item_id);
-                        // message_action_bar_modal.open(cx);
+			dbg!("opening", item_id);
+                        message_action_bar_modal.open(cx);
                     }
                     MessageAction::ActionBarClose => {
                         let action_bar_modal = self.modal(id!(action_bar_modal));
@@ -3675,7 +3689,11 @@ pub enum MessageAction {
     /// requesting to see the message (at the given timeline item index) source
     ViewSourceButtonClicked(usize),
     /// The message event source modal should be oppened
-    MessageSourceModalOpen,
+    MessageSourceModalOpen {
+	room_id: Option<OwnedRoomId>,
+	event_id: Option<OwnedEventId>,
+	original_json: Option<serde_json::Value>,
+    },
     /// The message event source modal should be clossed
     MessageSourceModalClose,
     None,

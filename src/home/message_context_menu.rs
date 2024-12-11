@@ -1,5 +1,4 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::EventId;
 
 use super::room_screen::MessageAction;
 
@@ -50,7 +49,6 @@ live_design! {
     MessageActionBar = {{MessageActionBar}} {
         width: Fit
         height: Fit
-        flow: Overlay
 
         menu_content = <RoundedView> {
             width: Fit,
@@ -124,6 +122,84 @@ live_design! {
     }
 }
 
+
+// Base menu trait.
+// Base menu trait.
+
+trait Menu {
+
+    fn signal_close(&mut self, cx: &mut Cx, scope: &mut Scope);
+
+}
+
+
+
+enum MessageMenuButton {
+
+    Reply,
+
+    ViewSource,
+
+}
+
+
+
+// Message specific menu. Allows to centralize the functionality accross various menus implementations.
+
+trait MessageMenu: Menu {
+    fn item_id(&self) -> Option<usize>;
+    fn room_screen_widget_uid(&self) -> Option<WidgetUid>;
+    fn button_mapping(&self) -> Vec<(ButtonRef, MessageMenuButton)>;
+    fn extract_context(&self) -> Option<(usize, WidgetUid)> {
+        let item_id = self.item_id()?;
+        let room_screen_widget_uid = self.room_screen_widget_uid()?;
+        Some((item_id, room_screen_widget_uid))
+    }
+
+    /// default handler for every button variant. Overwrite for custom handler.
+    fn handle_button_default(
+        &mut self,
+        cx: &mut Cx,
+        scope: &mut Scope,
+        button: &MessageMenuButton,
+    ) {
+        let Some((item_id, room_screen_widget_uid)) = self.extract_context() else {
+            return;
+        };
+
+        match button {
+            MessageMenuButton::Reply => {
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::MessageReplyButtonClicked(item_id),
+                );
+            }
+
+            MessageMenuButton::ViewSource => {
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::ViewSourceButtonClicked(item_id),
+                );
+            }
+        };
+
+        self.signal_close(cx, scope);
+    }
+
+    fn handle_buttons(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        for (button_ref, button_enum) in self.button_mapping() {
+            if button_ref.clicked(actions) {
+                self.handle_button_default(cx, scope, &button_enum);
+            }
+        }
+    }
+}
+
+
+// -- MessageContextMenu
+
 #[derive(Live, LiveHook, Widget)]
 pub struct MessageContextMenu {
     #[deref]
@@ -145,8 +221,43 @@ impl Widget for MessageContextMenu {
     }
 }
 
+impl Menu for MessageContextMenu {
+    fn signal_close(&mut self, cx: &mut Cx, scope: &mut Scope) {
+        if let Some(room_screen_widget_uid) = self.room_screen_widget_uid {
+            cx.widget_action(
+                room_screen_widget_uid,
+                &scope.path,
+                MessageAction::ContextMenuClose,
+            );
+        }
+    }
+}
+
+impl MessageMenu for MessageContextMenu {
+    fn item_id(&self) -> Option<usize> {
+        self.item_id
+    }
+
+    fn room_screen_widget_uid(&self) -> Option<WidgetUid> {
+        self.room_screen_widget_uid
+    }
+
+    fn button_mapping(&self) -> Vec<(ButtonRef, MessageMenuButton)> {
+        vec![
+            (self.button(id!(reply_button)), MessageMenuButton::Reply),
+            (self.button(id!(view_source_button)), MessageMenuButton::ViewSource),
+        ]
+    }
+}
+
+impl WidgetMatchEvent for MessageContextMenu {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+	self.handle_buttons(cx, actions, scope)
+    }
+}
+
 impl MessageContextMenu {
-    pub fn selected(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, item_id: usize) {
+    pub fn initialize_with_data(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, item_id: usize) {
 	self.room_screen_widget_uid = Some(room_screen_widget_uid);
         self.item_id = Some(item_id);
         self.redraw(cx);
@@ -154,60 +265,15 @@ impl MessageContextMenu {
 }
 
 impl MessageContextMenuRef {
-    pub fn selected(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, item_id: usize) {
+    pub fn initialize_with_data(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, item_id: usize) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.selected(cx, room_screen_widget_uid, item_id);
+        inner.initialize_with_data(cx, room_screen_widget_uid, item_id);
     }
 }
 
-impl WidgetMatchEvent for MessageContextMenu {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-	// If widget is not ready do nothing.
-	let Some(item_id) = self.item_id else {
-	    return;
-	};
-	let Some(room_screen_widget_uid) = self.room_screen_widget_uid else {
-	    return;
-	};
-
-	let widget_uid = self.widget_uid();
-
-        if self.button(id!(reply_button)).clicked(actions) {
-            cx.widget_action(
-		room_screen_widget_uid,
-		&scope.path,
-		MessageAction::MessageReplyButtonClicked(
-		    item_id,
-		)
-	    );
-
-	    cx.widget_action(
-		widget_uid,
-		&scope.path,
-		MessageAction::ContextMenuClose
-	    );
-        }
-
-        if self.button(id!(view_source_button)).clicked(actions) {
-            cx.widget_action(
-		room_screen_widget_uid,
-		&scope.path,
-		MessageAction::ViewSourceButtonClicked(
-		    item_id,
-		)
-	    );
-
-	    cx.widget_action(
-		widget_uid,
-		&scope.path,
-		MessageAction::ContextMenuClose
-	    );
-        }
-
-    }
-}
+// -- MessageActionBar
 
 #[derive(Live, LiveHook, Widget)]
 pub struct MessageActionBar {
@@ -230,6 +296,40 @@ impl Widget for MessageActionBar {
     }
 }
 
+impl Menu for MessageActionBar {
+    fn signal_close(&mut self, cx: &mut Cx, scope: &mut Scope) {
+        if let Some(room_screen_widget_uid) = self.room_screen_widget_uid {
+            cx.widget_action(
+                room_screen_widget_uid,
+                &scope.path,
+                MessageAction::ActionBarClose,
+            );
+        }
+    }
+}
+
+impl MessageMenu for MessageActionBar {
+    fn item_id(&self) -> Option<usize> {
+        self.item_id
+    }
+
+    fn room_screen_widget_uid(&self) -> Option<WidgetUid> {
+        self.room_screen_widget_uid
+    }
+
+    fn button_mapping(&self) -> Vec<(ButtonRef, MessageMenuButton)> {
+        vec![
+            (self.button(id!(reply_button)), MessageMenuButton::Reply),
+        ]
+    }
+}
+
+impl WidgetMatchEvent for MessageActionBar {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+	self.handle_buttons(cx, actions, scope)
+    }
+}
+
 impl MessageActionBar {
     pub fn selected(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, item_id: usize) {
 	self.room_screen_widget_uid = Some(room_screen_widget_uid);
@@ -244,36 +344,5 @@ impl MessageActionBarRef {
             return;
         };
         inner.selected(cx, room_screen_widget_uid, item_id);
-    }
-}
-
-impl WidgetMatchEvent for MessageActionBar {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-	// If widget is now ready do nothing.
-	let Some(item_id) = self.item_id else {
-	    return;
-	};
-	let Some(room_screen_widget_uid) = self.room_screen_widget_uid else {
-	    return;
-	};
-
-	let widget_uid = self.widget_uid();
-
-        if self.button(id!(reply_button)).clicked(actions) {
-            cx.widget_action(
-		room_screen_widget_uid,
-		&scope.path,
-		MessageAction::MessageReplyButtonClicked(
-		    item_id,
-		)
-	    );
-
-	    cx.widget_action(
-		widget_uid,
-		&scope.path,
-		MessageAction::ActionBarClose
-	    );
-        }
-
     }
 }

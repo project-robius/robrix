@@ -124,6 +124,11 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+                    message_source_modal = <Modal> {
+                        content: {
+                            message_source_modal_inner = <MessageSourceModal> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -238,10 +243,17 @@ impl MatchEvent for App {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
-	    // FACU TODO: put here stuff for oppening message source modal
-	   // match action.as_widget_action().cast() {
-	   //	MessageAction::
-	   // }
+	    // message source modal handling.
+            match action.as_widget_action().cast() {
+                MessageAction::MessageSourceModalOpen { room_id, event_id, original_json } => {
+                   // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
+                   // self.ui.modal(id!(message_source_modal)).open(cx);
+                }
+                MessageAction::MessageSourceModalClose => {
+                    self.ui.modal(id!(message_source_modal)).close(cx);
+                }
+                _ => {}
+            }
         }
     }
 
