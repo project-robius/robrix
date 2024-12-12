@@ -434,6 +434,11 @@ live_design! {
                 message = <HtmlOrPlaintext> { }
                 message_annotations = <MessageAnnotations> {}
             }
+            avatar_row = <AvatarRow> {
+                width: Fit,
+                height: 30,
+                margin: { top: (12.0), right: 50.0 },
+            }
         }
     }
 
@@ -446,6 +451,11 @@ live_design! {
                 message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
             }
+            avatar_row = <AvatarRow> {
+                width: Fit,
+                height: 30,
+                margin: { top: (12.0), right: 50.0 },
+            }
         }
     }
 
@@ -457,6 +467,11 @@ live_design! {
             content = {
                 message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
+            }
+            avatar_row = <AvatarRow> {
+                width: Fit,
+                height: 30,
+                margin: { top: (12.0), right: 50.0 },
             }
         }
     }
@@ -2556,7 +2571,7 @@ fn populate_message_view(
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-
+    println!("event_tl_time read_receipts() {:?} body {:?}", event_tl_item.read_receipts(), message.body());	
     let ts_millis = event_tl_item.timestamp();
 
     let mut is_notice = false; // whether this message is a Notice
@@ -2690,6 +2705,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2732,6 +2748,8 @@ fn populate_message_view(
                 live_id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2754,6 +2772,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2772,6 +2791,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2789,6 +2809,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2806,6 +2827,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2819,6 +2841,7 @@ fn populate_message_view(
         MessageOrStickerType::VerificationRequest(verification) => {
             let template = live_id!(Message);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2847,6 +2870,7 @@ fn populate_message_view(
         }
         other => {
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -3421,6 +3445,9 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        let v = &text_preview_of_redacted_message(event_tl_item, original_sender)
+        .format_with(original_sender);
+        println!("v {:?}", v);
         item.label(id!(content)).set_text(
             &text_preview_of_redacted_message(event_tl_item, original_sender)
                 .format_with(original_sender),
@@ -3468,6 +3495,8 @@ impl SmallStateEventContent for MemberProfileChange {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
+        let mpc = &text_preview_of_member_profile_change(self, username).format_with(username);
+        println!("mpc {}", mpc);
         item.label(id!(content))
             .set_text(&text_preview_of_member_profile_change(self, username).format_with(username));
         new_drawn_status.content_drawn = true;
@@ -3518,7 +3547,6 @@ fn populate_small_state_event(
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
-    item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
@@ -3553,7 +3581,10 @@ fn populate_small_state_event(
         new_drawn_status.profile_drawn = profile_drawn;
         username
     });
+    println!("event_tl_time read_receipts small_state_event {:?} body {:?} len {:?}", event_tl_item.read_receipts(), event_tl_item.event_id(), event_tl_item.read_receipts().len());	
 
+    item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+    //(item, new_drawn_status)
     // Proceed to draw the actual event content.
     event_content.populate_item_content(
         cx,

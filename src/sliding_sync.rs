@@ -460,13 +460,14 @@ async fn async_worker(
                         log!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
                     };
-
+                    
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
+                    
                     let result = timeline.fetch_details_for_event(&event_id).await;
                     match result {
                         Ok(_) => {
