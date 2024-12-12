@@ -3399,6 +3399,7 @@ dependencies = [
  "htmlize",
  "imbl",
  "imghdr",
+ "indexmap",
  "linkify",
  "makepad-widgets",
  "matrix-sdk",
