@@ -3447,7 +3447,6 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
     ) -> (WidgetRef, ItemDrawnStatus) {
         let v = &text_preview_of_redacted_message(event_tl_item, original_sender)
         .format_with(original_sender);
-        println!("v {:?}", v);
         item.label(id!(content)).set_text(
             &text_preview_of_redacted_message(event_tl_item, original_sender)
                 .format_with(original_sender),
@@ -3496,7 +3495,6 @@ impl SmallStateEventContent for MemberProfileChange {
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         let mpc = &text_preview_of_member_profile_change(self, username).format_with(username);
-        println!("mpc {}", mpc);
         item.label(id!(content))
             .set_text(&text_preview_of_member_profile_change(self, username).format_with(username));
         new_drawn_status.content_drawn = true;
@@ -3581,7 +3579,6 @@ fn populate_small_state_event(
         new_drawn_status.profile_drawn = profile_drawn;
         username
     });
-    println!("event_tl_time read_receipts small_state_event {:?} body {:?} len {:?}", event_tl_item.read_receipts(), event_tl_item.event_id(), event_tl_item.read_receipts().len());	
 
     item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
     //(item, new_drawn_status)
