@@ -2571,7 +2571,6 @@ fn populate_message_view(
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-    println!("event_tl_time read_receipts() {:?} body {:?}", event_tl_item.read_receipts(), message.body());	
     let ts_millis = event_tl_item.timestamp();
 
     let mut is_notice = false; // whether this message is a Notice
@@ -3445,8 +3444,6 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let v = &text_preview_of_redacted_message(event_tl_item, original_sender)
-        .format_with(original_sender);
         item.label(id!(content)).set_text(
             &text_preview_of_redacted_message(event_tl_item, original_sender)
                 .format_with(original_sender),
@@ -3494,7 +3491,6 @@ impl SmallStateEventContent for MemberProfileChange {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        let mpc = &text_preview_of_member_profile_change(self, username).format_with(username);
         item.label(id!(content))
             .set_text(&text_preview_of_member_profile_change(self, username).format_with(username));
         new_drawn_status.content_drawn = true;
@@ -3581,7 +3577,6 @@ fn populate_small_state_event(
     });
 
     item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
-    //(item, new_drawn_status)
     // Proceed to draw the actual event content.
     event_content.populate_item_content(
         cx,

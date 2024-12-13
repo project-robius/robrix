@@ -1,5 +1,6 @@
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
+use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
@@ -55,7 +56,8 @@ pub struct AvatarRow {
     #[rust]
     total_num_seen: usize,
     #[redraw] #[rust] area: Area,
-
+    #[rust]
+    human_readable_usernames: String, 
 }
 
 impl Widget for AvatarRow {
@@ -81,7 +83,7 @@ impl Widget for AvatarRow {
                         size: DVec2::new(),
                     }
                 };
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {0}", self.total_num_seen)));
+                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames)));
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
@@ -128,11 +130,13 @@ impl AvatarRow {
         }
         self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
-    
+        let mut usernames_arr = vec![];
         for (avatar_ref, (user_id, _)) in self.buttons.iter().zip(receipts_map) {
             // Set avatar_profile_opt to be None so that the function may fetch the user profile from profile cache
-            avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id);
+            let (username, _) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
+            usernames_arr.push(username);
         }
+        self.human_readable_usernames = human_readable_list(usernames_arr);
     }
 }
 impl AvatarRowRef {

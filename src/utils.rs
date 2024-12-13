@@ -278,7 +278,36 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
+/// Converts a list of names into a human-readable string with a chunk of 2 names in a line
+///
+/// # Examples
+/// ```
+/// assert_eq!(human_readable_list(vec!["Alice"]), "Alice");
+/// assert_eq!(human_readable_list(vec!["Alice", "Bob"]), "Alice and Bob");
+/// assert_eq!(human_readable_list(vec!["Alice", "Bob", "Charlie"]), "Alice, Bob\n and Charlie");
+/// ```
+pub fn human_readable_list(names: Vec<String>) -> String {
+    match names.len() {
+        0 => String::new(),
+        1 => names[0].clone(),
+        2 => format!("{} and {}", names[0], names[1]),
+        _ => {
+            let mut result = String::new();
+            let chunked_names = names.chunks(2);
 
+            for chunk in chunked_names {
+                if result.is_empty() {
+                    result.push_str(&chunk.join(", "));
+                } else {
+                    result.push_str(&format!("\n{}", chunk.join(", ")));
+                }
+            }
+
+            let last = result.split("\n").last().unwrap();
+            format!("{}, and {}", result.trim_end(), last)
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests_linkify {
