@@ -809,7 +809,7 @@ live_design! {
                 location_preview = <LocationPreview> { }
 
                 // Below that, display a view that holds the message input bar and send button.
-                bottom_input = <View> {
+                input_bar = <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {y: 0.5},
@@ -1506,9 +1506,6 @@ impl RoomScreen {
     ///
     /// Redraws this RoomScreen view if any updates were applied.
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
-        let bottom_input = self.view(id!(bottom_input));
-        let no_send_permission_notice = self.view(id!(no_send_permission_notice));
-
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
@@ -1735,11 +1732,13 @@ impl RoomScreen {
                     typing_users = users;
                 }
 
-                TimelineUpdate::CanUserPost(can_user_post) => {
-                    let (bottom_input_visible, no_send_permission_notice_visible) = if can_user_post { (true, false) } else { (false, true) };
+                TimelineUpdate::CanUserSendMessage(can_user_send_message) => {
+                    let input_bar = self.view.view(id!(input_bar));
+                    let no_send_permission_notice = self.view.view(id!(no_send_permission_notice));
 
-                    bottom_input.set_visible(bottom_input_visible);
-                    no_send_permission_notice.set_visible(no_send_permission_notice_visible)
+                    //Set the visibility of the corresponding component for both cases.
+                    input_bar.set_visible(can_user_send_message);
+                    no_send_permission_notice.set_visible(!can_user_send_message);
                 }
             }
         }
@@ -2134,7 +2133,7 @@ impl RoomScreen {
     /// Send request as `MatrixRequest` to check post permission.
     fn check_user_post_permission(&self) {
         if let Some(room_id) = self.room_id.clone() {
-            submit_async_request(MatrixRequest::CheckUserPostPermission { room_id })
+            submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id })
         }
     }
 }
@@ -2217,7 +2216,7 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
-    CanUserPost (bool)
+    CanUserSendMessage (bool)
 }
 
 /// The global set of all timeline states, one entry per room.

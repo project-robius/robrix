@@ -359,7 +359,7 @@ pub enum MatrixRequest {
         event_id: OwnedEventId,
     },
     /// Sends user permission's checking once user entered room.
-    CheckUserPostPermission{
+    CheckCanUserSendMessage{
         room_id: OwnedRoomId,
     }
 }
@@ -780,7 +780,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::CheckUserPostPermission { room_id } => {
+            MatrixRequest::CheckCanUserSendMessage { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -797,10 +797,10 @@ async fn async_worker(
                 let _check_user_send_permission_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
-                    let can_user_post = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(true);
+                    let can_user_send_message = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(false);
 
-                    if sender.send(TimelineUpdate::CanUserPost(can_user_post)).is_err() {
-                        error!("Failed to send the result of user send permission")
+                    if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
+                        error!("Failed to send the result of user send permission: {e}")
                     }
                 });
             }
@@ -1917,7 +1917,7 @@ fn update_latest_event(
             }
             AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
                 let id = room_id.clone();
-                submit_async_request(MatrixRequest::CheckUserPostPermission { room_id: id })
+                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: id })
             }
             _ => { }
         }
