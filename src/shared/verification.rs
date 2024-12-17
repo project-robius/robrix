@@ -52,8 +52,7 @@ live_design! {
     }
 
     VerificationNoticeDesktop = <TooltipBase> {
-        width: Fill,
-        height: Fill,
+        width: Fill, height: Fill,
         flow: Overlay
         align: {x: 0.0, y: 0.0}
 
@@ -65,8 +64,10 @@ live_design! {
 
         content: <View> {
             flow: Overlay
-            width: Fill
-            height: Fill
+
+            //The 'Fill' allows it shows anywhere we want over the app screen,
+            //our goal is to set the global relative position to make it an illusion of following the cursor.
+            width: Fill, height: Fill
             align: {y: 0.05}
 
             <RoundedView> {
@@ -92,8 +93,7 @@ live_design! {
         }
     }
     VerificationNoticeMobile = <TooltipBase> {
-        width: Fill,
-        height: Fill,
+        width: Fill, height: Fill,
         flow: Overlay
         align: {x: 0.0, y: 0.0}
 
@@ -105,8 +105,9 @@ live_design! {
 
         content: <View> {
             flow: Overlay
-            width: Fill
-            height: Fill
+
+            //Same as 'VerificationNoticeDesktop'
+            width: Fill, height: Fill
 
             align: {y: 0.95}
 

@@ -217,6 +217,9 @@ impl Widget for Profile {
                     VerificationState::Unverified => &self.verification_notice.no,
                     VerificationState::Verified => &self.verification_notice.yes
                 };
+
+                //Determine if it's a desktop or mobile layout,
+                //then we set the relative position so that the tooltip looks like following the cursor.
                 if cx.get_global::<DisplayContext>().is_desktop() {
                     verification_notice_desktop.set_text(text);
                     verification_notice_desktop.show(cx);
@@ -226,6 +229,7 @@ impl Widget for Profile {
                     verification_notice_mobile.show(cx);
                 }
             }
+            //Hide it if cursor is not hovering.
             else {
                 verification_notice_desktop.hide(cx);
                 verification_notice_mobile.hide(cx)
