@@ -2926,9 +2926,9 @@ fn populate_text_message_content(
     if let Some(formatted_body) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
     {
-        message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
+        message_content_widget.show_html(utils::linkify(formatted_body.as_ref(), true));
     } else {
-        match utils::linkify(body) {
+        match utils::linkify(body, false) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
         }
