@@ -27,7 +27,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -253,6 +253,7 @@ live_design! {
         height: Fit,
         margin: 0.0
         flow: Down,
+        cursor: Default,
         padding: 0.0,
         spacing: 0.0
 
@@ -463,6 +464,7 @@ live_design! {
         width: Fill,
         height: Fit,
         margin: 0.0
+        cursor: Default
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
@@ -705,6 +707,7 @@ live_design! {
 
     RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
+        cursor: Default,
         show_bg: true,
         draw_bg: {
             color: (COLOR_SECONDARY)
@@ -2900,20 +2903,17 @@ fn populate_message_view(
 }
 
 
-/// Returns `true` if the given message mentions the current user.
+/// Returns `true` if the given message mentions the current user or is a room mention.
 fn does_message_mention_current_user(
     message: &timeline::Message,
 ) -> bool {
-    let Some(client) = get_client() else {
-        return false;
-    };
-    let Some(current_user_id) = client.user_id() else {
+    let Some(current_user_id) = sliding_sync::current_user_id() else {
         return false;
     };
 
-    // This covers both direct mentions ("@user") and a replied-to message.
-    message.mentions().is_some_and(
-        |mentions| mentions.user_ids.contains(current_user_id)
+    // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
+    message.mentions().is_some_and(|mentions|
+        mentions.room || mentions.user_ids.contains(&current_user_id)
     )
 }
 
