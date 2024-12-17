@@ -2,6 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
 use crate::shared::adaptive_view::DisplayContext;
+use crate::sliding_sync::get_client;
 use crate::verification::VerificationStateAction;
 
 live_design! {
@@ -195,7 +196,7 @@ impl Default for VerificationNotice{
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct Profile {
     #[deref]
     view: View,
@@ -203,6 +204,20 @@ pub struct Profile {
     verification_state: VerificationState,
     #[rust]
     verification_notice: VerificationNotice,
+}
+
+impl Profile {
+    fn set_verification_icon_visibility(&self) {
+        let (yes_visible, no_visible, unk_visible) = match self.verification_state {
+            VerificationState::Unknown => (false, false, true),
+            VerificationState::Unverified => (false, true, false),
+            VerificationState::Verified => (true, false, false),
+        };
+
+        self.view(id!(icon_yes)).set_visible(yes_visible);
+        self.view(id!(icon_no)).set_visible(no_visible);
+        self.view(id!(icon_unk)).set_visible(unk_visible);
+    }
 }
 
 impl Widget for Profile {
@@ -221,8 +236,7 @@ impl Widget for Profile {
                 //Determine if it's a desktop or mobile layout,
                 //then we set the relative position so that the tooltip looks like following the cursor.
                 if cx.get_global::<DisplayContext>().is_desktop() {
-                    verification_notice_desktop.set_text(text);
-                    verification_notice_desktop.show(cx);
+                    verification_notice_desktop.show_with_options(cx, DVec2 {x: 65., y: 23.}, text);
                 }
                 else {
                     verification_notice_mobile.set_text(text);
@@ -244,25 +258,28 @@ impl Widget for Profile {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
 impl MatchEvent for Profile {
     fn handle_action(&mut self, cx: &mut Cx, action:&Action) {
         if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
             if self.verification_state != *state {
                 self.verification_state = *state;
 
-                // Update visibility states
-                let (yes_visible, no_visible, unk_visible) = match self.verification_state {
-                    VerificationState::Unknown => (false, false, true),
-                    VerificationState::Unverified => (false, true, false),
-                    VerificationState::Verified => (true, false, false),
-                };
-
-                self.view(id!(icon_yes)).set_visible(yes_visible);
-                self.view(id!(icon_no)).set_visible(no_visible);
-                self.view(id!(icon_unk)).set_visible(unk_visible);
-
+                self.set_verification_icon_visibility();
                 self.redraw(cx);
             }
+        }
+    }
+}
+
+impl LiveHook for Profile {
+    fn after_new_from_doc(&mut self, cx:&mut Cx) {
+        if let Some(client) = get_client() {
+            let current_verification_state = client.encryption().verification_state().get();
+            self.verification_state = current_verification_state;
+
+            self.set_verification_icon_visibility();
+            self.redraw(cx);
         }
     }
 }

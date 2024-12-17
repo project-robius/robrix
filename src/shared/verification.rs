@@ -54,7 +54,6 @@ live_design! {
     VerificationNoticeDesktop = <TooltipBase> {
         width: Fill, height: Fill,
         flow: Overlay
-        align: {x: 0.0, y: 0.0}
 
         draw_bg: {
             fn pixel(self) -> vec4 {
@@ -68,12 +67,10 @@ live_design! {
             //The 'Fill' allows it shows anywhere we want over the app screen,
             //our goal is to set the global relative position to make it an illusion of following the cursor.
             width: Fill, height: Fill
-            align: {y: 0.05}
 
             <RoundedView> {
-                width: Fit,
-                height: Fit,
-                padding: 8,
+                width: Fit, height: Fit,
+                padding: 7,
 
                 draw_bg: {
                     color: (COLOR_TOOLTIP_BG),
@@ -83,8 +80,9 @@ live_design! {
                 }
 
                 tooltip_label = <Label> {
+                    width: 230
                     draw_text: {
-                        text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                        text_style: <THEME_FONT_REGULAR>{font_size: SMALL_STATE_FONT_SIZE},
                         text_wrap: Word,
                         color: #000
                     }
@@ -95,7 +93,6 @@ live_design! {
     VerificationNoticeMobile = <TooltipBase> {
         width: Fill, height: Fill,
         flow: Overlay
-        align: {x: 0.0, y: 0.0}
 
         draw_bg: {
             fn pixel(self) -> vec4 {
@@ -106,15 +103,15 @@ live_design! {
         content: <View> {
             flow: Overlay
 
-            //Same as 'VerificationNoticeDesktop'
+            //Same as `VerificationNoticeDesktop`
             width: Fill, height: Fill
 
-            align: {y: 0.95}
+            align: { x: 0.43, y: 1. }
+            padding: { left: 30., bottom: 31. }
 
             <RoundedView> {
-                width: Fit,
-                height: Fit,
-                padding: 8,
+                width: Fit, height: Fit,
+                padding: 7,
 
                 draw_bg: {
                     color: (COLOR_TOOLTIP_BG),
@@ -124,8 +121,9 @@ live_design! {
                 }
 
                 tooltip_label = <Label> {
+                    width: 230
                     draw_text: {
-                        text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                        text_style: <THEME_FONT_REGULAR>{font_size: SMALL_STATE_FONT_SIZE},
                         text_wrap: Word,
                         color: #000
                     }
