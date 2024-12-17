@@ -11,7 +11,7 @@ thread_local! {
     /// A cache of each user's profile and the rooms they are a member of, indexed by user ID.
     ///
     /// To be of any use, this cache must only be accessed by the main UI thread.
-    static USER_PROFILE_CACHE: RefCell<BTreeMap<OwnedUserId, UserProfileCacheEntry>> = RefCell::new(BTreeMap::new());
+    static USER_PROFILE_CACHE: RefCell<BTreeMap<OwnedUserId, UserProfileCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 struct UserProfileCacheEntry {
     user_profile: UserProfile,
@@ -50,7 +50,7 @@ impl UserProfileUpdate {
     pub fn user_id(&self) -> &UserId {
         match self {
             UserProfileUpdate::Full { new_profile, .. } => &new_profile.user_id,
-            UserProfileUpdate::RoomMemberOnly { room_member, .. } => &room_member.user_id(),
+            UserProfileUpdate::RoomMemberOnly { room_member, .. } => room_member.user_id(),
             UserProfileUpdate::UserProfileOnly(profile) => &profile.user_id,
         }
     }
@@ -176,13 +176,10 @@ pub fn with_user_profile<F, R>(_cx: &mut Cx, user_id: &UserId, f: F) -> Option<R
 where
     F: FnOnce(&UserProfile, &BTreeMap<OwnedRoomId, RoomMember>) -> R,
 {
-    USER_PROFILE_CACHE.with_borrow(|cache| {
-        if let Some(entry) = cache.get(user_id) {
-            Some(f(&entry.user_profile, &entry.room_members))
-        } else {
-            None
-        }
-    })
+    USER_PROFILE_CACHE.with_borrow(|cache| cache
+        .get(user_id)
+        .map(|entry| f(&entry.user_profile, &entry.room_members))
+    )
 }
 
 /// Returns a clone of the cached user profile for the given user ID, if it exists.

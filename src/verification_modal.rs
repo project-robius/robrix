@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use makepad_widgets::*;
 use matrix_sdk::encryption::verification::Verification;
 
@@ -132,7 +134,7 @@ impl Widget for VerificationModal {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk.with_abs_pos(DVec2 { x: 0., y: 0. }))
+        self.view.draw_walk(cx, scope, walk)
     }
 }
 
@@ -145,8 +147,7 @@ impl WidgetMatchEvent for VerificationModal {
         let cancel_button_clicked = cancel_button.clicked(actions);
         let modal_dismissed = actions
             .iter()
-            .find(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)))
-            .is_some();
+            .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         if cancel_button_clicked || modal_dismissed {
             if let Some(state) = self.state.as_ref() {
@@ -241,10 +242,10 @@ impl WidgetMatchEvent for VerificationModal {
                     }
 
                     VerificationAction::SasAccepted(_accepted_protocols) => {
-                        self.label(id!(prompt)).set_text(&format!(
+                        self.label(id!(prompt)).set_text(
                             "Both sides have accepted the same verification method(s).\n\n\
                             Waiting for both devices to exchange keys..."
-                        ));
+                        );
                         accept_button.set_enabled(false);
                         accept_button.set_text("Waiting...");
                         cancel_button.set_text("Cancel");
@@ -328,17 +329,17 @@ impl VerificationModal {
         log!("Initializing verification modal with state: {:?}", state);
         let request = &state.request;
         let prompt_text = if request.is_self_verification() {
-            format!("Do you wish to verify your own device?")
+            Cow::from("Do you wish to verify your own device?")
         } else {
             if let Some(room_id) = request.room_id() {
                 format!("Do you wish to verify user {} in room {}?",
                     request.other_user_id(),
                     room_id,
-                )
+                ).into()
             } else {
                 format!("Do you wish to verify user {}?",
                     request.other_user_id()
-                )
+                ).into()
             }
         };
         self.label(id!(prompt)).set_text(&prompt_text);

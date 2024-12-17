@@ -194,45 +194,45 @@ impl MatchEvent for App {
                     room_index: _,
                     room_name,
                 } => {
+
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
-                        id: room_id.clone(),
-                        name: room_name.clone(),
+                        room_id: room_id.clone(),
+                        room_name: room_name.clone(),
                     });
 
                     let widget_uid = self.ui.widget_uid();
+                    // Navigate to the main content view
                     cx.widget_action(
                         widget_uid,
                         &Scope::default().path,
                         StackNavigationAction::NavigateTo(live_id!(main_content_view))
                     );
+                    // Update the Stack Navigation header with the room name
+                    self.ui.label(id!(main_content_view.header.content.title_container.title))
+                        .set_text(&room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
                 RoomListAction::None => { }
             }
 
             match action.as_widget_action().cast() {
-                RoomsPanelAction::RoomFocused(room_id) => {
-                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
-                        id: room_id.clone(),
-                        name: None
-                    });
+                RoomsPanelAction::RoomFocused(selected_room) => {
+                    self.app_state.rooms_panel.selected_room = Some(selected_room.clone());
                 }
                 RoomsPanelAction::FocusNone => {
                     self.app_state.rooms_panel.selected_room = None;
                 }
-                _ => { }
+                RoomsPanelAction::None => { }
             }
 
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
-            match action.downcast_ref() {
-                Some(VerificationAction::RequestReceived(state)) => {
-                    self.ui.verification_modal(id!(verification_modal_inner))
-                        .initialize_with_data(state.clone());
-                    self.ui.modal(id!(verification_modal)).open(cx);
-                }
-                // other verification actions are handled by the verification modal itself.
-                _ => { }
+            //
+            // Note: other verification actions are handled by the verification modal itself.
+            if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
+                self.ui.verification_modal(id!(verification_modal_inner))
+                    .initialize_with_data(state.clone());
+                self.ui.modal(id!(verification_modal)).open(cx);
             }
 
             if let VerificationModalAction::Close = action.as_widget_action().cast() {
@@ -294,9 +294,18 @@ pub struct RoomsPanelState {
     pub selected_room: Option<SelectedRoom>,
 }
 
-#[derive(Debug)]
+/// Represents a room currently or previously selected by the user.
+///
+/// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
+#[derive(Clone, Debug)]
 pub struct SelectedRoom {
-    pub id: OwnedRoomId,
-    pub name: Option<String>,
+    pub room_id: OwnedRoomId,
+    pub room_name: Option<String>,
 }
+impl PartialEq for SelectedRoom {
+    fn eq(&self, other: &Self) -> bool {
+        self.room_id == other.room_id
+    }
+}
+impl Eq for SelectedRoom {}
 

@@ -9,7 +9,7 @@ use crate::{
     utils::{self, relative_format},
 };
 
-use super::rooms_list::{RoomPreviewAvatar, RoomPreviewEntry};
+use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
 
 live_design! {
     import makepad_draw::shader::std::*;
@@ -157,8 +157,8 @@ impl LiveHook for RoomPreview {
         self.view
             .adaptive_view(id!(adaptive_preview))
             .set_variant_selector(cx, |_cx, parent_size| match parent_size.x {
-                x if x <= 100. => live_id!(OnlyIcon),
-                x if x <= 250. => live_id!(IconAndName),
+                width if width <= 70.0  => live_id!(OnlyIcon),
+                width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
             });
     }
@@ -166,7 +166,7 @@ impl LiveHook for RoomPreview {
 
 impl Widget for RoomPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid().clone();
+        let uid = self.widget_uid();
 
         match event.hits(cx, self.view.area()) {
             Hit::FingerDown(_fe) => {
@@ -209,7 +209,7 @@ impl Widget for RoomPreviewContent {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let Some(room_info) = scope.props.get::<RoomPreviewEntry>() {
+        if let Some(room_info) = scope.props.get::<RoomsListEntry>() {
             if let Some(ref name) = room_info.room_name {
                 self.view.label(id!(room_name)).set_text(name);
             }
@@ -255,6 +255,7 @@ impl RoomPreviewContent {
         let message_text_color;
         let room_name_color;
         let timestamp_color;
+        let code_bg_color;
 
         // TODO: This is quite verbose, makepad should provide a way to override this at a higher level.
         if is_selected {
@@ -262,11 +263,13 @@ impl RoomPreviewContent {
             message_text_color = vec3(1., 1., 1.); // COLOR_PRIMARY
             room_name_color = vec3(1., 1., 1.); // COLOR_PRIMARY
             timestamp_color = vec3(1., 1., 1.); // COLOR_PRIMARY
+            code_bg_color = vec3(0.3, 0.3, 0.3); // a darker gray, used for `code_color` and `quote_bg_color`
         } else {
             bg_color = vec3(1., 1., 1.); // COLOR_PRIMARY
             message_text_color = vec3(0.267, 0.267, 0.267); // MESSAGE_TEXT_COLOR
             room_name_color = vec3(0., 0., 0.);
             timestamp_color = vec3(0.6, 0.6, 0.6);
+            code_bg_color = vec3(0.929, 0.929, 0.929); // #EDEDED, see `code_color` and `quote_bg_color`
         }
 
         self.view.apply_over(
@@ -312,6 +315,10 @@ impl RoomPreviewContent {
                         draw_italic:      { color: (message_text_color) },
                         draw_bold:        { color: (message_text_color) },
                         draw_bold_italic: { color: (message_text_color) },
+                        draw_block: {
+                            quote_bg_color: (code_bg_color),
+                            code_color: (code_bg_color),
+                        }
                     }
                 }
                 plaintext_view = {

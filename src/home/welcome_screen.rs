@@ -28,21 +28,8 @@ live_design! {
                 }
             }
 
-            subtitle = <Label> {
-                text: "
-                    Our Matrix client is under heavy development.\nFor now, you can access the rooms you've joined in other clients.\nBut don't worry, we're working on expanding its features.\n
-                    Tip: to load older messages, click on a selected room (repeatedly).
-                    ",
-                draw_text: {
-                    color: (WELCOME_TEXT_COLOR),
-                    text_style: {
-                        font_size: 14.
-                    }
-                }
-            }
-
             // Using the HTML widget to taking advantage of embedding a link within text with proper vertical alignment
-            <RobrixHtml> {
+            <MessageHtml> {
                 padding: {top: 12, left: 0.}
                 font_size: 14.
                 font_color: (WELCOME_TEXT_COLOR)
@@ -59,7 +46,8 @@ live_design! {
                     // }
                 }
                 body:"
-                Look out for the latest announcements in our Matrix channel: <a href=\"https://matrix.to/#/#robius-robrix:matrix.org\">[m] Robrix</a><br/>
+                Our Matrix client is under heavy development.\nFor now, you can access the rooms you've joined in other clients.\nBut don't worry, we're working on expanding its features.\n
+                Look for the latest announcements in our Matrix channel: <b>#robrix:matrix.org</b><br/>
                 "
             }
         }

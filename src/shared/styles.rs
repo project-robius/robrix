@@ -31,7 +31,9 @@ live_design! {
     TYPING_NOTICE_TEXT_COLOR = #121570
 
     MESSAGE_FONT_SIZE = 11
-    MESSAGE_TEXT_COLOR = #x444
+    MESSAGE_TEXT_COLOR = #x333
+    // notices (automated messages from bots) use a lighter color
+    MESSAGE_NOTICE_TEXT_COLOR = #x888
     MESSAGE_TEXT_LINE_SPACING = 1.35
     MESSAGE_TEXT_HEIGHT_FACTOR = 1.55
     // This font should only be used for plaintext labels. Don't use this for Html content,
@@ -43,6 +45,7 @@ live_design! {
     }
 
     MESSAGE_REPLY_PREVIEW_FONT_SIZE = 9.5
+
 
     SMALL_STATE_FONT_SIZE = 9.0
     SMALL_STATE_TEXT_COLOR = #x888
@@ -56,6 +59,10 @@ live_design! {
     TIMESTAMP_TEXT_STYLE = <THEME_FONT_REGULAR>{
         font_size: (TIMESTAMP_FONT_SIZE),
     }
+
+    ROOM_NAME_TEXT_COLOR = #x0
+
+    COLOR_META = #xccc
 
     COLOR_PROFILE_CIRCLE = #xfff8ee
     COLOR_DIVIDER = #x00000018
@@ -73,6 +80,8 @@ live_design! {
 
     COLOR_AVATAR_BG = #52b2ac
     COLOR_AVATAR_BG_IDLE = #d8d8d8
+
+    COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
 
     COLOR_TEXT_IDLE = #d8d8d8
     COLOR_TEXT = #1C274C
