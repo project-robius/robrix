@@ -75,7 +75,7 @@ live_design! {
                 padding: 8,
 
                 draw_bg: {
-                    color: #0000003F,
+                    color: (COLOR_TOOLTIP_BG),
                     border_width: 1.0,
                     border_color: #000000,
                     radius: 2.5
@@ -117,7 +117,7 @@ live_design! {
                 padding: 8,
 
                 draw_bg: {
-                    color: #0000003F,
+                    color: (COLOR_TOOLTIP_BG),
                     border_width: 1.0,
                     border_color: #000000,
                     radius: 2.5
