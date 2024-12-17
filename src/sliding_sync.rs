@@ -917,6 +917,13 @@ pub fn get_client() -> Option<Client> {
     CLIENT.get().cloned()
 }
 
+/// Returns the user ID of the currently logged-in user, if any.
+pub fn current_user_id() -> Option<OwnedUserId> {
+    CLIENT.get().and_then(|c|
+        c.session_meta().map(|m| m.user_id.clone())
+    )
+}
+
 /// The singleton sync service.
 static SYNC_SERVICE: OnceLock<SyncService> = OnceLock::new();
 
