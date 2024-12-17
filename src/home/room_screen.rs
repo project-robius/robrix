@@ -200,32 +200,6 @@ live_design! {
         }
     }
 
-    // A view that shows action buttons for a message,
-    // with buttons for sending a reply (and in the future, reactions).
-    MessageMenu = <RoundedView> {
-        visible: true,
-        width: Fit,
-        height: Fit,
-        align: {x: 1, y: 0}
-
-        draw_bg: {
-            border_width: 0.0,
-            border_color: #000,
-            radius: 2.0
-        }
-
-        reply_button = <IconButton> {
-            visible: false
-            width: Fit,
-            height: Fit,
-
-            draw_icon: {
-                svg_file: (ICO_REPLY),
-            }
-            icon_walk: {width: 15, height: 15, margin: {top: 4.0}}
-        }
-    }
-
     // An optional view used to show reactions beneath a message.
     MessageAnnotations = <View> {
         visible: false,
@@ -394,13 +368,6 @@ live_design! {
                 message_annotations = <MessageAnnotations> {}
             }
 
-            message_menu = <MessageMenu> {}
-            // leave space for reply button (simulate a min width).
-            // once the message menu is done with overlays this wont be necessary.
-            <View> {
-                width: 1,
-                height: 1
-            }
         }
     }
 
@@ -955,34 +922,32 @@ live_design! {
                         x: 0.5,
                         y: 0.5
                     }
-                    message_context_menu = <MessageContextMenu> {}
+
+                    <View> {
+                        widht: 100, height: 100,
+                        show_bg: true,
+                        draw_bg: {
+                            bg_color: #123
+                        }
+                    }
+                     message_context_menu = <MessageContextMenu> {}
                 }
             }
 
-	    <View> {
-		flow: Overlay
-		    width: Fit
-		    height:Fit
-		message_action_bar_modal = <Modal> {
-		    align: {x: 0.0, y: 0.0}
-		// witdh: Fit
-		// height: Fit
-		    bg_view: {
-			visible: true
-		    }
-		    bg_color: #123
-		    content: {
-			height: Fit,
-			width: Fit,
-			show_bg: true,
-			align: {
-			    x: 0.5,
-			    y: 0.5
-			}
-			message_action_bar = <MessageActionBar> {}
-		    }
-		}
-	    }
+            message_action_bar_popup = <PopupNotification> {
+                align: {x: 0.0, y: 0.0}
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+
+                    message_action_bar = <MessageActionBar> {}
+                }
+            }
         }
 
         animator: {
@@ -1288,11 +1253,15 @@ impl Widget for RoomScreen {
                 }
 
                 match action.as_widget_action().cast() {
+                    MessageAction::ContextMenuClose => {
+                        let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
+                        message_context_menu_modal.close(cx);
+                    }
                     MessageAction::ContextMenuOpen { item_id, coords } => {
                         let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
                         let mut message_context_menu = message_context_menu_modal.message_context_menu(id!(message_context_menu));
 
-                        // the modal (0, 0) point is this view, not the screem, we need to compensate for that
+                        // the modal's (0, 0) point is this view, not the screen,so we need to compensate for that.
                         let coords = coords - self.view.area().rect(cx).pos;
 
                         message_context_menu_modal.apply_over(
@@ -1301,40 +1270,55 @@ impl Widget for RoomScreen {
                                 content: { margin: { left: (coords.x), top: (coords.y) } }
                             },
                         );
-                        
-                        message_context_menu.initialize_with_data(cx, widget_uid, item_id);
-                        message_context_menu_modal.open(cx);
+
+                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
+                            message_context_menu.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
+                            message_context_menu_modal.open(cx);
+                        }
                     }
-                    MessageAction::ContextMenuClose => {
-                        let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
-                        message_context_menu_modal.close(cx);
+                    MessageAction::ActionBarClose => {
+                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+
+                        // close only if the active message is requesting it to avoid double closes.
+                        if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
+                            if action.as_widget_action().widget_uid_eq(message_widget_uid).is_some() {
+                                message_action_bar_popup.close(cx);
+                            }
+                        }
                     }
                     MessageAction::ActionBarOpen { item_id, message_rect } => {
-                        let message_action_bar_modal = self.modal(id!(message_action_bar_modal));
-                        let mut message_action_bar = message_action_bar_modal.message_action_bar(id!(message_action_bar));
+                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                        let mut message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
 
-                        let x = message_rect.pos.x + message_rect.size.x - 100.;
-                        let y = message_rect.pos.y + message_rect.size.y + 20.;
+                        let margin_x = 50.;
+                        let margin_y = 20.;
 
-                        let coords = vec2(x as f32, y as f32);
+                        let coords = dvec2(
+                            (message_rect.pos.x + message_rect.size.x) - margin_x,
+                            message_rect.pos.y - margin_y,
+                        );
 
-                        message_action_bar_modal.apply_over(
+                        message_action_bar_popup.apply_over(
                             cx,
                             live! {
                                 content: { margin: { left: (coords.x), top: (coords.y) } }
                             },
                         );
-
-                        message_action_bar.selected(cx, widget_uid, item_id);
-			dbg!("opening", item_id);
-                        message_action_bar_modal.open(cx);
-                    }
-                    MessageAction::ActionBarClose => {
-                        let action_bar_modal = self.modal(id!(action_bar_modal));
-                        action_bar_modal.close(cx);
+                        
+                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
+                            message_action_bar_popup.open(cx);
+                            message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
+                        }
                     }
                     _ => {}
                 }
+            }
+
+            // close message action bar if scrolled.
+            if portal_list.scrolled(actions) {
+                let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                message_action_bar_popup.close(cx);
             }
 
             // Set visibility of loading message banner based of pagination logic
@@ -3699,12 +3683,24 @@ pub enum MessageAction {
     None,
 }
 
+#[derive(Debug, Clone, Default)]
+enum PushStatus {
+    Pushing(DVec2),
+    #[default]
+    None,
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
     #[rust(false)] mentions_user: bool,
+
+    #[rust]
+    timer: Timer,
+    #[rust]
+    push_status: PushStatus,
 
     #[rust] can_be_replied_to: bool,
     #[rust] item_id: usize,
@@ -3725,43 +3721,61 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
 
-        let Some(widget_uid) = self.room_screen_widget_uid else { return };
+        let Some(room_screen_widget_uid) = self.room_screen_widget_uid else { return };
+        let message_widget_uid = self.widget_uid();
 
-        if let Event::Actions(actions) = event {
-            if self.view.button(id!(reply_button)).clicked(actions) {
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                    MessageAction::MessageReplyButtonClicked(self.item_id),
-                );
+        // push timer handling
+        let push_total_duration = 0.04;
+        if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            if let PushStatus::None = self.push_status {
+                self.push_status = PushStatus::Pushing(fe.abs);
+                self.timer = cx.start_interval(push_total_duration);
+                self.redraw(cx);
             }
         }
+        // cancel timer on finger up or move
+        if let Hit::FingerUp(_) | Hit::FingerMove(_) = event.hits(cx, self.view(id!(body)).area()) {
+            cx.stop_timer(self.timer);
+            self.push_status = PushStatus::None;
+        }
+        // if the time passed, handle on push completed.
+        if let PushStatus::Pushing(abs_pos) = &self.push_status {
+            if self.timer.is_event(event).is_some() {
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::ContextMenuOpen {
+                        item_id: self.item_id,
+                        coords: *abs_pos,
+                    }
+                );
+                cx.stop_timer(self.timer);
+                self.push_status = PushStatus::None;
+            }
+
+            self.redraw(cx);
+        }
+
 
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(body)).area()) {
-            // if right click
-            if fe.device.mouse_button().map_or(false, |button| button == 3) {
+            let right_click = fe.device.mouse_button().map_or(false, |button| button == 3);
+            if right_click {
                 cx.widget_action(
-                    widget_uid,
+                    room_screen_widget_uid,
                     &scope.path,
                     MessageAction::ContextMenuOpen {
                         item_id: self.item_id,
                         coords: fe.abs,
                     }
                 );
-                // message_context_menu_modal.open(cx);
-                dbg!(&fe);
             }
-        }
-
-        if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
-            dbg!("DOWN", fe);
         }
 
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
                 if let Some(ref replied_to_event) = self.replied_to_event_id {
                     cx.widget_action(
-                        widget_uid,
+                        room_screen_widget_uid,
                         &scope.path,
                         MessageAction::ReplyPreviewClicked {
                             reply_message_item_id: self.item_id,
@@ -3773,7 +3787,6 @@ impl Widget for Message {
                 }
             }
         }
-
 
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -3789,25 +3802,30 @@ impl Widget for Message {
 
         if let Event::MouseMove(e) = event {
             let hovered = self.view.area().rect(cx).contains(e.abs);
-            // if hover changed
-            let hover_changed = (self.hovered != hovered) || (!hovered && self.animator_in_state(cx, id!(hover.on)));
-            if hover_changed {
-                self.hovered = hovered;
 
-                if !hovered {
-                   cx.widget_action(widget_uid, &scope.path, MessageAction::ActionBarClose) 
-                } else {
+            let hover_changed = self.hovered != hovered;
+            let animation_needs_update = hovered != self.animator_in_state(cx, id!(hover.on));
+
+            if hover_changed {
+                if hovered {
                     cx.widget_action(
-                        widget_uid,
+                        message_widget_uid,
                         &scope.path,
                         MessageAction::ActionBarOpen {
                             item_id: self.item_id,
                             message_rect: self.view.area().rect(cx)
                         }
-                    )
+                    );
+                } else {
+                    cx.widget_action(message_widget_uid, &scope.path, MessageAction::ActionBarClose);
                 }
 
-                let hover_animator = if self.hovered {
+
+                self.hovered = hovered;
+            }
+
+            if animation_needs_update {
+                let hover_animator = if hovered {
                     id!(hover.on)
                 } else {
                     id!(hover.off)
@@ -3830,10 +3848,6 @@ impl Widget for Message {
                 )
             )
         }
-
-        self.view
-            .button(id!(reply_button))
-            .set_visible(self.can_be_replied_to);
 
         self.view.draw_walk(cx, scope, walk)
     }
