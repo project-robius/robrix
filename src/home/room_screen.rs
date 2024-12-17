@@ -74,7 +74,7 @@ live_design! {
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
-    NO_POST_PERMISSION_NOTICE = "You don't have permission to post to this room."
+    CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
 
     FillerY = <View> {width: Fill}
 
@@ -916,7 +916,7 @@ live_design! {
                         icon_walk: {width: 18.0, height: Fit},
                     }
                 }
-                no_send_permission_notice = <View> {
+                can_not_send_message_notice = <View> {
                     visible: false
                     show_bg: true
                     draw_bg: {
@@ -931,7 +931,7 @@ live_design! {
                             color: (COLOR_TEXT)
                             text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
                         }
-                        text: (NO_POST_PERMISSION_NOTICE)
+                        text: (CAN_NOT_SEND_NOTICE)
                     }
                 }
             }
@@ -1734,11 +1734,11 @@ impl RoomScreen {
 
                 TimelineUpdate::CanUserSendMessage(can_user_send_message) => {
                     let input_bar = self.view.view(id!(input_bar));
-                    let no_send_permission_notice = self.view.view(id!(no_send_permission_notice));
+                    let can_not_send_message_notice = self.view.view(id!(can_not_send_message_notice));
 
                     //Set the visibility of the corresponding component for both cases.
                     input_bar.set_visible(can_user_send_message);
-                    no_send_permission_notice.set_visible(!can_user_send_message);
+                    can_not_send_message_notice.set_visible(!can_user_send_message);
                 }
             }
         }
@@ -1863,7 +1863,7 @@ impl RoomScreen {
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
-        self.check_user_post_permission();
+        self.check_can_user_send_message();
 
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
@@ -2131,7 +2131,7 @@ impl RoomScreen {
     }
 
     /// Send request as `MatrixRequest` to check post permission.
-    fn check_user_post_permission(&self) {
+    fn check_can_user_send_message(&self) {
         if let Some(room_id) = self.room_id.clone() {
             submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id })
         }

@@ -794,13 +794,13 @@ async fn async_worker(
                 let Some(client) = CLIENT.get() else { continue };
                 let Some(user_id) = client.user_id() else { continue };
 
-                let _check_user_send_permission_task = Handle::current().spawn(async move {
+                let _check_can_user_send_message_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
                     let can_user_send_message = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(false);
 
                     if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
-                        error!("Failed to send the result of user send permission: {e}")
+                        error!("Failed to send the result of if user can send message: {e}")
                     }
                 });
             }
