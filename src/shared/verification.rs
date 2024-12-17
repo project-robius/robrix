@@ -108,7 +108,6 @@ live_design! {
             width: Fill
             height: Fill
 
-            // padding: {top: 60}
             align: {y: 0.95}
 
             <RoundedView> {
