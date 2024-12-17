@@ -221,14 +221,18 @@ pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
                 &LinkKind::Url => {
                     linkified_text = format!(
                         "{linkified_text}{}<a href=\"{link_txt}\">{}</a>",
-                        text.get(last_end_index..link.start()).unwrap_or_default(),
+                        htmlize::escape_text(
+                            text.get(last_end_index..link.start()).unwrap_or_default()
+                        ),
                         htmlize::escape_attribute(link_txt),
                     );
                 }
                 &LinkKind::Email => {
                     linkified_text = format!(
                         "{linkified_text}{}<a href=\"mailto:{link_txt}\">{}</a>",
-                        text.get(last_end_index..link.start()).unwrap_or_default(),
+                        htmlize::escape_text(
+                            text.get(last_end_index..link.start()).unwrap_or_default(),
+                        ),
                         htmlize::escape_attribute(link_txt),
                     );
                 }
@@ -237,7 +241,11 @@ pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
         }
         last_end_index = link.end();
     }
-    linkified_text.push_str(text.get(last_end_index..).unwrap_or_default());
+    linkified_text.push_str(
+        &htmlize::escape_attribute(
+            text.get(last_end_index..).unwrap_or_default()
+        )
+    );
     Cow::Owned(linkified_text)
 }
 
