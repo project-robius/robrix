@@ -358,9 +358,7 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
-    /// Toggle a reaction on the given event in the given room.
-    /// 
-    /// Either add to or subtract from the reaction count.
+    /// Toggles the given reaction to the given event in the given room.
     ToggleReaction {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
