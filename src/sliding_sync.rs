@@ -362,7 +362,7 @@ pub enum MatrixRequest {
     ToggleReaction {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
-        reaction_key: String,
+        reaction: String,
     }
 }
 
