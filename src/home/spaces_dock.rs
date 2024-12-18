@@ -13,7 +13,7 @@ live_design! {
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
     import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::verification::*;
+    import crate::shared::verification_badge::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
