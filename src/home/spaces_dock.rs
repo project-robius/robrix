@@ -17,6 +17,7 @@ live_design! {
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
+    ICON_LOGOUT = dep("crate://self/resources/icons/logout.svg")
 
     Filler = <View> {
         height: Fill, width: Fill
@@ -102,6 +103,30 @@ live_design! {
         }
     }
 
+    Logout = <View> {
+        width: Fit, height: Fit
+        padding: {top: 8, left: 8, right: 12, bottom: 8}
+        align: {x: 0.5, y: 0.5}
+        <Button> {
+            draw_bg: {
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    return sdf.result
+                }
+            }
+
+            draw_icon: {
+                svg_file: (ICON_LOGOUT),
+                fn get_color(self) -> vec4 {
+                    return (COLOR_DANGER_RED);
+                    // return #x566287; // grayed-out #1C274C until enabled
+                }
+            }
+
+            icon_walk: {width: 25, height: Fit}
+        }
+    }
+
     Settings = <View> {
         width: Fit, height: Fit
         // FIXME: the extra padding on the right is because the icon is not correctly centered
@@ -145,6 +170,8 @@ live_design! {
             <Home> {}
 
             <Filler> {}
+
+            <Logout> {}
 
             <Settings> {}
         }
