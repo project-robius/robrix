@@ -1866,7 +1866,10 @@ impl RoomScreen {
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
-        self.check_can_user_send_message();
+        // Send request as `MatrixRequest` to check post permission.
+        if let Some(room_id) = self.room_id.clone() {
+            submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id })
+        }
 
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
@@ -2131,13 +2134,6 @@ impl RoomScreen {
             });
         }
         tl.last_scrolled_index = first_index;
-    }
-
-    /// Send request as `MatrixRequest` to check post permission.
-    fn check_can_user_send_message(&self) {
-        if let Some(room_id) = self.room_id.clone() {
-            submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id })
-        }
     }
 }
 

@@ -358,7 +358,9 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
-    /// Sends user permission's checking once user entered room.
+    /// Sends a request checking if the currently logged-in user can send a message to the given room.
+    ///
+    /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
     CheckCanUserSendMessage{
         room_id: OwnedRoomId,
     }
@@ -791,13 +793,17 @@ async fn async_worker(
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
-                let Some(client) = CLIENT.get() else { continue };
-                let Some(user_id) = client.user_id() else { continue };
+                let Some(user_id) = current_user_id() else { continue };
 
                 let _check_can_user_send_message_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
-                    let can_user_send_message = room.can_user_send_message(user_id, matrix_sdk::ruma::events::MessageLikeEventType::Message).await.unwrap_or(false);
+                    let can_user_send_message = room.can_user_send_message(
+                        &user_id,
+                        matrix_sdk::ruma::events::MessageLikeEventType::Message
+                    )
+                    .await
+                    .unwrap_or(false);
 
                     if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
                         error!("Failed to send the result of if user can send message: {e}")
@@ -1923,8 +1929,7 @@ fn update_latest_event(
                 room_avatar_changed = true;
             }
             AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
-                let id = room_id.clone();
-                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: id })
+                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
             }
             _ => { }
         }
