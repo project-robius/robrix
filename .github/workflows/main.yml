@@ -1,7 +1,7 @@
 # Trigger CI on PR updates and main branch pushes
 # Uses caching and selective path triggers to optimize performance
 
-name: Robrix Rust CI
+name: Robrix CI
 
 # Only `main` branch
 on:
@@ -45,7 +45,7 @@ jobs:
   # Basic compilation check to ensure code builds
   check:
     if: github.event.pull_request.draft == false
-    name: Check
+    name: cargo check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +60,7 @@ jobs:
 
   clippy:
     if: github.event.pull_request.draft == false
-    name: Clippy
+    name: clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +77,7 @@ jobs:
 
   typos:
     if: github.event.pull_request.draft == false
-    name: Check for typos
+    name: typos
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

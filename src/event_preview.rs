@@ -164,9 +164,9 @@ pub fn text_preview_of_message(
         MessageType::Text(text) => {
             text.formatted.as_ref()
                 .and_then(|fb| (fb.format == MessageFormat::Html)
-                    .then(|| utils::linkify(&fb.body).to_string())
+                    .then(|| utils::linkify(&fb.body, true).to_string())
                 )
-                .unwrap_or_else(|| utils::linkify(&text.body).to_string())
+                .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
         }
         MessageType::VerificationRequest(verification) => format!(
             "[Verification Request] <i>to user {}</i>",
