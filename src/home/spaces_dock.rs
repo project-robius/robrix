@@ -37,14 +37,10 @@ live_design! {
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
-                    //The center of the circle we are going to draw.
                     let c = self.rect_size * 0.5;
 
-                    //The radius of the circle
                     let r = self.rect_size * 0.38;
 
-                    //We just keeping the center position of sdf fixed, which is equal to center of the cisrcle,
-                    //while reducing the circle's radius.
                     sdf.circle(c.x, c.x, r.x);
                     sdf.fill_keep(self.background_color);
                     return sdf.result
@@ -181,17 +177,17 @@ live_design! {
     }
 }
 struct VerificationNotice {
-    yes: String,
-    no: String,
-    unk: String,
+    yes: &'static str,
+    no: &'static str,
+    unk: &'static str,
 }
 
 impl Default for VerificationNotice{
     fn default() -> Self {
         Self {
-            yes: String::from("This device is fully verified."),
-            no: String::from("This device is unverified. To view your encrypted message history, please verify it from another client."),
-            unk: String::from("Verification state is unknown."),
+            yes: "This device is fully verified.",
+            no: "This device is unverified. To view your encrypted message history, please verify it from another client.",
+            unk: "Verification state is unknown.",
         }
     }
 }
@@ -228,9 +224,9 @@ impl Widget for Profile {
 
             if self.view(id!(verification_icon)).area().rect(cx).contains(e.abs) {
                 let text = match self.verification_state {
-                    VerificationState::Unknown => &self.verification_notice.unk,
-                    VerificationState::Unverified => &self.verification_notice.no,
-                    VerificationState::Verified => &self.verification_notice.yes
+                    VerificationState::Unknown => self.verification_notice.unk,
+                    VerificationState::Unverified => self.verification_notice.no,
+                    VerificationState::Verified => self.verification_notice.yes
                 };
 
                 //Determine if it's a desktop or mobile layout,

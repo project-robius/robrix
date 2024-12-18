@@ -106,6 +106,10 @@ live_design! {
             //Same as `VerificationNoticeDesktop`
             width: Fill, height: Fill
 
+            // Via setting suitable align & padding,
+            // we can simulate a relative position to make the tootip follow widget `Profile (U)`,
+            // this is not a perfect solution.
+            // TODO: Find a way to follow widget `Profile (U)` more precisely.
             align: { x: 0.43, y: 1. }
             padding: { left: 30., bottom: 31. }
 
