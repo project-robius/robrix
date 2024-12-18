@@ -97,6 +97,7 @@ pub async fn restore_session(
         log!("Could not find previous session file for user {user_id}");
         bail!("Could not find previous session file");
     }
+
     let status_str = format!("Loading previous session file for {user_id}...");
     log!("{status_str}: '{}'", session_file.display());
     Cx::post_action(LoginAction::Status(status_str));
