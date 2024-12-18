@@ -228,16 +228,18 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
             match link.kind() {
                 LinkKind::Url => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{link_txt}\">{}</a>",
+                        "{linkified_text}{}<a href=\"{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 LinkKind::Email => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{link_txt}\">{}</a>",
+                        "{linkified_text}{}<a href=\"mailto:{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 _ => return Cow::Borrowed(text), // unreachable
@@ -248,6 +250,7 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
+    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
     Cow::Owned(linkified_text)
 }
 
