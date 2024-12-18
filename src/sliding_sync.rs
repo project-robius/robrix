@@ -1671,190 +1671,186 @@ async fn timeline_subscriber_handler(
 
         // Handle updates to the actual timeline content.
         batch_opt = subscriber.next() => {
-            if let Some(batch) = batch_opt {
-                let mut num_updates = 0;
-                // For now we always requery the latest event, but this can be better optimized.
-                let mut reobtain_latest_event = true;
-                let mut index_of_first_change = usize::MAX;
-                let mut index_of_last_change = usize::MIN;
-                // whether to clear the entire cache of drawn items
-                let mut clear_cache = false;
-                // whether the changes include items being appended to the end of the timeline
-                let mut is_append = false;
-                for diff in batch {
-                    num_updates += 1;
-                    match diff {
-                        VectorDiff::Append { values } => {
-                            let _values_len = values.len();
-                            index_of_first_change = min(index_of_first_change, timeline_items.len());
-                            timeline_items.extend(values);
-                            index_of_last_change = max(index_of_last_change, timeline_items.len());
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
-                            is_append = true;
+            let Some(batch) = batch_opt else { break };
+            let mut num_updates = 0;
+            // For now we always requery the latest event, but this can be better optimized.
+            let mut reobtain_latest_event = true;
+            let mut index_of_first_change = usize::MAX;
+            let mut index_of_last_change = usize::MIN;
+            // whether to clear the entire cache of drawn items
+            let mut clear_cache = false;
+            // whether the changes include items being appended to the end of the timeline
+            let mut is_append = false;
+            for diff in batch {
+                num_updates += 1;
+                match diff {
+                    VectorDiff::Append { values } => {
+                        let _values_len = values.len();
+                        index_of_first_change = min(index_of_first_change, timeline_items.len());
+                        timeline_items.extend(values);
+                        index_of_last_change = max(index_of_last_change, timeline_items.len());
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                        is_append = true;
+                    }
+                    VectorDiff::Clear => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Clear"); }
+                        clear_cache = true;
+                        timeline_items.clear();
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::PushFront { value } => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushFront"); }
+                        if let Some((index, _ev)) = found_target_event_id.as_mut() {
+                            *index += 1; // account for this new `value` being prepended.
+                        } else {
+                            found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value));
                         }
-                        VectorDiff::Clear => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Clear"); }
-                            clear_cache = true;
-                            timeline_items.clear();
-                            reobtain_latest_event = true;
-                        }
-                        VectorDiff::PushFront { value } => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushFront"); }
-                            if let Some((index, _ev)) = found_target_event_id.as_mut() {
-                                *index += 1; // account for this new `value` being prepended.
-                            } else {
-                                found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value));
-                            }
-                            
-                            clear_cache = true;
-                            timeline_items.push_front(value);
-                            reobtain_latest_event |= latest_event.is_none();
-                        }
-                        VectorDiff::PushBack { value } => {
-                            index_of_first_change = min(index_of_first_change, timeline_items.len());
-                            timeline_items.push_back(value);
-                            index_of_last_change = max(index_of_last_change, timeline_items.len());
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
-                            is_append = true;
-                        }
-                        VectorDiff::PopFront => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopFront"); }
-                            clear_cache = true;
-                            timeline_items.pop_front();
-                            if let Some((i, _ev)) = found_target_event_id.as_mut() {
-                                *i = i.saturating_sub(1); // account for the first item being removed.
-                            }
-                            // This doesn't affect whether we should reobtain the latest event.
-                        }
-                        VectorDiff::PopBack => {
-                            timeline_items.pop_back();
-                            index_of_first_change = min(index_of_first_change, timeline_items.len());
-                            index_of_last_change = usize::MAX;
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
-                        }
-                        VectorDiff::Insert { index, value } => {
-                            if index == 0 {
-                                clear_cache = true;
-                            } else {
-                                index_of_first_change = min(index_of_first_change, index);
-                                index_of_last_change = usize::MAX;
-                            }
-                            if index >= timeline_items.len() {
-                                is_append = true;
-                            }
 
-                            if let Some((i, _ev)) = found_target_event_id.as_mut() {
-                                // account for this new `value` being inserted before the previously-found target event's index.
-                                if index <= *i {
-                                    *i += 1;
-                                }
-                            } else {
-                                found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value))
-                                    .map(|(i, ev)| (i + index, ev));
-                            }
-
-                            timeline_items.insert(index, value);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
+                        clear_cache = true;
+                        timeline_items.push_front(value);
+                        reobtain_latest_event |= latest_event.is_none();
+                    }
+                    VectorDiff::PushBack { value } => {
+                        index_of_first_change = min(index_of_first_change, timeline_items.len());
+                        timeline_items.push_back(value);
+                        index_of_last_change = max(index_of_last_change, timeline_items.len());
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                        is_append = true;
+                    }
+                    VectorDiff::PopFront => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopFront"); }
+                        clear_cache = true;
+                        timeline_items.pop_front();
+                        if let Some((i, _ev)) = found_target_event_id.as_mut() {
+                            *i = i.saturating_sub(1); // account for the first item being removed.
                         }
-                        VectorDiff::Set { index, value } => {
+                        // This doesn't affect whether we should reobtain the latest event.
+                    }
+                    VectorDiff::PopBack => {
+                        timeline_items.pop_back();
+                        index_of_first_change = min(index_of_first_change, timeline_items.len());
+                        index_of_last_change = usize::MAX;
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Insert { index, value } => {
+                        if index == 0 {
+                            clear_cache = true;
+                        } else {
                             index_of_first_change = min(index_of_first_change, index);
-                            index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
-                            timeline_items.set(index, value);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
+                            index_of_last_change = usize::MAX;
                         }
-                        VectorDiff::Remove { index } => {
-                            if index == 0 {
-                                clear_cache = true;
-                            } else {
-                                index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
-                                index_of_last_change = usize::MAX;
+                        if index >= timeline_items.len() {
+                            is_append = true;
+                        }
+
+                        if let Some((i, _ev)) = found_target_event_id.as_mut() {
+                            // account for this new `value` being inserted before the previously-found target event's index.
+                            if index <= *i {
+                                *i += 1;
                             }
-                            if let Some((i, _ev)) = found_target_event_id.as_mut() {
-                                // account for an item being removed before the previously-found target event's index.
-                                if index <= *i {
-                                    *i = i.saturating_sub(1);
-                                }
-                            } 
-                            timeline_items.remove(index);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
+                        } else {
+                            found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value))
+                                .map(|(i, ev)| (i + index, ev));
                         }
-                        VectorDiff::Truncate { length } => {
-                            if length == 0 {
-                                clear_cache = true;
-                            } else {
-                                index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
-                                index_of_last_change = usize::MAX;
+
+                        timeline_items.insert(index, value);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Set { index, value } => {
+                        index_of_first_change = min(index_of_first_change, index);
+                        index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
+                        timeline_items.set(index, value);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Remove { index } => {
+                        if index == 0 {
+                            clear_cache = true;
+                        } else {
+                            index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
+                            index_of_last_change = usize::MAX;
+                        }
+                        if let Some((i, _ev)) = found_target_event_id.as_mut() {
+                            // account for an item being removed before the previously-found target event's index.
+                            if index <= *i {
+                                *i = i.saturating_sub(1);
                             }
-                            timeline_items.truncate(length);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
                         }
-                        VectorDiff::Reset { values } => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Reset, new length {}", values.len()); }
-                            clear_cache = true; // we must assume all items have changed.
-                            timeline_items = values;
-                            reobtain_latest_event = true;
+                        timeline_items.remove(index);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Truncate { length } => {
+                        if length == 0 {
+                            clear_cache = true;
+                        } else {
+                            index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
+                            index_of_last_change = usize::MAX;
                         }
+                        timeline_items.truncate(length);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Reset { values } => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Reset, new length {}", values.len()); }
+                        clear_cache = true; // we must assume all items have changed.
+                        timeline_items = values;
+                        reobtain_latest_event = true;
                     }
                 }
-        
-                if num_updates > 0 {
-                    let new_latest_event = if reobtain_latest_event {
-                        timeline.latest_event().await
-                    } else {
-                        None
-                    };
-        
-                    let changed_indices = index_of_first_change..index_of_last_change;
-        
-                    if LOG_TIMELINE_DIFFS {
-                        log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
-                    }
-                    timeline_update_sender.send(TimelineUpdate::NewItems {
-                        new_items: timeline_items.clone(),
-                        changed_indices,
-                        clear_cache,
-                        is_append,
-                    }).expect("Error: timeline update sender couldn't send update with new items!");
-
-                    // We must send this update *after* the actual NewItems update,
-                    // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
-                    if let Some((index, found_event_id)) = found_target_event_id.take() {
-                        target_event_id = None;
-                        timeline_update_sender.send(
-                            TimelineUpdate::TargetEventFound {
-                                target_event_id: found_event_id.clone(),
-                                index,
-                            }
-                        ).unwrap_or_else(
-                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}!")
-                        );
-                    }
-
-                    // Send a Makepad-level signal to update this room's timeline UI view.
-                    SignalToUI::set_ui_signal();
-                
-                    // Update the latest event for this room.
-                    if let Some(new_latest) = new_latest_event {
-                        if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                            let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
-                            latest_event = Some(new_latest);
-                            if room_avatar_changed {
-                                spawn_fetch_room_avatar(room.clone());
-                            }
-                        }
-                    }
-                }
-            } else {
-                break;
             }
 
+            if num_updates > 0 {
+                let new_latest_event = if reobtain_latest_event {
+                    timeline.latest_event().await
+                } else {
+                    None
+                };
+
+                let changed_indices = index_of_first_change..index_of_last_change;
+
+                if LOG_TIMELINE_DIFFS {
+                    log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
+                }
+                timeline_update_sender.send(TimelineUpdate::NewItems {
+                    new_items: timeline_items.clone(),
+                    changed_indices,
+                    clear_cache,
+                    is_append,
+                }).expect("Error: timeline update sender couldn't send update with new items!");
+
+                // We must send this update *after* the actual NewItems update,
+                // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
+                if let Some((index, found_event_id)) = found_target_event_id.take() {
+                    target_event_id = None;
+                    timeline_update_sender.send(
+                        TimelineUpdate::TargetEventFound {
+                            target_event_id: found_event_id.clone(),
+                            index,
+                        }
+                    ).unwrap_or_else(
+                        |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}!")
+                    );
+                }
+
+                // Send a Makepad-level signal to update this room's timeline UI view.
+                SignalToUI::set_ui_signal();
+
+                // Update the latest event for this room.
+                if let Some(new_latest) = new_latest_event {
+                    if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
+                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
+                        latest_event = Some(new_latest);
+                        if room_avatar_changed {
+                            spawn_fetch_room_avatar(room.clone());
+                        }
+                    }
+                }
+            }
         }
 
         else => {
