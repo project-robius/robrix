@@ -144,7 +144,7 @@ impl LiveHook for MatrixHtmlSpan {
                 if let Some(doc) = scope.props.get::<HtmlDoc>() {
                     let mut walker = doc.new_walker_with_index(scope.index + 1);
                     while let Some((lc, attr)) = walker.while_attr_lc(){
-                        let attr = attr.trim_matches(&['"', '\'']);
+                        let attr = attr.trim_matches(['"', '\'']);
                         match lc {
                             live_id!(color)
                             | live_id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),

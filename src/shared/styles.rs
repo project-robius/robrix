@@ -81,6 +81,7 @@ live_design! {
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
 
     pub COLOR_UNREAD_MESSAGE_BADGE = (COLOR_AVATAR_BG)
+    pub COLOR_TOOLTIP_BG = (COLOR_SECONDARY)
 
     pub COLOR_TEXT_IDLE = #d8d8d8
     pub COLOR_TEXT = #1C274C

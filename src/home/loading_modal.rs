@@ -159,7 +159,7 @@ impl WidgetMatchEvent for LoadingModal {
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         if cancel_button.clicked(actions) || modal_dismissed {
-            log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
+            // log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
             if let LoadingModalState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
                 let _did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();

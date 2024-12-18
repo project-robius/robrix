@@ -27,7 +27,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -253,6 +253,7 @@ live_design! {
         height: Fit,
         margin: 0.0
         flow: Down,
+        cursor: Default,
         padding: 0.0,
         spacing: 0.0
 
@@ -463,6 +464,7 @@ live_design! {
         width: Fill,
         height: Fit,
         margin: 0.0
+        cursor: Default
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
@@ -705,6 +707,7 @@ live_design! {
 
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
+        cursor: Default,
         show_bg: true,
         draw_bg: {
             color: (COLOR_SECONDARY)
@@ -2133,7 +2136,7 @@ pub enum TimelineUpdate {
         /// resulted in new items being *appended to the end* of the timeline.
         is_append: bool,
         /// Whether to clear the entire cache of drawn items in the timeline.
-        /// This supercedes `index_of_first_change` and is used when the entire timeline is being redrawn.
+        /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
     },
     /// The target event ID was found at the given `index` in the timeline items vector.
@@ -2250,7 +2253,7 @@ struct TimelineUiState {
     /// a reply preview, ends. so we keep a small state for it.
     /// By default, it starts in Off.
     /// Once the scrolling is started, the state becomes Pending.
-    /// If the animation was trigged, the state goes back to Off.
+    /// If the animation was triggered, the state goes back to Off.
     message_highlight_animation_state: MessageHighlightAnimationState,
 
     /// The index of the timeline item that was most recently scrolled up past it.
@@ -2293,7 +2296,7 @@ struct SavedState {
 /// of a visible item in the given `curr_items` list.
 ///
 /// This info includes a tuple of:
-/// 1. the index of the item in the currennt items list,
+/// 1. the index of the item in the current items list,
 /// 2. the index of the item in the new items list,
 /// 3. the positional "scroll" offset of the corresponding current item in the portal list,
 /// 4. the unique event ID of the item.
@@ -2870,7 +2873,7 @@ fn populate_message_view(
         return (item, new_drawn_status);
     }
 
-    // Set the Message widget's metatdata for reply-handling purposes.
+    // Set the Message widget's metadata for reply-handling purposes.
     item.as_message().set_data(
         event_tl_item.can_be_replied_to(),
         item_id,
@@ -2900,20 +2903,17 @@ fn populate_message_view(
 }
 
 
-/// Returns `true` if the given message mentions the current user.
+/// Returns `true` if the given message mentions the current user or is a room mention.
 fn does_message_mention_current_user(
     message: &timeline::Message,
 ) -> bool {
-    let Some(client) = get_client() else {
-        return false;
-    };
-    let Some(current_user_id) = client.user_id() else {
+    let Some(current_user_id) = sliding_sync::current_user_id() else {
         return false;
     };
 
-    // This covers both direct mentions ("@user") and a replied-to message.
-    message.mentions().is_some_and(
-        |mentions| mentions.user_ids.contains(current_user_id)
+    // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
+    message.mentions().is_some_and(|mentions|
+        mentions.room || mentions.user_ids.contains(&current_user_id)
     )
 }
 
@@ -2926,9 +2926,9 @@ fn populate_text_message_content(
     if let Some(formatted_body) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
     {
-        message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
+        message_content_widget.show_html(utils::linkify(formatted_body.as_ref(), true));
     } else {
-        match utils::linkify(body) {
+        match utils::linkify(body, false) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
         }
@@ -2957,7 +2957,7 @@ fn populate_image_message_content(
     // then show a message about it being unsupported.
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
-            text_or_image_ref.show_text(&format!(
+            text_or_image_ref.show_text(format!(
                 "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
             return true;
@@ -2983,13 +2983,13 @@ fn populate_image_message_content(
                     true
                 }
                 MediaCacheEntry::Requested => {
-                    text_or_image_ref.show_text(&format!("{body}\n\nFetching image from {:?}", mxc_uri));
+                    text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
                     // Do not consider this image as being fully drawn, as we're still fetching it.
                     false
                 }
                 MediaCacheEntry::Failed => {
                     text_or_image_ref
-                        .show_text(&format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                        .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                     // For now, we consider this as being "complete". In the future, we could support
                     // retrying to fetch the image on a user click/tap.
                     true
@@ -2997,7 +2997,7 @@ fn populate_image_message_content(
             }
         }
         Some(MediaSource::Encrypted(encrypted)) => {
-            text_or_image_ref.show_text(&format!(
+            text_or_image_ref.show_text(format!(
                 "{body}\n\n[TODO] fetch encrypted image at {:?}",
                 encrypted.url
             ));
@@ -3286,7 +3286,7 @@ fn draw_reactions(
         return;
     }
 
-    // The message annotaions view is invisible by default, so we must set it to visible
+    // The message annotations view is invisible by default, so we must set it to visible
     // now that we know there are reactions to show.
     message_item
         .view(id!(content.message_annotations))

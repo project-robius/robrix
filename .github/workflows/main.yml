@@ -1,0 +1,85 @@
+# Trigger CI on PR updates and main branch pushes
+# Uses caching and selective path triggers to optimize performance
+
+name: Robrix CI
+
+# Only `main` branch
+on:
+    push:
+      branches:
+        - main
+      paths:
+        - packaging/**
+        - resources/**
+        - src/**
+        - .github/**
+        - Cargo.toml
+        - rust-toolchain.toml
+
+    pull_request:
+      types: [opened, synchronize, reopened, ready_for_review]
+      branches:
+        - main
+      paths:
+        - packaging/**
+        - resources/**
+        - src/**
+        - .github/**
+        - Cargo.toml
+        - rust-toolchain.toml
+
+# Prevent concurrent CI runs and cancel in-progress runs on new pushes
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+# Global environment configuration
+env:
+    CARGO_TERM_COLOR: always
+    CARGO_INCREMENTAL: "0"  # Disable incremental compilation in CI
+    RUST_BACKTRACE: 1
+    # Enable warnings as errors for strict checks
+    RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Basic compilation check to ensure code builds
+  check:
+    if: github.event.pull_request.draft == false
+    name: cargo check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Cache dependencies to speed up builds
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          cache-on-failure: "true"
+      # Check if the code compiles with all features
+      - run: cargo check --workspace --all-features --all-targets
+
+  clippy:
+    if: github.event.pull_request.draft == false
+    name: clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-all-crates: "true"
+          cache-on-failure: "true"
+      # Run clippy with custom configuration for makepad DSL
+      # Allow pedantic / needless_lifetimes / too_many_arguments
+      - run: cargo clippy --workspace --examples --tests --all-features --all-targets
+
+  typos:
+    if: github.event.pull_request.draft == false
+    name: typos
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check for typos
+        uses: crate-ci/typos@master

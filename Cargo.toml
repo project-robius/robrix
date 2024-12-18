@@ -198,8 +198,17 @@ appdata_paths = [
     "$LOCALAPPDATA/$PRODUCTNAME",
 ]
 
+[lints.rust]
+keyword_idents_2024 = "forbid"
+non_ascii_idents = "forbid"
+non_local_definitions = "forbid"
+unsafe_op_in_unsafe_fn = "forbid"
 
-## Configuration for clippy
+unexpected_cfgs = "warn"
+unnameable_types = "warn"
+unused_import_braces = "warn"
+
+## Configuration for clippy lints.
 [lints.clippy]
 collapsible_if = "allow"
 collapsible_else_if = "allow"

@@ -94,7 +94,7 @@ impl JumpToBottomButton {
     ///   the unread message badge are made invisible, because we consider all messages
     ///   to be read by the user if the timeline has reached the bottom.
     /// * If `is_at_bottom` is `false`, only the main jump to bottom "parent" view
-    ///   is made visibile; the unread message badge is *not* made visible, as that is done
+    ///   is made visible; the unread message badge is *not* made visible, as that is done
     ///   via a separate call to [`JumpToBottomButton::show_unread_message_badge()`].
     pub fn update_visibility(&mut self, is_at_bottom: bool) {
         if is_at_bottom {

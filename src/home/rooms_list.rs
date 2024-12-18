@@ -261,6 +261,7 @@ impl Widget for RoomsList {
                                 self.displayed_rooms.push(room_id);
                             }
                         }
+                        self.update_status_rooms_count();
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
@@ -312,6 +313,8 @@ impl Widget for RoomsList {
                                 error!("Error: couldn't find room {room_id} to remove room");
                             });
 
+                        self.update_status_rooms_count();
+
                         // TODO: send an action to the RoomScreen to hide this room
                         //       if it is currently being displayed,
                         //       and also ensure that the room's TimelineUIState is preserved
@@ -323,6 +326,7 @@ impl Widget for RoomsList {
                     RoomsListUpdate::ClearRooms => {
                         self.all_rooms.clear();
                         self.displayed_rooms.clear();
+                        self.update_status_rooms_count();
                     }
                     RoomsListUpdate::NotLoaded => {
                         self.status = "Loading rooms (waiting for homeserver)...".to_string();
