@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
-use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::AppState, shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::room_preview::RoomPreviewAction;
 
@@ -240,6 +240,7 @@ impl RoomsList {
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
+        enqueue_popup_notification(self.status.clone());
     }
 }
 
@@ -331,6 +332,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::NotLoaded => {
                         self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                        enqueue_popup_notification(self.status.clone());
                     }
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;

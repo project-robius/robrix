@@ -18,6 +18,7 @@ live_design! {
     import crate::profile::my_profile_screen::MyProfileScreen;
     import crate::verification_modal::VerificationModal;
     import crate::login::login_screen::LoginScreen;
+    import crate::shared::popup_list::PopupList;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
@@ -127,6 +128,12 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+                    popup = <PopupNotification> {
+                        margin: {top:40,right: 15},
+                        content: {
+                            <PopupList> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -166,14 +173,17 @@ impl LiveHook for App {
 }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
+    fn handle_startup(&mut self, cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
         self.update_login_visibility();
-
+        // Open the popup notification overlay on startup
+        // as the overlay content is a list of notifications.
+        // Nothing will be shown until there is a notification in the list.
+        self.ui.popup_notification(id!(popup)).open(cx);
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
