@@ -51,7 +51,7 @@ live_design! {
         }
     }
 
-    VerificationNoticeDesktop = <TooltipBase> {
+    VerificationNotice = <TooltipBase> {
         width: Fill, height: Fill,
         flow: Overlay
 
@@ -67,51 +67,6 @@ live_design! {
             //The 'Fill' allows it shows anywhere we want over the app screen,
             //our goal is to set the global relative position to make it an illusion of following the cursor.
             width: Fill, height: Fill
-
-            <RoundedView> {
-                width: Fit, height: Fit,
-                padding: 7,
-
-                draw_bg: {
-                    color: (COLOR_TOOLTIP_BG),
-                    border_width: 1.0,
-                    border_color: #000000,
-                    radius: 2.5
-                }
-
-                tooltip_label = <Label> {
-                    width: 230
-                    draw_text: {
-                        text_style: <THEME_FONT_REGULAR>{font_size: SMALL_STATE_FONT_SIZE},
-                        text_wrap: Word,
-                        color: #000
-                    }
-                }
-            }
-        }
-    }
-    VerificationNoticeMobile = <TooltipBase> {
-        width: Fill, height: Fill,
-        flow: Overlay
-
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                return vec4(0., 0., 0., 0.0)
-            }
-        }
-
-        content: <View> {
-            flow: Overlay
-
-            //Same as `VerificationNoticeDesktop`
-            width: Fill, height: Fill
-
-            // Via setting suitable align & padding,
-            // we can simulate a relative position to make the tootip follow widget `Profile (U)`,
-            // this is not a perfect solution.
-            // TODO: Find a way to follow widget `Profile (U)` more precisely.
-            align: { x: 0.43, y: 1. }
-            padding: { left: 30., bottom: 31. }
 
             <RoundedView> {
                 width: Fit, height: Fit,

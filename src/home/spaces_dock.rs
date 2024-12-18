@@ -70,8 +70,7 @@ live_design! {
                 icon_unk = <IconUnk> {}
             }
         }
-        verification_notice_desktop = <VerificationNoticeDesktop> { }
-        verification_notice_mobile = <VerificationNoticeMobile> { }
+        verification_notice = <VerificationNotice> { }
     }
 
     Separator = <LineH> {
@@ -176,13 +175,13 @@ live_design! {
         }
     }
 }
-struct VerificationNotice {
+struct VerificationNoticeText {
     yes: &'static str,
     no: &'static str,
     unk: &'static str,
 }
 
-impl Default for VerificationNotice{
+impl Default for VerificationNoticeText{
     fn default() -> Self {
         Self {
             yes: "This device is fully verified.",
@@ -199,7 +198,7 @@ pub struct Profile {
     #[rust(VerificationState::Unknown)]
     verification_state: VerificationState,
     #[rust]
-    verification_notice: VerificationNotice,
+    verification_notice_text: VerificationNoticeText,
 }
 
 impl Profile {
@@ -219,30 +218,38 @@ impl Profile {
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::MouseMove(e) = event {
-            let mut verification_notice_desktop = self.tooltip(id!(verification_notice_desktop));
-            let mut verification_notice_mobile = self.tooltip(id!(verification_notice_mobile));
+            let mut verification_notice = self.tooltip(id!(verification_notice));
 
             if self.view(id!(verification_icon)).area().rect(cx).contains(e.abs) {
                 let text = match self.verification_state {
-                    VerificationState::Unknown => self.verification_notice.unk,
-                    VerificationState::Unverified => self.verification_notice.no,
-                    VerificationState::Verified => self.verification_notice.yes
+                    VerificationState::Unknown => self.verification_notice_text.unk,
+                    VerificationState::Unverified => self.verification_notice_text.no,
+                    VerificationState::Verified => self.verification_notice_text.yes
                 };
 
                 //Determine if it's a desktop or mobile layout,
                 //then we set the relative position so that the tooltip looks like following the cursor.
                 if cx.get_global::<DisplayContext>().is_desktop() {
-                    verification_notice_desktop.show_with_options(cx, DVec2 {x: 65., y: 23.}, text);
+                    verification_notice.show_with_options(cx, DVec2 {x: 65., y: 23.}, text);
                 }
                 else {
-                    verification_notice_mobile.set_text(text);
-                    verification_notice_mobile.show(cx);
+                    verification_notice.apply_over(cx, live!{
+                        content: {
+
+                            // Via setting suitable align & padding,
+                            // we can simulate a relative position to make the tootip follow widget `Profile (U)`,
+                            // this is not a perfect solution.
+                            // TODO: Find a way to follow widget `Profile (U)` more precisely.
+                            align: { x: 0.43, y: 1. }
+                            padding: { left: 30., bottom: 31. }
+                        }
+                    });
+                    verification_notice.show_with_options(cx, DVec2 {x: 0., y: 0.}, text);
                 }
             }
             //Hide it if cursor is not hovering.
             else {
-                verification_notice_desktop.hide(cx);
-                verification_notice_mobile.hide(cx)
+                verification_notice.hide(cx);
             }
         }
 
