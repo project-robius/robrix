@@ -93,14 +93,14 @@ impl DerefMut for UserProfileAndRoomId {
 }
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::helpers::*;
-    import crate::shared::styles::*;
-    import crate::shared::avatar::*;
-    import crate::shared::icon_button::*;
+    use crate::shared::helpers::*;
+    use crate::shared::styles::*;
+    use crate::shared::avatar::*;
+    use crate::shared::icon_button::*;
 
     // Copied from Moxin
     FadeView = <CachedView> {
@@ -275,7 +275,7 @@ live_design! {
     }
 
 
-    UserProfileSlidingPane = {{UserProfileSlidingPane}} {
+    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
         flow: Overlay,
         width: Fill,
         height: Fill,

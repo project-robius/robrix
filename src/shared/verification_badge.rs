@@ -1,11 +1,10 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
-
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+    use crate::shared::styles::*;
 
     VERIFICATION_YES = dep("crate://self/resources/icons/verification_yes.svg")
     VERIFICATION_NO = dep("crate://self/resources/icons/verification_no.svg")
@@ -14,7 +13,7 @@ live_design! {
     VerificationIcon = <Icon> {
         icon_walk: { width: 23 }
     }
-    IconYes = <View> {
+    pub IconYes = <View> {
         visible: false
         width: 31, height: 31
         <VerificationIcon> {
@@ -26,7 +25,7 @@ live_design! {
             }
         }
     }
-    IconNo = <View> {
+    pub IconNo = <View> {
         visible: false
         width: 31, height: 31
         <VerificationIcon> {
@@ -38,7 +37,7 @@ live_design! {
             }
         }
     }
-    IconUnk = <View> {
+    pub IconUnk = <View> {
         visible: false
         width: 31, height: 31
         <VerificationIcon> {
@@ -51,7 +50,7 @@ live_design! {
         }
     }
 
-    VerificationNotice = <TooltipBase> {
+    pub VerificationNotice = <TooltipBase> {
         width: Fill, height: Fill,
         flow: Overlay
 
@@ -82,7 +81,7 @@ live_design! {
                 tooltip_label = <Label> {
                     width: 230
                     draw_text: {
-                        text_style: <THEME_FONT_REGULAR>{font_size: SMALL_STATE_FONT_SIZE},
+                        text_style: <THEME_FONT_REGULAR> { font_size: (SMALL_STATE_FONT_SIZE) },
                         text_wrap: Word,
                         color: #000
                     }
