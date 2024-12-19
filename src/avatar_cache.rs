@@ -75,6 +75,7 @@ pub fn get_or_fetch_avatar(
             },
             Entry::Occupied(occupied) => return occupied.get().clone(),
         }
+
         submit_async_request(MatrixRequest::FetchAvatar {
             mxc_uri,
             on_fetched: enqueue_avatar_update,

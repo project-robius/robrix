@@ -50,14 +50,16 @@ pub struct AvatarRow {
     #[live]
     plus: Option<LivePtr>,
     // A vector containing its avatarRef and its drawn status
-    // Storing the drawn status helps prevent unnessary user profile request in the draw_walk function
+    // Storing the drawn status helps prevent unnecessary user profile request in the draw_walk function
     #[rust]
     buttons: Vec<(AvatarRef, bool)>,
     #[rust]
     label: Option<LabelRef>,
     #[rust]
     total_num_seen: usize,
-    #[redraw] #[rust] area: Area,
+    #[redraw] 
+    #[rust] 
+    area: Area,
     #[rust]
     human_readable_usernames: String, 
 }
