@@ -796,9 +796,7 @@ async fn async_worker(
                 let Some(user_id) = current_user_id() else { continue };
 
                 let _check_can_user_send_message_task = Handle::current().spawn(async move {
-                    let room = timeline.room();
-
-                    let can_user_send_message = room.can_user_send_message(
+                    let can_user_send_message = timeline.room().can_user_send_message(
                         &user_id,
                         matrix_sdk::ruma::events::MessageLikeEventType::Message
                     )
