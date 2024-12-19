@@ -104,7 +104,7 @@ live_design! {
         }
     }
 
-    Logout = <View> {
+    Logout = {{Logout}} {
         width: Fit, height: Fit
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
@@ -292,9 +292,6 @@ impl Widget for Profile {
 
 impl WidgetMatchEvent for Profile {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        if self.button(id!(logout_button)).clicked(actions) {
-            cx.action(LoginAction::Logout);
-        }
 
         for action in actions {
             if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
@@ -317,6 +314,30 @@ impl LiveHook for Profile {
 
             self.set_verification_icon_visibility();
             self.redraw(cx);
+        }
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct Logout {
+    #[deref] view: View
+}
+
+impl Widget for Logout {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.widget_match_event(cx, event, scope);
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for Logout {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+        if self.button(id!(logout_button)).clicked(actions) {
+            cx.action(LoginAction::Logout);
         }
     }
 }
