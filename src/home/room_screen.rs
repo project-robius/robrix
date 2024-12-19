@@ -74,6 +74,8 @@ live_design! {
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
 
+    CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
+
     FillerY = <View> {width: Fill}
 
     FillerX = <View> {height: Fill}
@@ -810,7 +812,7 @@ live_design! {
                 location_preview = <LocationPreview> { }
 
                 // Below that, display a view that holds the message input bar and send button.
-                <View> {
+                input_bar = <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {y: 0.5},
@@ -915,6 +917,24 @@ live_design! {
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
                         icon_walk: {width: 18.0, height: Fit},
+                    }
+                }
+                can_not_send_message_notice = <View> {
+                    visible: false
+                    show_bg: true
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
+                    padding: {left: 75}
+                    align: {y: 0.3}
+                    width: Fill, height: 37.5
+
+                    text = <Label> {
+                        draw_text: {
+                            color: (COLOR_TEXT)
+                            text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                        }
+                        text: (CAN_NOT_SEND_NOTICE)
                     }
                 }
             }
@@ -1714,6 +1734,14 @@ impl RoomScreen {
                     // if the list of typing users gets updated many times in a row.
                     typing_users = users;
                 }
+
+                TimelineUpdate::CanUserSendMessage(can_user_send_message) => {
+                    let input_bar = self.view.view(id!(input_bar));
+                    let can_not_send_message_notice = self.view.view(id!(can_not_send_message_notice));
+
+                    input_bar.set_visible(can_user_send_message);
+                    can_not_send_message_notice.set_visible(!can_user_send_message);
+                }
             }
         }
 
@@ -1844,6 +1872,9 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
+
+        // Send request as `MatrixRequest` to check post permission.
+        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() });
 
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
@@ -2181,6 +2212,9 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    /// A notice that the permission of user's ability to send messages in this room,
+    /// this condition is simple so that we only use `bool`
+    CanUserSendMessage (bool)
 }
 
 /// The global set of all timeline states, one entry per room.
