@@ -189,6 +189,24 @@ pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail
     }
 );
 
+/// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
+pub fn trim_start_html_whitespace(mut text: &str) -> &str {
+    let mut prev_text_len = text.len();
+    loop {
+        text = text
+            .trim_start_matches("<p>")
+            .trim_start_matches("<br>")
+            .trim_start_matches("<br/>")
+            .trim_start_matches("<br />")
+            .trim_start();
+
+        if text.len() == prev_text_len {
+            break;
+        }
+        prev_text_len = text.len();
+    }
+    text
+}
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
 pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {

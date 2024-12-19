@@ -2957,11 +2957,19 @@ fn populate_text_message_content(
     body: &str,
     formatted_body: Option<&FormattedBody>,
 ) {
-    if let Some(formatted_body) = formatted_body.as_ref()
-        .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
+    // The message was HTML-formatted rich text.
+    if let Some(fb) = formatted_body.as_ref()
+        .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        message_content_widget.show_html(utils::linkify(formatted_body.as_ref(), true));
-    } else {
+        message_content_widget.show_html(
+            utils::linkify(
+                utils::trim_start_html_whitespace(&fb.body),
+                true,
+            )
+        );
+    }
+    // The message was non-HTML plaintext.
+    else {
         match utils::linkify(body, false) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
@@ -3178,10 +3186,11 @@ fn populate_location_message_content(
         let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
         let html_body = format!(
-            "Location: {short_lat},{short_long}\
+            "Location: <a href=\"{}\">{short_lat},{short_long}</a><br>\
             <p><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></p>\
             <p><a href=\"https://www.google.com/maps/search/?api=1&amp;query={lat},{long}\">Open in Google Maps</a></p>\
             <p><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></p>",
+            location.geo_uri,
         );
         message_content_widget.show_html(html_body);
     } else {
