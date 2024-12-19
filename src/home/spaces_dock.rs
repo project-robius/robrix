@@ -1,6 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
+use crate::login::login_screen::LoginAction;
 use crate::shared::adaptive_view::DisplayContext;
 use crate::sliding_sync::get_client;
 use crate::verification::VerificationStateAction;
@@ -107,7 +108,7 @@ live_design! {
         width: Fit, height: Fit
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
-        <Button> {
+        logout_button = <Button> {
             draw_bg: {
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -280,7 +281,7 @@ impl Widget for Profile {
             }
         }
 
-        self.match_event(cx, event);
+        self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope)
     }
 
@@ -289,14 +290,20 @@ impl Widget for Profile {
     }
 }
 
-impl MatchEvent for Profile {
-    fn handle_action(&mut self, cx: &mut Cx, action:&Action) {
-        if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
-            if self.verification_state != *state {
-                self.verification_state = *state;
+impl WidgetMatchEvent for Profile {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+        if self.button(id!(logout_button)).clicked(actions) {
+            cx.action(LoginAction::Logout);
+        }
 
-                self.set_verification_icon_visibility();
-                self.redraw(cx);
+        for action in actions {
+            if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+                if self.verification_state != *state {
+                    self.verification_state = *state;
+    
+                    self.set_verification_icon_visibility();
+                    self.redraw(cx);
+                }
             }
         }
     }
