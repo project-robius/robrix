@@ -1739,7 +1739,6 @@ impl RoomScreen {
                     let input_bar = self.view.view(id!(input_bar));
                     let can_not_send_message_notice = self.view.view(id!(can_not_send_message_notice));
 
-                    //Set the visibility of the corresponding component for both cases.
                     input_bar.set_visible(can_user_send_message);
                     can_not_send_message_notice.set_visible(!can_user_send_message);
                 }
