@@ -40,21 +40,21 @@ const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
 
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::search_bar::SearchBar;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::text_or_image::TextOrImage;
-    import crate::shared::html_or_plaintext::*;
-    import crate::profile::user_profile::UserProfileSlidingPane;
-    import crate::shared::typing_animation::TypingAnimation;
-    import crate::shared::icon_button::*;
-    import crate::shared::jump_to_bottom_button::*;
-    import crate::home::loading_modal::*;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::search_bar::SearchBar;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::html_or_plaintext::*;
+    use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::shared::typing_animation::TypingAnimation;
+    use crate::shared::icon_button::*;
+    use crate::shared::jump_to_bottom_button::*;
+    use crate::home::loading_modal::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -707,7 +707,7 @@ live_design! {
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
 
-    RoomScreen = {{RoomScreen}} {
+    pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
         show_bg: true,

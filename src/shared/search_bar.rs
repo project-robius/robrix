@@ -1,16 +1,16 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::RobrixIconButton;
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::RobrixIconButton;
 
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
 
-    SearchBar = {{SearchBar}}<RoundedView> {
+    pub SearchBar = {{SearchBar}}<RoundedView> {
         width: Fill,
         height: Fit,
 

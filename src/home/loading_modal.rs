@@ -4,14 +4,14 @@ use matrix_sdk::ruma::OwnedEventId;
 use crate::sliding_sync::TimelineRequestSender;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::RobrixIconButton;
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::RobrixIconButton;
 
-    LoadingModal = {{LoadingModal}} {
+    pub LoadingModal = {{LoadingModal}} {
         width: Fit
         height: Fit
 
