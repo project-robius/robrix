@@ -103,8 +103,8 @@ live_design! {
     }
 
     pub RoomPreview = {{RoomPreview}} {
-        // Wraps the RoomPreviewContent in an AdaptiveView
-        // to change the displayed content (and its layout) based on the available space in the sidebar.
+        // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
+        // (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
@@ -121,7 +121,8 @@ live_design! {
                 avatar = <Avatar> {}
                 <View> {
                     flow: Down
-                    width: Fill, height: Fit
+                    width: Fill, height: 60
+                    spacing: 5
                     header = <View> {
                         width: Fill, height: Fit
                         flow: Right
