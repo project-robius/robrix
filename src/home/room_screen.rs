@@ -1749,7 +1749,7 @@ impl RoomScreen {
                         // an async request to get the rest of the details.
                         self.show_user_profile(
                             cx,
-                            &pane,
+                            pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id: UserProfileAndRoomId {
                                     user_profile: UserProfile {
