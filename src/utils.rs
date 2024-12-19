@@ -278,7 +278,7 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-/// Converts a list of names into a human-readable string with a chunk of 2 names in a line
+/// Converts a list of names into a human-readable string
 ///
 /// # Examples
 /// ```
@@ -292,19 +292,9 @@ pub fn human_readable_list(names: Vec<String>) -> String {
         1 => names[0].clone(),
         2 => format!("{} and {}", names[0], names[1]),
         _ => {
-            let mut result = String::new();
-            let chunked_names = names.chunks(2);
-
-            for chunk in chunked_names {
-                if result.is_empty() {
-                    result.push_str(&chunk.join(", "));
-                } else {
-                    result.push_str(&format!("\n{}", chunk.join(", ")));
-                }
-            }
-
-            let last = result.split("\n").last().unwrap();
-            format!("{}, and {}", result.trim_end(), last)
+            let last = names.last().unwrap();
+            let rest = &names[..names.len() - 1];
+            format!("{}, and {}", rest.join(", "), last)
         }
     }
 }

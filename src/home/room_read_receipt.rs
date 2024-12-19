@@ -21,9 +21,9 @@ live_design! {
                 text_style: { font_size: 6.0 }
             }}}
         }
-        margin: {top: 3, right: 10, bottom: 3, left: 10}
-        width: 100,
-        height: 50,
+        margin: {top: 12, right: 120, bottom: 3, left: 10}
+        width: Fit,
+        height: 30,
         plus: <Label> {
             draw_text: {
                 color: #x0,
@@ -85,7 +85,7 @@ impl Widget for AvatarRow {
                         size: DVec2::new(),
                     }
                 };
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames)));
+                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), 100.0));
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
@@ -133,7 +133,7 @@ impl AvatarRow {
         self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
         let mut usernames_arr = vec![];
-        for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map) {
+        for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
             // Set avatar_profile_opt to be None so that the function may fetch the user profile from profile cache
             if !*drawn {
                 let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
@@ -141,15 +141,16 @@ impl AvatarRow {
                 usernames_arr.push(username);
             }
         }
-        self.human_readable_usernames = human_readable_list(usernames_arr);
+        let human_readable_usernames= human_readable_list(usernames_arr);
+        self.human_readable_usernames = human_readable_usernames;
     }
 }
 impl AvatarRowRef {
     /// Handles hover in action
-    pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String)> {
+    pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String, f64)> {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             match item.cast() {
-                RoomScreenTooltipActions::HoverIn(tooltip_pos, tooltip_text) => Some((tooltip_pos, tooltip_text)),
+                RoomScreenTooltipActions::HoverIn(tooltip_pos, tooltip_text, tooltip_width) => Some((tooltip_pos, tooltip_text, tooltip_width)),
                 _ => None,
             }
         } else {

@@ -391,9 +391,7 @@ live_design! {
                 message_annotations = <MessageAnnotations> {}
             }
             avatar_row = <AvatarRow> {
-                width: Fit,
-                height: 30,
-                margin: { top: (12.0), right: 50.0 },
+                margin: {right: 73}
             }
             message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
@@ -434,11 +432,7 @@ live_design! {
                 message = <HtmlOrPlaintext> { }
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {
-                width: Fit,
-                height: 30,
-                margin: { top: (12.0), right: 50.0 },
-            }
+            avatar_row = <AvatarRow> {}
         }
     }
 
@@ -451,11 +445,7 @@ live_design! {
                 message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {
-                width: Fit,
-                height: 30,
-                margin: { top: (12.0), right: 50.0 },
-            }
+            avatar_row = <AvatarRow> {}
         }
     }
 
@@ -468,11 +458,7 @@ live_design! {
                 message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {
-                width: Fit,
-                height: 30,
-                margin: { top: (12.0), right: 50.0 },
-            }
+            avatar_row = <AvatarRow> {}
         }
     }
 
@@ -529,11 +515,7 @@ live_design! {
                 }
                 text: ""
             }
-            avatar_row = <AvatarRow> {
-                width: Fit,
-                height: 30,
-                margin: { top: (12.0), right: 50.0 },
-            }
+            avatar_row = <AvatarRow> {}
         }
     }
 
@@ -969,7 +951,7 @@ live_design! {
                 width: Fit
                 height: Fit
     
-                <RoundedView> {
+                rounded_view = <RoundedView> {
                     width: Fit,
                     height: Fit,
     
@@ -1054,8 +1036,17 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
-                if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
+                if let Some((rect, tooltip_text, tooltip_width)) = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, rect.pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            rounded_view = {
+                                tooltip_label = {
+                                    width: (tooltip_width)
+                                }
+                            }
+                        }
+                    ));
                 }
                 if seq.hover_out(actions) {
                     tooltip.hide(cx);
@@ -2182,7 +2173,8 @@ pub enum RoomScreenTooltipActions {
     // First parameter is rect containing tooltip position and its size
     // Todo! implement tooltip resizing
     // The second parameter is tooltip text
-    HoverIn(Rect, String),
+    // The third parameter is tooltip width
+    HoverIn(Rect, String, f64),
     HoverOut,
     None,
 }

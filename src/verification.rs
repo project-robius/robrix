@@ -7,14 +7,12 @@ use matrix_sdk::{
         VerificationRequestState,
     }, ruma::{
         events::{
-            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
-            room::message::{MessageType, OriginalSyncRoomMessageEvent},
+            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod}, room::message::{MessageType, OriginalSyncRoomMessageEvent}
         },
         UserId,
     }, Client
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
-
 
 
 pub fn add_verification_event_handlers_and_sync_client(client: Client) {
@@ -64,17 +62,18 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
             }
         }
     );
-
+    
     // This doesn't seem to be necessary, as we do receive verification requests
     // without this block. 
     // The sliding sync service must be handling the synchronization already.
     //
-    /*
-    Handle::current().spawn(async move {
-        client.sync(SyncSettings::new()).await
-            .expect("Client sync loop failed");
-    });
-    */
+    // We need this, if not there is not initial sync. Hence there will be missing read receipts
+    // Handle::current().spawn(async move {
+    //     client.sync(SyncSettings::new()).await
+    //         .expect("Client sync loop failed");
+    // });
+    
+ 
 }
 
 

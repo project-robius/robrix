@@ -6,7 +6,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
+    config::{RequestConfig, SyncSettings}, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
@@ -1113,6 +1113,7 @@ async fn async_main_loop(
         .await?;
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
+    handle_sync_once(client.clone());
     let room_list_service = sync_service.room_list_service();
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
@@ -1490,7 +1491,13 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
         }
     });
 }
-
+/// Synchronize the client's state with the latest state on the server.
+/// Without this, there will be discrepancies in the read receipts
+fn handle_sync_once(client: Client) {
+    Handle::current().spawn(async move {
+        let _ = client.sync_once(SyncSettings::new()).await;
+    });
+}
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
 ///
 /// If the sender profile of the event is not yet available, this function will
