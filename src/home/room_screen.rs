@@ -2214,6 +2214,8 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    /// A notice that the permission of user's ability to send messages in this room,
+    /// this condition is simple so that we only use `bool`
     CanUserSendMessage (bool)
 }
 
