@@ -324,6 +324,7 @@ pub type VariantSelector = dyn FnMut(&mut Cx, &ParentSize) -> LiveId;
 type ParentSize = DVec2;
 
 /// A context that is used to determine which view to display in an `AdaptiveView` widget.
+///
 /// DisplayContext is stored in a global context so that they can be accessed from multiple `AdaptiveView` widget instances.
 /// This will soon be replaced by having this context directly in Makepad's Cx.
 /// Later to be expanded with more context data like platform information, accessibility settings, etc.

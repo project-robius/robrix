@@ -1151,89 +1151,6 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
-
-                // Handle a link being clicked.
-                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-                    // A closure that handles both MatrixToUri and MatrixUri links.
-                    let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-                        match id {
-                            MatrixId::Room(room_id) => {
-                                if self.room_id.as_ref() == Some(room_id) {
-                                    return true;
-                                }
-                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                                    log!("TODO: jump to known room {}", room_id);
-                                } else {
-                                    log!("TODO: fetch and display room preview for room {}", room_id);
-                                }
-                                true
-                            }
-                            MatrixId::RoomAlias(room_alias) => {
-                                log!("TODO: open room alias {}", room_alias);
-                                // TODO: open a room loading screen that shows a spinner
-                                //       while our background async task calls Client::resolve_room_alias()
-                                //       and then either jumps to the room if known, or fetches and displays
-                                //       a room preview for that room.
-                                true
-                            }
-                            MatrixId::User(user_id) => {
-                                log!("Opening matrix.to user link for {}", user_id);
-
-                                // There is no synchronous way to get the user's full profile info
-                                // including the details of their room membership,
-                                // so we fill in with the details we *do* know currently,
-                                // show the UserProfileSlidingPane, and then after that,
-                                // the UserProfileSlidingPane itself will fire off
-                                // an async request to get the rest of the details.
-                                self.show_user_profile(
-                                    cx,
-                                    &pane,
-                                    UserProfilePaneInfo {
-                                        profile_and_room_id: UserProfileAndRoomId {
-                                            user_profile: UserProfile {
-                                                user_id: user_id.to_owned(),
-                                                username: None,
-                                                avatar_state: AvatarState::Unknown,
-                                            },
-                                            room_id: self.room_id.clone().unwrap(),
-                                        },
-                                        room_name: self.room_name.clone(),
-                                        // TODO: use the extra `via` parameters
-                                        room_member: None,
-                                    },
-                                );
-                                true
-                            }
-                            MatrixId::Event(room_id, event_id) => {
-                                log!("TODO: open event {} in room {}", event_id, room_id);
-                                // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                                //       but then we need to call Room::event_with_context() to get the event
-                                //       and its context (surrounding events ?).
-                                true
-                            }
-                            _ => false,
-                        }
-                    };
-
-                    let mut link_was_handled = false;
-                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                        link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
-                    }
-                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                        link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
-                    }
-
-                    if !link_was_handled {
-                        log!("Opening URL \"{}\"", url);
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                        }
-                    }
-                }
-
-                if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.modal(id!(loading_modal)).close(cx);
-                }
             }
 
             // Set visibility of loading message banner based of pagination logic
@@ -1282,14 +1199,14 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send message button being clicked and enter key being pressed.
-            let msg_input_widget = self.text_input(id!(message_input));
-            let send_message_shortcut_pressed = msg_input_widget
+            let message_input = self.text_input(id!(message_input));
+            let send_message_shortcut_pressed = message_input
                 .key_down_unhandled(actions)
                 .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
             if send_message_shortcut_pressed
                 || self.button(id!(send_message_button)).clicked(actions)
             {
-                let entered_text = msg_input_widget.text().trim().to_string();
+                let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
@@ -1310,7 +1227,7 @@ impl Widget for RoomScreen {
                     });
 
                     self.clear_replying_to();
-                    msg_input_widget.set_text_and_redraw(cx, "");
+                    message_input.set_text_and_redraw(cx, "");
                 }
             }
 
@@ -1322,7 +1239,7 @@ impl Widget for RoomScreen {
             );
 
             // Handle a typing action on the message input box.
-            if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
+            if let Some(new_text) = message_input.changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),
@@ -1353,9 +1270,31 @@ impl Widget for RoomScreen {
             // Forward the event to the user profile sliding pane,
             // preventing the underlying timeline view from receiving it.
             pane.handle_event(cx, event, scope);
-        } else {
-            // Forward the event to the inner timeline view.
-            self.view.handle_event(cx, event, scope);
+        }
+        else {
+            // Forward the event to the inner timeline view, but capture any actions it produces
+            // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
+            // ensuring they are not mistakenly handled by other RoomScreen widget instances.
+            let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
+                self.view.handle_event(cx, event, scope)
+            );
+            // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
+            // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
+            actions_generated_within_this_room_screen.retain(|action| {
+                if self.handle_link_clicked(cx, action, &pane) {
+                    return false;
+                }
+
+                if let LoadingModalAction::Close = action.as_widget_action().cast() {
+                    self.modal(id!(loading_modal)).close(cx);
+                    return false;
+                }
+
+                // Keep all unhandled actions so we can add them back to the global action list below.
+                true
+            });
+            // Add back any unhandled actions to the global action list.
+            cx.extend_actions(actions_generated_within_this_room_screen);
         }
     }
 
@@ -1791,6 +1730,98 @@ impl RoomScreen {
         if num_updates > 0 {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
+        }
+    }
+
+
+    /// Handles a link being clicked in any child widgets of this RoomScreen.
+    ///
+    /// Returns `true` if the given `action` was indeed an `HtmlLinkAction::Clicked` action.
+    fn handle_link_clicked(
+        &mut self,
+        cx: &mut Cx,
+        action: &Action,
+        pane: &UserProfileSlidingPaneRef,
+    ) -> bool {
+        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+            // A closure that handles both MatrixToUri and MatrixUri links.
+            let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+                match id {
+                    MatrixId::Room(room_id) => {
+                        if self.room_id.as_ref() == Some(room_id) {
+                            return true;
+                        }
+                        if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                            log!("TODO: jump to known room {}", room_id);
+                        } else {
+                            log!("TODO: fetch and display room preview for room {}", room_id);
+                        }
+                        true
+                    }
+                    MatrixId::RoomAlias(room_alias) => {
+                        log!("TODO: open room alias {}", room_alias);
+                        // TODO: open a room loading screen that shows a spinner
+                        //       while our background async task calls Client::resolve_room_alias()
+                        //       and then either jumps to the room if known, or fetches and displays
+                        //       a room preview for that room.
+                        true
+                    }
+                    MatrixId::User(user_id) => {
+                        log!("Opening matrix.to user link for {}", user_id);
+
+                        // There is no synchronous way to get the user's full profile info
+                        // including the details of their room membership,
+                        // so we fill in with the details we *do* know currently,
+                        // show the UserProfileSlidingPane, and then after that,
+                        // the UserProfileSlidingPane itself will fire off
+                        // an async request to get the rest of the details.
+                        self.show_user_profile(
+                            cx,
+                            pane,
+                            UserProfilePaneInfo {
+                                profile_and_room_id: UserProfileAndRoomId {
+                                    user_profile: UserProfile {
+                                        user_id: user_id.to_owned(),
+                                        username: None,
+                                        avatar_state: AvatarState::Unknown,
+                                    },
+                                    room_id: self.room_id.clone().unwrap(),
+                                },
+                                room_name: self.room_name.clone(),
+                                // TODO: use the extra `via` parameters
+                                room_member: None,
+                            },
+                        );
+                        true
+                    }
+                    MatrixId::Event(room_id, event_id) => {
+                        log!("TODO: open event {} in room {}", event_id, room_id);
+                        // TODO: this requires the same first step as the `MatrixId::Room` case above,
+                        //       but then we need to call Room::event_with_context() to get the event
+                        //       and its context (surrounding events ?).
+                        true
+                    }
+                    _ => false,
+                }
+            };
+
+            let mut link_was_handled = false;
+            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+            }
+            if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+            }
+
+            if !link_was_handled {
+                log!("Opening URL \"{}\"", url);
+                if let Err(e) = robius_open::Uri::new(&url).open() {
+                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                }
+            }
+            true
+        } else {
+            false
         }
     }
 
