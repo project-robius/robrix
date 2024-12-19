@@ -923,14 +923,7 @@ live_design! {
                         y: 0.5
                     }
 
-                    <View> {
-                        widht: 100, height: 100,
-                        show_bg: true,
-                        draw_bg: {
-                            bg_color: #123
-                        }
-                    }
-                     message_context_menu = <MessageContextMenu> {}
+                    message_context_menu = <MessageContextMenu> {}
                 }
             }
 
@@ -1292,11 +1285,10 @@ impl Widget for RoomScreen {
                         let mut message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
 
                         let margin_x = 50.;
-                        let margin_y = 20.;
 
                         let coords = dvec2(
                             (message_rect.pos.x + message_rect.size.x) - margin_x,
-                            message_rect.pos.y - margin_y,
+                            message_rect.pos.y,
                         );
 
                         message_action_bar_popup.apply_over(

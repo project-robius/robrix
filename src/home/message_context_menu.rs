@@ -92,12 +92,6 @@ live_design! {
 		align: {x: 0}
 		text: "Reply"
 	    }
-
-	    view_source_button = <ViewSourceButton> {
-		width: Fill
-		align: {x: 0}
-		text: "View Source"
-	    }
         }
     }
 }
@@ -105,7 +99,6 @@ live_design! {
 /// The message menu available buttons.
 enum MessageMenuButton {
     Reply,
-    ViewSource,
 }
 
 impl MessageMenuButton {
@@ -228,7 +221,6 @@ impl MessageMenu for MessageContextMenu {
     fn button_mapping(&self) -> Vec<(ButtonRef, MessageMenuButton)> {
         vec![
             (self.button(id!(reply_button)), MessageMenuButton::Reply),
-            (self.button(id!(view_source_button)), MessageMenuButton::ViewSource),
         ]
     }
 }
