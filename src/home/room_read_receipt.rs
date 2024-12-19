@@ -6,6 +6,8 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use std::cmp;
 const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW : usize = 5;
+const TOOLTIP_LENGTH: f64 = 100.0;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -78,7 +80,7 @@ impl Widget for AvatarRow {
                 // Temporary hack to improve the issue that the tooltip is cut off by the right side of the screen
                 // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
                 // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
-                let tooltip_pos = if finger_event.abs.x > cx.default_window_size().x - 80.0 {
+                let tooltip_pos = if finger_event.abs.x > cx.default_window_size().x - TOOLTIP_LENGTH {
                     Rect {
                         pos: DVec2 {
                             x: self.area.rect(cx).pos.x,
@@ -92,7 +94,7 @@ impl Widget for AvatarRow {
                         size: DVec2::new(),
                     }
                 };
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), 100.0));
+                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), TOOLTIP_LENGTH));
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
