@@ -119,14 +119,6 @@ impl MessageMenuButton {
                     MessageAction::MessageReplyButtonClicked(item_id),
                 );
             }
-
-            MessageMenuButton::ViewSource => {
-                cx.widget_action(
-                    room_screen_widget_uid,
-                    &scope.path,
-                    MessageAction::ViewSourceButtonClicked(item_id),
-                );
-            }
         };
     }
 }
