@@ -1533,6 +1533,7 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
 }
 /// Synchronize the client's state with the latest state on the server.
 /// Without this, there will be discrepancies in the read receipts
+/// Note: There is extra warning introduced "Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None"
 fn handle_sync_once(client: Client) {
     Handle::current().spawn(async move {
         let _ = client.sync_once(SyncSettings::new()).await;

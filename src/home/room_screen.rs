@@ -22,9 +22,9 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}
-    }, shared::{
+    , shared::{
         avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
@@ -44,18 +44,18 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::search_bar::SearchBar;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::text_or_image::TextOrImage;
-    import crate::shared::html_or_plaintext::*;
-    import crate::home::room_read_receipt::*;
-    import crate::profile::user_profile::UserProfileSlidingPane;
-    import crate::shared::typing_animation::TypingAnimation;
-    import crate::shared::icon_button::*;
-    import crate::shared::jump_to_bottom_button::*;
-    import crate::home::loading_modal::*;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::search_bar::SearchBar;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::html_or_plaintext::*;
+    use crate::home::room_read_receipt::*;
+    use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::shared::typing_animation::TypingAnimation;
+    use crate::shared::icon_button::*;
+    use crate::shared::jump_to_bottom_button::*;
+    use crate::home::loading_modal::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")

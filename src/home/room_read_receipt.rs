@@ -7,21 +7,26 @@ use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use std::cmp;
 const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW : usize = 5;
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::avatar::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    AvatarRow = {{AvatarRow}} {
+    use crate::shared::avatar::*;
+    use crate::shared::styles::*;
+
+    pub AvatarRow = {{AvatarRow}} {
         button: <Avatar> {
             width: 15.0,
             height: 15.0,
-            text_view = { text = { draw_text: {
-                text_style: { font_size: 6.0 }
-            }}}
+            text_view = { 
+                text = { 
+                    draw_text: {
+                        text_style: { font_size: 6.0 }
+                    }
+                }
+            }
         }
-        margin: {top: 12, right: 120, bottom: 3, left: 10}
+        margin: {top: 12, right: 120, bottom: 3, left: 10},
         width: Fit,
         height: 30,
         plus: <Label> {
