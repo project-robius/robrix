@@ -22,11 +22,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::
-        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}
-    , shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
+        user_profile_cache,
+    }, shared::{
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
@@ -40,9 +41,9 @@ const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
 
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
     import crate::shared::styles::*;
     import crate::shared::helpers::*;
@@ -74,6 +75,8 @@ live_design! {
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
+
+    CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
 
     FillerY = <View> {width: Fill}
 
@@ -254,6 +257,7 @@ live_design! {
         height: Fit,
         margin: 0.0
         flow: Down,
+        cursor: Default,
         padding: 0.0,
         spacing: 0.0
 
@@ -469,6 +473,7 @@ live_design! {
         width: Fill,
         height: Fit,
         margin: 0.0
+        cursor: Default
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
@@ -710,8 +715,9 @@ live_design! {
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
 
-    RoomScreen = {{RoomScreen}} {
+    pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
+        cursor: Default,
         show_bg: true,
         draw_bg: {
             color: (COLOR_SECONDARY)
@@ -813,7 +819,7 @@ live_design! {
                 location_preview = <LocationPreview> { }
 
                 // Below that, display a view that holds the message input bar and send button.
-                <View> {
+                input_bar = <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {y: 0.5},
@@ -918,6 +924,24 @@ live_design! {
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
                         icon_walk: {width: 18.0, height: Fit},
+                    }
+                }
+                can_not_send_message_notice = <View> {
+                    visible: false
+                    show_bg: true
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
+                    padding: {left: 75}
+                    align: {y: 0.3}
+                    width: Fill, height: 37.5
+
+                    text = <Label> {
+                        draw_text: {
+                            color: (COLOR_TEXT)
+                            text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                        }
+                        text: (CAN_NOT_SEND_NOTICE)
                     }
                 }
             }
@@ -1765,6 +1789,14 @@ impl RoomScreen {
                     // if the list of typing users gets updated many times in a row.
                     typing_users = users;
                 }
+
+                TimelineUpdate::CanUserSendMessage(can_user_send_message) => {
+                    let input_bar = self.view.view(id!(input_bar));
+                    let can_not_send_message_notice = self.view.view(id!(can_not_send_message_notice));
+
+                    input_bar.set_visible(can_user_send_message);
+                    can_not_send_message_notice.set_visible(!can_user_send_message);
+                }
             }
         }
 
@@ -1894,6 +1926,9 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
+
+        // Send request as `MatrixRequest` to check post permission.
+        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() });
 
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
@@ -2244,6 +2279,9 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    /// A notice that the permission of user's ability to send messages in this room,
+    /// this condition is simple so that we only use `bool`
+    CanUserSendMessage (bool)
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2976,20 +3014,17 @@ fn populate_message_view(
 }
 
 
-/// Returns `true` if the given message mentions the current user.
+/// Returns `true` if the given message mentions the current user or is a room mention.
 fn does_message_mention_current_user(
     message: &timeline::Message,
 ) -> bool {
-    let Some(client) = get_client() else {
-        return false;
-    };
-    let Some(current_user_id) = client.user_id() else {
+    let Some(current_user_id) = sliding_sync::current_user_id() else {
         return false;
     };
 
-    // This covers both direct mentions ("@user") and a replied-to message.
-    message.mentions().is_some_and(
-        |mentions| mentions.user_ids.contains(current_user_id)
+    // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
+    message.mentions().is_some_and(|mentions|
+        mentions.room || mentions.user_ids.contains(&current_user_id)
     )
 }
 
@@ -2999,12 +3034,20 @@ fn populate_text_message_content(
     body: &str,
     formatted_body: Option<&FormattedBody>,
 ) {
-    if let Some(formatted_body) = formatted_body.as_ref()
-        .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
+    // The message was HTML-formatted rich text.
+    if let Some(fb) = formatted_body.as_ref()
+        .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
-    } else {
-        match utils::linkify(body) {
+        message_content_widget.show_html(
+            utils::linkify(
+                utils::trim_start_html_whitespace(&fb.body),
+                true,
+            )
+        );
+    }
+    // The message was non-HTML plaintext.
+    else {
+        match utils::linkify(body, false) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
         }
@@ -3220,10 +3263,11 @@ fn populate_location_message_content(
         let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
         let html_body = format!(
-            "Location: {short_lat},{short_long}\
+            "Location: <a href=\"{}\">{short_lat},{short_long}</a><br>\
             <p><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></p>\
             <p><a href=\"https://www.google.com/maps/search/?api=1&amp;query={lat},{long}\">Open in Google Maps</a></p>\
             <p><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></p>",
+            location.geo_uri,
         );
         message_content_widget.show_html(html_body);
     } else {

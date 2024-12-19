@@ -5,16 +5,15 @@ use crate::{
 };
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
+    use crate::shared::styles::*;
+    use crate::home::room_screen::RoomScreen;
+    use crate::home::welcome_screen::WelcomeScreen;
 
-    import crate::home::room_screen::RoomScreen;
-    import crate::home::welcome_screen::WelcomeScreen;
-
-    MainMobileUI = {{MainMobileUI}} {
+    pub MainMobileUI = {{MainMobileUI}} {
         width: Fill, height: Fill
         flow: Down,
         show_bg: true

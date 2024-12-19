@@ -1,13 +1,19 @@
 use makepad_widgets::*;
+use matrix_sdk::encryption::VerificationState;
+
+use crate::shared::adaptive_view::DisplayContext;
+use crate::sliding_sync::get_client;
+use crate::verification::VerificationStateAction;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::verification_badge::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -16,21 +22,26 @@ live_design! {
         height: Fill, width: Fill
     }
 
-    Profile = <View> {
+    Profile = {{Profile}} {
+        flow: Overlay
         width: Fit, height: Fit
         align: { x: 0.5, y: 0.5 }
 
         text_view = <View> {
-            width: 45., height: 45.,
+            flow: Overlay
+            width: 60, height: 60,
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
-
             draw_bg: {
                 instance background_color: (COLOR_AVATAR_BG_IDLE),
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
                     let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x)
+
+                    let r = self.rect_size * 0.38;
+
+                    sdf.circle(c.x, c.x, r.x);
                     sdf.fill_keep(self.background_color);
                     return sdf.result
                 }
@@ -46,6 +57,20 @@ live_design! {
                 text: "U"
             }
         }
+        <View> {
+            align: { x: 1.0, y: 0.0 }
+
+            verification_icon = <View> {
+                flow: Overlay
+                align:{ x: 0.5, y: 0.5 }
+                width: 31, height: 31
+
+                icon_yes = <IconYes> {}
+                icon_no = <IconNo> {}
+                icon_unk = <IconUnk> {}
+            }
+        }
+        verification_notice = <VerificationNotice> { }
     }
 
     Separator = <LineH> {
@@ -102,7 +127,7 @@ live_design! {
         }
     }
 
-    SpacesDock = <AdaptiveView> {
+    pub SpacesDock = <AdaptiveView> {
         Desktop = {
             flow: Down, spacing: 15
             align: {x: 0.5}
@@ -118,7 +143,7 @@ live_design! {
             <Separator> {}
 
             <Home> {}
-            
+
             <Filler> {}
 
             <Settings> {}
@@ -137,16 +162,127 @@ live_design! {
             <Filler> {}
 
             <Profile> {}
-    
+
             <Filler> {}
-    
+
             <Home> {}
-            
+
             <Filler> {}
-    
+
             <Settings> {}
-    
+
             <Filler> {}
+        }
+    }
+}
+struct VerificationNoticeText {
+    yes: &'static str,
+    no: &'static str,
+    unk: &'static str,
+}
+
+impl Default for VerificationNoticeText{
+    fn default() -> Self {
+        Self {
+            yes: "This device is fully verified.",
+            no: "This device is unverified. To view your encrypted message history, please verify it from another client.",
+            unk: "Verification state is unknown.",
+        }
+    }
+}
+
+#[derive(Live, Widget)]
+pub struct Profile {
+    #[deref]
+    view: View,
+    #[rust(VerificationState::Unknown)]
+    verification_state: VerificationState,
+    #[rust]
+    verification_notice_text: VerificationNoticeText,
+}
+
+impl Profile {
+    fn set_verification_icon_visibility(&self) {
+        let (yes_visible, no_visible, unk_visible) = match self.verification_state {
+            VerificationState::Unknown => (false, false, true),
+            VerificationState::Unverified => (false, true, false),
+            VerificationState::Verified => (true, false, false),
+        };
+
+        self.view(id!(icon_yes)).set_visible(yes_visible);
+        self.view(id!(icon_no)).set_visible(no_visible);
+        self.view(id!(icon_unk)).set_visible(unk_visible);
+    }
+}
+
+impl Widget for Profile {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::MouseMove(e) = event {
+            let mut verification_notice = self.tooltip(id!(verification_notice));
+
+            if self.view(id!(verification_icon)).area().rect(cx).contains(e.abs) {
+                let text = match self.verification_state {
+                    VerificationState::Unknown => self.verification_notice_text.unk,
+                    VerificationState::Unverified => self.verification_notice_text.no,
+                    VerificationState::Verified => self.verification_notice_text.yes
+                };
+
+                //Determine if it's a desktop or mobile layout,
+                //then we set the relative position so that the tooltip looks like following the cursor.
+                if cx.get_global::<DisplayContext>().is_desktop() {
+                    verification_notice.show_with_options(cx, DVec2 {x: 65., y: 23.}, text);
+                }
+                else {
+                    verification_notice.apply_over(cx, live!{
+                        content: {
+
+                            // Via setting suitable align & padding,
+                            // we can simulate a relative position to make the tootip follow widget `Profile (U)`,
+                            // this is not a perfect solution.
+                            // TODO: Find a way to follow widget `Profile (U)` more precisely.
+                            align: { x: 0.43, y: 1. }
+                            padding: { left: 30., bottom: 31. }
+                        }
+                    });
+                    verification_notice.show_with_options(cx, DVec2 {x: 0., y: 0.}, text);
+                }
+            }
+            //Hide it if cursor is not hovering.
+            else {
+                verification_notice.hide(cx);
+            }
+        }
+
+        self.match_event(cx, event);
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for Profile {
+    fn handle_action(&mut self, cx: &mut Cx, action:&Action) {
+        if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+            if self.verification_state != *state {
+                self.verification_state = *state;
+
+                self.set_verification_icon_visibility();
+                self.redraw(cx);
+            }
+        }
+    }
+}
+
+impl LiveHook for Profile {
+    fn after_new_from_doc(&mut self, cx:&mut Cx) {
+        if let Some(client) = get_client() {
+            let current_verification_state = client.encryption().verification_state().get();
+            self.verification_state = current_verification_state;
+
+            self.set_verification_icon_visibility();
+            self.redraw(cx);
         }
     }
 }
