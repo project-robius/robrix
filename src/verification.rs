@@ -68,17 +68,6 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
             }
         }
     );
-
-    // This doesn't seem to be necessary, as we do receive verification requests
-    // without this block. 
-    // The sliding sync service must be handling the synchronization already.
-    //
-    /*
-    Handle::current().spawn(async move {
-        client.sync(SyncSettings::new()).await
-            .expect("Client sync loop failed");
-    });
-    */
 }
 
 
