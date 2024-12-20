@@ -1,9 +1,8 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
-use crate::login::login_screen::LoginAction;
 use crate::shared::adaptive_view::DisplayContext;
-use crate::sliding_sync::get_client;
+use crate::sliding_sync::{get_client, submit_async_request, MatrixRequest};
 use crate::verification::VerificationStateAction;
 
 live_design! {
@@ -335,9 +334,9 @@ impl Widget for Logout {
 }
 
 impl WidgetMatchEvent for Logout {
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+    fn handle_actions(&mut self, _cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         if self.button(id!(logout_button)).clicked(actions) {
-            cx.action(LoginAction::Logout);
+            submit_async_request(MatrixRequest::Logout);
         }
     }
 }

@@ -193,6 +193,30 @@ async fn login(
     }
 }
 
+/// Log out the current user.
+async fn logout() {
+    if let Ok((client, _sync_token)) = persistent_state::restore_session(None).await {
+        match persistent_state::delete_session(None).await {
+            Ok(_) => {
+                match client.matrix_auth().logout().await {
+                    Ok(_) => {
+                        Cx::post_action(LoginAction::Logout);
+                    },
+                    Err(_err) => {
+                        log!("http error")
+                    }
+                }
+            },
+            Err(_) => {
+                log!("log out failed, fail to delete session_token, please trt again.")
+            }
+        }
+    } else {
+        let status_err = "Failed to restore previous user session. Please try later.";
+        log!("{status_err}");
+    }
+}
+
 async fn populate_login_types(
     homeserver_url: &str,
     login_types: &mut Vec<LoginType>,
@@ -258,6 +282,10 @@ pub type OnMediaFetchedFn = fn(
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+
+    /// Request to logout.
+    Logout,
+
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -403,6 +431,9 @@ async fn async_worker(
                         "BUG: failed to send login request to async worker thread."
                     )));
                 }
+            }
+            MatrixRequest::Logout => {
+                logout().await
             }
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
