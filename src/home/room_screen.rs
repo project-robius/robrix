@@ -31,7 +31,7 @@ use crate::{
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::loading_modal::{LoadingModalAction, LoadingModalState};
+use super::{loading_modal::{LoadingModalAction, LoadingModalState}, room_read_receipt::populate_read_receipts};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -2632,8 +2632,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
-
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2656,7 +2655,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2684,7 +2683,7 @@ fn populate_message_view(
         MessageOrStickerType::ServerNotice(sn) => {
             is_server_notice = true;
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
 
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -2733,7 +2732,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2776,7 +2775,7 @@ fn populate_message_view(
                 live_id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
 
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -2800,7 +2799,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2819,7 +2818,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2837,7 +2836,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2855,7 +2854,7 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2869,7 +2868,7 @@ fn populate_message_view(
         MessageOrStickerType::VerificationRequest(verification) => {
             let template = live_id!(Message);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2898,7 +2897,7 @@ fn populate_message_view(
         }
         other => {
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
-            item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -3611,7 +3610,7 @@ fn populate_small_state_event(
         username
     });
 
-    item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+    populate_read_receipts(&item, cx, room_id, event_tl_item);
     // Proceed to draw the actual event content.
     event_content.populate_item_content(
         cx,

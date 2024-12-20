@@ -229,6 +229,30 @@ impl Avatar {
     }
     /// Sets the given avatar and returns a displayable username based on the
     /// given profile and user ID of the sender of the event with the given event ID.
+    ///
+    /// If the user profile is not ready, this function will submit an async request
+    /// to fetch the user profile from the server, but only if the event ID is `Some`.
+    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
+    ///
+    /// This function will always choose a nice, displayable username and avatar.
+    ///
+    /// The specific behavior is as follows:
+    /// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
+    ///   will be the user's display name and avatar image, if available.
+    ///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
+    /// * If no avatar image is available, then the `avatar` will be set to the first character
+    ///   of the user's display name, if available.
+    /// * If the user's display name is not available or has not been set, the user ID
+    ///   will be used for the `username`, and the first character of the user ID for the `avatar`.
+    /// * If the timeline event's sender profile isn't ready and the user ID isn't found in
+    ///   our user profile cache , then the `username` and `avatar`  will be the user ID
+    ///   and the first character of that user ID, respectively.
+    ///
+    /// ## Return
+    /// Returns a tuple of:
+    /// 1. The displayable username that should be used to populate the username field.
+    /// 2. A boolean indicating whether the user's profile info has been completely drawn
+    ///    (for purposes of caching it to avoid future redraws).
     fn set_avatar_and_get_username(
         &mut self,
         cx: &mut Cx,
@@ -371,44 +395,13 @@ impl AvatarRef {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns a hit event based on user interaction with the avatar
-    /// 
-    /// # Parameters
-    /// - `cx`: The draw context
-    /// - `event`: The input event
-    /// - `sweep_area`: The area to check for hits
-    /// 
-    /// # Returns
-    /// A `Hit` representing the type of interaction (hover, click, etc.)
+    
+    /// See [`Avatar::hit()`].
     pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
         self.borrow_mut().map(|mut inner| inner.hit(cx, event, sweep_area))
     }
-    /// Sets the given avatar and returns a displayable username based on the
-    /// given profile and user ID of the sender of the event with the given event ID.
-    ///
-    /// If the user profile is not ready, this function will submit an async request
-    /// to fetch the user profile from the server, but only if the event ID is `Some`.
-    /// For Read Receipt cases, there is no user's profile. The Avatar cache is taken from the sender's profile 
-    ///
-    /// This function will always choose a nice, displayable username and avatar.
-    ///
-    /// The specific behavior is as follows:
-    /// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
-    ///   will be the user's display name and avatar image, if available.
-    ///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
-    /// * If no avatar image is available, then the `avatar` will be set to the first character
-    ///   of the user's display name, if available.
-    /// * If the user's display name is not available or has not been set, the user ID
-    ///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-    /// * If the timeline event's sender profile isn't ready and the user ID isn't found in
-    ///   our user profile cache , then the `username` and `avatar`  will be the user ID
-    ///   and the first character of that user ID, respectively.
-    ///
-    /// ## Return
-    /// Returns a tuple of:
-    /// 1. The displayable username that should be used to populate the username field.
-    /// 2. A boolean indicating whether the user's profile info has been completely drawn
-    ///    (for purposes of caching it to avoid future redraws).
+    
+    /// See [`Avatar::set_avatar_and_get_username()`].
     pub fn set_avatar_and_get_username(
         &self,
         cx: &mut Cx,

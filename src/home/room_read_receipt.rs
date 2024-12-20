@@ -4,6 +4,7 @@ use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
+use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW : usize = 5;
 const TOOLTIP_LENGTH: f64 = 100.0;
@@ -56,10 +57,10 @@ pub struct AvatarRow {
     layout: Layout,
     #[live]
     plus: Option<LivePtr>,
-    // A vector containing its avatarRef and its drawn status
+    // A vector containing its avatarRef, its drawn status and username
     // Storing the drawn status helps prevent unnecessary user profile request in the draw_walk function
     #[rust]
-    buttons: Vec<(AvatarRef, bool)>,
+    buttons: Vec<(AvatarRef, bool, String)>,
     #[rust]
     label: Option<LabelRef>,
     #[rust]
@@ -105,7 +106,7 @@ impl Widget for AvatarRow {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, Layout::default());
-        for (avatar_ref, _) in self.buttons.iter_mut() {
+        for (avatar_ref, _, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
         }
         if self.total_num_seen > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW {
@@ -136,22 +137,21 @@ impl AvatarRow {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW, receipts_map.len()) {
-                self.buttons.push((WidgetRef::new_from_ptr(cx, self.button).as_avatar(), false));
+                self.buttons.push((WidgetRef::new_from_ptr(cx, self.button).as_avatar(), false, String::new()));
             }
         }
         self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
-        let mut usernames_arr = vec![];
-        for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
+        for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
             // Set avatar_profile_opt to be None so that the function may fetch the user profile from profile cache
             if !*drawn {
                 let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
                 *drawn = drawn_status;
-                usernames_arr.push(username);
+                *username_ref = username;
             }
         }
-        let human_readable_usernames= human_readable_list(usernames_arr);
-        self.human_readable_usernames = human_readable_usernames;
+        let username_arr: Vec<&String> = self.buttons.iter().map(|(_, _, username)| username).collect();
+        self.human_readable_usernames = human_readable_list(&username_arr);
     }
 }
 impl AvatarRowRef {
@@ -188,4 +188,14 @@ impl AvatarRowRef {
             inner.set_avatar_row(cx, room_id, event_id, receipts_map);
         }
     }
+}
+
+/// Populate the read receipts avatar row in a message item
+/// 
+/// Given a reference to item widget (typically a MessageEventMarker), a Cx2d, a
+/// room ID, and an EventTimelineItem, this will populate the avatar
+/// row of the item with the read receipts of the event.
+///
+pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, event_tl_item: &EventTimelineItem) {
+    item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
 }
