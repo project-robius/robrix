@@ -310,7 +310,40 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-
+/// Converts a list of names into a human-readable string
+///
+/// # Examples
+/// ```
+/// assert_eq!(human_readable_list(&vec!["Alice"]), String::from("Alice"));
+/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")]), String::from("Alice and Bob"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
+/// ```
+pub fn human_readable_list<S>(names: &[S]) -> String where S: AsRef<str> {
+    let mut result = String::new();
+    match names.len() {
+        0 => {
+        },
+        1 => {
+            result.push_str(names[0].as_ref());
+        },
+        2 => {
+            result.push_str(names[0].as_ref());
+            result.push_str(" and ");
+            result.push_str(names[1].as_ref());
+        },
+        _ => {
+            let last = names[names.len() - 1].as_ref();
+            let rest = &names[..names.len() - 1];
+            for name in rest.iter() {
+                result.push_str(name.as_ref());
+                result.push_str(", ");
+            }
+            result.push_str(" and ");
+            result.push_str(last);
+        }
+    };
+    result
+}
 
 #[cfg(test)]
 mod tests_linkify {
