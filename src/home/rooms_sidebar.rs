@@ -37,7 +37,11 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
-        search_bar = <SearchBar> {}
+        search_bar = <SearchBar> {
+            input = {
+                empty_message: "Search rooms..."
+            }
+        }
         <CachedWidget> {
             rooms_list = <RoomsList> {}
         }
