@@ -1,10 +1,10 @@
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::sliding_sync::{get_client, submit_async_request, MatrixRequest};
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile;
 use crate::home::room_screen::RoomScreenTooltipActions;
-
+const TOOLTIP_WIDTH: f64 = 80.0;
 live_design! {
     import makepad_widgets::base::*;
     import makepad_widgets::theme_desktop_dark::*;
@@ -107,13 +107,13 @@ live_design! {
 }
 struct ReactionData {
     emoji: String,
-    // Total number of people reacted to the emoji
+    /// Total number of people reacted to the emoji
     total_num_react: usize,
-    // Tooltip text display when mouse over the reaction button
+    /// Tooltip text display when mouse over the reaction button
     tooltip_text: String,
-    // Boolean indicating if the current user is also a sender of the reaction
+    /// Boolean indicating if the current user is also a sender of the reaction
     includes_user: bool,
-    // Calculated of the width of the reaction button
+    /// Calculated of the width of the reaction button
     width: f64
 }
 
@@ -130,15 +130,15 @@ pub struct ReactionList {
     layout: Layout,
     #[walk]
     walk: Walk,
-    // A list of ReactionData which includes data required to draw the reaction buttons and their tooltips
-    // After the first draw, the buttons' will be stored in this vector
+    /// A list of ReactionData which includes data required to draw the reaction buttons and their tooltips
+    /// After the first draw, the buttons will be stored in this vector
     #[rust]
     event_reaction_list: Vec<ReactionData>,
     #[rust]
     room_id: Option<OwnedRoomId>,
     #[rust]
     timeline_event_id: Option<TimelineEventItemId>,
-    // Has the width of the emoji buttons already been drawn and calculated beforehand?
+    /// Has the width of the emoji buttons already been drawn and calculated beforehand?
     #[rust]
     width_calculated: bool,
     /// Tooltip that appears when hovering over a reaction button, (Index in event_reaction_list, tooltip rendering rectangle's area, tooltip's text)
@@ -226,10 +226,8 @@ impl Widget for ReactionList {
         // Currently handling mouse-in effect using "event.hits(cx, widget_ref.area())" does not work.
         if let Event::MouseMove(e) = event {
             let uid = self.widget_uid();
-            if self.tooltip_state.is_none(){
-                self.children
-                .iter()
-                .for_each(|(id, widget_ref)| {
+            if self.tooltip_state.is_none() {
+                for (id, widget_ref) in self.children.iter() {
                     // Widget.handle_event here does not cause the button to be highlighted when mouse over
                     // To make the button highlighted when mouse over, the iteration over the children needs to be done 
                     // outside Event::MouseMove.
@@ -238,7 +236,7 @@ impl Widget for ReactionList {
                             // Temporary hack to improve the issue that the tooltip is cut off by the right side of the screen
                             // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
                             // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
-                            let rect = if e.abs.x > cx.default_window_size().x - 80.0{
+                            let rect = if e.abs.x > cx.default_window_size().x - TOOLTIP_WIDTH {
                                 Rect {
                                     pos: DVec2 {
                                         x:widget_ref.area().rect(cx).pos.x,
@@ -257,7 +255,7 @@ impl Widget for ReactionList {
                             self.tooltip_state = Some((id.0, rect, reaction_data.tooltip_text.clone()));
                         }
                     }
-                });
+                }
             } else {
                 let mut reset_tooltip_state = false;
                 if let Some((ref index, ref tooltip_area, ref tooltip_text)) = &self.tooltip_state {
@@ -292,14 +290,17 @@ impl Widget for ReactionList {
             .for_each(|(_id, widget_ref)| {
                 if widget_ref.clicked(actions) {
                     let text = widget_ref.text().clone();
-                    let mut reaction_string_arr: Vec<&str> = text.split(" ").collect();
-                    reaction_string_arr.pop();
-                    let reaction_string = reaction_string_arr.join(" ");
+                    // let mut reaction_string_arr: Vec<&str> = text.split(" ").collect();
+                    // reaction_string_arr.pop();
+                    // let reaction_string = reaction_string_arr.join(" ");
+                    let reaction_string = text.rsplit_once(' ')
+                    .map(|(prefix, _)| prefix)
+                    .unwrap_or(&text);
                     if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
                         submit_async_request(MatrixRequest::ToggleReaction {
                             room_id: room_id.clone(),
                             timeline_event_id: timeline_event_id.clone(),
-                            reaction_key: key.as_str().to_string(),
+                            reaction: key.as_str().to_string(),
                         });
                     }
                 }
@@ -328,9 +329,9 @@ impl ReactionListRef {
         _cx: &mut Cx,
         event_tl_item_reactions: &ReactionsByKeyBySender,
         room_id: OwnedRoomId,
-        user_id: OwnedUserId,
         timeline_event_item_id: TimelineEventItemId,
     ) {
+        let Some(client_user_id) = get_client().and_then(|c| c.user_id().map(|user_id| user_id.to_owned()) ) else { return };
         if let Some(mut instance) = self.borrow_mut() {
             instance.event_reaction_list = Vec::with_capacity(event_tl_item_reactions.len());
             for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
@@ -346,7 +347,7 @@ impl ReactionListRef {
                 let total_num_react = reaction_senders.len();
                 let mut includes_user = false;
                 let tooltip_text_arr:Vec<String> = reaction_senders.iter().map(|(sender, _react_info)|{
-                    if sender == &user_id {
+                    if sender == &client_user_id {
                         includes_user = true;
                     }
                     let sender_name = get_user_profile(_cx, sender).map(|profile| {
