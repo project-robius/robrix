@@ -104,7 +104,7 @@ pub struct ReactionList {
     #[walk]
     walk: Walk,
     /// A list of ReactionData which includes data required to draw the reaction buttons and their tooltips
-    /// After the first draw, the buttons will be stored in this vector
+    /// After the first draw, the button widths will be stored in this vector
     #[rust]
     event_reaction_list: Vec<ReactionData>,
     #[rust]
@@ -124,7 +124,7 @@ impl Widget for ReactionList {
         let rect = cx.turtle().rect();
         let width: f64 = rect.size.x;
         if !self.width_calculated {
-            // Records the buttons' width after the first draw
+            // Records the button widths after the first draw
             let mut prev_width: f64 = 0.0;
             for (index, reaction_data) in
                 self.event_reaction_list.iter_mut().enumerate()
@@ -207,9 +207,6 @@ impl Widget for ReactionList {
                     let widget_rect = widget_ref.area().rect(cx);
                     if widget_rect.contains(e.abs) {
                         if let Some(reaction_data) = self.event_reaction_list.get(id.0 as usize) {
-                            // Temporary hack to improve the issue that the tooltip is cut off by the right side of the screen
-                            // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
-                            // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
                             let rect =  Rect {
                                 pos: DVec2 {
                                     x: widget_rect.pos.x + widget_rect.size.x - REACTION_LIST_PADDING_RIGHT,

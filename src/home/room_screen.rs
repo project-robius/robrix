@@ -968,7 +968,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
                     
-                    padding: {left:20, top: 10, right: 10, bottom: 10},
+                    padding: 10,
     
                     draw_bg: {
                         color: #fff,
@@ -976,30 +976,31 @@ live_design! {
                         border_color: #D0D5DD,
                         radius: 2.,
                         instance background_color: (#3b444b),
-                        instance offset: 20.0,
+                        // Height of isoceles triangle
+                        instance callout_triangle_height: 5.0,
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                
-                            // Main rounded rectangle
                             let rect_size = self.rect_size;
+                            // Main rounded rectangle
                             sdf.box(
-                                8.0 + self.border_width,
+                                // Minus 2.0 to overlap the triangle and rectangle
+                                (self.callout_triangle_height - 2.0) + self.border_width,
                                 0.0 + self.border_width,
-                                rect_size.x - (self.border_width * 2.0) - 8.0,
+                                rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
                                 rect_size.y - (self.border_width * 2.0),
                                 max(1.0, self.radius)
                             )
                             sdf.fill(self.background_color);
                             
                             sdf.translate(0.0, self.rect_size.y / 2.0 - 10.0);
-                            // Draw left pointed arrow
-                            sdf.move_to(10.0, 0.0);
-                            sdf.line_to(10.0, 20.0);
-                            sdf.line_to(0.0, 10.0);
-                            // Draw up pointed arrow
-                            // sdf.move_to(20.0, 20.0);
-                            // sdf.line_to(0.0, 20.0);
-                            // sdf.line_to(10.0, 10.0);
+                            // Draw left-pointed arrow triangle
+                            sdf.move_to(self.callout_triangle_height, 0.0);
+                            sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                            sdf.line_to(0.0, self.callout_triangle_height);
+                            // Draw up-pointed arrow triangle
+                            // sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 20.0);
+                            // sdf.line_to(0.0, self.callout_triangle_height * 2.0);
+                            // sdf.line_to(self.callout_triangle_height, self.callout_triangle_height);
                             sdf.close_path();
                             
                             sdf.fill((self.background_color));
