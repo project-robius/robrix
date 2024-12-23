@@ -272,13 +272,25 @@ impl RoomDisplayFilterBuilder {
     }
 
     fn matches_room_id(room: &RoomsListEntry, keywords: &str) -> bool {
-        room.room_id.to_string().to_lowercase().contains(keywords)
+        room.room_id.to_string().to_lowercase() == keywords
     }
 
     fn matches_room_name(room: &RoomsListEntry, keywords: &str) -> bool {
         room.room_name
             .as_ref()
             .map_or(false, |name| name.to_lowercase().contains(keywords))
+    }
+
+    /// Check if the keywords have a special prefix that indicates a pre-match filter check.
+    fn pre_match_filter_check(keywords: &str) -> Option<(&str, char)> {
+        if keywords.is_empty() {
+            return None;
+        }
+        let first_char = keywords.chars().next().unwrap();
+        match first_char {
+            '!' | '@' => Some((keywords, first_char)),
+            _ => None
+        }
     }
 
     pub fn build(self) -> (RoomDisplayFilter, Option<SortFn>) {
@@ -292,16 +304,24 @@ impl RoomDisplayFilterBuilder {
 
             let keywords = keywords.to_lowercase();
 
-            if filter_types.contains(&RoomDisplayFilterType::All) {
-                return Self::matches_room_id(room, &keywords) ||
-                        Self::matches_room_name(room, &keywords);
+
+            if let Some((keywords, prefix)) = Self::pre_match_filter_check(&keywords) {
+                return match prefix {
+                    '!' => Self::matches_room_id(room, keywords),
+                    // Todo: Match room alias, etc.
+                    // @ => self.matches_room_alias(room, keywords),
+                    _ => false,
+                };
             }
 
             filter_types.iter().any(|filter_type| match filter_type {
                 RoomDisplayFilterType::RoomName => Self::matches_room_name(room, &keywords),
-                RoomDisplayFilterType::RoomId => Self::matches_room_id(room, &keywords),
+                RoomDisplayFilterType::All => {
+                    Self::matches_room_name(room, &keywords) ||
+                    Self::matches_room_id(room, &keywords)
+                },
                 RoomDisplayFilterType::None => true,
-                RoomDisplayFilterType::All => unreachable!(),
+                RoomDisplayFilterType::RoomId => unreachable!(),
             })
         }));
 
@@ -586,7 +606,7 @@ impl WidgetMatchEvent for RoomsList {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
                 .set_keywords(keywords)
-                .by_room_name()
+                .by_all()
                 .build();
 
                 self.display_filter = filter;
@@ -602,6 +622,12 @@ impl WidgetMatchEvent for RoomsList {
                         let room_b = self.all_rooms.get(b).unwrap();
                         sort_fn(room_a, room_b)
                     });
+                }
+
+                if self.displayed_rooms.is_empty() {
+                    self.status = "No rooms found matching search.".to_string();
+                } else {
+                    self.status = format!("Found {} rooms matching search.", self.displayed_rooms.len());
                 }
 
                 self.redraw(cx);
