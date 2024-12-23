@@ -5,6 +5,7 @@ use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile;
 use crate::home::room_screen::RoomScreenTooltipActions;
 const TOOLTIP_WIDTH: f64 = 100.0;
+const REACTION_LIST_PADDING_RIGHT: f64 = 3.0;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -12,12 +13,13 @@ live_design! {
 
     use crate::shared::styles::*;
     COLOR_BUTTON_GREY = #B6BABF
+    REACTION_LIST_PADDING_RIGHT = 30.0;
     pub ReactionList = {{ReactionList}} {
         width: Fill, 
         height: Fit, 
         margin: {top: (5.0)}
         padding:{
-            right:30
+            right: (REACTION_LIST_PADDING_RIGHT)
         }
         item: <Button> {
             width: Fit,
@@ -202,24 +204,18 @@ impl Widget for ReactionList {
                     // Widget.handle_event here does not cause the button to be highlighted when mouse over
                     // To make the button highlighted when mouse over, the iteration over the children needs to be done 
                     // outside Event::MouseMove.
-                    if widget_ref.area().rect(cx).contains(e.abs) {
+                    let widget_rect = widget_ref.area().rect(cx);
+                    if widget_rect.contains(e.abs) {
                         if let Some(reaction_data) = self.event_reaction_list.get(id.0 as usize) {
                             // Temporary hack to improve the issue that the tooltip is cut off by the right side of the screen
                             // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
                             // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
-                            let rect = if e.abs.x > cx.default_window_size().x - TOOLTIP_WIDTH {
-                                Rect {
-                                    pos: DVec2 {
-                                        x:widget_ref.area().rect(cx).pos.x,
-                                        y:e.abs.y
-                                    },
-                                    size: DVec2::new(),
-                                }
-                            } else {
-                                Rect {
-                                    pos: e.abs,
-                                    size: DVec2::new(),
-                                }
+                            let rect =  Rect {
+                                pos: DVec2 {
+                                    x: widget_rect.pos.x + widget_rect.size.x - REACTION_LIST_PADDING_RIGHT,
+                                    y: widget_rect.pos.y - widget_rect.size.y / 2.0
+                                },
+                                size: DVec2::new(),
                             };
                             // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state
                             // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction button

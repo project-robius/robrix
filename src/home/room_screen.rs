@@ -967,14 +967,45 @@ live_design! {
                 <RoundedView> {
                     width: Fit,
                     height: Fit,
-    
-                    padding: {left:10, top: 19, right: 10, bottom: 10},
+                    
+                    padding: {left:20, top: 10, right: 10, bottom: 10},
     
                     draw_bg: {
                         color: #fff,
                         border_width: 1.0,
                         border_color: #D0D5DD,
-                        radius: 2.
+                        radius: 2.,
+                        instance background_color: (#3b444b),
+                        instance offset: 20.0,
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                
+                            // Main rounded rectangle
+                            let rect_size = self.rect_size;
+                            sdf.box(
+                                8.0 + self.border_width,
+                                0.0 + self.border_width,
+                                rect_size.x - (self.border_width * 2.0) - 8.0,
+                                rect_size.y - (self.border_width * 2.0),
+                                max(1.0, self.radius)
+                            )
+                            sdf.fill(self.background_color);
+                            
+                            sdf.translate(0.0, self.rect_size.y / 2.0 - 10.0);
+                            // Draw left pointed arrow
+                            sdf.move_to(10.0, 0.0);
+                            sdf.line_to(10.0, 20.0);
+                            sdf.line_to(0.0, 10.0);
+                            // Draw up pointed arrow
+                            // sdf.move_to(20.0, 20.0);
+                            // sdf.line_to(0.0, 20.0);
+                            // sdf.line_to(10.0, 10.0);
+                            sdf.close_path();
+                            
+                            sdf.fill((self.background_color));
+                            return sdf.result;
+                        }
+                        
                     }
     
                     tooltip_label = <Label> {
@@ -982,7 +1013,7 @@ live_design! {
                         draw_text: {
                             text_style: <THEME_FONT_REGULAR>{font_size: 9},
                             text_wrap: Word,
-                            color: #000
+                            color: (COLOR_PRIMARY)
                         }
                     }
                 }
