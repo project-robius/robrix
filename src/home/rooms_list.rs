@@ -1,11 +1,12 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{cmp::Ordering, collections::HashMap, ops::Deref};
 use crossbeam_queue::SegQueue;
+use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomId};
 
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
-use super::room_preview::RoomPreviewAction;
+use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in the room preview,
@@ -200,6 +201,114 @@ impl Deref for RoomDisplayFilter {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub enum RoomDisplayFilterType {
+    /// Filter All rooms by the given keywords.
+    All,
+    // Filter rooms by RoomName
+    RoomName,
+    // Filter rooms by RoomId
+    RoomId,
+    None,
+}
+
+/// A builder for creating a `RoomDisplayFilter` with a specific set of filter types and a sorting function.
+pub struct RoomDisplayFilterBuilder {
+    keywords: String,
+    filter_types: HashSet<RoomDisplayFilterType>,
+    sort_fn: Option<Box<dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering>>,
+}
+/// ## Example
+/// You can create any combination of filters and sorting functions using the `RoomDisplayFilterBuilder`.
+/// ```rust,norun
+///   let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
+///     .set_keywords(keywords)
+///     .by_room_id()
+///     .by_room_name()
+///     .sort_by(|a, b| {
+///         let name_a = a.room_name.as_ref().map_or("", |n| n.as_str());
+///         let name_b = b.room_name.as_ref().map_or("", |n| n.as_str());
+///         name_a.cmp(name_b)
+///     })
+///     .build();
+/// ```
+impl RoomDisplayFilterBuilder {
+    pub fn new() -> Self {
+        Self {
+            keywords: String::new(),
+            filter_types: HashSet::new(),
+            sort_fn: None,
+        }
+    }
+
+    pub fn set_keywords(mut self, keywords: String) -> Self {
+        self.keywords = keywords;
+        self
+    }
+
+    pub fn by_room_id(mut self) -> Self {
+        self.filter_types.insert(RoomDisplayFilterType::RoomId);
+        self
+    }
+
+    pub fn by_room_name(mut self) -> Self {
+        self.filter_types.insert(RoomDisplayFilterType::RoomName);
+        self
+    }
+
+    pub fn by_all(mut self) -> Self {
+        self.filter_types.insert(RoomDisplayFilterType::All);
+        self
+    }
+
+    pub fn sort_by<F>(mut self, sort_fn: F) -> Self
+    where
+        F: Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering + 'static
+    {
+        self.sort_fn = Some(Box::new(sort_fn));
+        self
+    }
+
+    fn matches_room_id(room: &RoomsListEntry, keywords: &str) -> bool {
+        room.room_id.to_string().to_lowercase().contains(keywords)
+    }
+
+    fn matches_room_name(room: &RoomsListEntry, keywords: &str) -> bool {
+        room.room_name
+            .as_ref()
+            .map_or(false, |name| name.to_lowercase().contains(keywords))
+    }
+
+    pub fn build(self) -> (RoomDisplayFilter, Option<Box<dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering>>) {
+        let keywords = self.keywords;
+        let filter_types = self.filter_types;
+
+        let filter = RoomDisplayFilter(Box::new(move |room| {
+            if keywords.is_empty() || filter_types.is_empty() {
+                return true;
+            }
+
+            let keywords = keywords.to_lowercase();
+
+            if filter_types.contains(&RoomDisplayFilterType::All) {
+                return Self::matches_room_id(room, &keywords) ||
+                        Self::matches_room_name(room, &keywords);
+            }
+
+            filter_types.iter().any(|filter_type| match filter_type {
+                RoomDisplayFilterType::RoomName => Self::matches_room_name(room, &keywords),
+                RoomDisplayFilterType::RoomId => Self::matches_room_id(room, &keywords),
+                RoomDisplayFilterType::None => true,
+                RoomDisplayFilterType::All => unreachable!(),
+            })
+        }));
+
+        (filter, self.sort_fn)
+    }
+
+}
+
+
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
@@ -388,6 +497,7 @@ impl Widget for RoomsList {
                 self.redraw(cx);
             }
         }
+        self.widget_match_event(cx, event, scope);
     }
 
 
@@ -461,4 +571,39 @@ impl Widget for RoomsList {
         DrawStep::done()
     }
 
+}
+
+impl WidgetMatchEvent for RoomsList {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+        for action in actions {
+            if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
+                let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
+                .set_keywords(keywords)
+                .by_room_name()
+                .sort_by(|a, b| {
+                    let name_a = a.room_name.as_ref().map_or("", |n| n.as_str());
+                    let name_b = b.room_name.as_ref().map_or("", |n| n.as_str());
+                    name_a.cmp(name_b)
+                })
+                .build();
+
+                self.display_filter = filter;
+                self.displayed_rooms = self.all_rooms
+                    .iter()
+                    .filter(|(_, room)| (self.display_filter)(room))
+                    .map(|(room_id, _)| room_id.clone())
+                    .collect();
+
+                if let Some(sort_fn) = sort_fn {
+                    self.displayed_rooms.sort_by(|a, b| {
+                        let room_a = self.all_rooms.get(a).unwrap();
+                        let room_b = self.all_rooms.get(b).unwrap();
+                        sort_fn(room_a, room_b)
+                    });
+                }
+
+                self.redraw(cx);
+            }
+        }
+    }
 }
