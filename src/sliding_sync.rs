@@ -812,6 +812,24 @@ async fn async_worker(
                         error!("Failed to send the result of if user can send message: {e}")
                     }
                 });
+            },
+            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for send toggle reaction {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+
+                let _toggle_reaction_task = Handle::current().spawn(async move {
+                    log!("Toggle Reaction to room {room_id}: ...");
+                    match timeline.toggle_reaction(&timeline_event_id, &reaction).await {
+                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id} {reaction}."),
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
+                    }
+                });
             }
         }
     }

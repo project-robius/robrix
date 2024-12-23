@@ -12,7 +12,7 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, UserId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
     },
     OwnedServerName,
 };
@@ -56,6 +56,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_modal::*;
+    use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -1034,8 +1035,17 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.reaction_list(id!(reaction_list));
-                if let Some((rect, tooltip_text)) = seq.hover_in(actions) {
+                if let Some((rect, tooltip_text, tooltip_width)) = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, rect.pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            rounded_view = {
+                                tooltip_label = {
+                                    width: (tooltip_width)
+                                }
+                            }
+                        }
+                    ));
                 }
                 if seq.hover_out(actions) {
                     tooltip.hide(cx);
@@ -2203,7 +2213,8 @@ pub enum RoomScreenTooltipActions {
     // First parameter is rect containing tooltip position and its size
     // Todo! implement tooltip resizing
     // The second parameter is tooltip text
-    HoverIn(Rect, String),
+    // The third parameter is tooltip width
+    HoverIn(Rect, String, f64),
     HoverOut,
     None,
 }

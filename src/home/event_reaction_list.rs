@@ -1,17 +1,18 @@
 use crate::sliding_sync::{get_client, submit_async_request, MatrixRequest};
 use makepad_widgets::*;
-use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile;
 use crate::home::room_screen::RoomScreenTooltipActions;
-const TOOLTIP_WIDTH: f64 = 80.0;
+const TOOLTIP_WIDTH: f64 = 100.0;
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
     COLOR_BUTTON_GREY = #B6BABF
-    ReactionList = {{ReactionList}} {
+    pub ReactionList = {{ReactionList}} {
         width: Fill, 
         height: Fit, 
         margin: {top: (5.0)}
@@ -69,36 +70,6 @@ live_design! {
                 color: #000
                 fn get_color(self) -> vec4 {
                     return self.color;
-                }
-            }
-        }
-        tooltip = <Tooltip> {
-            content: <View> {
-                flow: Overlay
-                width: Fit
-                height: Fit
-    
-                <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-    
-                    padding: {left:10, top: 19, right: 10, bottom: 10},
-    
-                    draw_bg: {
-                        color: #fff,
-                        border_width: 1.0,
-                        border_color: #D0D5DD,
-                        radius: 2.
-                    }
-    
-                    tooltip_label = <Label> {
-                        width: 30,
-                        draw_text: {
-                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
-                            text_wrap: Word,
-                            color: #000
-                        }
-                    }
                 }
             }
         }
@@ -276,7 +247,7 @@ impl Widget for ReactionList {
                     });
                     // If the mouse does not leave this particular reaction button, post a HoverIn action
                     if !reset_tooltip_state {
-                        cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(*tooltip_area, tooltip_text.clone()));
+                        cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(*tooltip_area, tooltip_text.clone(), TOOLTIP_WIDTH));
                     }
                 }
                 if reset_tooltip_state {
@@ -290,13 +261,10 @@ impl Widget for ReactionList {
             .for_each(|(_id, widget_ref)| {
                 if widget_ref.clicked(actions) {
                     let text = widget_ref.text().clone();
-                    // let mut reaction_string_arr: Vec<&str> = text.split(" ").collect();
-                    // reaction_string_arr.pop();
-                    // let reaction_string = reaction_string_arr.join(" ");
                     let reaction_string = text.rsplit_once(' ')
                     .map(|(prefix, _)| prefix)
                     .unwrap_or(&text);
-                    if let Some(key) = emojis::get_by_shortcode(&reaction_string) {
+                    if let Some(key) = emojis::get_by_shortcode(reaction_string) {
                         submit_async_request(MatrixRequest::ToggleReaction {
                             room_id: room_id.clone(),
                             timeline_event_id: timeline_event_id.clone(),
@@ -373,10 +341,10 @@ impl ReactionListRef {
             instance.width_calculated = false;
         }
     }
-    pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String)> {
+    pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String, f64)> {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             match item.cast() {
-                RoomScreenTooltipActions::HoverIn(rect, tooltip_text) => Some((rect, tooltip_text)),
+                RoomScreenTooltipActions::HoverIn(rect, tooltip_text, tooltip_width) => Some((rect, tooltip_text, tooltip_width)),
                 _ => None,
             }
         } else {
