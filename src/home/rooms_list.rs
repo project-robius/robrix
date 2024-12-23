@@ -212,11 +212,13 @@ pub enum RoomDisplayFilterType {
     None,
 }
 
+type SortFn = Box<dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering>;
+
 /// A builder for creating a `RoomDisplayFilter` with a specific set of filter types and a sorting function.
 pub struct RoomDisplayFilterBuilder {
     keywords: String,
     filter_types: HashSet<RoomDisplayFilterType>,
-    sort_fn: Option<Box<dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering>>,
+    sort_fn: Option<SortFn>,
 }
 /// ## Example
 /// You can create any combination of filters and sorting functions using the `RoomDisplayFilterBuilder`.
@@ -279,7 +281,7 @@ impl RoomDisplayFilterBuilder {
             .map_or(false, |name| name.to_lowercase().contains(keywords))
     }
 
-    pub fn build(self) -> (RoomDisplayFilter, Option<Box<dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering>>) {
+    pub fn build(self) -> (RoomDisplayFilter, Option<SortFn>) {
         let keywords = self.keywords;
         let filter_types = self.filter_types;
 
@@ -308,6 +310,11 @@ impl RoomDisplayFilterBuilder {
 
 }
 
+impl Default for RoomDisplayFilterBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomsList {
