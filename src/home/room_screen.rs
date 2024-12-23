@@ -27,7 +27,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
@@ -41,22 +41,21 @@ const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
 
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::search_bar::SearchBar;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::text_or_image::TextOrImage;
-    import crate::shared::html_or_plaintext::*;
-    import crate::profile::user_profile::UserProfileSlidingPane;
-    import crate::home::event_reaction::*;
-    import crate::shared::typing_animation::TypingAnimation;
-    import crate::shared::icon_button::*;
-    import crate::shared::jump_to_bottom_button::*;
-    import crate::home::loading_modal::*;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::search_bar::SearchBar;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::html_or_plaintext::*;
+    use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::shared::typing_animation::TypingAnimation;
+    use crate::shared::icon_button::*;
+    use crate::shared::jump_to_bottom_button::*;
+    use crate::home::loading_modal::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -75,6 +74,8 @@ live_design! {
     COLOR_READ_MARKER = #xeb2733
     COLOR_PROFILE_CIRCLE = #xfff8ee
     TYPING_NOTICE_ANIMATION_DURATION = 0.3
+
+    CAN_NOT_SEND_NOTICE = "You don't have permission to post to this room."
 
     FillerY = <View> {width: Fill}
 
@@ -234,6 +235,7 @@ live_design! {
         height: Fit,
         margin: 0.0
         flow: Down,
+        cursor: Default,
         padding: 0.0,
         spacing: 0.0
 
@@ -444,6 +446,7 @@ live_design! {
         width: Fill,
         height: Fit,
         margin: 0.0
+        cursor: Default
         flow: Right,
         padding: { top: 1.0, bottom: 1.0 }
         spacing: 0.0
@@ -684,8 +687,9 @@ live_design! {
     IMG_PLUS = dep("crate://self/resources/img/plus.png")
     IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
 
-    RoomScreen = {{RoomScreen}} {
+    pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
+        cursor: Default,
         show_bg: true,
         draw_bg: {
             color: (COLOR_SECONDARY)
@@ -788,7 +792,7 @@ live_design! {
                 location_preview = <LocationPreview> { }
 
                 // Below that, display a view that holds the message input bar and send button.
-                <View> {
+                input_bar = <View> {
                     width: Fill, height: Fit
                     flow: Right,
                     align: {y: 0.5},
@@ -893,6 +897,24 @@ live_design! {
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
                         icon_walk: {width: 18.0, height: Fit},
+                    }
+                }
+                can_not_send_message_notice = <View> {
+                    visible: false
+                    show_bg: true
+                    draw_bg: {
+                        color: (COLOR_SECONDARY)
+                    }
+                    padding: {left: 75}
+                    align: {y: 0.3}
+                    width: Fill, height: 37.5
+
+                    text = <Label> {
+                        draw_text: {
+                            color: (COLOR_TEXT)
+                            text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                        }
+                        text: (CAN_NOT_SEND_NOTICE)
                     }
                 }
             }
@@ -1150,89 +1172,6 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
-
-                // Handle a link being clicked.
-                if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-                    // A closure that handles both MatrixToUri and MatrixUri links.
-                    let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-                        match id {
-                            MatrixId::Room(room_id) => {
-                                if self.room_id.as_ref() == Some(room_id) {
-                                    return true;
-                                }
-                                if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                                    log!("TODO: jump to known room {}", room_id);
-                                } else {
-                                    log!("TODO: fetch and display room preview for room {}", room_id);
-                                }
-                                true
-                            }
-                            MatrixId::RoomAlias(room_alias) => {
-                                log!("TODO: open room alias {}", room_alias);
-                                // TODO: open a room loading screen that shows a spinner
-                                //       while our background async task calls Client::resolve_room_alias()
-                                //       and then either jumps to the room if known, or fetches and displays
-                                //       a room preview for that room.
-                                true
-                            }
-                            MatrixId::User(user_id) => {
-                                log!("Opening matrix.to user link for {}", user_id);
-
-                                // There is no synchronous way to get the user's full profile info
-                                // including the details of their room membership,
-                                // so we fill in with the details we *do* know currently,
-                                // show the UserProfileSlidingPane, and then after that,
-                                // the UserProfileSlidingPane itself will fire off
-                                // an async request to get the rest of the details.
-                                self.show_user_profile(
-                                    cx,
-                                    &pane,
-                                    UserProfilePaneInfo {
-                                        profile_and_room_id: UserProfileAndRoomId {
-                                            user_profile: UserProfile {
-                                                user_id: user_id.to_owned(),
-                                                username: None,
-                                                avatar_state: AvatarState::Unknown,
-                                            },
-                                            room_id: self.room_id.clone().unwrap(),
-                                        },
-                                        room_name: self.room_name.clone(),
-                                        // TODO: use the extra `via` parameters
-                                        room_member: None,
-                                    },
-                                );
-                                true
-                            }
-                            MatrixId::Event(room_id, event_id) => {
-                                log!("TODO: open event {} in room {}", event_id, room_id);
-                                // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                                //       but then we need to call Room::event_with_context() to get the event
-                                //       and its context (surrounding events ?).
-                                true
-                            }
-                            _ => false,
-                        }
-                    };
-
-                    let mut link_was_handled = false;
-                    if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                        link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
-                    }
-                    if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                        link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
-                    }
-
-                    if !link_was_handled {
-                        log!("Opening URL \"{}\"", url);
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                        }
-                    }
-                }
-
-                if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.modal(id!(loading_modal)).close(cx);
-                }
             }
 
             // Set visibility of loading message banner based of pagination logic
@@ -1281,14 +1220,14 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send message button being clicked and enter key being pressed.
-            let msg_input_widget = self.text_input(id!(message_input));
-            let send_message_shortcut_pressed = msg_input_widget
+            let message_input = self.text_input(id!(message_input));
+            let send_message_shortcut_pressed = message_input
                 .key_down_unhandled(actions)
                 .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
             if send_message_shortcut_pressed
                 || self.button(id!(send_message_button)).clicked(actions)
             {
-                let entered_text = msg_input_widget.text().trim().to_string();
+                let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     log!("Sending message to room {}: {:?}", room_id, entered_text);
@@ -1309,7 +1248,7 @@ impl Widget for RoomScreen {
                     });
 
                     self.clear_replying_to();
-                    msg_input_widget.set_text_and_redraw(cx, "");
+                    message_input.set_text_and_redraw(cx, "");
                 }
             }
 
@@ -1321,7 +1260,7 @@ impl Widget for RoomScreen {
             );
 
             // Handle a typing action on the message input box.
-            if let Some(new_text) = self.text_input(id!(message_input)).changed(actions) {
+            if let Some(new_text) = message_input.changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),
@@ -1352,9 +1291,31 @@ impl Widget for RoomScreen {
             // Forward the event to the user profile sliding pane,
             // preventing the underlying timeline view from receiving it.
             pane.handle_event(cx, event, scope);
-        } else {
-            // Forward the event to the inner timeline view.
-            self.view.handle_event(cx, event, scope);
+        }
+        else {
+            // Forward the event to the inner timeline view, but capture any actions it produces
+            // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
+            // ensuring they are not mistakenly handled by other RoomScreen widget instances.
+            let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
+                self.view.handle_event(cx, event, scope)
+            );
+            // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
+            // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
+            actions_generated_within_this_room_screen.retain(|action| {
+                if self.handle_link_clicked(cx, action, &pane) {
+                    return false;
+                }
+
+                if let LoadingModalAction::Close = action.as_widget_action().cast() {
+                    self.modal(id!(loading_modal)).close(cx);
+                    return false;
+                }
+
+                // Keep all unhandled actions so we can add them back to the global action list below.
+                true
+            });
+            // Add back any unhandled actions to the global action list.
+            cx.extend_actions(actions_generated_within_this_room_screen);
         }
     }
 
@@ -1733,6 +1694,14 @@ impl RoomScreen {
                     // if the list of typing users gets updated many times in a row.
                     typing_users = users;
                 }
+
+                TimelineUpdate::CanUserSendMessage(can_user_send_message) => {
+                    let input_bar = self.view.view(id!(input_bar));
+                    let can_not_send_message_notice = self.view.view(id!(can_not_send_message_notice));
+
+                    input_bar.set_visible(can_user_send_message);
+                    can_not_send_message_notice.set_visible(!can_user_send_message);
+                }
             }
         }
 
@@ -1782,6 +1751,98 @@ impl RoomScreen {
         if num_updates > 0 {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
+        }
+    }
+
+
+    /// Handles a link being clicked in any child widgets of this RoomScreen.
+    ///
+    /// Returns `true` if the given `action` was indeed an `HtmlLinkAction::Clicked` action.
+    fn handle_link_clicked(
+        &mut self,
+        cx: &mut Cx,
+        action: &Action,
+        pane: &UserProfileSlidingPaneRef,
+    ) -> bool {
+        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+            // A closure that handles both MatrixToUri and MatrixUri links.
+            let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+                match id {
+                    MatrixId::Room(room_id) => {
+                        if self.room_id.as_ref() == Some(room_id) {
+                            return true;
+                        }
+                        if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                            log!("TODO: jump to known room {}", room_id);
+                        } else {
+                            log!("TODO: fetch and display room preview for room {}", room_id);
+                        }
+                        true
+                    }
+                    MatrixId::RoomAlias(room_alias) => {
+                        log!("TODO: open room alias {}", room_alias);
+                        // TODO: open a room loading screen that shows a spinner
+                        //       while our background async task calls Client::resolve_room_alias()
+                        //       and then either jumps to the room if known, or fetches and displays
+                        //       a room preview for that room.
+                        true
+                    }
+                    MatrixId::User(user_id) => {
+                        log!("Opening matrix.to user link for {}", user_id);
+
+                        // There is no synchronous way to get the user's full profile info
+                        // including the details of their room membership,
+                        // so we fill in with the details we *do* know currently,
+                        // show the UserProfileSlidingPane, and then after that,
+                        // the UserProfileSlidingPane itself will fire off
+                        // an async request to get the rest of the details.
+                        self.show_user_profile(
+                            cx,
+                            pane,
+                            UserProfilePaneInfo {
+                                profile_and_room_id: UserProfileAndRoomId {
+                                    user_profile: UserProfile {
+                                        user_id: user_id.to_owned(),
+                                        username: None,
+                                        avatar_state: AvatarState::Unknown,
+                                    },
+                                    room_id: self.room_id.clone().unwrap(),
+                                },
+                                room_name: self.room_name.clone(),
+                                // TODO: use the extra `via` parameters
+                                room_member: None,
+                            },
+                        );
+                        true
+                    }
+                    MatrixId::Event(room_id, event_id) => {
+                        log!("TODO: open event {} in room {}", event_id, room_id);
+                        // TODO: this requires the same first step as the `MatrixId::Room` case above,
+                        //       but then we need to call Room::event_with_context() to get the event
+                        //       and its context (surrounding events ?).
+                        true
+                    }
+                    _ => false,
+                }
+            };
+
+            let mut link_was_handled = false;
+            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+            }
+            if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+            }
+
+            if !link_was_handled {
+                log!("Opening URL \"{}\"", url);
+                if let Err(e) = robius_open::Uri::new(&url).open() {
+                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                }
+            }
+            true
+        } else {
+            false
         }
     }
 
@@ -1863,6 +1924,7 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
+
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
@@ -2211,6 +2273,9 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
+    /// A notice that the permission of user's ability to send messages in this room,
+    /// this condition is simple so that we only use `bool`
+    CanUserSendMessage (bool)
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2934,20 +2999,17 @@ fn populate_message_view(
 }
 
 
-/// Returns `true` if the given message mentions the current user.
+/// Returns `true` if the given message mentions the current user or is a room mention.
 fn does_message_mention_current_user(
     message: &timeline::Message,
 ) -> bool {
-    let Some(client) = get_client() else {
-        return false;
-    };
-    let Some(current_user_id) = client.user_id() else {
+    let Some(current_user_id) = sliding_sync::current_user_id() else {
         return false;
     };
 
-    // This covers both direct mentions ("@user") and a replied-to message.
-    message.mentions().is_some_and(
-        |mentions| mentions.user_ids.contains(current_user_id)
+    // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
+    message.mentions().is_some_and(|mentions|
+        mentions.room || mentions.user_ids.contains(&current_user_id)
     )
 }
 
@@ -2957,12 +3019,20 @@ fn populate_text_message_content(
     body: &str,
     formatted_body: Option<&FormattedBody>,
 ) {
-    if let Some(formatted_body) = formatted_body.as_ref()
-        .and_then(|fb| (fb.format == MessageFormat::Html).then(|| fb.body.clone()))
+    // The message was HTML-formatted rich text.
+    if let Some(fb) = formatted_body.as_ref()
+        .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        message_content_widget.show_html(utils::linkify(formatted_body.as_ref()));
-    } else {
-        match utils::linkify(body) {
+        message_content_widget.show_html(
+            utils::linkify(
+                utils::trim_start_html_whitespace(&fb.body),
+                true,
+            )
+        );
+    }
+    // The message was non-HTML plaintext.
+    else {
+        match utils::linkify(body, false) {
             Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
             Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
         }
@@ -3178,10 +3248,11 @@ fn populate_location_message_content(
         let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
         let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
         let html_body = format!(
-            "Location: {short_lat},{short_long}\
+            "Location: <a href=\"{}\">{short_lat},{short_long}</a><br>\
             <p><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></p>\
             <p><a href=\"https://www.google.com/maps/search/?api=1&amp;query={lat},{long}\">Open in Google Maps</a></p>\
             <p><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></p>",
+            location.geo_uri,
         );
         message_content_widget.show_html(html_body);
     } else {

@@ -189,9 +189,27 @@ pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail
     }
 );
 
+/// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
+pub fn trim_start_html_whitespace(mut text: &str) -> &str {
+    let mut prev_text_len = text.len();
+    loop {
+        text = text
+            .trim_start_matches("<p>")
+            .trim_start_matches("<br>")
+            .trim_start_matches("<br/>")
+            .trim_start_matches("<br />")
+            .trim_start();
+
+        if text.len() == prev_text_len {
+            break;
+        }
+        prev_text_len = text.len();
+    }
+    text
+}
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-pub fn linkify(text: &str) -> Cow<'_, str> {
+pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
     use linkify::{LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
@@ -199,6 +217,15 @@ pub fn linkify(text: &str) -> Cow<'_, str> {
     if links.peek().is_none() {
         return Cow::Borrowed(text);
     }
+
+    // A closure to escape text if it's not HTML.
+    let escaped = |text| {
+        if is_html {
+            Cow::from(text)
+        } else {
+            htmlize::escape_text(text)
+        }
+    };
 
     let mut linkified_text = String::new();
     let mut last_end_index = 0;
@@ -219,16 +246,18 @@ pub fn linkify(text: &str) -> Cow<'_, str> {
             match link.kind() {
                 LinkKind::Url => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{link_txt}\">{}</a>",
-                        text.get(last_end_index..link.start()).unwrap_or_default(),
+                        "{linkified_text}{}<a href=\"{}\">{}</a>",
+                        escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 LinkKind::Email => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{link_txt}\">{}</a>",
-                        text.get(last_end_index..link.start()).unwrap_or_default(),
+                        "{linkified_text}{}<a href=\"mailto:{}\">{}</a>",
+                        escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 _ => return Cow::Borrowed(text), // unreachable
@@ -236,7 +265,10 @@ pub fn linkify(text: &str) -> Cow<'_, str> {
         }
         last_end_index = link.end();
     }
-    linkified_text.push_str(text.get(last_end_index..).unwrap_or_default());
+    linkified_text.push_str(
+        &escaped(text.get(last_end_index..).unwrap_or_default())
+    );
+    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
     Cow::Owned(linkified_text)
 }
 
@@ -287,14 +319,14 @@ mod tests_linkify {
     #[test]
     fn test_linkify0() {
         let text = "Hello, world!";
-        assert_eq!(linkify(text).as_ref(), text);
+        assert_eq!(linkify(text, false).as_ref(), text);
     }
 
     #[test]
     fn test_linkify1() {
         let text = "Check out this website: https://example.com";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -303,7 +335,7 @@ mod tests_linkify {
     fn test_linkify2() {
         let text = "Send an email to john@example.com";
         let expected = "Send an email to <a href=\"mailto:john@example.com\">john@example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -311,14 +343,14 @@ mod tests_linkify {
     #[test]
     fn test_linkify3() {
         let text = "Visit our website at www.example.com";
-        assert_eq!(linkify(text).as_ref(), text);
+        assert_eq!(linkify(text, false).as_ref(), text);
     }
 
     #[test]
     fn test_linkify4() {
         let text = "Link 1 http://google.com Link 2 https://example.com";
         let expected = "Link 1 <a href=\"http://google.com\">http://google.com</a> Link 2 <a href=\"https://example.com\">https://example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -328,7 +360,7 @@ mod tests_linkify {
     fn test_linkify5() {
         let text = "html test <a href=http://google.com>Link title</a> Link 2 https://example.com";
         let expected = "html test <a href=http://google.com>Link title</a> Link 2 <a href=\"https://example.com\">https://example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, true);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -336,21 +368,21 @@ mod tests_linkify {
     #[test]
     fn test_linkify6() {
         let text = "<a href=http://google.com>link title</a>";
-        assert_eq!(linkify(text).as_ref(), text);
+        assert_eq!(linkify(text, true).as_ref(), text);
     }
 
     #[test]
     fn test_linkify7() {
         let text = "https://example.com";
         let expected = "<a href=\"https://example.com\">https://example.com</a>";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify8() {
         let text = "test test https://crates.io/crates/cargo-packager test test";
         let expected = "test test <a href=\"https://crates.io/crates/cargo-packager\">https://crates.io/crates/cargo-packager</a> test test";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 
     #[test]
@@ -358,14 +390,14 @@ mod tests_linkify {
         let text = "<mx-reply><blockquote><a href=\"https://matrix.to/#/!ifW4td0it0scmZpEM6:computer.surgery/$GwDzIlPzNgxhJ2QCIsmcPMC-sHdoKNsb0g2MS1psyyM?via=matrix.org&via=mozilla.org&via=gitter.im\">In reply to</a> <a href=\"https://matrix.to/#/@spore:mozilla.org\">@spore:mozilla.org</a><br />So I asked if there's a crate for it (bc I don't have the time to test and debug it) or if there's simply a better way that involves less states and invariants</blockquote></mx-reply>https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasick.html#method.stream_find_iter";
 
         let expected = "<mx-reply><blockquote><a href=\"https://matrix.to/#/!ifW4td0it0scmZpEM6:computer.surgery/$GwDzIlPzNgxhJ2QCIsmcPMC-sHdoKNsb0g2MS1psyyM?via=matrix.org&via=mozilla.org&via=gitter.im\">In reply to</a> <a href=\"https://matrix.to/#/@spore:mozilla.org\">@spore:mozilla.org</a><br />So I asked if there's a crate for it (bc I don't have the time to test and debug it) or if there's simply a better way that involves less states and invariants</blockquote></mx-reply><a href=\"https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasick.html#method.stream_find_iter\">https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasick.html#method.stream_find_iter</a>";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify10() {
         let text = "And then call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
         let expected = "And then call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
 
@@ -373,21 +405,21 @@ mod tests_linkify {
     fn test_linkify11() {
         let text = "And then https://google.com call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
         let expected = "And then <a href=\"https://google.com\">https://google.com</a> call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify12() {
         let text = "And then https://google.com call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead http://another-link.http.com </code> methods.";
         let expected = "And then <a href=\"https://google.com\">https://google.com</a> call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead <a href=\"http://another-link.http.com\">http://another-link.http.com</a> </code> methods.";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify13() {
         let text = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 }
 

@@ -91,26 +91,28 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] View timeline of events in a single room
 - [x] Fetch and display room avatars
 - [x] Fetch user profiles (displayable names)
+- [x] Cache user profiles and avatars
+- [x] Cache fetched media on a per-room basis 
 - [x] Fetch and display user profile avatars
-- [x] Backwards pagination (upon viewing a room timeline)
+- [x] Backwards pagination to view a room's older history
 - [x] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
 - [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
-- [x] Stable positioning of events during simple timeline update
-- [x] Stable positioning of events during complex/multi-part timeline update
-- [x] Display simple text-only messages
+- [x] Stable vertical position of events during timeline update
+- [x] Display simple plaintext messages
 - [x] Display image messages (PNG, JPEG)
-- [x] Rich text formatting for message bodies
+- [x] HTML (rich text) formatting for message bodies
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
-- [x] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
-- [x] Send messages (standalone, no replies)
+- [x] Show reply previews above messages: https://github.com/project-robius/robrix/issues/82
+- [x] Send standalone messages
 - [x] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
-- [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
-- [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
+- [x] Show reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
+
+
 
 ### Auxiliary/admin features: login, registration, settings
 - [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
@@ -118,6 +120,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
+- [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] User settings screen
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
