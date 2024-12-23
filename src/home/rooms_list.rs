@@ -580,11 +580,6 @@ impl WidgetMatchEvent for RoomsList {
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
                 .set_keywords(keywords)
                 .by_room_name()
-                .sort_by(|a, b| {
-                    let name_a = a.room_name.as_ref().map_or("", |n| n.as_str());
-                    let name_b = b.room_name.as_ref().map_or("", |n| n.as_str());
-                    name_a.cmp(name_b)
-                })
                 .build();
 
                 self.display_filter = filter;
