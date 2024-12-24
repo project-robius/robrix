@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Deref};
 use crossbeam_queue::SegQueue;
 use imbl::HashSet;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomId};
+use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
@@ -142,6 +142,10 @@ pub struct RoomsListEntry {
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The canonical alias for this room, if any.
+    pub cannonical_alias: Option<OwnedRoomAliasId>,
+    /// The alternative aliases for this room, if any.
+    pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The tags associated with this room, if any.
     /// This includes things like is_favourite, is_low_priority,
     /// whether the room is a server notice room, etc.
@@ -205,10 +209,14 @@ impl Deref for RoomDisplayFilter {
 pub enum RoomDisplayFilterType {
     /// Filter All rooms by the given keywords.
     All,
-    // Filter rooms by RoomName
+    /// Filter rooms by Room name
     RoomName,
-    // Filter rooms by RoomId
+    /// Filter rooms by Room ID
     RoomId,
+    /// Filter rooms by Room alias
+    RoomAlias,
+    /// Filter rooms by Tags
+    RoomTags,
     None,
 }
 
@@ -258,6 +266,16 @@ impl RoomDisplayFilterBuilder {
         self
     }
 
+    pub fn by_room_alias(mut self) -> Self {
+        self.filter_types.insert(RoomDisplayFilterType::RoomAlias);
+        self
+    }
+
+    pub fn by_room_tags(mut self) -> Self {
+        self.filter_types.insert(RoomDisplayFilterType::RoomTags);
+        self
+    }
+
     pub fn by_all(mut self) -> Self {
         self.filter_types.insert(RoomDisplayFilterType::All);
         self
@@ -281,16 +299,50 @@ impl RoomDisplayFilterBuilder {
             .map_or(false, |name| name.to_lowercase().contains(keywords))
     }
 
-    /// Check if the keywords have a special prefix that indicates a pre-match filter check.
+    fn matches_room_alias(room: &RoomsListEntry, keywords: &str) -> bool {
+        // first check the canonical alias
+        if let Some(cannonical_alias) = &room.cannonical_alias {
+            if cannonical_alias.as_str().to_lowercase() == keywords {
+                return true;
+            }
+        }
+        // then check the alternative aliases
+        for alt_alias in &room.alt_aliases {
+            if alt_alias.as_str().to_lowercase() == keywords {
+                return true;
+            }
+        }
+
+        // no match found
+        false
+    }
+
+    fn matches_room_tags(room: &RoomsListEntry, keywords: &str) -> bool {
+        let search_tags: HashSet<&str> = keywords
+            .split_whitespace()
+            .map(|tag| tag.trim_start_matches(':'))
+            .collect();
+        room.tags.as_ref().map_or(false, |room_tags| {
+            search_tags.iter().all(|search_tag| {
+                room_tags.iter().any(|(tag_name, _)| match tag_name {
+                    TagName::Favorite if *search_tag == "favourite" => true,
+                    TagName::LowPriority if *search_tag == "lowpriority" => true,
+                    TagName::ServerNotice if *search_tag == "server_notice" => true,
+                    TagName::User(user_tag) => user_tag.as_ref().to_lowercase() == *search_tag,
+                    _ => false,
+                })
+            })
+        })
+    }
+
+    // Check if the keywords have a special prefix that indicates a pre-match filter check.
     fn pre_match_filter_check(keywords: &str) -> Option<(&str, char)> {
-        if keywords.is_empty() {
-            return None;
-        }
-        let first_char = keywords.chars().next().unwrap();
-        match first_char {
-            '!' | '@' => Some((keywords, first_char)),
-            _ => None
-        }
+        keywords.chars().next().and_then(|c|
+            match c {
+                '!' | '#' | ':' => Some((keywords, c)),
+                _ => None,
+            }
+        )
     }
 
     pub fn build(self) -> (RoomDisplayFilter, Option<SortFn>) {
@@ -302,14 +354,14 @@ impl RoomDisplayFilterBuilder {
                 return true;
             }
 
-            let keywords = keywords.to_lowercase();
+            let keywords = keywords.trim().to_lowercase();
 
-
+            // Reduce the number of matches by checking for special prefixes that indicate pre-match filtering checks.
             if let Some((keywords, prefix)) = Self::pre_match_filter_check(&keywords) {
                 return match prefix {
                     '!' => Self::matches_room_id(room, keywords),
-                    // Todo: Match room alias, etc.
-                    // @ => self.matches_room_alias(room, keywords),
+                    '#' => Self::matches_room_alias(room, keywords),
+                    ':' => Self::matches_room_tags(room, keywords),
                     _ => false,
                 };
             }
@@ -321,7 +373,10 @@ impl RoomDisplayFilterBuilder {
                     Self::matches_room_id(room, &keywords)
                 },
                 RoomDisplayFilterType::None => true,
+                // special prefix checks already handled above
                 RoomDisplayFilterType::RoomId => unreachable!(),
+                RoomDisplayFilterType::RoomAlias => unreachable!(),
+                RoomDisplayFilterType::RoomTags => unreachable!(),
             })
         }));
 
@@ -608,27 +663,40 @@ impl WidgetMatchEvent for RoomsList {
                 .set_keywords(keywords)
                 .by_all()
                 .build();
-
                 self.display_filter = filter;
-                self.displayed_rooms = self.all_rooms
-                    .iter()
-                    .filter(|(_, room)| (self.display_filter)(room))
-                    .map(|(room_id, _)| room_id.clone())
-                    .collect();
+
+                self.displayed_rooms.clear();
+                self.displayed_rooms.reserve(self.all_rooms.len());
 
                 if let Some(sort_fn) = sort_fn {
-                    self.displayed_rooms.sort_by(|a, b| {
-                        let room_a = self.all_rooms.get(a).unwrap();
-                        let room_b = self.all_rooms.get(b).unwrap();
+                    let filtered_rooms: Vec<(&OwnedRoomId, &RoomsListEntry)> = self.all_rooms
+                        .iter()
+                        .filter(|(_, room)| (self.display_filter)(room))
+                        .collect();
+
+                    let mut sorted_rooms = filtered_rooms;
+                    sorted_rooms.sort_by(|(_, room_a), (_, room_b)| {
                         sort_fn(room_a, room_b)
                     });
+
+                    self.displayed_rooms.extend(
+                        sorted_rooms.into_iter()
+                                    .map(|(room_id, _)| room_id.clone())
+                    );
+                } else {
+                    self.displayed_rooms.extend(
+                        self.all_rooms
+                            .iter()
+                            .filter(|(_, room)| (self.display_filter)(room))
+                            .map(|(room_id, _)| room_id.clone())
+                    );
                 }
 
-                if self.displayed_rooms.is_empty() {
-                    self.status = "No rooms found matching search.".to_string();
+                self.status = if self.displayed_rooms.is_empty() {
+                    "No rooms found matching search.".into()
                 } else {
-                    self.status = format!("Found {} rooms matching search.", self.displayed_rooms.len());
-                }
+                    format!("Found {} rooms matching search.", self.displayed_rooms.len())
+                };
 
                 self.redraw(cx);
             }
