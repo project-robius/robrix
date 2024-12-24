@@ -143,7 +143,7 @@ pub struct RoomsListEntry {
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
     /// The canonical alias for this room, if any.
-    pub cannonical_alias: Option<OwnedRoomAliasId>,
+    pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
     pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The tags associated with this room, if any.
@@ -301,8 +301,8 @@ impl RoomDisplayFilterBuilder {
 
     fn matches_room_alias(room: &RoomsListEntry, keywords: &str) -> bool {
         // first check the canonical alias
-        if let Some(cannonical_alias) = &room.cannonical_alias {
-            if cannonical_alias.as_str().to_lowercase() == keywords {
+        if let Some(canonical_alias) = &room.canonical_alias {
+            if canonical_alias.as_str().to_lowercase() == keywords {
                 return true;
             }
         }
