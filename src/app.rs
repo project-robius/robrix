@@ -187,6 +187,12 @@ impl MatchEvent for App {
                 self.ui.redraw(cx);
             }
 
+            if let Some(LoginAction::Logout) = action.downcast_ref() {
+                self.app_state.logged_in = false;
+                self.update_login_visibility();
+                self.ui.redraw(cx);
+            }
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
