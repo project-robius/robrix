@@ -26,7 +26,7 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{any::Any, cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -1430,7 +1430,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
-        cannonical_alias: room.canonical_alias(),
+        canonical_alias: room.canonical_alias(),
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
