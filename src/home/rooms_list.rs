@@ -322,15 +322,20 @@ impl RoomDisplayFilterBuilder {
             .split_whitespace()
             .map(|tag| tag.trim_start_matches(':'))
             .collect();
+
+        fn is_tag_match(search_tag: &str, tag_name: &TagName) -> bool {
+            match tag_name {
+                TagName::Favorite => search_tag == "favourite",
+                TagName::LowPriority => ["low_priority", "low-priority", "lowpriority", "lowPriority"].contains(&search_tag),
+                TagName::ServerNotice => ["server_notice", "server-notice", "servernotice", "serverNotice"].contains(&search_tag),
+                TagName::User(user_tag) => user_tag.as_ref().eq_ignore_ascii_case(search_tag),
+                _ => false,
+            }
+        }
+
         room.tags.as_ref().map_or(false, |room_tags| {
             search_tags.iter().all(|search_tag| {
-                room_tags.iter().any(|(tag_name, _)| match tag_name {
-                    TagName::Favorite if *search_tag == "favourite" => true,
-                    TagName::LowPriority if *search_tag == "lowpriority" => true,
-                    TagName::ServerNotice if *search_tag == "server_notice" => true,
-                    TagName::User(user_tag) => user_tag.as_ref().to_lowercase() == *search_tag,
-                    _ => false,
-                })
+                room_tags.iter().any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
             })
         })
     }
