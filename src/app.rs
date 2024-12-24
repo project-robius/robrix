@@ -190,7 +190,6 @@ impl MatchEvent for App {
             if let Some(LoginAction::Logout) = action.downcast_ref() {
                 self.app_state.logged_in = false;
                 self.update_login_visibility();
-                // self.handle_startup(cx);
                 self.ui.redraw(cx);
             }
 
