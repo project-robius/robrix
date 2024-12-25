@@ -43,12 +43,12 @@ live_design! {
             width: 25, height: 20,
             margin: {right: 22.0, bottom: 8.0},
             align: {
-                x: 0.5,
+                x: 0.4,
                 y: 0.5
             }
-            visible: false,
-
-            show_bg: true,
+            visible: true,
+            
+            show_bg: false,
             draw_bg: {
                 color: (COLOR_UNREAD_MESSAGE_BADGE)
                 instance radius: 4.0
@@ -78,8 +78,8 @@ live_design! {
             unread_messages_count = <Label> {
                 width: Fit,
                 height: Fit,
-                padding: { left: 0.0, right: 2.0 }
-                text: "",
+                //padding: { left: 0.0, right: 2.0 }
+                text: "1",
                
                 draw_text: {
                     color: #ffffff,
@@ -129,6 +129,8 @@ impl JumpToBottomButton {
     /// This does not automatically redraw any views.
     /// If unread_message_count is `0`, the unread message badge is hidden.
     pub fn show_unread_message_badge(&mut self, cx: &mut Cx, unread_message_count: u64) {
+        let unread_message_count =200;
+
         if unread_message_count > 0 {
             self.visible = true;
             self.view(id!(unread_message_badge)).set_visible(true);
@@ -139,13 +141,21 @@ impl JumpToBottomButton {
             ));
             if unread_message_count > 99 {
                 self.view(id!(unread_message_badge)).apply_over(cx, live!{
+                    align: {x: 0.5, y: 0.5},
+                    draw_bg: {
+                        width_retention_ratio: 1.2
+                    }
+                });
+            } if unread_message_count > 9 {
+                self.view(id!(unread_message_badge)).apply_over(cx, live!{
+                    align: {x: 0.45, y: 0.5},
                     draw_bg: {
                         width_retention_ratio: 1.0
                     }
                 });
             } else {
                 self.view(id!(unread_message_badge)).apply_over(cx, live!{
-                    //margin: {right: 26.0},
+                    align: {x: 0.38, y: 0.5},
                     draw_bg: {
                         width_retention_ratio: 0.8
                     }
