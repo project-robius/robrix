@@ -970,10 +970,11 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// Timer to send fully read receipt
-    /// 
-    /// 5 secs timer starts when user scrolled down and scrolled_past_read_marker is true
-    /// Last displayed event will be sent as fully read receipt
+    /// Timer used to send fully-read receipts for the current room.
+    ///
+    /// We start a short (5 second) timer when the user scrolls down,
+    /// if `scrolled_past_read_marker` is true. Then, we send a fully-read receipt
+    /// for the last displayed event in this room.
     #[rust] fully_read_timer: Timer,
 
 }
