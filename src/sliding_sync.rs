@@ -900,7 +900,7 @@ async fn async_worker(
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} send fully read receipt to room {room_id} for event {event_id}", 
+                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}", 
                             if sent { "Sent" } else { "Already sent" }
                         ),
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
