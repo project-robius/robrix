@@ -151,7 +151,7 @@ pub fn text_preview_of_message(
         ),
         MessageType::Notice(notice) => format!("<i>{}</i>",
             if let Some(formatted_body) = notice.formatted.as_ref() {
-                &formatted_body.body
+                utils::trim_start_html_whitespace(&formatted_body.body)
             } else {
                 &notice.body
             }
@@ -162,11 +162,18 @@ pub fn text_preview_of_message(
             notice.body,
         ),
         MessageType::Text(text) => {
-            text.formatted.as_ref()
-                .and_then(|fb| (fb.format == MessageFormat::Html)
-                    .then(|| utils::linkify(&fb.body).to_string())
+            text.formatted
+                .as_ref()
+                .and_then(|fb|
+                    (fb.format == MessageFormat::Html).then(||
+                        utils::linkify(
+                            utils::trim_start_html_whitespace(&fb.body),
+                            true,
+                        )
+                        .to_string()
+                    )
                 )
-                .unwrap_or_else(|| utils::linkify(&text.body).to_string())
+                .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
         }
         MessageType::VerificationRequest(verification) => format!(
             "[Verification Request] <i>to user {}</i>",

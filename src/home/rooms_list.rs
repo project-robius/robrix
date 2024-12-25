@@ -13,18 +13,17 @@ use super::room_preview::RoomPreviewAction;
 const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::search_bar::SearchBar;
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    use crate::shared::search_bar::SearchBar;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     
-    import crate::home::room_preview::*;
+    use crate::home::room_preview::*;
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -46,7 +45,7 @@ live_design! {
         }
     }
 
-    RoomsList = {{RoomsList}} {
+    pub RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
 
@@ -262,6 +261,7 @@ impl Widget for RoomsList {
                                 self.displayed_rooms.push(room_id);
                             }
                         }
+                        self.update_status_rooms_count();
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
@@ -313,6 +313,8 @@ impl Widget for RoomsList {
                                 error!("Error: couldn't find room {room_id} to remove room");
                             });
 
+                        self.update_status_rooms_count();
+
                         // TODO: send an action to the RoomScreen to hide this room
                         //       if it is currently being displayed,
                         //       and also ensure that the room's TimelineUIState is preserved
@@ -324,6 +326,7 @@ impl Widget for RoomsList {
                     RoomsListUpdate::ClearRooms => {
                         self.all_rooms.clear();
                         self.displayed_rooms.clear();
+                        self.update_status_rooms_count();
                     }
                     RoomsListUpdate::NotLoaded => {
                         self.status = "Loading rooms (waiting for homeserver)...".to_string();

@@ -3,17 +3,17 @@ use makepad_widgets::*;
 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::*;
 
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     // A jump to bottom button that appears when the timeline is not at the bottom.
-    JumpToBottomButton = {{JumpToBottomButton}} {
+    pub JumpToBottomButton = {{JumpToBottomButton}} {
         width: Fill,
         height: Fill,
         flow: Overlay,
