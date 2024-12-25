@@ -288,7 +288,7 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
-    /// Request to fetch the fully read event in the given room's timeline.
+    /// Request to fetch the user's latest fully-read event for the given room.
     GetFullyReadEvent {
         room_id: OwnedRoomId,
     },
