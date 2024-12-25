@@ -3,7 +3,7 @@ use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
-use imbl::Vector;
+use imbl::{HashMap, Vector};
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
@@ -26,7 +26,7 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}, time};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -405,7 +405,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-
+    let mut rate_limit_user_profile: HashMap<OwnedUserId, time::Instant> = HashMap::new();
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -517,6 +517,13 @@ async fn async_worker(
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
                 let Some(client) = CLIENT.get() else { continue };
+                if let Some(last_sent_time) = rate_limit_user_profile.get_mut(&user_id) {
+                    if last_sent_time.elapsed() < std::time::Duration::new(2,0) {
+                        continue
+                    }
+                } else {
+                    rate_limit_user_profile.insert(user_id.clone(), time::Instant::now());
+                }
                 let _fetch_task = Handle::current().spawn(async move {
                     log!("Sending get user profile request: user: {user_id}, \
                         room: {room_id:?}, local_only: {local_only}...",

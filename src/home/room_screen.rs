@@ -23,9 +23,8 @@ use robius_location::Coordinates;
 
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
-        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
-        user_profile_cache,
-    }, shared::{
+        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt}, user_profile_cache}
+    , shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
@@ -964,7 +963,7 @@ live_design! {
                 width: Fit
                 height: Fit
     
-                <RoundedView> {
+                rounded_view = <RoundedView> {
                     width: Fit,
                     height: Fit,
                     
@@ -978,6 +977,7 @@ live_design! {
                         instance background_color: (#3b444b),
                         // Height of isoceles triangle
                         instance callout_triangle_height: 5.0,
+                        instance callout_y_offset: 15.0,
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                             let rect_size = self.rect_size;
@@ -991,8 +991,7 @@ live_design! {
                                 max(1.0, self.radius)
                             )
                             sdf.fill(self.background_color);
-                            
-                            sdf.translate(0.0, self.rect_size.y / 2.0 - 10.0);
+                            sdf.translate(0.0, self.callout_y_offset);
                             // Draw left-pointed arrow triangle
                             sdf.move_to(self.callout_triangle_height, 0.0);
                             sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
@@ -1067,13 +1066,17 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.reaction_list(id!(reaction_list));
-                if let Some((rect, tooltip_text, tooltip_width)) = seq.hover_in(actions) {
-                    tooltip.show_with_options(cx, rect.pos, &tooltip_text);
+                if let Some(hover_in_data) = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, hover_in_data.tooltip_position.pos, &hover_in_data.tooltip_text);
+
                     tooltip.apply_over(cx, live!(
                         content: {
                             rounded_view = {
+                                draw_bg: {
+                                    callout_y_offset: (hover_in_data.callout_y_offset )
+                                }
                                 tooltip_label = {
-                                    width: (tooltip_width)
+                                    width: (hover_in_data.tooltip_width)
                                 }
                             }
                         }
@@ -2242,15 +2245,18 @@ impl RoomScreenRef {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
     // Mouse over event when the mouse is over the reaction button
-    // First parameter is rect containing tooltip position and its size
-    // Todo! implement tooltip resizing
-    // The second parameter is tooltip text
-    // The third parameter is tooltip width
-    HoverIn(Rect, String, f64),
+    HoverIn(HoverInData),
     HoverOut,
     None,
 }
-
+#[derive(Clone, Debug)]
+pub struct HoverInData {
+    pub tooltip_position: Rect,
+    pub tooltip_text: String,
+    pub tooltip_width: f64,
+    /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget
+    pub callout_y_offset: f64,
+}
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {

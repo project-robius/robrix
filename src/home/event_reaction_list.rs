@@ -1,9 +1,12 @@
 use crate::sliding_sync::{get_client, submit_async_request, MatrixRequest};
+use crate::utils::human_readable_list;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile;
 use crate::home::room_screen::RoomScreenTooltipActions;
+
+use super::room_screen::HoverInData;
 const TOOLTIP_WIDTH: f64 = 100.0;
 const REACTION_LIST_PADDING_RIGHT: f64 = 3.0;
 live_design! {
@@ -87,7 +90,7 @@ struct ReactionData {
     /// Boolean indicating if the current user is also a sender of the reaction
     includes_user: bool,
     /// Calculated of the width of the reaction button
-    width: f64
+    width: f64,
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -114,9 +117,9 @@ pub struct ReactionList {
     /// Has the width of the emoji buttons already been drawn and calculated beforehand?
     #[rust]
     width_calculated: bool,
-    /// Tooltip that appears when hovering over a reaction button, (Index in event_reaction_list, tooltip rendering rectangle's area, tooltip's text)
+    /// Tooltip that appears when hovering over a reaction button, (Index in event_reaction_list, tooltip rendering rectangle's area, tooltip's text, callout's y offset)
     #[rust]
-    tooltip_state: Option<(u64, Rect, String)>
+    tooltip_state: Option<(u64, HoverInData)>
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -216,13 +219,18 @@ impl Widget for ReactionList {
                             };
                             // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state
                             // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction button
-                            self.tooltip_state = Some((id.0, rect, reaction_data.tooltip_text.clone()));
+                            self.tooltip_state = Some((id.0, HoverInData {
+                                tooltip_position: rect,
+                                tooltip_width: TOOLTIP_WIDTH,
+                                tooltip_text: reaction_data.tooltip_text.clone(),
+                                callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0 //minus 5 because of top margin,  + 10.0 because of tooltip's padding
+                            }));
                         }
                     }
                 }
             } else {
                 let mut reset_tooltip_state = false;
-                if let Some((ref index, ref tooltip_area, ref tooltip_text)) = &self.tooltip_state {
+                if let Some((ref index, hover_in_data)) = &self.tooltip_state {
                     self.children
                     .iter()
                     .for_each(|(id, widget_ref)| {
@@ -240,7 +248,7 @@ impl Widget for ReactionList {
                     });
                     // If the mouse does not leave this particular reaction button, post a HoverIn action
                     if !reset_tooltip_state {
-                        cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(*tooltip_area, tooltip_text.clone(), TOOLTIP_WIDTH));
+                        cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(hover_in_data.clone()));
                     }
                 }
                 if reset_tooltip_state {
@@ -287,7 +295,7 @@ impl ReactionListRef {
     /// Required by Matrix API
     pub fn set_list(
         &mut self,
-        _cx: &mut Cx,
+        cx: &mut Cx,
         event_tl_item_reactions: &ReactionsByKeyBySender,
         room_id: OwnedRoomId,
         timeline_event_item_id: TimelineEventItemId,
@@ -307,26 +315,34 @@ impl ReactionListRef {
                     });
                 let total_num_react = reaction_senders.len();
                 let mut includes_user = false;
+                let mut user_id_list = Vec::with_capacity(5);
+                for (index, (sender, _react_info)) in reaction_senders.iter().enumerate() {
+                    if sender == &client_user_id {
+                        includes_user = true;
+                    }
+                    if index < 5 {
+                        user_id_list.push(sender.clone());
+                    }
+                }
                 let tooltip_text_arr:Vec<String> = reaction_senders.iter().map(|(sender, _react_info)|{
                     if sender == &client_user_id {
                         includes_user = true;
                     }
-                    let sender_name = get_user_profile(_cx, sender).map(|profile| {
-                        profile.displayable_name().to_owned()
-                    }).unwrap_or(sender.to_string());
-                    sender_name
+                    get_user_profile(cx, sender).map(|profile| profile.displayable_name().to_owned()).unwrap_or_else(||{
+                        submit_async_request(MatrixRequest::GetUserProfile { 
+                            user_id: sender.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
+                        });
+                        sender.to_string()
+                    })
                 }).collect();
-                let mut tooltip_text = human_readable_list(tooltip_text_arr);
-                // Manually create new line to manage the tooltip width as the width is set as Fit
-                // TODO: Find a better way to manage the tooltip width
-                // The tooltip width follows the length of the first line instead of the longest line
-                tooltip_text.insert_str(0, &format!("{} \n ", emoji_text));
+               let mut tooltip_text = human_readable_list(&tooltip_text_arr);                
+                tooltip_text.push_str(&format!("\nreacted with: {}", emoji_text));
                 instance.event_reaction_list.push(ReactionData{
                     emoji: emoji_text.to_string(),
                     total_num_react,
                     tooltip_text,
                     includes_user,
-                    width: 0.0
+                    width: 0.0,
                 });
             }
             instance.room_id = Some(room_id);
@@ -334,10 +350,10 @@ impl ReactionListRef {
             instance.width_calculated = false;
         }
     }
-    pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String, f64)> {
+    pub fn hover_in(&self, actions: &Actions) -> Option<HoverInData> {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             match item.cast() {
-                RoomScreenTooltipActions::HoverIn(rect, tooltip_text, tooltip_width) => Some((rect, tooltip_text, tooltip_width)),
+                RoomScreenTooltipActions::HoverIn(hover_in_data) => Some(hover_in_data),
                 _ => None,
             }
         } else {
@@ -350,26 +366,6 @@ impl ReactionListRef {
             matches!(item.cast(), RoomScreenTooltipActions::HoverOut)
         } else {
             false
-        }
-    }
-}
-/// Converts a list of names into a human-readable string.
-///
-/// # Examples
-/// ```
-/// assert_eq!(human_readable_list(vec!["Alice"]), "Alice");
-/// assert_eq!(human_readable_list(vec!["Alice", "Bob"]), "Alice and Bob");
-/// assert_eq!(human_readable_list(vec!["Alice", "Bob", "Charlie"]), "Alice, Bob and Charlie");
-/// ```
-fn human_readable_list(names: Vec<String>) -> String {
-    match names.len() {
-        0 => String::new(),
-        1 => names[0].clone(),
-        2 => format!("{} and {}", names[0], names[1]),
-        _ => {
-            let last = names.last().unwrap();
-            let rest = &names[..names.len() - 1];
-            format!("{}, and {}", rest.join(", "), last)
         }
     }
 }
