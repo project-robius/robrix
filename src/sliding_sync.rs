@@ -783,7 +783,8 @@ async fn async_worker(
                                 .unwrap_or_default()
                                 .get("latest_active")
                                 .unwrap_or(&serde_json::Value::Null)
-                                .get("event_id") {
+                                .get("event_id")
+                            {
                                 // The event_id contains double quotes, hence there is a string replacement code to remove them 
                                 let updated_event_id = latest_active.to_string().replace("\"", "");
                                 let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
