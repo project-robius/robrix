@@ -616,7 +616,7 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::GetNumOfUnReadMessages { room_id } => {
+            MatrixRequest::GetNumberUnreadMessages { room_id } => {
                 let sender = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -628,11 +628,9 @@ async fn async_worker(
                 };
                 let _fetch_task = Handle::current().spawn(async move {
                     if let Some(unread_messages_count) = get_client()
-                        .and_then(|c| c.get_room(&room_id))
-                        .map(|room| Some(room.num_unread_messages()))
+                        .and_then(|c| c.get_room(&room_id)).map(|room| room.num_unread_messages())
                     {
-                        if let Err(e) = sender.send(TimelineUpdate::NewItems { new_items: Vec::new().into(), changed_indices: 0..1, 
-                            is_append: false, clear_cache: false, unread_messages_count }) {
+                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(unread_messages_count)) {
                             log!("Failed to send timeline update: {e:?} for NumOfUnReadMessages request for room {room_id}");
                         } else {
                             SignalToUI::set_ui_signal();
@@ -1049,7 +1047,7 @@ struct RoomInfo {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// A broadcast receiver for room updates.
+    /// A boolean indicating if the update subsciber has been initialised
     update_subscriber_initialised: bool,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
@@ -2052,7 +2050,6 @@ async fn timeline_subscriber_handler(
                     changed_indices,
                     clear_cache,
                     is_append,
-                        unread_messages_count: None
                 }).expect("Error: timeline update sender couldn't send update with new items!");
 
                 // We must send this update *after* the actual NewItems update,

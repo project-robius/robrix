@@ -138,7 +138,7 @@ impl JumpToBottomButton {
                         border_width: 0.0
                     }
                 });
-            } if unread_message_count > 9 {
+            } else if unread_message_count > 9 {
                 self.view(id!(unread_message_badge.green_view)).apply_over(cx, live!{
                     draw_bg: {
                         border_width: 1.0

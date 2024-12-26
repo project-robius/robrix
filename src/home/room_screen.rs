@@ -1482,7 +1482,7 @@ impl RoomScreen {
                     tl.items = initial_items;
                     done_loading = true;
                 }
-                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache, unread_messages_count } => {
+                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1546,13 +1546,10 @@ impl RoomScreen {
                     if is_append && !portal_list.is_at_end() {
                         if let Some(room_id) = &self.room_id {
                             // Set the number of unread messages to unread_notification_badge by async request to avoid locking in the Main UI thread
-                            submit_async_request(MatrixRequest::GetNumOfUnReadMessages{ room_id: room_id.clone() });
+                            submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
                         }
                     }
-                    if let Some(unread_messages_count) = unread_messages_count {
-                        jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
-                        continue;
-                    }
+                    
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
@@ -1585,6 +1582,9 @@ impl RoomScreen {
                     }
                     tl.items = new_items;
                     done_loading = true;
+                }
+                TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
+                    jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.room_id);
@@ -2230,9 +2230,9 @@ pub enum TimelineUpdate {
         /// Whether to clear the entire cache of drawn items in the timeline.
         /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
-        /// The updated number of unread messages in the room.
-        unread_messages_count: Option<u64>
     },
+    /// The updated number of unread messages in the room.
+    NewUnreadMessagesCount(u64),
     /// The target event ID was found at the given `index` in the timeline items vector.
     ///
     /// This means that the RoomScreen widget can scroll the timeline up to this event,
