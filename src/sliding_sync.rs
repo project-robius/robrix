@@ -293,7 +293,7 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
     },
     /// Request to fetch the number of unread messages in the given room.
-    GetNumOfUnReadMessages {
+    GetNumberUnreadMessages {
         room_id: OwnedRoomId,
     },
     /// Request to ignore/block or unignore/unblock a user.
