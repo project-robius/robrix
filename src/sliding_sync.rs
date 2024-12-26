@@ -12,13 +12,13 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
-        }, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, sync::RoomUpdate, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, RoomExt, TimelineDetails, TimelineItem, TimelineItemContent},
     Timeline,
 };
 use robius_open::Uri;
@@ -780,32 +780,24 @@ async fn async_worker(
                 let _to_updates_task = Handle::current().spawn(async move {
                     while let Ok(room_update) = update_receiver.recv().await {
                         if let RoomUpdate::Joined { room, updates: _ } = room_update {
-                            // Using Serde_json to obtain the latest_active event_id  
-                            // Room's read receipt's latest_active event is not public, but the ReadReceipt struct 
-                            // is serializable 
-                            if let Some(latest_active) = serde_json::to_value(room.read_receipts())
-                                .unwrap_or_default()
-                                .get("latest_active")
-                                .unwrap_or(&serde_json::Value::Null)
-                                .get("event_id")
-                            {
-                                // The event_id contains double quotes, hence there is a string replacement code to remove them 
-                                let updated_event_id = latest_active.to_string().replace("\"", "");
-                                let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
-                                if let Some((event_id, _)) = fully_read_event {
-                                    let Ok(updated_event_id) = EventId::parse(updated_event_id.clone()).map_err(|e|{
-                                        error!("Error: couldn't parse event id {updated_event_id}: {e:?}");
-                                    }) else { continue };
-                                    if event_id != updated_event_id {
-                                        if let Err(e) = get_event_timestamp(&room, &room_id, event_id).await
-                                            .map(|(read_event, timestamp)| {
-                                            set_fully_read_event(&room_id, read_event, timestamp)
-                                        }) {
-                                            error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
+                            if let Ok(timeline) = room.timeline().await {
+                                if let Some(client_user_id) = current_user_id() {
+                                    let updated_event_id = timeline.latest_user_read_receipt(&client_user_id).await;
+                                    let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
+                                    if let (Some((updated_event_id, _receipt)), Some((fully_read_event_id, _time))) = (updated_event_id, fully_read_event) {
+                                        if updated_event_id != fully_read_event_id {
+                                            if let Err(e) = get_event_timestamp(&room, &room_id, fully_read_event_id).await
+                                                .map(|(read_event, timestamp)| {
+                                                set_fully_read_event(&room_id, read_event, timestamp)
+                                            }) {
+                                                error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
+                                            }
                                         }
                                     }
                                 }
+
                             }
+                        
                         }
                     }
                 });
