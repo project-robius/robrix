@@ -13,12 +13,12 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, sync::RoomUpdate, Client, Error, Room
+    }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, RoomExt, TimelineDetails, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
     Timeline,
 };
 use robius_open::Uri;
@@ -37,7 +37,6 @@ use crate::{
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
-
 
 #[derive(Parser, Debug, Default)]
 struct Cli {
@@ -357,12 +356,12 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
-    /// Subscribe to Updates for the given room.
+    /// Subscribe to Updates own user read receipts changed for the given room.
     ///
     /// This request does not return a response or notify the UI thread.
-    SubscribeToUpdates {
+    SubscribeToOwnUserReadReceiptsChanged {
         room_id: OwnedRoomId,
-        /// Whether to subscribe or unsubscribe to Updates for this room.
+        /// Whether to subscribe or unsubscribe to own user read receipts changed for this room.
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
@@ -417,7 +416,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-
+    let subscribe_to_owned_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, bool>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -753,51 +752,60 @@ async fn async_worker(
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
-            MatrixRequest::SubscribeToUpdates { room_id, subscribe } => {
-                let mut update_receiver = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for subscribe to updates, room {room_id}");
-                        continue;
-                    };
-                    let recv = if subscribe {
-                        if room_info.update_subscriber_initialised {
-                            warning!("Note: room {room_id} is already subscribed to updates.");
-                            continue
-                        }
-                        let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                            error!("BUG: client/room not found when subscribing to updates, room: {room_id}");
-                            continue;
-                        };
-                        room_info.update_subscriber_initialised = true;
-                        room.subscribe_to_updates()
-                    } else {
-                        continue;
-                    };
-                    recv
+            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
+                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                    error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
+                    continue;
                 };
 
+                let timeline = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("BUG: room info not found for send message request {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+                let subscribe_to_owned_user_read_receipt_changed = subscribe_to_owned_user_read_receipt_changed.clone();
+
                 let _to_updates_task = Handle::current().spawn(async move {
-                    while let Ok(room_update) = update_receiver.recv().await {
-                        if let RoomUpdate::Joined { room, updates: _ } = room_update {
-                            if let Ok(timeline) = room.timeline().await {
-                                if let Some(client_user_id) = current_user_id() {
-                                    let updated_event_id = timeline.latest_user_read_receipt(&client_user_id).await;
-                                    let fully_read_event = get_fully_read_event(&room.room_id().to_owned());
-                                    if let (Some((updated_event_id, _receipt)), Some((fully_read_event_id, _time))) = (updated_event_id, fully_read_event) {
-                                        if updated_event_id != fully_read_event_id {
-                                            if let Err(e) = get_event_timestamp(&room, &room_id, fully_read_event_id).await
-                                                .map(|(read_event, timestamp)| {
-                                                set_fully_read_event(&room_id, read_event, timestamp)
-                                            }) {
-                                                error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
-                                            }
+                    let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
+                    let read_receipt_change_mutex = subscribe_to_owned_user_read_receipt_changed.clone();
+                    let mut read_receipt_change_mutex_guard = read_receipt_change_mutex.lock().await;
+                    if let Some(subscription) = read_receipt_change_mutex_guard.get(&room_id) {
+                        if *subscription && subscribe {
+                            return
+                        }
+                    } else if subscribe {
+                        read_receipt_change_mutex_guard.insert(room_id.clone(), true);
+                    }
+                    pin_mut!(update_receiver);
+                    if let Some(client_user_id) = current_user_id() {
+                        while (update_receiver.next().await).is_some() {
+                            let read_receipt_change = subscribe_to_owned_user_read_receipt_changed.clone();
+                            let read_receipt_change = read_receipt_change.lock().await;
+                            let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
+                            if !subscribed_to_user_read_receipt {
+                                break;
+                            }
+                            
+                            let updated_event_id = timeline.latest_user_read_receipt_timeline_event_id(&client_user_id).await;
+                            let fully_read_event = get_fully_read_event(&room_id);
+                            if let (Some(updated_event_id), Some((event_id, fully_read_event_timestamp))) = (updated_event_id, fully_read_event) {
+                                if updated_event_id != event_id {
+                                    if let Err(e) = get_event_timestamp(&room, &room_id, updated_event_id).await
+                                    .map(|(read_event, timestamp)| {
+                                        if timestamp > fully_read_event_timestamp {
+                                            set_fully_read_event(&room_id, read_event, timestamp)
+                                        } else {
+                                            bail!("updated event's timestamp is older than current fully read event");
                                         }
+                                    })
+                                    {
+                                        error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
                                     }
                                 }
-
                             }
-                        
                         }
                     }
                 });
@@ -1039,8 +1047,6 @@ struct RoomInfo {
     timeline_subscriber_handler_task: JoinHandle<()>,
     /// A drop guard for the event handler that represents a subscription to typing notices for this room.
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
-    /// A boolean indicating if the update subsciber has been initialised
-    update_subscriber_initialised: bool,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
     /// Event_id and timestamp for read marker
@@ -1624,7 +1630,6 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_update_sender,
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
-            update_subscriber_initialised: false,
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
             fully_read_event: None
         },
