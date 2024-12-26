@@ -12,7 +12,7 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Error, Room
+    }, sliding_sync::VersionBuilder, Client, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -1954,6 +1954,16 @@ fn spawn_fetch_room_avatar(room: Room) {
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
+    if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+        if room_members.len() == 2 {
+            if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
+                return match non_account_member.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+                    Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+                    _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+                }
+            }
+        }
+    }
     match room.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
         _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
