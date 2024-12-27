@@ -1894,19 +1894,19 @@ async fn timeline_subscriber_handler(
                         match new_latest.content() {
                             TimelineItemContent::OtherState(other) => {
                                 match other.content() {
-                                    // Hanle RoomName change event.
+                                    // Handle RoomName change event.
                                     AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
                                         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                                             room_id: room_id.clone(),
                                             new_room_name: content.name.clone(),
                                         });
                                     }
-                                    // Hanle RoomAvatar change event.
+                                    // Handle RoomAvatar change event.
                                     AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                                         // Set it to `true` if this latest event indicates that the room's avatar has changed.
                                         room_avatar_changed = true;
                                     }
-                                    // Hanle RoomPowerLevels event.
+                                    // Handle RoomPowerLevels event.
                                     // Submit a `MatrixRequest` to check if the user can send when power levels change.
                                     AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
                                         submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
