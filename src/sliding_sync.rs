@@ -543,17 +543,28 @@ async fn async_worker(
                         }
                     }
 
-                    if update.is_none() && !local_only {
-                        if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                            update = Some(UserProfileUpdate::UserProfileOnly(
-                                UserProfile {
-                                    username: response.displayname,
-                                    user_id: user_id.clone(),
-                                    avatar_state: AvatarState::Known(response.avatar_url),
+                    if !local_only {
+                        if update.is_none() {
+                            if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                update = Some(UserProfileUpdate::UserProfileOnly(
+                                    UserProfile {
+                                        username: response.displayname,
+                                        user_id: user_id.clone(),
+                                        avatar_state: AvatarState::Known(response.avatar_url),
+                                    }
+                                ));
+                            } else {
+                                log!("User profile request: client could not get user with ID {user_id}");
+                            }
+                        }
+
+                        match update.as_mut() {
+                            Some(UserProfileUpdate::Full { new_profile: UserProfile { username, .. }, .. }) if username.is_none() => {
+                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                    *username = response.displayname;
                                 }
-                            ));
-                        } else {
-                            log!("User profile request: client could not get user with ID {user_id}");
+                            }
+                            _ => { }
                         }
                     }
 
