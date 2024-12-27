@@ -1917,7 +1917,10 @@ async fn timeline_subscriber_handler(
                             TimelineItemContent::MembershipChange(room_membership_change) => {
                                 // Submit a `MatrixRequest` to check if the user can send when invited to a room.
                                 if let Some(MembershipChange::Invited) = room_membership_change.change() {
-                                    log!("Received an invite.");
+                                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                                }
+                                if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
+                                    log!("Accept an invite.");
                                     submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
                                 }
                             }
