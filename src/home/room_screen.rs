@@ -1507,7 +1507,7 @@ impl RoomScreen {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                             portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
                             tl.prev_first_index = Some(new_item_idx);
-                            // Reset the fully read timer when we jump to a new event
+                            // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
                         }
                     }
@@ -1920,7 +1920,6 @@ impl RoomScreen {
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
-                last_display_event: None,
             };
             (new_tl_state, true)
         };
@@ -2100,14 +2099,17 @@ impl RoomScreen {
                         room_id: room_id.clone(),
                         event_id: last_event_id.to_owned(),
                     });
-                    // If scrolled_past_read_marker is true, set last_display_event to last_event_id and start the timer
+                    // If scrolled_past_read_marker is true, send full read receipt for the last visible event
                     if tl_state.scrolled_past_read_marker {
-                        tl_state.last_display_event = Some((last_event_id.to_owned(), last_timestamp));
+                        submit_async_request(MatrixRequest::FullyReadReceipt {
+                              room_id: room_id.clone(),
+                              event_id: last_event_id.to_owned(),
+                              timestamp: last_timestamp,
+                        });
                     } else {
                         // Get event_id and timestamp for the first visible event
                         // If scrolled_past_read_marker is false, check if the saved fully read event's timestamp in between the first and last visible event
-                        // If true, set scrolled_past_read_marker to true
-                        // If true, set last_event_id to last_display_event
+                        // If true, set scrolled_past_read_marker to true and send full read receipt
                         let Some((_, fully_read_timestamp)) =
                             get_fully_read_event(room_id)
                         else {
@@ -2341,15 +2343,10 @@ struct TimelineUiState {
     /// Used to send fully read receipt after user scrolled pass the read marker
     /// Read marker is referred to Red marker in the UI or also known as latest fully read receipt 
     /// Value is determined by comparing the fully read event's timestamp with the first and last timestamp of displayed events in the timeline
-    /// When scrolling down, if scrolled_past_read_marker is true, a 5 seconds timer is started.
-    /// Once the countdown ends, the app will send out last visible event's fully read receipt which will be stored as RoomInfo's fully_read_event
-    /// In between, any scrolling or new message coming in will reset the timer
+    /// When scrolling down, if scrolled_past_read_marker is true,
+    /// the app will send out last visible event's fully read receipt
+    /// Any new message coming in will reset scrolled_past_read_marker to false
     scrolled_past_read_marker: bool,
-
-    /// EventId and timestamp of the last displayed event in the timeline
-    /// 
-    /// To be send as fully read receipt
-    last_display_event: Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)>,
 }
 
 #[derive(Default, Debug)]

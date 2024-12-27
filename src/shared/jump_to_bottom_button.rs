@@ -48,7 +48,7 @@ live_design! {
             }
             visible: false,
             flow: Overlay,
-            green_view = <View> {
+            green_rounded_label = <View> {
                 width: Fill,
                 height: Fill,
                 show_bg: true,
@@ -133,19 +133,19 @@ impl JumpToBottomButton {
                 if unread_message_count > 99 { "+" } else { "" }
             ));
             if unread_message_count > 99 {
-                self.view(id!(unread_message_badge.green_view)).apply_over(cx, live!{
+                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
                     draw_bg: {
                         border_width: 0.0
                     }
                 });
             } else if unread_message_count > 9 {
-                self.view(id!(unread_message_badge.green_view)).apply_over(cx, live!{
+                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
                     draw_bg: {
                         border_width: 1.0
                     }
                 });
             } else {
-                self.view(id!(unread_message_badge.green_view)).apply_over(cx, live!{
+                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
                     draw_bg: {
                         border_width: 2.0
                     }

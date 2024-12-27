@@ -356,12 +356,12 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
-    /// Subscribe to Updates own user read receipts changed for the given room.
+    /// Subscribe to changes in the read receipts of our own user.
     ///
     /// This request does not return a response or notify the UI thread.
     SubscribeToOwnUserReadReceiptsChanged {
         room_id: OwnedRoomId,
-        /// Whether to subscribe or unsubscribe to own user read receipts changed for this room.
+        /// Whether to subscribe or unsubscribe to changes in the read receipts of our own user for this room
         subscribe: bool,
     },
     /// Sends a read receipt for the given event in the given room.
