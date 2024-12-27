@@ -1920,7 +1920,6 @@ async fn timeline_subscriber_handler(
                                     submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
                                 }
                                 if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
-                                    log!("Accept an invite.");
                                     submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
                                 }
                             }
