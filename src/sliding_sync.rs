@@ -1888,48 +1888,16 @@ async fn timeline_subscriber_handler(
                 // Update the latest event for this room.
                 if let Some(new_latest) = new_latest_event {
                     if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                        // `room_avatar_changed` is used to monitor if room avatar has changed.
-                        let mut room_avatar_changed = false;
-
-                        match new_latest.content() {
-                            TimelineItemContent::OtherState(other) => {
-                                match other.content() {
-                                    // Handle RoomName change event.
-                                    AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-                                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                                            room_id: room_id.clone(),
-                                            new_room_name: content.name.clone(),
-                                        });
-                                    }
-                                    // Handle RoomAvatar change event.
-                                    AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
-                                        // Set it to `true` if this latest event indicates that the room's avatar has changed.
-                                        room_avatar_changed = true;
-                                    }
-                                    // Handle RoomPowerLevels event.
-                                    // Submit a `MatrixRequest` to check if the user can send when power levels change.
-                                    AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
-                                        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
-                                    }
-                                    _ => { }
-                                }
-                            }
-                            TimelineItemContent::MembershipChange(room_membership_change) => {
-                                // Submit a `MatrixRequest` to check if the user can send when invited to a room.
-                                if let Some(MembershipChange::Invited) = room_membership_change.change() {
-                                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
-                                }
-                                if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
-                                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
-                                }
-                            }
-                            _ => { }
-                        }
-
-                        latest_event = Some(new_latest);
+                        // Handle avatar changes.
+                        let room_avatar_changed = update_avatar_for_latest_event(room_id.clone(), &new_latest);
                         if room_avatar_changed {
                             spawn_fetch_room_avatar(room.clone());
                         }
+
+                        // Handle if can send message.
+                        update_if_can_send_message_for_latest_event(room_id.clone(), &new_latest);
+
+                        latest_event = Some(new_latest);
                     }
                 }
             }
@@ -1991,6 +1959,31 @@ fn update_avatar_for_latest_event(
     room_avatar_changed
 }
 
+/// Updates the latest event for the given room.
+///
+/// This function handles and checks permission of sending message.
+fn update_if_can_send_message_for_latest_event(
+    room_id: OwnedRoomId,
+    event_tl_item: &EventTimelineItem,
+)  {
+    match event_tl_item.content() {
+        TimelineItemContent::OtherState(other) => {
+                // Handle RoomPowerLevels event.
+                // Submit a `MatrixRequest` to check if the user can send when power levels change.
+               if let AnyOtherFullStateEventContent::RoomPowerLevels(_room_power_levels_event) = other.content() {
+                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                }
+            }
+
+        TimelineItemContent::MembershipChange(room_membership_change) => {
+            // Submit a `MatrixRequest` to check if the user can send when invited to a room.
+            if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
+                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+            }
+        }
+        _ => { }
+    }
+}
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: Room) {
