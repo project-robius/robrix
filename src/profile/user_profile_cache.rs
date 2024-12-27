@@ -233,8 +233,7 @@ where
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
 pub fn get_user_profile_and_room_member(
-#[allow(unused)]
-_cx: &mut Cx,
+    _cx: &mut Cx,
     user_id: OwnedUserId,
     room_id: &RoomId,
     fetch_if_missing: bool,
