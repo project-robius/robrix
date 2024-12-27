@@ -1928,27 +1928,19 @@ fn update_avatar_for_latest_event(
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
 
     // Check for relevant state events.
-    match event_tl_item.content() {
-        TimelineItemContent::OtherState(other) => {
-            match other.content() {
-                AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+    if let TimelineItemContent::OtherState(other) = event_tl_item.content() {
+        match other.content() {
+            AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
                     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                        room_id: room_id.clone(),
-                        new_room_name: content.name.clone(),
-                    });
-                }
-                AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
+                    room_id: room_id.clone(),
+                    new_room_name: content.name.clone(),
+                });
+            }
+            AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                     room_avatar_changed = true;
-                }
-                _ => { }
             }
+            _ => { }
         }
-        TimelineItemContent::MembershipChange(room_membership_change) => {
-            if let Some(MembershipChange::Invited) = room_membership_change.change() {
-
-            }
-        }
-        _ => {}
     }
 
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
