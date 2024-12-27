@@ -812,7 +812,7 @@ async fn async_worker(
                         matrix_sdk::ruma::events::MessageLikeEventType::Message
                     )
                     .await
-                    .unwrap_or(false);
+                    .unwrap_or(true);
 
                     if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
                         error!("Failed to send the result of if user can send message: {e}")
