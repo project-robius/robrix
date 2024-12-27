@@ -1312,7 +1312,7 @@ async fn update_room(
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event);
+                    room_avatar_changed = update_avatar_for_latest_event(new_room_id.clone(), &new_latest_event);
                 }
             }
         }
@@ -1917,6 +1917,7 @@ async fn timeline_subscriber_handler(
                             TimelineItemContent::MembershipChange(room_membership_change) => {
                                 // Submit a `MatrixRequest` to check if the user can send when invited to a room.
                                 if let Some(MembershipChange::Invited) = room_membership_change.change() {
+                                    log!("Received an invite.");
                                     submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
                                 }
                             }
@@ -1948,7 +1949,7 @@ async fn timeline_subscriber_handler(
 ///
 /// Returns `true` if this latest event indicates that the room's avatar has changed
 /// and should also be updated.
-fn update_latest_event(
+fn update_avatar_for_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
 ) -> bool {
