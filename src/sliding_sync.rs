@@ -17,7 +17,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent, MembershipChange},
     Timeline,
 };
 use robius_open::Uri;
@@ -1888,7 +1888,41 @@ async fn timeline_subscriber_handler(
                 // Update the latest event for this room.
                 if let Some(new_latest) = new_latest_event {
                     if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
+                        // `room_avatar_changed` is used to monitor if room avatar has changed.
+                        let mut room_avatar_changed = false;
+
+                        match new_latest.content() {
+                            TimelineItemContent::OtherState(other) => {
+                                match other.content() {
+                                    // Hanle RoomName change event.
+                                    AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+                                        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
+                                            room_id: room_id.clone(),
+                                            new_room_name: content.name.clone(),
+                                        });
+                                    }
+                                    // Hanle RoomAvatar change event.
+                                    AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
+                                        // Set it to `true` if this latest event indicates that the room's avatar has changed.
+                                        room_avatar_changed = true;
+                                    }
+                                    // Hanle RoomPowerLevels event.
+                                    // Submit a `MatrixRequest` to check if the user can send when power levels change.
+                                    AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
+                                        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                                    }
+                                    _ => { }
+                                }
+                            }
+                            TimelineItemContent::MembershipChange(room_membership_change) => {
+                                // Submit a `MatrixRequest` to check if the user can send when invited to a room.
+                                if let Some(MembershipChange::Invited) = room_membership_change.change() {
+                                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                                }
+                            }
+                            _ => { }
+                        }
+
                         latest_event = Some(new_latest);
                         if room_avatar_changed {
                             spawn_fetch_room_avatar(room.clone());
@@ -1922,24 +1956,30 @@ fn update_latest_event(
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
 
-    // Check for relevant state events: a changed room name or avatar.
-    if let TimelineItemContent::OtherState(other) = event_tl_item.content() {
-        match other.content() {
-            AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                    room_id: room_id.clone(),
-                    new_room_name: content.name.clone(),
-                });
+    // Check for relevant state events.
+    match event_tl_item.content() {
+        TimelineItemContent::OtherState(other) => {
+            match other.content() {
+                AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+                    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
+                        room_id: room_id.clone(),
+                        new_room_name: content.name.clone(),
+                    });
+                }
+                AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
+                    room_avatar_changed = true;
+                }
+                _ => { }
             }
-            AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
-                room_avatar_changed = true;
-            }
-            AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
-                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
-            }
-            _ => { }
         }
+        TimelineItemContent::MembershipChange(room_membership_change) => {
+            if let Some(MembershipChange::Invited) = room_membership_change.change() {
+
+            }
+        }
+        _ => {}
     }
+
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
         room_id,
         timestamp,
