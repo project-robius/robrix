@@ -1967,7 +1967,6 @@ fn update_latest_event(
         timestamp,
         latest_message_text,
     });
-    log!("can_user_send_message: {can_user_send_message}");
     (room_avatar_changed, can_user_send_message)
 }
 
