@@ -1943,13 +1943,11 @@ fn update_latest_event(
                     room_avatar_changed = true;
                 }
                 // Check for if can user send message.
-                AnyOtherFullStateEventContent::RoomPowerLevels(room_power_levels_event) => {
-                    if let FullStateEventContent::Original { content, prev_content: _ } = room_power_levels_event {
-                        if let Some(user_id) = current_user_id() {
-                            if let Some(power) = content.users.get(&user_id) {
-                                if let Some(room_send_message_level) = content.events.get(&matrix_sdk::ruma::events::TimelineEventType::Message) {
-                                    can_user_send_message = power >= room_send_message_level
-                                }
+                AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    if let Some(user_id) = current_user_id() {
+                        if let Some(power) = content.users.get(&user_id) {
+                            if let Some(room_send_message_level) = content.events.get(&matrix_sdk::ruma::events::TimelineEventType::Message) {
+                                can_user_send_message = power >= room_send_message_level
                             }
                         }
                     }
