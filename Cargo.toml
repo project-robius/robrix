@@ -216,5 +216,3 @@ too_many_arguments = "allow"
 blocks_in_conditions = "allow"
 used_underscore_binding = "allow"
 module_name_repetitions = "allow"
-[profile.dev]
-debug = 0
