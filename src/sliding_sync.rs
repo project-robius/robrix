@@ -1914,7 +1914,7 @@ async fn timeline_subscriber_handler(
 
 /// Updates the latest event for the given room.
 ///
-/// This function currently handles room name, avator and send permission changes
+/// This function currently handles room name, avatar and send permission changes
 /// (but does not directly handle).
 ///
 /// Returns `true` if those have changed
@@ -1938,7 +1938,7 @@ fn update_latest_event(
                         new_room_name: content.name.clone(),
                     });
                 }
-                // Check for room avator changes.
+                // Check for room avatar changes.
                 AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
                     room_avatar_changed = true;
                 }
