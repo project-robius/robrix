@@ -1,9 +1,10 @@
 use makepad_widgets::*;
-use matrix_sdk::encryption::VerificationState;
 
 use crate::shared::adaptive_view::DisplayContext;
-use crate::sliding_sync::get_client;
+use crate::shared::color_tooltip::*;
+use crate::shared::verification_badge::{VerificationBadge, VerificationText};
 use crate::verification::VerificationStateAction;
+use matrix_sdk::encryption::VerificationState;
 
 live_design! {
     use link::theme::*;
@@ -14,6 +15,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::adaptive_view::AdaptiveView;
     use crate::shared::verification_badge::*;
+    use crate::shared::color_tooltip::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -57,20 +59,14 @@ live_design! {
                 text: "U"
             }
         }
+
         <View> {
             align: { x: 1.0, y: 0.0 }
-
-            verification_icon = <View> {
-                flow: Overlay
-                align:{ x: 0.5, y: 0.5 }
-                width: 31, height: 31
-
-                icon_yes = <IconYes> {}
-                icon_no = <IconNo> {}
-                icon_unk = <IconUnk> {}
-            }
+            verification_badge = <VerificationBadge> {}
         }
-        verification_notice = <VerificationNotice> { }
+
+        profile_tooltip = <ColorTooltip> {}
+
     }
 
     Separator = <LineH> {
@@ -175,81 +171,64 @@ live_design! {
         }
     }
 }
-struct VerificationNoticeText {
-    yes: &'static str,
-    no: &'static str,
-    unk: &'static str,
-}
 
-impl Default for VerificationNoticeText{
-    fn default() -> Self {
-        Self {
-            yes: "This device is fully verified.",
-            no: "This device is unverified. To view your encrypted message history, please verify it from another client.",
-            unk: "Verification state is unknown.",
-        }
-    }
-}
-
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct Profile {
     #[deref]
     view: View,
-    #[rust(VerificationState::Unknown)]
-    verification_state: VerificationState,
-    #[rust]
-    verification_notice_text: VerificationNoticeText,
-}
-
-impl Profile {
-    fn set_verification_icon_visibility(&self) {
-        let (yes_visible, no_visible, unk_visible) = match self.verification_state {
-            VerificationState::Unknown => (false, false, true),
-            VerificationState::Unverified => (false, true, false),
-            VerificationState::Verified => (true, false, false),
-        };
-
-        self.view(id!(icon_yes)).set_visible(yes_visible);
-        self.view(id!(icon_no)).set_visible(no_visible);
-        self.view(id!(icon_unk)).set_visible(unk_visible);
-    }
 }
 
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let mut color: Vec4 = vec4(0.2, 0.2, 0.2, 1.0); // Default Grey Color
+        let profile_rect = {
+            let view = self.view(id!(text_view));
+            view.area().rect(cx)
+        }; // view borrow end
+
         if let Event::MouseMove(e) = event {
-            let mut verification_notice = self.tooltip(id!(verification_notice));
+            let (is_mouse_over_icons, verification_text, tooltip_pos) = {
+                if let Some(badge) = self
+                    .widget(id!(verification_badge))
+                    .borrow_mut::<VerificationBadge>()
+                {
+                    let icons_rect = badge.get_icons_rect(cx);
+                    let is_over = icons_rect.contains(e.abs);
+                    let text =
+                        VerificationText::from_state(badge.verification_state).get_text();
+                    color = match badge.verification_state {
+                        VerificationState::Verified => vec4(0.0, 0.75, 0.0, 1.0), // Green
+                        VerificationState::Unverified => vec4(0.75, 0.0, 0.0, 1.0), // Red
+                        VerificationState::Unknown => vec4(0.2, 0.2, 0.2, 1.0),   // Grey
+                    };
 
-            if self.view(id!(verification_icon)).area().rect(cx).contains(e.abs) {
-                let text = match self.verification_state {
-                    VerificationState::Unknown => self.verification_notice_text.unk,
-                    VerificationState::Unverified => self.verification_notice_text.no,
-                    VerificationState::Verified => self.verification_notice_text.yes
-                };
-
-                //Determine if it's a desktop or mobile layout,
-                //then we set the relative position so that the tooltip looks like following the cursor.
-                if cx.get_global::<DisplayContext>().is_desktop() {
-                    verification_notice.show_with_options(cx, DVec2 {x: 65., y: 23.}, text);
-                }
-                else {
-                    verification_notice.apply_over(cx, live!{
-                        content: {
-
-                            // Via setting suitable align & padding,
-                            // we can simulate a relative position to make the tootip follow widget `Profile (U)`,
-                            // this is not a perfect solution.
-                            // TODO: Find a way to follow widget `Profile (U)` more precisely.
-                            align: { x: 0.43, y: 1. }
-                            padding: { left: 30., bottom: 31. }
+                    let tooltip_pos = if cx.get_global::<DisplayContext>().is_desktop() {
+                        DVec2 {
+                            x: icons_rect.pos.x + icons_rect.size.x + 1.,
+                            y: icons_rect.pos.y - 10.,
                         }
-                    });
-                    verification_notice.show_with_options(cx, DVec2 {x: 0., y: 0.}, text);
+                    } else {
+                        DVec2 {
+                            x: profile_rect.pos.x,
+                            y: profile_rect.pos.y - 10.,
+                        }
+                    };
+                    (is_over, text.to_string(), tooltip_pos)
+                } else {
+                    let tooltip_pos = DVec2 { x: 0., y: 0. };
+                    (false, String::new(), tooltip_pos)
                 }
-            }
-            //Hide it if cursor is not hovering.
-            else {
-                verification_notice.hide(cx);
+            }; // badge borrow end
+
+            if let Some(mut tooltip) = self
+                .widget(id!(profile_tooltip))
+                .borrow_mut::<ColorTooltip>()
+            {
+                if is_mouse_over_icons {
+                    tooltip.show_with_options(cx, tooltip_pos, &verification_text, color);
+                } else {
+                    tooltip.hide(cx);
+                }
             }
         }
 
@@ -263,26 +242,18 @@ impl Widget for Profile {
 }
 
 impl MatchEvent for Profile {
-    fn handle_action(&mut self, cx: &mut Cx, action:&Action) {
+    fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
         if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
-            if self.verification_state != *state {
-                self.verification_state = *state;
-
-                self.set_verification_icon_visibility();
-                self.redraw(cx);
+            if let Some(mut badge) = self
+                .widget(id!(verification_badge))
+                .borrow_mut::<VerificationBadge>()
+            {
+                if badge.verification_state != *state {
+                    badge.verification_state = *state;
+                    badge.update_icon_visibility();
+                    badge.redraw(cx);
+                }
             }
-        }
-    }
-}
-
-impl LiveHook for Profile {
-    fn after_new_from_doc(&mut self, cx:&mut Cx) {
-        if let Some(client) = get_client() {
-            let current_verification_state = client.encryption().verification_state().get();
-            self.verification_state = current_verification_state;
-
-            self.set_verification_icon_visibility();
-            self.redraw(cx);
         }
     }
 }
