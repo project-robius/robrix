@@ -103,9 +103,6 @@ live_design! {
     }
 
     pub RoomPreview = {{RoomPreview}} {
-        width: Fill, height: 50.
-        // Wraps the RoomPreviewContent in an AdaptiveView
-        // to change the displayed content (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}

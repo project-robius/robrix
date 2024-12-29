@@ -3,7 +3,7 @@ use crossbeam_queue::SegQueue;
 use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
-
+use bitflags::bitflags;
 use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
@@ -205,28 +205,28 @@ impl Deref for RoomDisplayFilter {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub enum RoomDisplayFilterType {
-    /// Filter All rooms by the given keywords.
-    All,
-    /// Filter rooms by Room name
-    RoomName,
-    /// Filter rooms by Room ID
-    RoomId,
-    /// Filter rooms by Room alias
-    RoomAlias,
-    /// Filter rooms by Tags
-    RoomTags,
-    None,
+bitflags! {
+    #[derive(Clone, PartialEq, Eq)]
+    pub struct RoomDisplayFilterType: u8 {
+        const RoomId    = 0b0000_0001;
+        const RoomName  = 0b0000_0010;
+        const RoomAlias = 0b0000_0100;
+        const RoomTags  = 0b0000_1000;
+        const All       = Self::RoomId.bits() | Self::RoomName.bits() | Self::RoomAlias.bits() | Self::RoomTags.bits();
+    }
 }
 
-type SortFn = Box<dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering>;
+impl Default for RoomDisplayFilterType {
+    fn default() -> Self { RoomDisplayFilterType::All }
+}
+
+type SortFn = dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering;
 
 /// A builder for creating a `RoomDisplayFilter` with a specific set of filter types and a sorting function.
 pub struct RoomDisplayFilterBuilder {
     keywords: String,
-    filter_types: HashSet<RoomDisplayFilterType>,
-    sort_fn: Option<SortFn>,
+    filter_types: RoomDisplayFilterType,
+    sort_fn: Option<Box<SortFn>>,
 }
 /// ## Example
 /// You can create any combination of filters and sorting functions using the `RoomDisplayFilterBuilder`.
@@ -246,7 +246,7 @@ impl RoomDisplayFilterBuilder {
     pub fn new() -> Self {
         Self {
             keywords: String::new(),
-            filter_types: HashSet::new(),
+            filter_types: RoomDisplayFilterType::default(),
             sort_fn: None,
         }
     }
@@ -256,28 +256,8 @@ impl RoomDisplayFilterBuilder {
         self
     }
 
-    pub fn by_room_id(mut self) -> Self {
-        self.filter_types.insert(RoomDisplayFilterType::RoomId);
-        self
-    }
-
-    pub fn by_room_name(mut self) -> Self {
-        self.filter_types.insert(RoomDisplayFilterType::RoomName);
-        self
-    }
-
-    pub fn by_room_alias(mut self) -> Self {
-        self.filter_types.insert(RoomDisplayFilterType::RoomAlias);
-        self
-    }
-
-    pub fn by_room_tags(mut self) -> Self {
-        self.filter_types.insert(RoomDisplayFilterType::RoomTags);
-        self
-    }
-
-    pub fn by_all(mut self) -> Self {
-        self.filter_types.insert(RoomDisplayFilterType::All);
+    fn set_filter_types(mut self, filter_types: RoomDisplayFilterType) -> Self {
+        self.filter_types = filter_types;
         self
     }
 
@@ -290,7 +270,7 @@ impl RoomDisplayFilterBuilder {
     }
 
     fn matches_room_id(room: &RoomsListEntry, keywords: &str) -> bool {
-        room.room_id.to_string().to_lowercase() == keywords
+        room.room_id.to_string().eq_ignore_ascii_case(keywords)
     }
 
     fn matches_room_name(room: &RoomsListEntry, keywords: &str) -> bool {
@@ -300,21 +280,12 @@ impl RoomDisplayFilterBuilder {
     }
 
     fn matches_room_alias(room: &RoomsListEntry, keywords: &str) -> bool {
-        // first check the canonical alias
-        if let Some(canonical_alias) = &room.canonical_alias {
-            if canonical_alias.as_str().to_lowercase() == keywords {
-                return true;
-            }
-        }
-        // then check the alternative aliases
-        for alt_alias in &room.alt_aliases {
-            if alt_alias.as_str().to_lowercase() == keywords {
-                return true;
-            }
-        }
-
-        // no match found
-        false
+        room.canonical_alias
+            .as_ref()
+            .map_or(false, |alias| alias.as_str().eq_ignore_ascii_case(keywords))
+            || room.alt_aliases
+                .iter()
+                .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
     }
 
     fn matches_room_tags(room: &RoomsListEntry, keywords: &str) -> bool {
@@ -341,16 +312,16 @@ impl RoomDisplayFilterBuilder {
     }
 
     // Check if the keywords have a special prefix that indicates a pre-match filter check.
-    fn pre_match_filter_check(keywords: &str) -> Option<(&str, char)> {
-        keywords.chars().next().and_then(|c|
-            match c {
-                '!' | '#' | ':' => Some((keywords, c)),
-                _ => None,
-            }
-        )
+    fn pre_match_filter_check(keywords: &str) -> (RoomDisplayFilterType, &str) {
+        match keywords.chars().next() {
+            Some('!') => (RoomDisplayFilterType::RoomId, keywords),
+            Some('#') => (RoomDisplayFilterType::RoomAlias, keywords),
+            Some(':') => (RoomDisplayFilterType::RoomTags, keywords),
+            _ => (RoomDisplayFilterType::All, keywords),
+        }
     }
 
-    pub fn build(self) -> (RoomDisplayFilter, Option<SortFn>) {
+    pub fn build(self) -> (RoomDisplayFilter, Option<Box<SortFn>>) {
         let keywords = self.keywords;
         let filter_types = self.filter_types;
 
@@ -360,29 +331,22 @@ impl RoomDisplayFilterBuilder {
             }
 
             let keywords = keywords.trim().to_lowercase();
+            let (search_type, keywords) = Self::pre_match_filter_check(&keywords);
 
             // Reduce the number of matches by checking for special prefixes that indicate pre-match filtering checks.
-            if let Some((keywords, prefix)) = Self::pre_match_filter_check(&keywords) {
-                return match prefix {
-                    '!' => Self::matches_room_id(room, keywords),
-                    '#' => Self::matches_room_alias(room, keywords),
-                    ':' => Self::matches_room_tags(room, keywords),
-                    _ => false,
-                };
+            match search_type {
+                RoomDisplayFilterType::RoomId if filter_types.contains(RoomDisplayFilterType::RoomId) => Self::matches_room_id(room, keywords),
+                RoomDisplayFilterType::RoomName if filter_types.contains(RoomDisplayFilterType::RoomName) => Self::matches_room_name(room, keywords),
+                RoomDisplayFilterType::RoomAlias if filter_types.contains(RoomDisplayFilterType::RoomAlias) => Self::matches_room_alias(room, keywords),
+                RoomDisplayFilterType::RoomTags if filter_types.contains(RoomDisplayFilterType::RoomTags) => Self::matches_room_tags(room, keywords),
+                _ if filter_types == RoomDisplayFilterType::All => {
+                    Self::matches_room_id(room, keywords)
+                    || Self::matches_room_name(room, keywords)
+                    || Self::matches_room_alias(room, keywords)
+                    || Self::matches_room_tags(room, keywords)
+                }
+                _ => false
             }
-
-            filter_types.iter().any(|filter_type| match filter_type {
-                RoomDisplayFilterType::RoomName => Self::matches_room_name(room, &keywords),
-                RoomDisplayFilterType::All => {
-                    Self::matches_room_name(room, &keywords) ||
-                    Self::matches_room_id(room, &keywords)
-                },
-                RoomDisplayFilterType::None => true,
-                // special prefix checks already handled above
-                RoomDisplayFilterType::RoomId => unreachable!(),
-                RoomDisplayFilterType::RoomAlias => unreachable!(),
-                RoomDisplayFilterType::RoomTags => unreachable!(),
-            })
         }));
 
         (filter, self.sort_fn)
@@ -666,43 +630,37 @@ impl WidgetMatchEvent for RoomsList {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
                 .set_keywords(keywords)
-                .by_all()
+                .set_filter_types(RoomDisplayFilterType::All)
                 .build();
                 self.display_filter = filter;
 
-                self.displayed_rooms.clear();
-                self.displayed_rooms.reserve(self.all_rooms.len());
-
-                if let Some(sort_fn) = sort_fn {
-                    let filtered_rooms: Vec<(&OwnedRoomId, &RoomsListEntry)> = self.all_rooms
+                let displayed_rooms = if let Some(sort_fn) = sort_fn {
+                    let mut filtered_rooms: Vec<_> = self.all_rooms
                         .iter()
                         .filter(|(_, room)| (self.display_filter)(room))
                         .collect();
 
-                    let mut sorted_rooms = filtered_rooms;
-                    sorted_rooms.sort_by(|(_, room_a), (_, room_b)| {
-                        sort_fn(room_a, room_b)
-                    });
+                    filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
 
-                    self.displayed_rooms.extend(
-                        sorted_rooms.into_iter()
-                                    .map(|(room_id, _)| room_id.clone())
-                    );
+                    filtered_rooms
+                        .into_iter()
+                        .map(|(room_id, _)| room_id.clone())
+                        .collect()
                 } else {
-                    self.displayed_rooms.extend(
-                        self.all_rooms
-                            .iter()
-                            .filter(|(_, room)| (self.display_filter)(room))
-                            .map(|(room_id, _)| room_id.clone())
-                    );
-                }
+                    self.all_rooms
+                        .iter()
+                        .filter(|(_, room)| (self.display_filter)(room))
+                        .map(|(room_id, _)| room_id.clone())
+                        .collect()
+                };
 
                 self.status = if self.displayed_rooms.is_empty() {
                     "No rooms found matching search.".into()
                 } else {
                     format!("Found {} rooms matching search.", self.displayed_rooms.len())
                 };
-
+                // Update the displayed rooms list.
+                self.displayed_rooms = displayed_rooms;
                 self.redraw(cx);
             }
         }
