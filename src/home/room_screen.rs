@@ -2340,12 +2340,12 @@ struct TimelineUiState {
 
     /// Boolean to indicate if the user scrolled pass the read marker
     /// 
-    /// Used to send fully read receipt after user scrolled pass the read marker
+    /// This boolean is used to send fully read receipt after user scrolled past the read marker.
     /// Read marker is referred to Red marker in the UI or also known as latest fully read receipt 
-    /// Value is determined by comparing the fully read event's timestamp with the first and last timestamp of displayed events in the timeline
-    /// When scrolling down, if scrolled_past_read_marker is true,
-    /// the app will send out last visible event's fully read receipt
-    /// Any new message coming in will reset scrolled_past_read_marker to false
+    /// Value is determined by comparing the fully read event's timestamp with the first and last timestamp of displayed events in the timeline.
+    /// When scrolling down, if the value is true,
+    /// the app will send out last visible event's fully read receipt.
+    /// Any new message coming in will reset the value to false.
     scrolled_past_read_marker: bool,
 }
 
