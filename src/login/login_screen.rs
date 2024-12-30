@@ -493,6 +493,9 @@ impl MatchEvent for LoginScreen {
                     status_label.set_text("");
                     self.redraw(cx);
                 }
+                Some(LoginAction::Logout) => {
+                    status_label.set_text("");
+                }
                 _ => {
 
                 }
@@ -558,4 +561,5 @@ pub enum LoginAction {
     /// inform the login screen which SSO identity providers it should display to the user.
     IdentityProvider(Vec<IdentityProvider>),
     None,
+    Logout,
 }
