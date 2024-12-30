@@ -1312,7 +1312,7 @@ async fn update_room(
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    (room_avatar_changed, _) = update_latest_event(new_room_id.clone(), &new_latest_event);
+                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event, None);
                 }
             }
         }
@@ -1888,14 +1888,10 @@ async fn timeline_subscriber_handler(
                 // Update the latest event for this room.
                 if let Some(new_latest) = new_latest_event {
                     if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                        let (room_avatar_changed, can_user_send_message) = update_latest_event(room_id.clone(), &new_latest);
+                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
 
                         if room_avatar_changed {
                             spawn_fetch_room_avatar(room.clone());
-                        }
-
-                        if let Err(e) = timeline_update_sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
-                            error!("Failed to send the result of if user can send message: {e}")
                         }
 
                         latest_event = Some(new_latest);
@@ -1917,14 +1913,14 @@ async fn timeline_subscriber_handler(
 /// This function currently handles room name, avatar and send permission changes
 /// (but does not directly handle).
 ///
-/// Returns `true` if those have changed
+/// Returns `true` if room avatar has changed
 /// and should also be updated.
 fn update_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
-) -> (bool, bool) {
+    sender: Option<&crossbeam_channel::Sender<TimelineUpdate>>
+) -> bool {
     let mut room_avatar_changed = false;
-    let mut can_user_send_message = true;
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
     match event_tl_item.content() {
@@ -1946,7 +1942,9 @@ fn update_latest_event(
                 AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
                     if let Some(user_id) = current_user_id() {
                         if let Some(user_power) = content.users.get(&user_id) {
-                            can_user_send_message = user_power >= &content.events_default
+                            if let Err(e) = sender.unwrap().send(TimelineUpdate::CanUserSendMessage(user_power >= &content.events_default)) {
+                                error!("Failed to send the result of if user can send message: {e}")
+                            }
                         }
                     }
                 }
@@ -1954,9 +1952,13 @@ fn update_latest_event(
             }
         }
         TimelineItemContent::MembershipChange(room_membership_change) => {
-            // Submit a `MatrixRequest` to check if the user can send when invited to a room successfully.
+            // Submit a `MatrixRequest` to check if the user can send when current user accept invitation successfully.
             if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
-                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                if let Some(user_id) = current_user_id() {
+                    if user_id == room_membership_change.user_id() {
+                        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                    }
+                }
             }
         }
         _ => { }
@@ -1967,7 +1969,7 @@ fn update_latest_event(
         timestamp,
         latest_message_text,
     });
-    (room_avatar_changed, can_user_send_message)
+    room_avatar_changed
 }
 
 /// Spawn a new async task to fetch the room's new avatar.
