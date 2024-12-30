@@ -590,8 +590,10 @@ async fn async_worker(
                 };
                 
                 let _get_fully_read_event_task = Handle::current().spawn(async move {
-                    async fn fetch_fully_read_event(room: &Room, room_id: &OwnedRoomId) -> 
-                        Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
+                    async fn fetch_fully_read_event(
+                        room: &Room,
+                        room_id: &OwnedRoomId,
+                    ) -> Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
                         let fully_read_event =  room
                             .account_data_static::<FullyReadEventContent>().await?
                             .and_then(|f| f.deserialize().ok())
