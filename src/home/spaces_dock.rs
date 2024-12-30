@@ -4,7 +4,9 @@ use crate::shared::adaptive_view::DisplayContext;
 use crate::shared::color_tooltip::*;
 use crate::shared::verification_badge::{VerificationBadge, VerificationText};
 use crate::verification::VerificationStateAction;
+use crate::sliding_sync::get_client;
 use matrix_sdk::encryption::VerificationState;
+
 
 live_design! {
     use link::theme::*;
@@ -172,7 +174,7 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct Profile {
     #[deref]
     view: View,
@@ -250,6 +252,24 @@ impl MatchEvent for Profile {
             {
                 if badge.verification_state != *state {
                     badge.verification_state = *state;
+                    badge.update_icon_visibility();
+                    badge.redraw(cx);
+                }
+            }
+        }
+    }
+}
+
+impl LiveHook for Profile {
+    fn after_new_from_doc(&mut self, cx:&mut Cx) {
+        if let Some(client) = get_client() {
+            let current_verification_state = client.encryption().verification_state().get();
+            if let Some(mut badge) = self
+                .widget(id!(verification_badge))
+                .borrow_mut::<VerificationBadge>()
+            {
+                if badge.verification_state != current_verification_state {
+                    badge.verification_state = current_verification_state;
                     badge.update_icon_visibility();
                     badge.redraw(cx);
                 }

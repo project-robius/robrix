@@ -87,8 +87,8 @@ pub enum VerificationText {
 impl VerificationText {
     pub fn get_text(&self) -> &'static str {
         match self {
-            VerificationText::Verified => "This device is fully verified.",
-            VerificationText::Unverified => " This device is unverified. To view your encrypted message history, please verify it from another client.",
+            VerificationText::Verified => "This device is fully verified.To view your encrypted message history, please verify it from another client.",
+            VerificationText::Unverified => "This device is unverified. To view your encrypted message history, please verify it from another client.",
             VerificationText::Unknown => " Verification state is unknown.",
         }
     }

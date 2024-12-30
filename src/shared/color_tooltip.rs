@@ -9,7 +9,6 @@ live_design! {
     pub ColorTooltip = {{ColorTooltip}} {
         width: Fill,
         height: Fill,
-        visible: false
         flow: Overlay
         align: {x: 0.0, y: 0.0}
 
@@ -20,18 +19,17 @@ live_design! {
         }
 
         content : <View> {
-            width: Fit
+            width: 300
             height: Fit
-
+            visible: false,
             padding: 2.0
 
             tooltip_bg = <RoundedView> {
-                width: Fit,
+                width: Fill,
                 height: Fit,
                 padding: 7,
 
                 draw_bg: {
-                    // color: #ff0000aa,
                     color: #fff,
                     border_width: 1.5,
                     border_color: #fff,
@@ -39,7 +37,7 @@ live_design! {
                 }
 
                 tooltip_label = <Label> {
-                    width: Fit,
+                    width: Fill,
                     height: Fit,
                     draw_text: {
                         text_style: <REGULAR_TEXT> {}
