@@ -26,7 +26,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnReadMessageCount}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, get_fully_read_event, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use rangemap::RangeSet;
@@ -1521,6 +1521,8 @@ impl RoomScreen {
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
                         if let Some(room_id) = &self.room_id {
+                            // Display empty green badge just in case request for the number of unread messages fails
+                            jump_to_bottom.show_unread_message_badge(cx, UnReadMessageCount::Unknown);
                             // Set the number of unread messages to unread_notification_badge by async request to avoid locking in the Main UI thread
                             submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
                         }
@@ -2208,7 +2210,7 @@ pub enum TimelineUpdate {
         clear_cache: bool,
     },
     /// The updated number of unread messages in the room.
-    NewUnreadMessagesCount(u64),
+    NewUnreadMessagesCount(UnReadMessageCount),
     /// The target event ID was found at the given `index` in the timeline items vector.
     ///
     /// This means that the RoomScreen widget can scroll the timeline up to this event,
@@ -2335,7 +2337,7 @@ struct TimelineUiState {
     /// at which point we submit a backwards pagination request to fetch more events.
     last_scrolled_index: usize,
 
-    /// The index of the first item in the timeline that is currently visible
+    /// The previous first index of the portallist before timeline receives new item, scroll changes or timeline view jumps
     prev_first_index: Option<usize>,
 
     /// Boolean to indicate if the user scrolled pass the read marker

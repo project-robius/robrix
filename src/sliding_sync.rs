@@ -35,7 +35,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::jump_to_bottom_button::UnReadMessageCount, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -416,7 +416,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-    let subscribe_to_owned_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, bool>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+    let subscribe_to_current_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, bool>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -631,7 +631,7 @@ async fn async_worker(
                     if let Some(unread_messages_count) = get_client()
                         .and_then(|c| c.get_room(&room_id)).map(|room| room.num_unread_messages())
                     {
-                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(unread_messages_count)) {
+                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(UnReadMessageCount::Known(unread_messages_count))) {
                             log!("Failed to send timeline update: {e:?} for NumOfUnReadMessages request for room {room_id}");
                         } else {
                             SignalToUI::set_ui_signal();
@@ -768,11 +768,11 @@ async fn async_worker(
                     };
                     room_info.timeline.clone()
                 };
-                let subscribe_to_owned_user_read_receipt_changed = subscribe_to_owned_user_read_receipt_changed.clone();
+                let subscribe_to_current_user_read_receipt_changed = subscribe_to_current_user_read_receipt_changed.clone();
 
                 let _to_updates_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
-                    let read_receipt_change_mutex = subscribe_to_owned_user_read_receipt_changed.clone();
+                    let read_receipt_change_mutex = subscribe_to_current_user_read_receipt_changed.clone();
                     let mut read_receipt_change_mutex_guard = read_receipt_change_mutex.lock().await;
                     if let Some(subscription) = read_receipt_change_mutex_guard.get(&room_id) {
                         if *subscription && subscribe {
@@ -784,7 +784,7 @@ async fn async_worker(
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
                         while (update_receiver.next().await).is_some() {
-                            let read_receipt_change = subscribe_to_owned_user_read_receipt_changed.clone();
+                            let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
                             let read_receipt_change = read_receipt_change.lock().await;
                             let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
                             if !subscribed_to_user_read_receipt {

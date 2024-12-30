@@ -123,40 +123,50 @@ impl JumpToBottomButton {
     ///
     /// This does not automatically redraw any views.
     /// If unread_message_count is `0`, the unread message badge is hidden.
-    pub fn show_unread_message_badge(&mut self, cx: &mut Cx, unread_message_count: u64) {
-        if unread_message_count > 0 {
-            self.visible = true;
-            self.view(id!(unread_message_badge)).set_visible(true);
-            self.label(id!(unread_messages_count)).set_text(&format!(
-                "{}{}",
-                std::cmp::min(unread_message_count, 99),
-                if unread_message_count > 99 { "+" } else { "" }
-            ));
-            if unread_message_count > 99 {
-                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
-                    draw_bg: {
-                        border_width: 0.0
-                    }
-                });
-            } else if unread_message_count > 9 {
-                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
-                    draw_bg: {
-                        border_width: 1.0
-                    }
-                });
-            } else {
-                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
-                    draw_bg: {
-                        border_width: 2.0
-                    }
-                });
+    pub fn show_unread_message_badge(&mut self, cx: &mut Cx, unread_message_count: UnReadMessageCount) {
+        match unread_message_count {
+            UnReadMessageCount::Unknown => {
+                self.visible = true;
+                self.view(id!(unread_message_badge)).set_visible(true);
+                self.label(id!(unread_messages_count)).set_text("");
             }
-        } else {
-            self.visible = false;
-            self.view(id!(unread_message_badge)).set_visible(false);
-            self.label(id!(unread_messages_count))
-                .set_text("");
+            UnReadMessageCount::Known(unread_message_count) => {
+                if unread_message_count > 0 {
+                    self.visible = true;
+                    self.view(id!(unread_message_badge)).set_visible(true);
+                    self.label(id!(unread_messages_count)).set_text(&format!(
+                        "{}{}",
+                        std::cmp::min(unread_message_count, 99),
+                        if unread_message_count > 99 { "+" } else { "" }
+                    ));
+                    if unread_message_count > 99 {
+                        self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                            draw_bg: {
+                                border_width: 0.0
+                            }
+                        });
+                    } else if unread_message_count > 9 {
+                        self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                            draw_bg: {
+                                border_width: 1.0
+                            }
+                        });
+                    } else {
+                        self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                            draw_bg: {
+                                border_width: 2.0
+                            }
+                        });
+                    }
+                } else {
+                    self.visible = false;
+                    self.view(id!(unread_message_badge)).set_visible(false);
+                    self.label(id!(unread_messages_count)).set_text("");
+                }
+            }
+            
         }
+        
     }
 
     /// Updates the visibility of the jump to bottom button and the unread message badge
@@ -204,7 +214,7 @@ impl JumpToBottomButtonRef {
     }
 
     /// See [`JumpToBottomButton::show_unread_message_badge()`].
-    pub fn show_unread_message_badge(&self, cx: &mut Cx, unread_message_count: u64) {
+    pub fn show_unread_message_badge(&self, cx: &mut Cx, unread_message_count: UnReadMessageCount) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_unread_message_badge(cx, unread_message_count);
         }
@@ -221,4 +231,13 @@ impl JumpToBottomButtonRef {
             inner.update_from_actions(cx, portal_list, actions);
         }
     }
+}
+
+/// The number of unread messages in the room
+#[derive(Clone, Debug)]
+pub enum UnReadMessageCount {
+    /// Display green badge without text
+    Unknown,
+    /// Display green badge and text for the number of unread messages
+    Known(u64)
 }
