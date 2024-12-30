@@ -639,9 +639,9 @@ impl WidgetMatchEvent for RoomsList {
                 }
 
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                .set_keywords(keywords)
-                .set_filter_types(RoomDisplayFilterType::All)
-                .build();
+                    .set_keywords(keywords)
+                    .set_filter_types(RoomDisplayFilterType::All)
+                    .build();
                 self.display_filter = filter;
 
                 let displayed_rooms = if let Some(sort_fn) = sort_fn {
