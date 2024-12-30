@@ -629,9 +629,9 @@ impl WidgetMatchEvent for RoomsList {
         for action in actions {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                .set_keywords(keywords)
-                .set_filter_types(RoomDisplayFilterType::All)
-                .build();
+                    .set_keywords(keywords)
+                    .set_filter_types(RoomDisplayFilterType::All)
+                    .build();
                 self.display_filter = filter;
 
                 let displayed_rooms = if let Some(sort_fn) = sort_fn {
