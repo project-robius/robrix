@@ -296,7 +296,7 @@ impl RoomDisplayFilterBuilder {
 
         fn is_tag_match(search_tag: &str, tag_name: &TagName) -> bool {
             match tag_name {
-                TagName::Favorite => search_tag == "favourite",
+                TagName::Favorite => ["favourite", "favorite"].contains(&search_tag),
                 TagName::LowPriority => ["low_priority", "low-priority", "lowpriority", "lowPriority"].contains(&search_tag),
                 TagName::ServerNotice => ["server_notice", "server-notice", "servernotice", "serverNotice"].contains(&search_tag),
                 TagName::User(user_tag) => user_tag.as_ref().eq_ignore_ascii_case(search_tag),
@@ -628,6 +628,16 @@ impl WidgetMatchEvent for RoomsList {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         for action in actions {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
+
+                if keywords.is_empty() {
+                    // Reset the displayed rooms list to show all rooms.
+                    self.display_filter = RoomDisplayFilter::default();
+                    self.displayed_rooms = self.all_rooms.keys().cloned().collect();
+                    self.update_status_rooms_count();
+                    self.redraw(cx);
+                    return;
+                }
+
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
                 .set_keywords(keywords)
                 .set_filter_types(RoomDisplayFilterType::All)
@@ -655,9 +665,11 @@ impl WidgetMatchEvent for RoomsList {
                 };
 
                 self.status = if self.displayed_rooms.is_empty() {
-                    "No rooms found matching search.".into()
+                    "No rooms found matching.".into()
+                } else if self.displayed_rooms.len() == 1 {
+                    "Found 1 matching room".into()
                 } else {
-                    format!("Found {} rooms matching search.", self.displayed_rooms.len())
+                    format!("Found {} matching rooms.", self.displayed_rooms.len())
                 };
                 // Update the displayed rooms list.
                 self.displayed_rooms = displayed_rooms;
