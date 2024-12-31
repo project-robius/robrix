@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
-        events::{room::{
+        events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
@@ -27,7 +27,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnReadMessageCount}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, get_fully_read_event, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -1675,6 +1675,9 @@ impl RoomScreen {
                     input_bar.set_visible(can_user_send_message);
                     can_not_send_message_notice.set_visible(!can_user_send_message);
                 }
+                TimelineUpdate::OwnUserReadReceipt(receipt) => {
+                    tl.latest_own_user_receipt = Some(receipt);
+                }
             }
         }
 
@@ -1922,6 +1925,7 @@ impl RoomScreen {
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
+                latest_own_user_receipt: None,
             };
             (new_tl_state, true)
         };
@@ -1935,8 +1939,6 @@ impl RoomScreen {
             }
         );
 
-        // Query for User's fully read event
-        submit_async_request(MatrixRequest::GetFullyReadEvent { room_id: room_id.clone() });
         submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id: room_id.clone(), subscribe: true });
         // Kick off a back pagination request for this room. This is "urgent",
         // because we want to show the user some messages as soon as possible
@@ -2101,41 +2103,33 @@ impl RoomScreen {
                         room_id: room_id.clone(),
                         event_id: last_event_id.to_owned(),
                     });
-                    // If scrolled_past_read_marker is true, send full read receipt for the last visible event
                     if tl_state.scrolled_past_read_marker {
                         submit_async_request(MatrixRequest::FullyReadReceipt {
-                              room_id: room_id.clone(),
-                              event_id: last_event_id.to_owned(),
-                              timestamp: last_timestamp,
+                            room_id: room_id.clone(),
+                            event_id: last_event_id.to_owned(),
                         });
                     } else {
-                        // Get event_id and timestamp for the first visible event
-                        // If scrolled_past_read_marker is false, check if the saved fully read event's timestamp in between the first and last visible event
-                        // If true, set scrolled_past_read_marker to true and send full read receipt
-                        let Some((_, fully_read_timestamp)) =
-                            get_fully_read_event(room_id)
-                        else {
-                            *index = first_index;
-                            return;
-                        };
-                        let Some((_first_event_id, first_timestamp)) = tl_state
-                            .items
-                            .get(first_index)
-                            .and_then(|f| f.as_event())
-                            .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
-                        else {
-                            *index = first_index;
-                            return;
-                        };
-                        if fully_read_timestamp >= first_timestamp
-                            && fully_read_timestamp <= last_timestamp
-                        {
-                            tl_state.scrolled_past_read_marker = true;
-                            submit_async_request(MatrixRequest::FullyReadReceipt {
-                                room_id: room_id.clone(),
-                                event_id: last_event_id.to_owned(),
-                                timestamp: last_timestamp,
-                            });
+                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
+                        .and_then(|receipt| receipt.ts) {
+                            let Some((_first_event_id, first_timestamp)) = tl_state
+                                .items
+                                .get(first_index)
+                                .and_then(|f| f.as_event())
+                                .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                                else {
+                                    *index = first_index;
+                                    return;
+                                };
+                            if own_user_receipt_timestamp >= &first_timestamp
+                                && own_user_receipt_timestamp <= &last_timestamp
+                            {
+                                tl_state.scrolled_past_read_marker = true;
+                                submit_async_request(MatrixRequest::FullyReadReceipt {
+                                    room_id: room_id.clone(),
+                                    event_id: last_event_id.to_owned(),
+                                });
+                            }
+                            
                         }
                     }
                 }
@@ -2255,7 +2249,9 @@ pub enum TimelineUpdate {
     },
     /// A notice that the permission of user's ability to send messages in this room,
     /// this condition is simple so that we only use `bool`
-    CanUserSendMessage (bool)
+    CanUserSendMessage (bool),
+    /// A notice that the read receipt of own user has been updated
+    OwnUserReadReceipt(Receipt)
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2349,6 +2345,7 @@ struct TimelineUiState {
     /// the app will send out last visible event's fully read receipt.
     /// Any new message coming in will reset the value to false.
     scrolled_past_read_marker: bool,
+    latest_own_user_receipt: Option<Receipt>,
 }
 
 #[derive(Default, Debug)]

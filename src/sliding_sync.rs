@@ -6,9 +6,8 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, deserialized_responses::TimelineEventKind, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
-            fully_read::FullyReadEventContent,
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent
@@ -287,10 +286,6 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
-    /// Request to fetch the user's latest fully-read event for the given room.
-    GetFullyReadEvent {
-        room_id: OwnedRoomId,
-    },
     /// Request to fetch the number of unread messages in the given room.
     GetNumberUnreadMessages {
         room_id: OwnedRoomId,
@@ -373,7 +368,6 @@ pub enum MatrixRequest {
     FullyReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
-        timestamp: MilliSecondsSinceUnixEpoch
     },
     /// Sends a request checking if the currently logged-in user can send a message to the given room.
     ///
@@ -582,41 +576,6 @@ async fn async_worker(
                     }
                 });
             }
-            
-            MatrixRequest::GetFullyReadEvent { room_id } => {
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                    error!("BUG: client/room not found for Get Fully Read Event {room_id}");
-                    continue;
-                };
-                
-                let _get_fully_read_event_task = Handle::current().spawn(async move {
-                    async fn fetch_fully_read_event(
-                        room: &Room,
-                        room_id: &OwnedRoomId,
-                    ) -> Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
-                        let fully_read_event =  room
-                            .account_data_static::<FullyReadEventContent>().await?
-                            .and_then(|f| f.deserialize().ok())
-                            .map(|f| f.content.event_id);
-                        if let Some(event_id) = fully_read_event {
-                            get_event_timestamp(room, room_id, event_id).await
-                        } else {
-                            bail!("There is no fully read event");
-                        }
-                    }
-                    match fetch_fully_read_event(&room, &room_id).await {
-                        Ok((event_id, timestamp)) => {
-                            log!("Successfully fetched fully read event for room {room_id} at {timestamp:?} for {event_id}");
-                            if let Err(e) = set_fully_read_event(&room_id, event_id, timestamp) {
-                                error!("Failed to set fully read event for room {room_id}: {e:?}");
-                            }
-                        }
-                        Err(e) => {
-                            log!("Failed to fetch fully read event for room {room_id} {e:?}");
-                        }
-                    }
-                });
-            }
             MatrixRequest::GetNumberUnreadMessages { room_id } => {
                 let sender = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -755,19 +714,16 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
-                    error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
-                    continue;
-                };
 
-                let timeline = {
+                let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for send message request {room_id}");
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {    
+                        log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
                     };
-                    room_info.timeline.clone()
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
+
                 let subscribe_to_current_user_read_receipt_changed = subscribe_to_current_user_read_receipt_changed.clone();
 
                 let _to_updates_task = Handle::current().spawn(async move {
@@ -783,6 +739,12 @@ async fn async_worker(
                     }
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
+                        if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                            log!("Received own user read receipt: {receipt:?} {event_id:?}");
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
+                                error!("Failed to get own user read receipt: {e:?}"); 
+                            }
+                        }
                         while (update_receiver.next().await).is_some() {
                             let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
                             let read_receipt_change = read_receipt_change.lock().await;
@@ -790,22 +752,9 @@ async fn async_worker(
                             if !subscribed_to_user_read_receipt {
                                 break;
                             }
-                            
-                            let updated_event_id = timeline.latest_user_read_receipt_timeline_event_id(&client_user_id).await;
-                            let fully_read_event = get_fully_read_event(&room_id);
-                            if let (Some(updated_event_id), Some((event_id, fully_read_event_timestamp))) = (updated_event_id, fully_read_event) {
-                                if updated_event_id != event_id {
-                                    if let Err(e) = get_event_timestamp(&room, &room_id, updated_event_id).await
-                                    .map(|(read_event, timestamp)| {
-                                        if timestamp > fully_read_event_timestamp {
-                                            set_fully_read_event(&room_id, read_event, timestamp)
-                                        } else {
-                                            bail!("updated event's timestamp is older than current fully read event");
-                                        }
-                                    })
-                                    {
-                                        error!("Error: couldn't set fully read event for room {room_id}: {e:?}");
-                                    }
+                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
+                                    error!("Failed to get own user read receipt: {e:?}"); 
                                 }
                             }
                         }
@@ -1051,8 +1000,6 @@ struct RoomInfo {
     typing_notice_subscriber: Option<EventHandlerDropGuard>,
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
-    /// Event_id and timestamp for read marker
-    fully_read_event: Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)>,
 }
 impl Drop for RoomInfo {
     fn drop(&mut self) {
@@ -1138,35 +1085,6 @@ pub fn take_timeline_endpoints(
         )
 }
 
-
-/// Return an option of user's fully read event id and timestamp for a given room using Mutex Lock
-/// 
-/// Gets the fully read event for the given room
-/// Returns `None` if there is no fully read event
-pub fn get_fully_read_event(room_id: &OwnedRoomId) -> Option<(OwnedEventId, MilliSecondsSinceUnixEpoch)> {
-    let result = ALL_ROOM_INFO
-        .lock()
-        .map(|guard| {
-            guard
-                .get(room_id)
-                .and_then(|ri| ri.fully_read_event.clone())
-        })
-        .unwrap_or_else(|_| None);
-    result
-}
-/// Update fully read event inside Room Info after sending out read_receipt
-fn set_fully_read_event(room_id: &OwnedRoomId, read_event: OwnedEventId, timestamp: MilliSecondsSinceUnixEpoch) -> Result<(), anyhow::Error> {
-    ALL_ROOM_INFO
-        .lock()
-        .map_err(|e| anyhow::anyhow!("Failed to lock ALL_ROOM_INFO: {}", e))?
-        .get_mut(room_id)
-        .map(|room_info| {
-            room_info.fully_read_event = Some((read_event.clone(), timestamp));
-            log!("Set fully read event for room {:?} read_event {:?}", room_id, read_event);
-            Ok(())
-        })
-        .unwrap_or(Err(anyhow::anyhow!("Cannot find room info for room {}", room_id)))
-}
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
 fn username_to_full_user_id(
@@ -1500,39 +1418,6 @@ async fn update_room(
     }
 }
 
-/// Asynchronously retrieves the timestamp of a given event in a room.
-///
-/// This function fetches the specified event from the provided room and extracts
-/// its origin server timestamp. It handles both decrypted and plain text timeline
-/// event kinds. In the case of an unsupported event kind, or if the event cannot
-/// be fetched or deserialized, an error is returned.
-///
-/// # Arguments
-///
-/// * `room` - The room from which to retrieve the event.
-/// * `room_id` - The ID of the room.
-/// * `event_id` - The ID of the event whose timestamp is to be retrieved.
-///
-/// # Returns
-///
-/// * `Ok((OwnedEventId, MilliSecondsSinceUnixEpoch))` - A tuple containing the
-///   event ID and its origin server timestamp if successful.
-/// * `Err(anyhow::Error)` - An error if the event cannot be fetched or is of
-///   an unsupported timeline event kind.
-async fn get_event_timestamp(room: &Room, room_id: &OwnedRoomId, event_id: OwnedEventId) -> Result<(OwnedEventId, MilliSecondsSinceUnixEpoch),  anyhow::Error> {
-    let event = room.event(&event_id, None).await?;
-    match event.kind {
-        TimelineEventKind::Decrypted(decrypted_room_event) => {
-            decrypted_room_event.event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
-        }
-        TimelineEventKind::PlainText { event } => {
-            event.deserialize().map(|e| (event_id, e.origin_server_ts())).map_err(|e| e.into())
-        }
-        _ => {
-           bail!("Failed to fetch fully read event for room {room_id} because there is no TimelineEventKind::Decrypted")
-        }
-    }
-}
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &room_list_service::Room) {
     ALL_ROOM_INFO.lock().unwrap().remove(room.room_id());
@@ -1633,7 +1518,6 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
             timeline_subscriber_handler_task,
             typing_notice_subscriber: None,
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
-            fully_read_event: None
         },
     );
     Ok(())
