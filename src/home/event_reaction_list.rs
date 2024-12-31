@@ -8,7 +8,6 @@ use crate::home::room_screen::RoomScreenTooltipActions;
 
 use super::room_screen::HoverInData;
 const TOOLTIP_WIDTH: f64 = 100.0;
-const REACTION_LIST_PADDING_RIGHT: f64 = 3.0;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -106,7 +105,7 @@ pub struct ReactionList {
     layout: Layout,
     #[walk]
     walk: Walk,
-    /// A list of ReactionData which includes data required to draw the reaction buttons and their tooltips
+    /// A list of ReactionData which includes data required to draw the reaction buttons and their tooltips.
     /// After the first draw, the button widths will be stored in this vector
     #[rust]
     event_reaction_list: Vec<ReactionData>,
@@ -212,7 +211,7 @@ impl Widget for ReactionList {
                         if let Some(reaction_data) = self.event_reaction_list.get(id.0 as usize) {
                             let rect =  Rect {
                                 pos: DVec2 {
-                                    x: widget_rect.pos.x + widget_rect.size.x - REACTION_LIST_PADDING_RIGHT,
+                                    x: widget_rect.pos.x + widget_rect.size.x,
                                     y: widget_rect.pos.y - widget_rect.size.y / 2.0
                                 },
                                 size: DVec2::new(),
