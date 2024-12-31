@@ -1952,7 +1952,7 @@ fn update_latest_event(
                             let power_level_to_send_message_like_event = content.events
                                 .get(&TimelineEventType::RoomMessage)
                                 .or_else(|| content.events.get(&TimelineEventType::Message))
-                                .unwrap_or_else(|| &content.events_default);
+                                .unwrap_or(&content.events_default);
                             let _res = sender.send(TimelineUpdate::CanUserSendMessage(
                                 user_power >= power_level_to_send_message_like_event
                             ));
