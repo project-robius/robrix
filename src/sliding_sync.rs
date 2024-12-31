@@ -10,14 +10,14 @@ use matrix_sdk::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
-            }, FullStateEventContent
+            }, FullStateEventContent, MessageLikeEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, MembershipChange},
     Timeline,
 };
 use robius_open::Uri;
@@ -556,17 +556,28 @@ async fn async_worker(
                         }
                     }
 
-                    if update.is_none() && !local_only {
-                        if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                            update = Some(UserProfileUpdate::UserProfileOnly(
-                                UserProfile {
-                                    username: response.displayname,
-                                    user_id: user_id.clone(),
-                                    avatar_state: AvatarState::Known(response.avatar_url),
+                    if !local_only {
+                        if update.is_none() {
+                            if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                update = Some(UserProfileUpdate::UserProfileOnly(
+                                    UserProfile {
+                                        username: response.displayname,
+                                        user_id: user_id.clone(),
+                                        avatar_state: AvatarState::Known(response.avatar_url),
+                                    }
+                                ));
+                            } else {
+                                log!("User profile request: client could not get user with ID {user_id}");
+                            }
+                        }
+
+                        match update.as_mut() {
+                            Some(UserProfileUpdate::Full { new_profile: UserProfile { username, .. }, .. }) if username.is_none() => {
+                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                    *username = response.displayname;
                                 }
-                            ));
-                        } else {
-                            log!("User profile request: client could not get user with ID {user_id}");
+                            }
+                            _ => { }
                         }
                     }
 
@@ -810,10 +821,10 @@ async fn async_worker(
                 let _check_can_user_send_message_task = Handle::current().spawn(async move {
                     let can_user_send_message = timeline.room().can_user_send_message(
                         &user_id,
-                        matrix_sdk::ruma::events::MessageLikeEventType::Message
+                        MessageLikeEventType::Message
                     )
                     .await
-                    .unwrap_or(false);
+                    .unwrap_or(true);
 
                     if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
                         error!("Failed to send the result of if user can send message: {e}")
@@ -1331,7 +1342,7 @@ async fn update_room(
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event);
+                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event, None);
                 }
             }
         }
@@ -1907,11 +1918,13 @@ async fn timeline_subscriber_handler(
                 // Update the latest event for this room.
                 if let Some(new_latest) = new_latest_event {
                     if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
-                        latest_event = Some(new_latest);
+                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
+
                         if room_avatar_changed {
                             spawn_fetch_room_avatar(room.clone());
                         }
+
+                        latest_event = Some(new_latest);
                     }
                 }
             }
@@ -1925,40 +1938,62 @@ async fn timeline_subscriber_handler(
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
 }
 
-
 /// Updates the latest event for the given room.
 ///
-/// This function handles room name changes and checks for (but does not directly handle)
-/// room avatar changes.
+/// This function currently handles room name, avatar and send permission changes
+/// (but does not directly handle).
 ///
-/// Returns `true` if this latest event indicates that the room's avatar has changed
+/// Returns `true` if room avatar has changed
 /// and should also be updated.
 fn update_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
+    sender: Option<&crossbeam_channel::Sender<TimelineUpdate>>
 ) -> bool {
     let mut room_avatar_changed = false;
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
-
-    // Check for relevant state events: a changed room name or avatar.
-    if let TimelineItemContent::OtherState(other) = event_tl_item.content() {
-        match other.content() {
-            AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                    room_id: room_id.clone(),
-                    new_room_name: content.name.clone(),
-                });
+    match event_tl_item.content() {
+        // Check for relevant state events.
+        TimelineItemContent::OtherState(other) => {
+            match other.content() {
+                // Check for room name changes.
+                AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+                    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
+                        room_id: room_id.clone(),
+                        new_room_name: content.name.clone(),
+                    });
+                }
+                // Check for room avatar changes.
+                AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
+                    room_avatar_changed = true;
+                }
+                // Check for if can user send message.
+                AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    if let Some(user_id) = current_user_id() {
+                        if let Some(user_power) = content.users.get(&user_id) {
+                            if let Err(e) = sender.unwrap().send(TimelineUpdate::CanUserSendMessage(user_power >= &content.events_default)) {
+                                error!("Failed to send the result of if user can send message: {e}")
+                            }
+                        }
+                    }
+                }
+                _ => { }
             }
-            AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
-                room_avatar_changed = true;
-            }
-            AnyOtherFullStateEventContent::RoomPowerLevels(_power_level_event) => {
-                submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
-            }
-            _ => { }
         }
+        TimelineItemContent::MembershipChange(room_membership_change) => {
+            // Submit a `MatrixRequest` to check if the user can send when current user accept invitation successfully.
+            if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
+                if let Some(user_id) = current_user_id() {
+                    if user_id == room_membership_change.user_id() {
+                        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                    }
+                }
+            }
+        }
+        _ => { }
     }
+
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
         room_id,
         timestamp,
@@ -1966,7 +2001,6 @@ fn update_latest_event(
     });
     room_avatar_changed
 }
-
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: Room) {

@@ -3,7 +3,7 @@ use crate::utils::human_readable_list;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
-use crate::profile::user_profile_cache::get_user_profile;
+use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::home::room_screen::RoomScreenTooltipActions;
 
 use super::room_screen::HoverInData;
@@ -328,12 +328,9 @@ impl ReactionListRef {
                     if sender == &client_user_id {
                         includes_user = true;
                     }
-                    get_user_profile(cx, sender).map(|profile| profile.displayable_name().to_owned()).unwrap_or_else(||{
-                        submit_async_request(MatrixRequest::GetUserProfile { 
-                            user_id: sender.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
-                        });
-                        sender.to_string()
-                    })
+                    get_user_profile_and_room_member(cx, sender.clone(), &room_id, true).0
+                        .map(|user_profile| user_profile.displayable_name().to_string())
+                        .unwrap_or(sender.to_string())
                 }).collect();
                let mut tooltip_text = human_readable_list(&tooltip_text_arr);                
                 tooltip_text.push_str(&format!("\nreacted with: {}", emoji_text));
