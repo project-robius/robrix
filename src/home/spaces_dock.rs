@@ -67,7 +67,11 @@ live_design! {
             verification_badge = <VerificationBadge> {}
         }
 
-        profile_tooltip = <ColorTooltip> {}
+        profile_tooltip = <ColorTooltip> {
+            content: {
+                width: 200
+            }
+        }
 
     }
 
@@ -189,10 +193,11 @@ impl Widget for Profile {
         }; // view borrow end
 
         if let Event::MouseMove(e) = event {
+
             let (is_mouse_over_icons, verification_text, tooltip_pos) = {
                 if let Some(badge) = self
                     .widget(id!(verification_badge))
-                    .borrow_mut::<VerificationBadge>()
+                    .borrow::<VerificationBadge>()
                 {
                     let icons_rect = badge.get_icons_rect(cx);
                     let is_over = icons_rect.contains(e.abs);
@@ -210,9 +215,13 @@ impl Widget for Profile {
                             y: icons_rect.pos.y - 10.,
                         }
                     } else {
-                        DVec2 {
-                            x: profile_rect.pos.x,
-                            y: profile_rect.pos.y - 10.,
+                        if let Some(tooltip) = self
+                            .widget(id!(profile_tooltip))
+                            .borrow::<ColorTooltip>()
+                        {
+                            tooltip.calculate_above_position(cx, profile_rect)
+                        } else {
+                            DVec2 { x: 0., y: 0. }
                         }
                     };
                     (is_over, text.to_string(), tooltip_pos)
