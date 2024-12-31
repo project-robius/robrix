@@ -1955,6 +1955,7 @@ fn spawn_fetch_room_avatar(room: Room) {
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
     if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+        // Once is_direct() is fixed, we’ll use the API to check the room status.
         if room_members.len() == 2 {
             if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
                 return match non_account_member.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
