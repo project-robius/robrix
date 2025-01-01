@@ -238,6 +238,6 @@ impl JumpToBottomButtonRef {
 pub enum UnreadMessageCount {
     /// There are unread messages, but we do not know how many.
     Unknown,
-    /// Display green badge and text for the number of unread messages
+    /// There are unread messages, and we know exactly how many.
     Known(u64)
 }
