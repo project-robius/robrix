@@ -1059,8 +1059,8 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
-                if let Some((rect, tooltip_text, tooltip_width)) = seq.hover_in(actions) {
-                    tooltip.show_with_options(cx, rect.pos, &tooltip_text);
+                if let RoomScreenTooltipActions::HoverIn { tooltip_pos, tooltip_text, tooltip_width } = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
                             rounded_view = {
@@ -2205,9 +2205,10 @@ impl RoomScreenRef {
 pub enum RoomScreenTooltipActions {
     /// The mouse is hovering over the ??? (see below)
     HoverIn {
-        tooltip_pos: Rect,
+        tooltip_pos: DVec2,
         tooltip_text: String,
         tooltip_width: f64,
+    },
     HoverOut,
     None,
 }
