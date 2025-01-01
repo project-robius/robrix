@@ -1025,6 +1025,7 @@ impl Drop for RoomInfo {
         }
     }
 }
+
 /// Information about all of the rooms we currently know about.
 static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
 
