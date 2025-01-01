@@ -235,7 +235,7 @@ impl JumpToBottomButtonRef {
 
 /// The number of unread messages in the room
 #[derive(Clone, Debug)]
-pub enum UnReadMessageCount {
+pub enum UnreadMessageCount {
     /// Display green badge without text
     Unknown,
     /// Display green badge and text for the number of unread messages
