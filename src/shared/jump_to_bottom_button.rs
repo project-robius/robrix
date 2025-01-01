@@ -19,69 +19,73 @@ live_design! {
         flow: Overlay,
         align: {x: 1.0, y: 1.0},
         visible: false,
-
-        jump_to_bottom_button = <IconButton> {
-            margin: {right: 15.0, bottom: 15.0},
-            width: 50, height: 50,
-            draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-            icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-            // draw a circular background for the button
-            draw_bg: {
-                instance background_color: #edededce,
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x);
-                    sdf.fill_keep(self.background_color);
-                    return sdf.result
-                }
-            }
-        }
-
-        // A badge overlay on the jump to bottom button showing unread messages
-        unread_message_badge = <View> {
-            width: 25, height: 20,
-            margin: {right: 25.0, bottom: 8.0},
-            align: {
-                x: 0.5,
-                y: 0.5
-            }
-            visible: false,
+        <View> {
+            width: 65, height: 75,
+            align: {x: 0.5, y: 1.0},
             flow: Overlay,
-            green_rounded_label = <View> {
-                width: Fill,
-                height: Fill,
-                show_bg: true,
+            jump_to_bottom_button = <IconButton> {
+                width: 50, height: 50,
+                margin: {bottom: 8},
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                // draw a circular background for the button
                 draw_bg: {
-                    color: (COLOR_UNREAD_MESSAGE_BADGE)
-                    instance radius: 4.0
-                    // Adjust this border_width to larger value to make oval smaller 
-                    instance border_width: 2.0
+                    instance background_color: #edededce,
                     fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                        sdf.box(
-                            self.border_width,
-                            self.border_width,
-                            self.rect_size.x - (self.border_width * 2.0),
-                            self.rect_size.y - (self.border_width * 2.0),
-                            max(1.0, self.radius)
-                        )
-                        sdf.fill_keep(self.color)
-                        return sdf.result;
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result
                     }
                 }
             }
-            // Label that displays the unread message count
-            unread_messages_count = <Label> {
-                width: Fit,
-                height: Fit,
-                text: "",
-                draw_text: {
-                    color: #ffffff,
-                    text_style: {font_size: 8.0},
+
+            // A badge overlay on the jump to bottom button showing unread messages
+            unread_message_badge = <View> {
+                width: 25, height: 20,
+                align: {
+                    x: 0.5,
+                    y: 0.5
+                }
+                visible: false,
+                flow: Overlay,
+                green_rounded_label = <View> {
+                    width: Fill,
+                    height: Fill,
+                    show_bg: true,
+                    draw_bg: {
+                        color: (COLOR_UNREAD_MESSAGE_BADGE)
+                        instance radius: 4.0
+                        // Adjust this border_width to larger value to make oval smaller 
+                        instance border_width: 2.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                            sdf.box(
+                                self.border_width,
+                                self.border_width,
+                                self.rect_size.x - (self.border_width * 2.0),
+                                self.rect_size.y - (self.border_width * 2.0),
+                                max(1.0, self.radius)
+                            )
+                            sdf.fill_keep(self.color)
+                            return sdf.result;
+                        }
+                    }
+                }
+                // Label that displays the unread message count
+                unread_messages_count = <Label> {
+                    width: Fit,
+                    height: Fit,
+                    text: "",
+                    draw_text: {
+                        color: #ffffff,
+                        text_style: {font_size: 8.0},
+                    }
                 }
             }
         }
+        
     }
 }
 
