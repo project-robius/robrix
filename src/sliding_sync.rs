@@ -1999,7 +1999,7 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
-            .next()
+            .find(|g| g.chars().all(char::is_alphanumeric))
             .map(ToString::to_string)
             .unwrap_or_default()
     )
