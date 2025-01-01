@@ -1073,21 +1073,26 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.reaction_list(id!(reaction_list));
-                if let Some(hover_in_data) = seq.hover_in(actions) {
-                    tooltip.show_with_options(cx, hover_in_data.tooltip_position.pos, &hover_in_data.tooltip_text);
-
-                    tooltip.apply_over(cx, live!(
-                        content: {
-                            rounded_view = {
-                                draw_bg: {
-                                    callout_y_offset: (hover_in_data.callout_y_offset )
-                                }
-                                tooltip_label = {
-                                    width: (hover_in_data.tooltip_width)
+                if let RoomScreenTooltipActions::HoverIn { tooltip_pos, 
+                    tooltip_text, 
+                    tooltip_width, 
+                    callout_y_offset 
+                } = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
+                    if let Some(callout_y_offset) = callout_y_offset {
+                        tooltip.apply_over(cx, live!(
+                            content: {
+                                rounded_view = {
+                                    draw_bg: {
+                                        callout_y_offset: (callout_y_offset)
+                                    }
+                                    tooltip_label = {
+                                        width: (tooltip_width)
+                                    }
                                 }
                             }
-                        }
-                    ));
+                        ));
+                    }
                 }
                 if seq.hover_out(actions) {
                     tooltip.hide(cx);
@@ -1383,7 +1388,7 @@ impl Widget for RoomScreen {
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
-            let room_id = &tl_state.room_id;            
+            let room_id = &tl_state.room_id;
             let tl_items = &tl_state.items;
 
             // Set the portal list's range based on the number of timeline items.
@@ -2251,18 +2256,16 @@ impl RoomScreenRef {
 /// Actions for the room screen's tooltip 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
-    // Mouse over event when the mouse is over the reaction button
-    HoverIn(HoverInData),
+    /// Mouse over event when the mouse is over the reaction button
+    HoverIn {
+        tooltip_pos: DVec2,
+        tooltip_text: String,
+        tooltip_width: f64,
+        /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget
+        callout_y_offset: Option<f64>,
+    },
     HoverOut,
     None,
-}
-#[derive(Clone, Debug)]
-pub struct HoverInData {
-    pub tooltip_position: Rect,
-    pub tooltip_text: String,
-    pub tooltip_width: f64,
-    /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget
-    pub callout_y_offset: f64,
 }
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.

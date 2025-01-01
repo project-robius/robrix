@@ -6,8 +6,10 @@ use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::home::room_screen::RoomScreenTooltipActions;
 
-use super::room_screen::HoverInData;
 const TOOLTIP_WIDTH: f64 = 100.0;
+const EMOJI_BG_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
+const EMOJI_BG_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -118,7 +120,7 @@ pub struct ReactionList {
     width_calculated: bool,
     /// Tooltip that appears when hovering over a reaction button, (Index in event_reaction_list, tooltip rendering rectangle's area, tooltip's text, callout's y offset)
     #[rust]
-    tooltip_state: Option<(u64, HoverInData)>
+    tooltip_state: Option<(u64, RoomScreenTooltipActions)>
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -163,11 +165,11 @@ impl Widget for ReactionList {
                 // Renders Grey button for reaction that does not include client user
                 let node_to_apply = if reaction_data.includes_user {
                     live! {
-                        draw_bg: { hide: 0.0 , color: (vec4(0.0, 0.6, 0.47, 1.0)) }
+                        draw_bg: { hide: 0.0 , color: (EMOJI_BG_COLOR_INCLUDE_SELF) }
                     }
                 } else {
                     live! {
-                        draw_bg: { hide: 0.0, color: (vec4(0.714, 0.73, 0.75, 1.0)) }
+                        draw_bg: { hide: 0.0, color: (EMOJI_BG_COLOR_NOT_INCLUDE_SELF) }
                     }
                 };
                 // Unhide the button as we have the width of the buttons
@@ -209,20 +211,17 @@ impl Widget for ReactionList {
                     let widget_rect = widget_ref.area().rect(cx);
                     if widget_rect.contains(e.abs) {
                         if let Some(reaction_data) = self.event_reaction_list.get(id.0 as usize) {
-                            let rect =  Rect {
-                                pos: DVec2 {
-                                    x: widget_rect.pos.x + widget_rect.size.x,
-                                    y: widget_rect.pos.y - widget_rect.size.y / 2.0
-                                },
-                                size: DVec2::new(),
+                            let tooltip_pos =  DVec2 {
+                                x: widget_rect.pos.x + widget_rect.size.x,
+                                y: widget_rect.pos.y - widget_rect.size.y / 2.0
                             };
                             // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state
                             // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction button
-                            self.tooltip_state = Some((id.0, HoverInData {
-                                tooltip_position: rect,
-                                tooltip_width: TOOLTIP_WIDTH,
-                                tooltip_text: reaction_data.tooltip_text.clone(),
-                                callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0 //minus 5 because of top margin,  + 10.0 because of tooltip's padding
+                            self.tooltip_state = Some((id.0, RoomScreenTooltipActions::HoverIn { 
+                                tooltip_pos, 
+                                tooltip_text: reaction_data.tooltip_text.clone(), 
+                                tooltip_width: TOOLTIP_WIDTH, 
+                                callout_y_offset: Some((widget_rect.size.y - 5.0) / 2.0 + 10.0) 
                             }));
                         }
                     }
@@ -247,7 +246,7 @@ impl Widget for ReactionList {
                     });
                     // If the mouse does not leave this particular reaction button, post a HoverIn action
                     if !reset_tooltip_state {
-                        cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(hover_in_data.clone()));
+                        cx.widget_action(uid, &scope.path, hover_in_data.clone());
                     }
                 }
                 if reset_tooltip_state {
@@ -346,14 +345,11 @@ impl ReactionListRef {
             instance.width_calculated = false;
         }
     }
-    pub fn hover_in(&self, actions: &Actions) -> Option<HoverInData> {
+    pub fn hover_in(&self, actions: &Actions) -> RoomScreenTooltipActions {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
-            match item.cast() {
-                RoomScreenTooltipActions::HoverIn(hover_in_data) => Some(hover_in_data),
-                _ => None,
-            }
+            item.cast()
         } else {
-            None
+            RoomScreenTooltipActions::None
         }
     }
     /// Handles hover out action
