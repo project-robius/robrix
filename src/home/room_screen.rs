@@ -2333,7 +2333,10 @@ struct TimelineUiState {
     /// at which point we submit a backwards pagination request to fetch more events.
     last_scrolled_index: usize,
 
-    /// The previous first index of the portallist before timeline receives new item, scroll changes or timeline view jumps
+    /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
+    ///
+    /// This index is saved before the timeline undergoes any jumps, e.g.,
+    /// receiving new items, major scroll changes, or other timeline view jumps.
     prev_first_index: Option<usize>,
 
     /// Boolean to indicate if the user scrolled pass the read marker
