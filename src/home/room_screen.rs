@@ -1079,20 +1079,18 @@ impl Widget for RoomScreen {
                     callout_y_offset 
                 } = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
-                    if let Some(callout_y_offset) = callout_y_offset {
-                        tooltip.apply_over(cx, live!(
-                            content: {
-                                rounded_view = {
-                                    draw_bg: {
-                                        callout_y_offset: (callout_y_offset)
-                                    }
-                                    tooltip_label = {
-                                        width: (tooltip_width)
-                                    }
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            rounded_view = {
+                                draw_bg: {
+                                    callout_y_offset: (callout_y_offset)
+                                }
+                                tooltip_label = {
+                                    width: (tooltip_width)
                                 }
                             }
-                        ));
-                    }
+                        }
+                    ));
                 }
                 if seq.hover_out(actions) {
                     tooltip.hide(cx);
@@ -2262,7 +2260,7 @@ pub enum RoomScreenTooltipActions {
         tooltip_text: String,
         tooltip_width: f64,
         /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget
-        callout_y_offset: Option<f64>,
+        callout_y_offset: f64,
     },
     HoverOut,
     None,

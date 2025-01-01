@@ -217,11 +217,11 @@ impl Widget for ReactionList {
                             };
                             // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state
                             // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction button
-                            self.tooltip_state = Some((id.0, RoomScreenTooltipActions::HoverIn { 
+                            self.tooltip_state = Some((id.0, RoomScreenTooltipActions::HoverIn {
                                 tooltip_pos, 
                                 tooltip_text: reaction_data.tooltip_text.clone(), 
                                 tooltip_width: TOOLTIP_WIDTH, 
-                                callout_y_offset: Some((widget_rect.size.y - 5.0) / 2.0 + 10.0) 
+                                callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0
                             }));
                         }
                     }
