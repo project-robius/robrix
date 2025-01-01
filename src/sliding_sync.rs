@@ -34,7 +34,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::jump_to_bottom_button::UnReadMessageCount, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::jump_to_bottom_button::UnreadMessageCount, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -590,7 +590,7 @@ async fn async_worker(
                     if let Some(unread_messages_count) = get_client()
                         .and_then(|c| c.get_room(&room_id)).map(|room| room.num_unread_messages())
                     {
-                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(UnReadMessageCount::Known(unread_messages_count))) {
+                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(UnreadMessageCount::Known(unread_messages_count))) {
                             log!("Failed to send timeline update: {e:?} for NumOfUnReadMessages request for room {room_id}");
                         } else {
                             SignalToUI::set_ui_signal();
