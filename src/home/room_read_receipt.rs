@@ -82,20 +82,18 @@ impl Widget for AvatarRow {
                 // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
                 // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
                 let tooltip_pos = if finger_event.abs.x > cx.default_window_size().x - TOOLTIP_LENGTH {
-                    Rect {
-                        pos: DVec2 {
-                            x: self.area.rect(cx).pos.x,
-                            y: finger_event.abs.y
-                        },
-                        size: DVec2::new(),
+                    DVec2 {
+                        x: self.area.rect(cx).pos.x,
+                        y: finger_event.abs.y
                     }
                 } else {
-                    Rect {
-                        pos: finger_event.abs,
-                        size: DVec2::new(),
-                    }
+                    finger_event.abs
                 };
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn(tooltip_pos, format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), TOOLTIP_LENGTH));
+                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn{
+                    tooltip_pos,
+                    tooltip_text: format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), 
+                    tooltip_width: TOOLTIP_LENGTH
+                });
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
@@ -156,14 +154,11 @@ impl AvatarRow {
 }
 impl AvatarRowRef {
     /// Handles hover in action
-    pub fn hover_in(&self, actions: &Actions) -> Option<(Rect, String, f64)> {
+    pub fn hover_in(&self, actions: &Actions) -> RoomScreenTooltipActions {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
-            match item.cast() {
-                RoomScreenTooltipActions::HoverIn(tooltip_pos, tooltip_text, tooltip_width) => Some((tooltip_pos, tooltip_text, tooltip_width)),
-                _ => None,
-            }
+            item.cast()
         } else {
-            None
+            RoomScreenTooltipActions::None
         }
     }
     /// Handles hover out action
