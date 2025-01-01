@@ -1016,6 +1016,13 @@ impl Widget for RoomScreen {
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
             self.process_timeline_updates(cx, &portal_list);
+
+            // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
+            // but it doesn't hurt to do it here.
+            // TODO: move this up a layer to something higher in the UI tree,
+            //       and wrap it in a `if let Event::Signal` conditional.
+            user_profile_cache::process_user_profile_updates(cx);
+            avatar_cache::process_avatar_updates(cx);
         }
 
         if let Event::Actions(actions) = event {
@@ -3649,10 +3656,12 @@ fn set_avatar_and_get_username(
     // Get the display name and avatar URL from the sender's profile, if available,
     // or if the profile isn't ready, fall back to qeurying our user profile cache.
     let (username_opt, avatar_state) = match sender_profile {
-        TimelineDetails::Ready(profile) => (
-            profile.display_name.clone(),
-            AvatarState::Known(profile.avatar_url.clone()),
-        ),
+        TimelineDetails::Ready(profile) => {
+            (
+                profile.display_name.clone(),
+                AvatarState::Known(profile.avatar_url.clone()),
+            )
+        }
         not_ready => {
             if matches!(not_ready, TimelineDetails::Unavailable) {
                 if let Some(event_id) = event_id {
@@ -3663,7 +3672,7 @@ fn set_avatar_and_get_username(
                 }
             }
             // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, sender_user_id, |profile, room_members| {
+            user_profile_cache::with_user_profile(cx, sender_user_id.to_owned(), true, |profile, room_members| {
                 room_members
                     .get(room_id)
                     .map(|rm| {
@@ -3672,7 +3681,12 @@ fn set_avatar_and_get_username(
                             AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
                         )
                     })
-                    .unwrap_or_else(|| (profile.username.clone(), profile.avatar_state.clone()))
+                    .unwrap_or_else(|| {
+                        (
+                            profile.username.clone(),
+                            profile.avatar_state.clone(),
+                        )
+                    })
             })
             .unwrap_or((None, AvatarState::Unknown))
         }
