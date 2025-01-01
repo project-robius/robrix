@@ -580,7 +580,7 @@ async fn async_worker(
                 let sender = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("Skipping pagination request for not-yet-known room {room_id}");
+                        log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
                         continue;
                     };
 
