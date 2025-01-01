@@ -278,7 +278,7 @@ impl Avatar {
                     }
                 }
                 // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-                user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
+                user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
                     room_members
                         .get(room_id)
                         .map(|rm| {
@@ -292,7 +292,7 @@ impl Avatar {
                 .unwrap_or((None, AvatarState::Unknown))
             }
             None => {
-                match user_profile_cache::with_user_profile(cx, avatar_user_id, |profile, room_members| {
+                match user_profile_cache::with_user_profile(cx, avatar_user_id.to_owned(), true, |profile, room_members| {
                     room_members
                         .get(room_id)
                         .map(|rm| {
