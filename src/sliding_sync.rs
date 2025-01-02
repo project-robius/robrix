@@ -597,7 +597,7 @@ async fn async_worker(
 
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-                let _ = Handle::current().spawn(async move {
+                let _get_unreads_task = Handle::current().spawn(async move {
                     match sender.send(TimelineUpdate::NewUnreadMessagesCount(
                         UnreadMessageCount::Known(timeline.room().num_unread_messages())
                     )) {
