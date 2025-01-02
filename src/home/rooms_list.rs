@@ -206,7 +206,7 @@ impl Deref for RoomDisplayFilter {
 }
 
 bitflags! {
-    #[derive(Clone, PartialEq, Eq)]
+    #[derive(Copy, Clone, PartialEq, Eq)]
     pub struct RoomDisplayFilterType: u8 {
         const RoomId    = 0b0000_0001;
         const RoomName  = 0b0000_0010;
@@ -321,6 +321,48 @@ impl RoomDisplayFilterBuilder {
         }
     }
 
+    fn matches_filter(room: &RoomsListEntry, keywords: &str, filter_types: RoomDisplayFilterType) -> bool {
+        if filter_types.is_empty() {
+            return false;
+        }
+
+        let (specific_type, cleaned_keywords) = Self::pre_match_filter_check(keywords);
+
+        if specific_type != RoomDisplayFilterType::All {
+            // When using a special prefix, only check that specific type
+            match specific_type {
+                RoomDisplayFilterType::RoomId if filter_types.contains(RoomDisplayFilterType::RoomId) => {
+                    Self::matches_room_id(room, cleaned_keywords)
+                }
+                RoomDisplayFilterType::RoomAlias if filter_types.contains(RoomDisplayFilterType::RoomAlias) => {
+                    Self::matches_room_alias(room, cleaned_keywords)
+                }
+                RoomDisplayFilterType::RoomTags if filter_types.contains(RoomDisplayFilterType::RoomTags) => {
+                    Self::matches_room_tags(room, cleaned_keywords)
+                }
+                _ => false
+            }
+        } else {
+            // No special prefix, check all enabled filter types
+            let mut matches = false;
+
+            if filter_types.contains(RoomDisplayFilterType::RoomId) {
+                matches |= Self::matches_room_id(room, cleaned_keywords);
+            }
+            if filter_types.contains(RoomDisplayFilterType::RoomName) {
+                matches |= Self::matches_room_name(room, cleaned_keywords);
+            }
+            if filter_types.contains(RoomDisplayFilterType::RoomAlias) {
+                matches |= Self::matches_room_alias(room, cleaned_keywords);
+            }
+            if filter_types.contains(RoomDisplayFilterType::RoomTags) {
+                matches |= Self::matches_room_tags(room, cleaned_keywords);
+            }
+
+            matches
+        }
+    }
+
     pub fn build(self) -> (RoomDisplayFilter, Option<Box<SortFn>>) {
         let keywords = self.keywords;
         let filter_types = self.filter_types;
@@ -329,24 +371,8 @@ impl RoomDisplayFilterBuilder {
             if keywords.is_empty() || filter_types.is_empty() {
                 return true;
             }
-
             let keywords = keywords.trim().to_lowercase();
-            let (search_type, keywords) = Self::pre_match_filter_check(&keywords);
-
-            // Reduce the number of matches by checking for special prefixes that indicate pre-match filtering checks.
-            match search_type {
-                RoomDisplayFilterType::RoomId if filter_types.contains(RoomDisplayFilterType::RoomId) => Self::matches_room_id(room, keywords),
-                RoomDisplayFilterType::RoomName if filter_types.contains(RoomDisplayFilterType::RoomName) => Self::matches_room_name(room, keywords),
-                RoomDisplayFilterType::RoomAlias if filter_types.contains(RoomDisplayFilterType::RoomAlias) => Self::matches_room_alias(room, keywords),
-                RoomDisplayFilterType::RoomTags if filter_types.contains(RoomDisplayFilterType::RoomTags) => Self::matches_room_tags(room, keywords),
-                _ if filter_types == RoomDisplayFilterType::All => {
-                    Self::matches_room_id(room, keywords)
-                    || Self::matches_room_name(room, keywords)
-                    || Self::matches_room_alias(room, keywords)
-                    || Self::matches_room_tags(room, keywords)
-                }
-                _ => false
-            }
+            Self::matches_filter(room, &keywords, self.filter_types)
         }));
 
         (filter, self.sort_fn)
@@ -399,6 +425,14 @@ impl RoomsList {
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
+    }
+
+    fn update_search_status_rooms_count(&mut self) {
+        self.status = match self.displayed_rooms.len() {
+            0 => "No rooms found matching.".to_string(),
+            1 => "Found 1 matching room.".to_string(),
+            n => format!("Found {} matching rooms.", n),
+        }
     }
 }
 
@@ -664,15 +698,10 @@ impl WidgetMatchEvent for RoomsList {
                         .collect()
                 };
 
-                self.status = if self.displayed_rooms.is_empty() {
-                    "No rooms found matching.".into()
-                } else if self.displayed_rooms.len() == 1 {
-                    "Found 1 matching room".into()
-                } else {
-                    format!("Found {} matching rooms.", self.displayed_rooms.len())
-                };
                 // Update the displayed rooms list.
                 self.displayed_rooms = displayed_rooms;
+                self.update_search_status_rooms_count();
+                // Redraw the rooms list.
                 self.redraw(cx);
             }
         }
