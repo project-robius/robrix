@@ -1339,6 +1339,12 @@ async fn update_room(
                 new_tags,
             });
         }
+
+        enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+            room_id: new_room_id.clone(),
+            new_num_unread_messages: new_room.num_unread_messages(),
+        });
+
         Ok(())
     }
     else {
@@ -1427,6 +1433,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         room_id: room_id.clone(),
         latest,
         tags: room.tags().await.ok().flatten(),
+        num_unread_messages: room.num_unread_messages(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
