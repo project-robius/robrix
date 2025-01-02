@@ -703,11 +703,6 @@ live_design! {
         }
     }
 
-
-    IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
-    IMG_PLUS = dep("crate://self/resources/img/plus.png")
-    IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
-
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
