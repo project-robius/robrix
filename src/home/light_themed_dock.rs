@@ -5,7 +5,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    use crate::shared::styles::*;    
+    use crate::shared::styles::*;
 
     pub Splitter = <SplitterBase> {
         draw_splitter: {
@@ -90,7 +90,7 @@ live_design! {
             }
         }
     }
-    
+
     pub TabCloseButton = <TabCloseButtonBase> {
             // TODO: NEEDS FOCUS STATE
         height: 10.0, width: 10.0,
@@ -260,7 +260,6 @@ live_design! {
         flow: Down,
 
         round_corner: {
-            draw_depth: 20.0
             border_radius: 20.
             fn pixel(self) -> vec4 {
                 let pos = vec2(
