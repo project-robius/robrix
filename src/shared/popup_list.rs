@@ -7,9 +7,9 @@ pub fn enqueue_popup_notification(update: String) {
 }
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
 
     PopupDialog = <RoundedView> {
@@ -61,7 +61,7 @@ live_design! {
         icon_walk: {width: 12, height: 12}
     }
 
-    PopupList = {{PopupList}} {
+    pub PopupList = {{PopupList}} {
         width: Fit
         height: Fit
         flow: Down

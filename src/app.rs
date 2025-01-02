@@ -13,12 +13,12 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::home::home_screen::HomeScreen;
-    import crate::profile::my_profile_screen::MyProfileScreen;
-    import crate::verification_modal::VerificationModal;
-    import crate::login::login_screen::LoginScreen;
-    import crate::shared::popup_list::PopupList;
+    use crate::shared::styles::*;
+    use crate::home::home_screen::HomeScreen;
+    use crate::profile::my_profile_screen::MyProfileScreen;
+    use crate::verification_modal::VerificationModal;
+    use crate::login::login_screen::LoginScreen;
+    use crate::shared::popup_list::PopupList;
     
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
