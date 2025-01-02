@@ -180,6 +180,7 @@ impl MatchEvent for App {
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
         self.update_login_visibility();
+
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
@@ -240,7 +241,7 @@ impl MatchEvent for App {
                 }
                 RoomsPanelAction::None => { }
             }
-           
+
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
