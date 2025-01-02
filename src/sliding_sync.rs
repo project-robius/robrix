@@ -10,7 +10,7 @@ use matrix_sdk::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
-            }, FullStateEventContent, MessageLikeEventType
+            }, FullStateEventContent, MessageLikeEventType, TimelineEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, Error, Room
 };
@@ -1987,17 +1987,24 @@ async fn timeline_subscriber_handler(
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
 }
 
-/// Updates the latest event for the given room.
+/// Handles the given updated latest event for the given room.
 ///
-/// This function currently handles room name, avatar and send permission changes
-/// (but does not directly handle).
+/// This currently includes checking the given event for:
+/// * room name changes, in which it sends a `RoomsListUpdate`.
+/// * room power level changes to see if the current user's permissions
+///   have changed; if so, it sends a `TimelineUpdate::CanUserSendMessage`.
+/// * room avatar changes, which is not handled here.
+///   Instead, we return `true` such that other code can fetch the new avatar.
+/// * membership changes to see if the current user has joined or left a room.
 ///
-/// Returns `true` if room avatar has changed
-/// and should also be updated.
+/// Finally, this function sends a `RoomsListUpdate::UpdateLatestEvent`
+/// to update the latest event in the RoomsList's room preview for the given room.
+///
+/// Returns `true` if room avatar has changed and should be fetched and updated.
 fn update_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
-    sender: Option<&crossbeam_channel::Sender<TimelineUpdate>>
+    timeline_update_sender: Option<&crossbeam_channel::Sender<TimelineUpdate>>
 ) -> bool {
     let mut room_avatar_changed = false;
 
@@ -2019,9 +2026,16 @@ fn update_latest_event(
                 }
                 // Check for if can user send message.
                 AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
-                    if let Some(user_id) = current_user_id() {
-                        if let Some(user_power) = content.users.get(&user_id) {
-                            if let Err(e) = sender.unwrap().send(TimelineUpdate::CanUserSendMessage(user_power >= &content.events_default)) {
+                    if let Some(sender) = timeline_update_sender {
+                        if let Some(user_power) = current_user_id().and_then(|uid| content.users.get(&uid)) {
+                            let power_level_to_send_message_like_event = content.events
+                                .get(&TimelineEventType::RoomMessage)
+                                .or_else(|| content.events.get(&TimelineEventType::Message))
+                                .unwrap_or(&content.events_default);
+                            let _res = sender.send(TimelineUpdate::CanUserSendMessage(
+                                user_power >= power_level_to_send_message_like_event
+                            ));
+                            if let Err(e) = _res {
                                 error!("Failed to send the result of if user can send message: {e}")
                             }
                         }
@@ -2031,12 +2045,12 @@ fn update_latest_event(
             }
         }
         TimelineItemContent::MembershipChange(room_membership_change) => {
-            // Submit a `MatrixRequest` to check if the user can send when current user accept invitation successfully.
-            if let Some(MembershipChange::InvitationAccepted) = room_membership_change.change() {
-                if let Some(user_id) = current_user_id() {
-                    if user_id == room_membership_change.user_id() {
-                        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
-                    }
+            if matches!(
+                room_membership_change.change(),
+                Some(MembershipChange::InvitationAccepted | MembershipChange::Joined)
+            ) {
+                if current_user_id().as_deref() == Some(room_membership_change.user_id()) {
+                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
                 }
             }
         }
@@ -2078,7 +2092,7 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
-            .next()
+            .find(|&g| g != "@") 
             .map(ToString::to_string)
             .unwrap_or_default()
     )
