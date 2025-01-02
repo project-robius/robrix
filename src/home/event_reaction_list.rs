@@ -345,6 +345,18 @@ impl ReactionListRef {
             instance.width_calculated = false;
         }
     }
+
+    /// Handles hover in action and returns the appropriate `RoomScreenTooltipActions`.
+    /// 
+    /// This function checks if there is a widget action associated with the current
+    /// widget's unique identifier in the provided `actions`. If an action exists,
+    /// it is cast to `RoomScreenTooltipActions` and returned. Otherwise, it returns
+    /// `RoomScreenTooltipActions::None`.
+    ///
+    /// # Arguments
+    ///
+    /// * `actions` - A reference to the `Actions` that may contain widget actions
+    ///   relevant to this widget.
     pub fn hover_in(&self, actions: &Actions) -> RoomScreenTooltipActions {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             item.cast()
@@ -352,7 +364,8 @@ impl ReactionListRef {
             RoomScreenTooltipActions::None
         }
     }
-    /// Handles hover out action
+    /// Handles widget actions and returns `true` if the hover out action was found in the provided `actions`.
+    /// Otherwise, returns `false`.
     pub fn hover_out(&self, actions: &Actions) -> bool {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             matches!(item.cast(), RoomScreenTooltipActions::HoverOut)
