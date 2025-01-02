@@ -588,24 +588,21 @@ async fn async_worker(
                 });
             }
             MatrixRequest::GetNumberUnreadMessages { room_id } => {
-                let sender = {
+                let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
                         continue;
                     };
 
-                    room_info.timeline_update_sender.clone()
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-                let _fetch_task = Handle::current().spawn(async move {
-                    if let Some(unread_messages_count) = get_client()
-                        .and_then(|c| c.get_room(&room_id)).map(|room| room.num_unread_messages())
-                    {
-                        if let Err(e) = sender.send(TimelineUpdate::NewUnreadMessagesCount(UnreadMessageCount::Known(unread_messages_count))) {
-                            log!("Failed to send timeline update: {e:?} for NumOfUnReadMessages request for room {room_id}");
-                        } else {
-                            SignalToUI::set_ui_signal();
-                        }
+                let _ = Handle::current().spawn(async move {
+                    match sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                        UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                    )) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send timeline update: {e:?} for GetNumberUnreadMessages request for room {room_id}"),
                     }
                 });
             }
@@ -1429,6 +1426,7 @@ async fn update_room(
         add_new_room(new_room).await
     }
 }
+
 
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &room_list_service::Room) {

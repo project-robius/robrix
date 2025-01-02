@@ -127,48 +127,37 @@ impl JumpToBottomButton {
     ///
     /// This does not automatically redraw any views.
     /// If unread_message_count is `0`, the unread message badge is hidden.
-    pub fn show_unread_message_badge(&mut self, cx: &mut Cx, unread_message_count: UnreadMessageCount) {
-        match unread_message_count {
+    pub fn show_unread_message_badge(&mut self, cx: &mut Cx, count: UnreadMessageCount) {
+        match count {
             UnreadMessageCount::Unknown => {
                 self.visible = true;
                 self.view(id!(unread_message_badge)).set_visible(true);
                 self.label(id!(unread_messages_count)).set_text("");
             }
-            UnreadMessageCount::Known(unread_message_count) => {
-                if unread_message_count > 0 {
-                    self.visible = true;
-                    self.view(id!(unread_message_badge)).set_visible(true);
-                    self.label(id!(unread_messages_count)).set_text(&format!(
-                        "{}{}",
-                        std::cmp::min(unread_message_count, 99),
-                        if unread_message_count > 99 { "+" } else { "" }
-                    ));
-                    if unread_message_count > 99 {
-                        self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
-                            draw_bg: {
-                                border_width: 0.0
-                            }
-                        });
-                    } else if unread_message_count > 9 {
-                        self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
-                            draw_bg: {
-                                border_width: 1.0
-                            }
-                        });
-                    } else {
-                        self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
-                            draw_bg: {
-                                border_width: 2.0
-                            }
-                        });
-                    }
-                } else {
-                    self.visible = false;
-                    self.view(id!(unread_message_badge)).set_visible(false);
-                    self.label(id!(unread_messages_count)).set_text("");
-                }
+            UnreadMessageCount::Known(0) => {
+                self.visible = false;
+                self.view(id!(unread_message_badge)).set_visible(false);
+                self.label(id!(unread_messages_count)).set_text("");
             }
-            
+            UnreadMessageCount::Known(unread_message_count) => {
+                self.visible = true;
+                self.view(id!(unread_message_badge)).set_visible(true);
+                let (border_size, plus_sign) = if unread_message_count > 99 {
+                    (0.0, "+")
+                } else if unread_message_count > 9 {
+                    (1.0, "")
+                } else {
+                    (2.0, "")
+                };
+                self.label(id!(unread_messages_count)).set_text(
+                    &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
+                );
+                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                    }
+                });
+            }
         }
         
     }
@@ -218,9 +207,9 @@ impl JumpToBottomButtonRef {
     }
 
     /// See [`JumpToBottomButton::show_unread_message_badge()`].
-    pub fn show_unread_message_badge(&self, cx: &mut Cx, unread_message_count: UnreadMessageCount) {
+    pub fn show_unread_message_badge(&self, cx: &mut Cx, count: UnreadMessageCount) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_unread_message_badge(cx, unread_message_count);
+            inner.show_unread_message_badge(cx, count);
         }
     }
 
@@ -237,7 +226,7 @@ impl JumpToBottomButtonRef {
     }
 }
 
-/// The number of unread messages in the room
+/// The number of unread messages in a room.
 #[derive(Clone, Debug)]
 pub enum UnreadMessageCount {
     /// There are unread messages, but we do not know how many.

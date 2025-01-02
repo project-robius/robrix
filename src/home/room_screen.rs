@@ -1528,9 +1528,8 @@ impl RoomScreen {
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
                         if let Some(room_id) = &self.room_id {
-                            // Display empty green badge just in case request for the number of unread messages fails
+                            // Immediately show the unread badge with no count while we fetch the actual count in the background.
                             jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
-                            // Set the number of unread messages to unread_notification_badge by async request to avoid locking in the Main UI thread
                             submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
                         }
                     }
@@ -2089,9 +2088,8 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-        let (Some(tl_state), Some(room_id)) = (self.tl_state.as_mut(), self.room_id.as_ref()) else {
-            return;
-        };
+        let Some(tl_state) = self.tl_state.as_mut() else { return };
+
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
@@ -2107,12 +2105,12 @@ impl RoomScreen {
                         return;
                     };
                     submit_async_request(MatrixRequest::ReadReceipt {
-                        room_id: room_id.clone(),
+                        room_id: tl_state.room_id.clone(),
                         event_id: last_event_id.to_owned(),
                     });
                     if tl_state.scrolled_past_read_marker {
                         submit_async_request(MatrixRequest::FullyReadReceipt {
-                            room_id: room_id.clone(),
+                            room_id: tl_state.room_id.clone(),
                             event_id: last_event_id.to_owned(),
                         });
                     } else {
@@ -2132,7 +2130,7 @@ impl RoomScreen {
                             {
                                 tl_state.scrolled_past_read_marker = true;
                                 submit_async_request(MatrixRequest::FullyReadReceipt {
-                                    room_id: room_id.clone(),
+                                    room_id: tl_state.room_id.clone(),
                                     event_id: last_event_id.to_owned(),
                                 });
                             }
@@ -2254,11 +2252,10 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
-    /// A notice that the permission of user's ability to send messages in this room,
-    /// this condition is simple so that we only use `bool`
-    CanUserSendMessage (bool),
-    /// A notice that the read receipt of own user has been updated
-    OwnUserReadReceipt(Receipt)
+    /// An update containing whether the user is permitted to send messages in this room.
+    CanUserSendMessage(bool),
+    /// An update to the currently logged-in user's own read receipt for this room.
+    OwnUserReadReceipt(Receipt),
 }
 
 /// The global set of all timeline states, one entry per room.
