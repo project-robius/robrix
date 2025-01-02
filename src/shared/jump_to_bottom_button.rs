@@ -3,17 +3,17 @@ use makepad_widgets::*;
 const SCROLL_TO_BOTTOM_SPEED: f64 = 90.0;
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::*;
 
     ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     // A jump to bottom button that appears when the timeline is not at the bottom.
-    JumpToBottomButton = {{JumpToBottomButton}} {
+    pub JumpToBottomButton = {{JumpToBottomButton}} {
         width: Fill,
         height: Fill,
         flow: Overlay,
@@ -94,7 +94,7 @@ impl JumpToBottomButton {
     ///   the unread message badge are made invisible, because we consider all messages
     ///   to be read by the user if the timeline has reached the bottom.
     /// * If `is_at_bottom` is `false`, only the main jump to bottom "parent" view
-    ///   is made visibile; the unread message badge is *not* made visible, as that is done
+    ///   is made visible; the unread message badge is *not* made visible, as that is done
     ///   via a separate call to [`JumpToBottomButton::show_unread_message_badge()`].
     pub fn update_visibility(&mut self, is_at_bottom: bool) {
         if is_at_bottom {

@@ -1,13 +1,13 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;    
+    use crate::shared::styles::*;
 
-    Splitter = <SplitterBase> {
+    pub Splitter = <SplitterBase> {
         draw_splitter: {
             uniform border_radius: 1.0
             uniform splitter_pad: 1.0
@@ -90,8 +90,8 @@ live_design! {
             }
         }
     }
-    
-    TabCloseButton = <TabCloseButtonBase> {
+
+    pub TabCloseButton = <TabCloseButtonBase> {
             // TODO: NEEDS FOCUS STATE
         height: 10.0, width: 10.0,
         margin: { right: (THEME_SPACE_2), left: -3.5 },
@@ -139,7 +139,7 @@ live_design! {
         }
     }
 
-    Tab = <TabBase> {
+    pub Tab = <TabBase> {
         width: Fit, height: Fill, //Fixed((THEME_TAB_HEIGHT)),
 
         align: {x: 0.0, y: 0.5}
@@ -231,7 +231,7 @@ live_design! {
         }
     }
 
-    TabBar = <TabBarBase> {
+    pub TabBar = <TabBarBase> {
         CloseableTab = <Tab> {closeable:true}
         PermanentTab = <Tab> {closeable:false}
 
@@ -256,11 +256,10 @@ live_design! {
         }
     }
 
-    Dock = <DockBase> {
+    pub Dock = <DockBase> {
         flow: Down,
 
         round_corner: {
-            draw_depth: 20.0
             border_radius: 20.
             fn pixel(self) -> vec4 {
                 let pos = vec2(

@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -10,14 +10,14 @@ use matrix_sdk::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
-            }, FullStateEventContent
+            }, FullStateEventContent, MessageLikeEventType, TimelineEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Room, Error
+    }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent, MembershipChange},
     Timeline,
 };
 use robius_open::Uri;
@@ -26,11 +26,11 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomPreviewEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -102,7 +102,7 @@ async fn build_client(
     let homeserver_url = cli.homeserver.as_deref()
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
-    
+
     let mut builder = Client::builder()
         .server_name_or_homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
@@ -141,14 +141,14 @@ async fn build_client(
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
-    login_types: &Vec<LoginType>,
+    login_types: &[LoginType],
 ) -> Result<(Client, Option<String>)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
             let cli = if let LoginRequest::LoginByPassword(login_by_password) = login_request {
                 &Cli::from(login_by_password)
             } else {
-                &cli
+                cli
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
             if !login_types
@@ -160,7 +160,7 @@ async fn login(
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
-                .login_username(&cli.username.clone(), &cli.password.clone())
+                .login_username(&cli.username, &cli.password)
                 .initial_device_display_name("robrix-un-pw")
                 .send()
                 .await?;
@@ -182,7 +182,7 @@ async fn login(
                 bail!("Failed to login as {}: {login_result:?}", cli.username);
             }
         }
-       
+
         LoginRequest::LoginBySSOSuccess(client, client_session) => {
             if let Err(e) = persistent_state::save_session(&client, client_session).await {
                 error!("Failed to save session state to storage: {e:?}");
@@ -199,7 +199,7 @@ async fn populate_login_types(
     homeserver_url: &str,
     login_types: &mut Vec<LoginType>,
 ) -> Result<()> {
-    Cx::post_action(LoginAction::Status(format!("Fetching Login Types ...")));
+    Cx::post_action(LoginAction::Status(String::from("Fetching Login Types ...")));
     let homeserver_url = if homeserver_url.is_empty() {
         DEFAULT_HOMESERVER
     } else {
@@ -219,16 +219,16 @@ async fn populate_login_types(
                 acc
             });
             Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-            return Ok(());
+            Ok(())
         }
         Err(e) => {
-            return Err(e.into());
+            Err(e.into())
         }
     }
 }
 
 /// Which direction to paginate in.
-/// 
+///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
 ///    which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
@@ -246,6 +246,14 @@ impl std::fmt::Display for PaginationDirection {
         }
     }
 }
+
+/// The function signature for the callback that gets invoked when media is fetched.
+pub type OnMediaFetchedFn = fn(
+    &Mutex<MediaCacheEntry>,
+    MediaRequest,
+    matrix_sdk::Result<Vec<u8>>,
+    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+);
 
 
 /// The set of requests for async work that can be made to the worker thread.
@@ -306,7 +314,7 @@ pub enum MatrixRequest {
     /// the result of the media fetch, and the `update_sender`.
     FetchMedia {
         media_request: MediaRequest,
-        on_fetched: fn(&Mutex<MediaCacheEntry>, MediaRequest, matrix_sdk::Result<Vec<u8>>, Option<crossbeam_channel::Sender<TimelineUpdate>>),
+        on_fetched: OnMediaFetchedFn,
         destination: Arc<Mutex<MediaCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
@@ -351,6 +359,12 @@ pub enum MatrixRequest {
     FullyReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
+    },
+    /// Sends a request checking if the currently logged-in user can send a message to the given room.
+    ///
+    /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
+    CheckCanUserSendMessage{
+        room_id: OwnedRoomId,
     }
 }
 
@@ -368,7 +382,7 @@ pub enum LoginRequest{
     LoginBySSOSuccess(Client, ClientSessionPersisted),
     LoginByCli,
     HomeserverLoginTypesQuery(String),
-    
+
 }
 /// Information needed to log in to a Matrix homeserver.
 pub struct LoginByPassword {
@@ -531,17 +545,28 @@ async fn async_worker(
                         }
                     }
 
-                    if update.is_none() && !local_only {
-                        if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
-                            update = Some(UserProfileUpdate::UserProfileOnly(
-                                UserProfile {
-                                    username: response.displayname,
-                                    user_id: user_id.clone(),
-                                    avatar_state: AvatarState::Known(response.avatar_url),
+                    if !local_only {
+                        if update.is_none() {
+                            if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                update = Some(UserProfileUpdate::UserProfileOnly(
+                                    UserProfile {
+                                        username: response.displayname,
+                                        user_id: user_id.clone(),
+                                        avatar_state: AvatarState::Known(response.avatar_url),
+                                    }
+                                ));
+                            } else {
+                                log!("User profile request: client could not get user with ID {user_id}");
+                            }
+                        }
+
+                        match update.as_mut() {
+                            Some(UserProfileUpdate::Full { new_profile: UserProfile { username, .. }, .. }) if username.is_none() => {
+                                if let Ok(response) = client.account().fetch_user_profile_of(&user_id).await {
+                                    *username = response.displayname;
                                 }
-                            ));
-                        } else {
-                            log!("User profile request: client could not get user with ID {user_id}");
+                            }
+                            _ => { }
                         }
                     }
 
@@ -768,7 +793,34 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            },
+
+            MatrixRequest::CheckCanUserSendMessage { room_id } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for fetch members request {room_id}");
+                        continue;
+                    };
+
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let Some(user_id) = current_user_id() else { continue };
+
+                let _check_can_user_send_message_task = Handle::current().spawn(async move {
+                    let can_user_send_message = timeline.room().can_user_send_message(
+                        &user_id,
+                        MessageLikeEventType::Message
+                    )
+                    .await
+                    .unwrap_or(true);
+
+                    if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
+                        error!("Failed to send the result of if user can send message: {e}")
+                    }
+                });
+            }
         }
     }
 
@@ -792,7 +844,7 @@ pub fn start_matrix_tokio() -> Result<()> {
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
-    
+
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
@@ -802,6 +854,7 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
 
+        #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
                 result = &mut main_loop_join_handle => {
@@ -912,6 +965,13 @@ pub fn get_client() -> Option<Client> {
     CLIENT.get().cloned()
 }
 
+/// Returns the user ID of the currently logged-in user, if any.
+pub fn current_user_id() -> Option<OwnedUserId> {
+    CLIENT.get().and_then(|c|
+        c.session_meta().map(|m| m.user_id.clone())
+    )
+}
+
 /// The singleton sync service.
 static SYNC_SERVICE: OnceLock<SyncService> = OnceLock::new();
 
@@ -937,7 +997,7 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 
 
 /// Returns three channel endpoints related to the timeline for the given room.
-/// 
+///
 /// 1. A timeline update sender.
 /// 2. The timeline update receiver, which is a singleton, and can only be taken once.
 /// 3. A `tokio::watch` sender that can be used to send requests to the timeline subscriber handler.
@@ -971,7 +1031,7 @@ fn username_to_full_user_id(
         .try_into()
         .ok()
         .or_else(|| {
-            let homeserver_url = homeserver.unwrap_or_else( || DEFAULT_HOMESERVER);
+            let homeserver_url = homeserver.unwrap_or(DEFAULT_HOMESERVER);
             let user_id_str = if username.starts_with("@") {
                 format!("{}:{}", username, homeserver_url)
             } else {
@@ -1011,7 +1071,7 @@ async fn async_main_loop(
         log!("Trying to restore session for user: {:?}",
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
-        if let Some(session) = persistent_state::restore_session(specified_username).await.ok() {
+        if let Ok(session) = persistent_state::restore_session(specified_username).await {
             Some(session)
         } else {
             let status_err = "Failed to restore previous user session. Please login again.";
@@ -1051,8 +1111,7 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.as_deref()
-                .unwrap_or_else(|| DEFAULT_HOMESERVER);
+            let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
             let mut login_types = Vec::new();
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
@@ -1140,7 +1199,7 @@ async fn async_main_loop(
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in &new_rooms {
-                        add_new_room(&new_room).await?;
+                        add_new_room(new_room).await?;
                     }
                     all_known_rooms.append(new_rooms);
                 }
@@ -1196,18 +1255,15 @@ async fn async_main_loop(
                         // We treat this as a simple `Set` operation (`update_room()`),
                         // which is way more efficient.
                         let mut next_diff_was_handled = false;
-                        match peekable_diffs.peek() {
-                            Some(VectorDiff::Insert { index: insert_index, value: new_room }) => {
-                                if room.room_id() == new_room.room_id() {
-                                    if LOG_ROOM_LIST_DIFFS {
-                                        log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
-                                    }
-                                    update_room(&room, new_room).await?;
-                                    all_known_rooms.insert(*insert_index, new_room.clone());
-                                    next_diff_was_handled = true;
+                        if let Some(VectorDiff::Insert { index: insert_index, value: new_room }) = peekable_diffs.peek() {
+                            if room.room_id() == new_room.room_id() {
+                                if LOG_ROOM_LIST_DIFFS {
+                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
                                 }
+                                update_room(&room, new_room).await?;
+                                all_known_rooms.insert(*insert_index, new_room.clone());
+                                next_diff_was_handled = true;
                             }
-                            _ => {}
                         }
                         if next_diff_was_handled {
                             peekable_diffs.next(); // consume the next diff
@@ -1241,7 +1297,7 @@ async fn async_main_loop(
                     ALL_ROOM_INFO.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
-                        add_new_room(&room).await?;
+                        add_new_room(room).await?;
                     }
                     all_known_rooms = new_rooms;
                 }
@@ -1260,12 +1316,12 @@ async fn update_room(
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
     let mut room_avatar_changed = false;
-    if old_room.room_id() == &new_room_id {
+    if old_room.room_id() == new_room_id {
         if let Some(new_latest_event) = new_room.latest_event().await {
             if let Some(old_latest_event) = old_room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
-                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event);
+                    room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event, None);
                 }
             }
         }
@@ -1284,6 +1340,13 @@ async fn update_room(
                     new_room_name,
                 });
             }
+        }
+
+        if let Ok(new_tags) = new_room.tags().await {
+            enqueue_rooms_list_update(RoomsListUpdate::Tags {
+                room_id: new_room_id.clone(),
+                new_tags,
+            });
         }
         Ok(())
     }
@@ -1369,9 +1432,10 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         |ev| get_latest_event_details(ev, &room_id)
     );
 
-    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomPreviewEntry {
+    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
         room_id: room_id.clone(),
         latest,
+        tags: room.tags().await.ok().flatten(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
@@ -1621,7 +1685,7 @@ async fn timeline_subscriber_handler(
                         .rev()
                         .position(|i| i.as_event()
                             .and_then(|e| e.event_id())
-                            .is_some_and(|ev_id| ev_id == &new_target_event_id)
+                            .is_some_and(|ev_id| ev_id == new_target_event_id)
                         )
                         .map(|i| starting_index.saturating_sub(i).saturating_sub(1))
                     {
@@ -1660,190 +1724,189 @@ async fn timeline_subscriber_handler(
 
         // Handle updates to the actual timeline content.
         batch_opt = subscriber.next() => {
-            if let Some(batch) = batch_opt {
-                let mut num_updates = 0;
-                // For now we always requery the latest event, but this can be better optimized.
-                let mut reobtain_latest_event = true;
-                let mut index_of_first_change = usize::MAX;
-                let mut index_of_last_change = usize::MIN;
-                // whether to clear the entire cache of drawn items
-                let mut clear_cache = false;
-                // whether the changes include items being appended to the end of the timeline
-                let mut is_append = false;
-                for diff in batch {
-                    num_updates += 1;
-                    match diff {
-                        VectorDiff::Append { values } => {
-                            let _values_len = values.len();
-                            index_of_first_change = min(index_of_first_change, timeline_items.len());
-                            timeline_items.extend(values);
-                            index_of_last_change = max(index_of_last_change, timeline_items.len());
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
-                            is_append = true;
+            let Some(batch) = batch_opt else { break };
+            let mut num_updates = 0;
+            // For now we always requery the latest event, but this can be better optimized.
+            let mut reobtain_latest_event = true;
+            let mut index_of_first_change = usize::MAX;
+            let mut index_of_last_change = usize::MIN;
+            // whether to clear the entire cache of drawn items
+            let mut clear_cache = false;
+            // whether the changes include items being appended to the end of the timeline
+            let mut is_append = false;
+            for diff in batch {
+                num_updates += 1;
+                match diff {
+                    VectorDiff::Append { values } => {
+                        let _values_len = values.len();
+                        index_of_first_change = min(index_of_first_change, timeline_items.len());
+                        timeline_items.extend(values);
+                        index_of_last_change = max(index_of_last_change, timeline_items.len());
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Append {_values_len}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                        is_append = true;
+                    }
+                    VectorDiff::Clear => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Clear"); }
+                        clear_cache = true;
+                        timeline_items.clear();
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::PushFront { value } => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushFront"); }
+                        if let Some((index, _ev)) = found_target_event_id.as_mut() {
+                            *index += 1; // account for this new `value` being prepended.
+                        } else {
+                            found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value));
                         }
-                        VectorDiff::Clear => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Clear"); }
-                            clear_cache = true;
-                            timeline_items.clear();
-                            reobtain_latest_event = true;
-                        }
-                        VectorDiff::PushFront { value } => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushFront"); }
-                            if let Some((index, _ev)) = found_target_event_id.as_mut() {
-                                *index += 1; // account for this new `value` being prepended.
-                            } else {
-                                found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value));
-                            }
-                            
-                            clear_cache = true;
-                            timeline_items.push_front(value);
-                            reobtain_latest_event |= latest_event.is_none();
-                        }
-                        VectorDiff::PushBack { value } => {
-                            index_of_first_change = min(index_of_first_change, timeline_items.len());
-                            timeline_items.push_back(value);
-                            index_of_last_change = max(index_of_last_change, timeline_items.len());
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
-                            is_append = true;
-                        }
-                        VectorDiff::PopFront => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopFront"); }
-                            clear_cache = true;
-                            timeline_items.pop_front();
-                            if let Some((i, _ev)) = found_target_event_id.as_mut() {
-                                *i = i.saturating_sub(1); // account for the first item being removed.
-                            }
-                            // This doesn't affect whether we should reobtain the latest event.
-                        }
-                        VectorDiff::PopBack => {
-                            timeline_items.pop_back();
-                            index_of_first_change = min(index_of_first_change, timeline_items.len());
-                            index_of_last_change = usize::MAX;
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
-                        }
-                        VectorDiff::Insert { index, value } => {
-                            if index == 0 {
-                                clear_cache = true;
-                            } else {
-                                index_of_first_change = min(index_of_first_change, index);
-                                index_of_last_change = usize::MAX;
-                            }
-                            if index >= timeline_items.len() {
-                                is_append = true;
-                            }
 
-                            if let Some((i, _ev)) = found_target_event_id.as_mut() {
-                                // account for this new `value` being inserted before the previously-found target event's index.
-                                if index <= *i {
-                                    *i += 1;
-                                }
-                            } else {
-                                found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value))
-                                    .map(|(i, ev)| (i + index, ev));
-                            }
-
-                            timeline_items.insert(index, value);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
+                        clear_cache = true;
+                        timeline_items.push_front(value);
+                        reobtain_latest_event |= latest_event.is_none();
+                    }
+                    VectorDiff::PushBack { value } => {
+                        index_of_first_change = min(index_of_first_change, timeline_items.len());
+                        timeline_items.push_back(value);
+                        index_of_last_change = max(index_of_last_change, timeline_items.len());
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PushBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                        is_append = true;
+                    }
+                    VectorDiff::PopFront => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopFront"); }
+                        clear_cache = true;
+                        timeline_items.pop_front();
+                        if let Some((i, _ev)) = found_target_event_id.as_mut() {
+                            *i = i.saturating_sub(1); // account for the first item being removed.
                         }
-                        VectorDiff::Set { index, value } => {
+                        // This doesn't affect whether we should reobtain the latest event.
+                    }
+                    VectorDiff::PopBack => {
+                        timeline_items.pop_back();
+                        index_of_first_change = min(index_of_first_change, timeline_items.len());
+                        index_of_last_change = usize::MAX;
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff PopBack. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Insert { index, value } => {
+                        if index == 0 {
+                            clear_cache = true;
+                        } else {
                             index_of_first_change = min(index_of_first_change, index);
-                            index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
-                            timeline_items.set(index, value);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
+                            index_of_last_change = usize::MAX;
                         }
-                        VectorDiff::Remove { index } => {
-                            if index == 0 {
-                                clear_cache = true;
-                            } else {
-                                index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
-                                index_of_last_change = usize::MAX;
+                        if index >= timeline_items.len() {
+                            is_append = true;
+                        }
+
+                        if let Some((i, _ev)) = found_target_event_id.as_mut() {
+                            // account for this new `value` being inserted before the previously-found target event's index.
+                            if index <= *i {
+                                *i += 1;
                             }
-                            if let Some((i, _ev)) = found_target_event_id.as_mut() {
-                                // account for an item being removed before the previously-found target event's index.
-                                if index <= *i {
-                                    *i = i.saturating_sub(1);
-                                }
-                            } 
-                            timeline_items.remove(index);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
+                        } else {
+                            found_target_event_id = find_target_event(&mut target_event_id, std::iter::once(&value))
+                                .map(|(i, ev)| (i + index, ev));
                         }
-                        VectorDiff::Truncate { length } => {
-                            if length == 0 {
-                                clear_cache = true;
-                            } else {
-                                index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
-                                index_of_last_change = usize::MAX;
+
+                        timeline_items.insert(index, value);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Insert at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Set { index, value } => {
+                        index_of_first_change = min(index_of_first_change, index);
+                        index_of_last_change  = max(index_of_last_change, index.saturating_add(1));
+                        timeline_items.set(index, value);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Set at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Remove { index } => {
+                        if index == 0 {
+                            clear_cache = true;
+                        } else {
+                            index_of_first_change = min(index_of_first_change, index.saturating_sub(1));
+                            index_of_last_change = usize::MAX;
+                        }
+                        if let Some((i, _ev)) = found_target_event_id.as_mut() {
+                            // account for an item being removed before the previously-found target event's index.
+                            if index <= *i {
+                                *i = i.saturating_sub(1);
                             }
-                            timeline_items.truncate(length);
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
-                            reobtain_latest_event = true;
                         }
-                        VectorDiff::Reset { values } => {
-                            if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Reset, new length {}", values.len()); }
-                            clear_cache = true; // we must assume all items have changed.
-                            timeline_items = values;
-                            reobtain_latest_event = true;
+                        timeline_items.remove(index);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Remove at {index}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Truncate { length } => {
+                        if length == 0 {
+                            clear_cache = true;
+                        } else {
+                            index_of_first_change = min(index_of_first_change, length.saturating_sub(1));
+                            index_of_last_change = usize::MAX;
                         }
+                        timeline_items.truncate(length);
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Truncate to length {length}. Changes: {index_of_first_change}..{index_of_last_change}"); }
+                        reobtain_latest_event = true;
+                    }
+                    VectorDiff::Reset { values } => {
+                        if LOG_TIMELINE_DIFFS { log!("timeline_subscriber: room {room_id} diff Reset, new length {}", values.len()); }
+                        clear_cache = true; // we must assume all items have changed.
+                        timeline_items = values;
+                        reobtain_latest_event = true;
                     }
                 }
-        
-                if num_updates > 0 {
-                    let new_latest_event = if reobtain_latest_event {
-                        timeline.latest_event().await
-                    } else {
-                        None
-                    };
-        
-                    let changed_indices = index_of_first_change..index_of_last_change;
-        
-                    if LOG_TIMELINE_DIFFS {
-                        log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
-                    }
-                    timeline_update_sender.send(TimelineUpdate::NewItems {
-                        new_items: timeline_items.clone(),
-                        changed_indices,
-                        clear_cache,
-                        is_append,
-                    }).expect("Error: timeline update sender couldn't send update with new items!");
-
-                    // We must send this update *after* the actual NewItems update,
-                    // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
-                    if let Some((index, found_event_id)) = found_target_event_id.take() {
-                        target_event_id = None;
-                        timeline_update_sender.send(
-                            TimelineUpdate::TargetEventFound {
-                                target_event_id: found_event_id.clone(),
-                                index,
-                            }
-                        ).unwrap_or_else(
-                            |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}!")
-                        );
-                    }
-
-                    // Send a Makepad-level signal to update this room's timeline UI view.
-                    SignalToUI::set_ui_signal();
-                
-                    // Update the latest event for this room.
-                    if let Some(new_latest) = new_latest_event {
-                        if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                            let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest);
-                            latest_event = Some(new_latest);
-                            if room_avatar_changed {
-                                spawn_fetch_room_avatar(room.clone());
-                            }
-                        }
-                    }
-                }
-            } else {
-                break;
             }
 
+
+            if num_updates > 0 {
+                let new_latest_event = if reobtain_latest_event {
+                    timeline.latest_event().await
+                } else {
+                    None
+                };
+
+                let changed_indices = index_of_first_change..index_of_last_change;
+
+                if LOG_TIMELINE_DIFFS {
+                    log!("timeline_subscriber: applied {num_updates} updates for room {room_id}, timeline now has {} items. is_append? {is_append}, clear_cache? {clear_cache}. Changes: {changed_indices:?}.", timeline_items.len());
+                }
+                timeline_update_sender.send(TimelineUpdate::NewItems {
+                    new_items: timeline_items.clone(),
+                    changed_indices,
+                    clear_cache,
+                    is_append,
+                }).expect("Error: timeline update sender couldn't send update with new items!");
+
+                // We must send this update *after* the actual NewItems update,
+                // otherwise the UI thread (RoomScreen) won't be able to correctly locate the target event.
+                if let Some((index, found_event_id)) = found_target_event_id.take() {
+                    target_event_id = None;
+                    timeline_update_sender.send(
+                        TimelineUpdate::TargetEventFound {
+                            target_event_id: found_event_id.clone(),
+                            index,
+                        }
+                    ).unwrap_or_else(
+                        |_e| panic!("Error: timeline update sender couldn't send TargetEventFound({found_event_id}, {index}) to room {room_id}!")
+                    );
+                }
+
+                // Send a Makepad-level signal to update this room's timeline UI view.
+                SignalToUI::set_ui_signal();
+
+                // Update the latest event for this room.
+                if let Some(new_latest) = new_latest_event {
+                    if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
+                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
+
+                        if room_avatar_changed {
+                            spawn_fetch_room_avatar(room.clone());
+                        }
+
+                        latest_event = Some(new_latest);
+                    }
+                }
+            }
         }
 
         else => {
@@ -1854,38 +1917,76 @@ async fn timeline_subscriber_handler(
     error!("Error: unexpectedly ended timeline subscriber for room {room_id}.");
 }
 
-
-/// Updates the latest event for the given room.
+/// Handles the given updated latest event for the given room.
 ///
-/// This function handles room name changes and checks for (but does not direclty handle)
-/// room avatar changes.
+/// This currently includes checking the given event for:
+/// * room name changes, in which it sends a `RoomsListUpdate`.
+/// * room power level changes to see if the current user's permissions
+///   have changed; if so, it sends a `TimelineUpdate::CanUserSendMessage`.
+/// * room avatar changes, which is not handled here.
+///   Instead, we return `true` such that other code can fetch the new avatar.
+/// * membership changes to see if the current user has joined or left a room.
 ///
-/// Returns `true` if this latest event indicates that the room's avatar has changed
-/// and should also be updated.
+/// Finally, this function sends a `RoomsListUpdate::UpdateLatestEvent`
+/// to update the latest event in the RoomsList's room preview for the given room.
+///
+/// Returns `true` if room avatar has changed and should be fetched and updated.
 fn update_latest_event(
     room_id: OwnedRoomId,
     event_tl_item: &EventTimelineItem,
+    timeline_update_sender: Option<&crossbeam_channel::Sender<TimelineUpdate>>
 ) -> bool {
     let mut room_avatar_changed = false;
 
     let (timestamp, latest_message_text) = get_latest_event_details(event_tl_item, &room_id);
-
-    // Check for relevant state events: a changed room name or avatar.
     match event_tl_item.content() {
-        TimelineItemContent::OtherState(other) => match other.content() {
-            AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
-                rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
-                    room_id: room_id.clone(),
-                    new_room_name: content.name.clone(),
-                });
+        // Check for relevant state events.
+        TimelineItemContent::OtherState(other) => {
+            match other.content() {
+                // Check for room name changes.
+                AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+                    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
+                        room_id: room_id.clone(),
+                        new_room_name: content.name.clone(),
+                    });
+                }
+                // Check for room avatar changes.
+                AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
+                    room_avatar_changed = true;
+                }
+                // Check for if can user send message.
+                AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
+                    if let Some(sender) = timeline_update_sender {
+                        if let Some(user_power) = current_user_id().and_then(|uid| content.users.get(&uid)) {
+                            let power_level_to_send_message_like_event = content.events
+                                .get(&TimelineEventType::RoomMessage)
+                                .or_else(|| content.events.get(&TimelineEventType::Message))
+                                .unwrap_or(&content.events_default);
+                            let _res = sender.send(TimelineUpdate::CanUserSendMessage(
+                                user_power >= power_level_to_send_message_like_event
+                            ));
+                            if let Err(e) = _res {
+                                error!("Failed to send the result of if user can send message: {e}")
+                            }
+                        }
+                    }
+                }
+                _ => { }
             }
-            AnyOtherFullStateEventContent::RoomAvatar(_avatar_event) => {
-                room_avatar_changed = true;
+        }
+        TimelineItemContent::MembershipChange(room_membership_change) => {
+            if matches!(
+                room_membership_change.change(),
+                Some(MembershipChange::InvitationAccepted | MembershipChange::Joined)
+            ) {
+                if current_user_id().as_deref() == Some(room_membership_change.user_id()) {
+                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                }
             }
-            _ => { }
         }
         _ => { }
     }
+
     enqueue_rooms_list_update(RoomsListUpdate::UpdateLatestEvent {
         room_id,
         timestamp,
@@ -1893,7 +1994,6 @@ fn update_latest_event(
     });
     room_avatar_changed
 }
-
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: Room) {
@@ -1922,7 +2022,7 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
-            .next()
+            .find(|&g| g != "@") 
             .map(ToString::to_string)
             .unwrap_or_default()
     )
@@ -1943,14 +2043,16 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
-    Cx::post_action(LoginAction::Status(format!("Opening Browser ...")));
-    let mut cli = Cli::default();
-    cli.homeserver = (!homeserver_url.is_empty()).then_some(homeserver_url);
+    Cx::post_action(LoginAction::Status(String::from("Opening Browser ...")));
+    let cli = Cli {
+        homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
+        ..Default::default()
+    };
     Handle::current().spawn(async move {
-        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else { 
-            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string())); 
-            return; 
-        }; 
+        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else {
+            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string()));
+            return;
+        };
         let mut is_logged_in = false;
         match client
             .matrix_auth()
@@ -1968,14 +2070,13 @@ async fn spawn_sso_server(
             .identity_provider_id(&identity_provider_id)
             .initial_device_display_name(&format!("robrix-sso-{brand}"))
             .await
-            .map(|response| {
+            .inspect(|_| {
                 if let Some(client) = get_client() {
                     if client.logged_in() {
                         is_logged_in = true;
                         log!("Already logged in, ignore login with sso");
                     }
                 }
-                response
             }) {
             Ok(identity_provider_res) => {
                 if !is_logged_in {
@@ -1996,7 +2097,7 @@ async fn spawn_sso_server(
             Err(e) => {
                 if !is_logged_in {
                     error!("Login by SSO failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {}", e.to_string())));
+                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {e}")));
                 }
             }
         }

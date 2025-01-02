@@ -1,13 +1,23 @@
 use makepad_widgets::*;
 
-live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+use crate::shared::adaptive_view::DisplayContext;
+use crate::shared::color_tooltip::*;
+use crate::shared::verification_badge::{VerificationBadge, VerificationText};
+use crate::verification::VerificationStateAction;
+use crate::sliding_sync::get_client;
+use matrix_sdk::encryption::VerificationState;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::adaptive_view::AdaptiveView;
+
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::verification_badge::*;
+    use crate::shared::color_tooltip::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -16,21 +26,26 @@ live_design! {
         height: Fill, width: Fill
     }
 
-    Profile = <View> {
+    Profile = {{Profile}} {
+        flow: Overlay
         width: Fit, height: Fit
         align: { x: 0.5, y: 0.5 }
 
         text_view = <View> {
-            width: 45., height: 45.,
+            flow: Overlay
+            width: 60, height: 60,
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
-
             draw_bg: {
                 instance background_color: (COLOR_AVATAR_BG_IDLE),
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
                     let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x)
+
+                    let r = self.rect_size * 0.38;
+
+                    sdf.circle(c.x, c.x, r.x);
                     sdf.fill_keep(self.background_color);
                     return sdf.result
                 }
@@ -46,6 +61,14 @@ live_design! {
                 text: "U"
             }
         }
+
+        <View> {
+            align: { x: 1.0, y: 0.0 }
+            verification_badge = <VerificationBadge> {}
+        }
+
+        profile_tooltip = <ColorTooltip> {}
+
     }
 
     Separator = <LineH> {
@@ -54,7 +77,7 @@ live_design! {
 
     Home = <RoundedView> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is becase the icon is not correctly centered
+        // FIXME: the extra padding on the right is because the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         show_bg: true
@@ -79,7 +102,7 @@ live_design! {
 
     Settings = <View> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is becase the icon is not correctly centered
+        // FIXME: the extra padding on the right is because the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
@@ -102,7 +125,7 @@ live_design! {
         }
     }
 
-    SpacesDock = <AdaptiveView> {
+    pub SpacesDock = <AdaptiveView> {
         Desktop = {
             flow: Down, spacing: 15
             align: {x: 0.5}
@@ -118,7 +141,7 @@ live_design! {
             <Separator> {}
 
             <Home> {}
-            
+
             <Filler> {}
 
             <Settings> {}
@@ -137,16 +160,120 @@ live_design! {
             <Filler> {}
 
             <Profile> {}
-    
+
             <Filler> {}
-    
+
             <Home> {}
-            
+
             <Filler> {}
-    
+
             <Settings> {}
-    
+
             <Filler> {}
+        }
+    }
+}
+
+#[derive(Live, Widget)]
+pub struct Profile {
+    #[deref]
+    view: View,
+}
+
+impl Widget for Profile {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let mut color: Vec4 = vec4(0.2, 0.2, 0.2, 1.0); // Default Grey Color
+        let profile_rect = {
+            let view = self.view(id!(text_view));
+            view.area().rect(cx)
+        }; // view borrow end
+
+        if let Event::MouseMove(e) = event {
+            let (is_mouse_over_icons, verification_text, tooltip_pos) = {
+                if let Some(badge) = self
+                    .widget(id!(verification_badge))
+                    .borrow_mut::<VerificationBadge>()
+                {
+                    let icons_rect = badge.get_icons_rect(cx);
+                    let is_over = icons_rect.contains(e.abs);
+                    let text =
+                        VerificationText::from_state(badge.verification_state).get_text();
+                    color = match badge.verification_state {
+                        VerificationState::Verified => vec4(0.0, 0.75, 0.0, 1.0), // Green
+                        VerificationState::Unverified => vec4(0.75, 0.0, 0.0, 1.0), // Red
+                        VerificationState::Unknown => vec4(0.2, 0.2, 0.2, 1.0),   // Grey
+                    };
+
+                    let tooltip_pos = if cx.get_global::<DisplayContext>().is_desktop() {
+                        DVec2 {
+                            x: icons_rect.pos.x + icons_rect.size.x + 1.,
+                            y: icons_rect.pos.y - 10.,
+                        }
+                    } else {
+                        DVec2 {
+                            x: profile_rect.pos.x,
+                            y: profile_rect.pos.y - 10.,
+                        }
+                    };
+                    (is_over, text.to_string(), tooltip_pos)
+                } else {
+                    let tooltip_pos = DVec2 { x: 0., y: 0. };
+                    (false, String::new(), tooltip_pos)
+                }
+            }; // badge borrow end
+
+            if let Some(mut tooltip) = self
+                .widget(id!(profile_tooltip))
+                .borrow_mut::<ColorTooltip>()
+            {
+                if is_mouse_over_icons {
+                    tooltip.show_with_options(cx, tooltip_pos, &verification_text, color);
+                } else {
+                    tooltip.hide(cx);
+                }
+            }
+        }
+
+        self.match_event(cx, event);
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for Profile {
+    fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
+        if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+            if let Some(mut badge) = self
+                .widget(id!(verification_badge))
+                .borrow_mut::<VerificationBadge>()
+            {
+                if badge.verification_state != *state {
+                    badge.verification_state = *state;
+                    badge.update_icon_visibility();
+                    badge.redraw(cx);
+                }
+            }
+        }
+    }
+}
+
+impl LiveHook for Profile {
+    fn after_new_from_doc(&mut self, cx:&mut Cx) {
+        if let Some(client) = get_client() {
+            let current_verification_state = client.encryption().verification_state().get();
+            if let Some(mut badge) = self
+                .widget(id!(verification_badge))
+                .borrow_mut::<VerificationBadge>()
+            {
+                if badge.verification_state != current_verification_state {
+                    badge.verification_state = current_verification_state;
+                    badge.update_icon_visibility();
+                    badge.redraw(cx);
+                }
+            }
         }
     }
 }

@@ -151,7 +151,7 @@ pub fn text_preview_of_message(
         ),
         MessageType::Notice(notice) => format!("<i>{}</i>",
             if let Some(formatted_body) = notice.formatted.as_ref() {
-                &formatted_body.body
+                utils::trim_start_html_whitespace(&formatted_body.body)
             } else {
                 &notice.body
             }
@@ -162,11 +162,18 @@ pub fn text_preview_of_message(
             notice.body,
         ),
         MessageType::Text(text) => {
-            text.formatted.as_ref()
-                .and_then(|fb| (fb.format == MessageFormat::Html)
-                    .then(|| utils::linkify(&fb.body).to_string())
+            text.formatted
+                .as_ref()
+                .and_then(|fb|
+                    (fb.format == MessageFormat::Html).then(||
+                        utils::linkify(
+                            utils::trim_start_html_whitespace(&fb.body),
+                            true,
+                        )
+                        .to_string()
+                    )
                 )
-                .unwrap_or_else(|| utils::linkify(&text.body).to_string())
+                .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
         }
         MessageType::VerificationRequest(verification) => format!(
             "[Verification Request] <i>to user {}</i>",
@@ -201,17 +208,15 @@ pub fn text_preview_of_redacted_message(
     let redactor_and_reason = {
         let mut rr = None;
         if let Some(redacted_msg) = event_tl_item.latest_json() {
-            if let Ok(old) = redacted_msg.deserialize() {
-                if let AnySyncTimelineEvent::MessageLike(
-                    AnySyncMessageLikeEvent::RoomMessage(
-                        SyncMessageLikeEvent::Redacted(redaction)
-                    )
-                ) = old {
-                    rr = Some((
-                        redaction.unsigned.redacted_because.sender,
-                        redaction.unsigned.redacted_because.content.reason,
-                    ));
-                }
+            if let Ok(AnySyncTimelineEvent::MessageLike(
+                AnySyncMessageLikeEvent::RoomMessage(
+                    SyncMessageLikeEvent::Redacted(redaction)
+                )
+            )) = redacted_msg.deserialize() {
+                rr = Some((
+                    redaction.unsigned.redacted_because.sender,
+                    redaction.unsigned.redacted_because.content.reason,
+                ));
             }
         }
         rr
@@ -242,7 +247,7 @@ pub fn text_preview_of_other_state(
 ) -> Option<TextPreview> {
     let text = match other_state.content() {
         AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
-            let mut s = format!("set this room's aliases to ");
+            let mut s = String::from("set this room's aliases to ");
             let last_alias = content.aliases.len() - 1;
             for (i, alias) in content.aliases.iter().enumerate() {
                 s.push_str(alias.as_str());
@@ -250,11 +255,11 @@ pub fn text_preview_of_other_state(
                     s.push_str(", ");
                 }
             }
-            s.push_str(".");
+            s.push('.');
             Some(s)
         }
         AnyOtherFullStateEventContent::RoomAvatar(_) => {
-            Some(format!("set this room's avatar picture."))
+            Some(String::from("set this room's avatar picture."))
         }
         AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
             Some(format!("set the main address of this room to {}.",
@@ -265,31 +270,35 @@ pub fn text_preview_of_other_state(
             Some(format!("created this room (v{}).", content.room_version.as_str()))
         }
         AnyOtherFullStateEventContent::RoomEncryption(_) => {
-            Some(format!("enabled encryption in this room."))
+            Some(String::from("enabled encryption in this room."))
         }
         AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
-            Some(match content.guest_access {
-                GuestAccess::CanJoin => format!("has allowed guests to join this room."),
-                GuestAccess::Forbidden | _ => format!("has forbidden guests from joining this room."),
+            Some(match &content.guest_access {
+                GuestAccess::CanJoin => String::from("has allowed guests to join this room."),
+                GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
+                custom => format!("has set custom guest access rules for this room: {}", custom.as_str()),
             })
         }
         AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
-            let visibility = match content.history_visibility {
-                HistoryVisibility::Invited => "invited users, since they were invited.",
-                HistoryVisibility::Joined => "joined users, since they joined.",
-                HistoryVisibility::Shared => "joined users, for all of time.",
-                HistoryVisibility::WorldReadable | _ => "anyone for all time.",
-            };
-            Some(format!("set this room's history to be visible by {}", visibility))
+            Some(format!("set this room's history to be visible by {}",
+                match &content.history_visibility {
+                    HistoryVisibility::Invited => "invited users, since they were invited.",
+                    HistoryVisibility::Joined => "joined users, since they joined.",
+                    HistoryVisibility::Shared => "joined users, for all of time.",
+                    HistoryVisibility::WorldReadable => "anyone for all time.",
+                    custom => custom.as_str(),
+                },
+            ))
         }
         AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
-            Some(match content.join_rule {
-                JoinRule::Public => format!("set this room to be joinable by anyone."),
-                JoinRule::Knock => format!("set this room to be joinable by invite only or by request."),
-                JoinRule::Private => format!("set this room to be private."),
-                JoinRule::Restricted(_) => format!("set this room to be joinable by invite only or with restrictions."),
-                JoinRule::KnockRestricted(_) => format!("set this room to be joinable by invite only or requestable with restrictions."),
-                JoinRule::Invite | _ => format!("set this room to be joinable by invite only."),
+            Some(match &content.join_rule {
+                JoinRule::Public => String::from("set this room to be joinable by anyone."),
+                JoinRule::Knock => String::from("set this room to be joinable by invite only or by request."),
+                JoinRule::Private => String::from("set this room to be private."),
+                JoinRule::Restricted(_) => String::from("set this room to be joinable by invite only or with restrictions."),
+                JoinRule::KnockRestricted(_) => String::from("set this room to be joinable by invite only or requestable with restrictions."),
+                JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
+                custom => format!("set custom join rules for this room: {}", custom.as_str()),
             })
         }
         AnyOtherFullStateEventContent::RoomPinnedEvents(FullStateEventContent::Original { content, .. }) => {
@@ -299,10 +308,10 @@ pub fn text_preview_of_other_state(
             Some(format!("changed this room's name to {:?}.", content.name))
         }
         AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
-            Some(format!("set the power levels for this room."))
+            Some(String::from("set the power levels for this room."))
         }
         AnyOtherFullStateEventContent::RoomServerAcl(_) => {
-            Some(format!("set the server access control list for this room."))
+            Some(String::from("set the server access control list for this room."))
         }
         AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, .. }) => {
             Some(format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri()))
@@ -331,7 +340,7 @@ pub fn text_preview_of_member_profile_change(
     username: &str,
 ) -> TextPreview {
     let name_text = if let Some(name_change) = change.displayname_change() {
-        let old = name_change.old.as_deref().unwrap_or(&username);
+        let old = name_change.old.as_deref().unwrap_or(username);
         if let Some(new) = name_change.new.as_ref() {
             format!("{old} changed their display name to {new:?}")
         } else {
@@ -344,7 +353,7 @@ pub fn text_preview_of_member_profile_change(
         if name_text.is_empty() {
             format!("{} changed their profile picture", username)
         } else {
-            format!(" and changed their profile picture")
+            String::from(" and changed their profile picture")
         }
     } else {
         String::new()
@@ -373,9 +382,9 @@ pub fn text_preview_of_room_membership_change(
             return None;
         }
         Some(MembershipChange::Joined) =>
-            format!("joined this room."),
+            String::from("joined this room."),
         Some(MembershipChange::Left) =>
-            format!("left this room."),
+            String::from("left this room."),
         Some(MembershipChange::Banned) =>
             format!("banned {} from this room.", change_user_id),
         Some(MembershipChange::Unbanned) =>
@@ -387,17 +396,17 @@ pub fn text_preview_of_room_membership_change(
         Some(MembershipChange::KickedAndBanned) =>
             format!("kicked and banned {} from this room.", change_user_id),
         Some(MembershipChange::InvitationAccepted) =>
-            format!("accepted an invitation to this room."),
+            String::from("accepted an invitation to this room."),
         Some(MembershipChange::InvitationRejected) =>
-            format!("rejected an invitation to this room."),
+            String::from("rejected an invitation to this room."),
         Some(MembershipChange::InvitationRevoked) =>
             format!("revoked {}'s invitation to this room.", change_user_id),
         Some(MembershipChange::Knocked) =>
-            format!("requested to join this room."),
+            String::from("requested to join this room."),
         Some(MembershipChange::KnockAccepted) =>
             format!("accepted {}'s request to join this room.", change_user_id),
         Some(MembershipChange::KnockRetracted) =>
-            format!("retracted their request to join this room."),
+            String::from("retracted their request to join this room."),
         Some(MembershipChange::KnockDenied) =>
             format!("denied {}'s request to join this room.", change_user_id),
     };

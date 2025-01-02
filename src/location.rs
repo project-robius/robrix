@@ -29,7 +29,7 @@ static LATEST_LOCATION: Mutex<Option<LocationUpdate>> = Mutex::new(None);
 /// Note that this function is guaranteed to return `None` if
 /// [`init_location_subscriber`] has not been called yet.
 pub fn get_latest_location() -> Option<LocationUpdate> {
-    LATEST_LOCATION.lock().unwrap().clone()
+    *(LATEST_LOCATION.lock().unwrap())
 }
 
 

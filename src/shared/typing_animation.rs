@@ -1,80 +1,44 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    ANIMATION_DURATION = 0.65
-
-    // 1. Set the width and height to the same value.
-    // 2. Set the radius to half of the width/height.
-    EllipsisDot = <CircleView> {
-        width: 3
-        height: 3
-        draw_bg: {
-            radius: 1.5
-            color: (TYPING_NOTICE_TEXT_COLOR)
-        }
-    }
-
-    TypingAnimation = {{TypingAnimation}} {
-        width: Fit,
-        height: Fit,
-
+    pub TypingAnimation = {{TypingAnimation}} {
+        width: 24,
+        height: 12,
         flow: Down,
-        align: {x: 0.0, y: 0.5},
-        
-        content = <View> {
-            width: Fit,
-            height: Fit,
-            spacing: 2,
-            circle1 = <EllipsisDot> {}
-            circle2 = <EllipsisDot> {}
-            circle3 = <EllipsisDot> {}
-        }
-
-        animator: {
-            circle1 = {
-                default: down,
-                down = {
-                    redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
-                    apply: {content = { circle1 = { margin: {top: 10.0} }}}
-                }
-                up = {
-                    redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
-                    apply: {content = { circle1 = { margin: {top: 3.0} }}}
-                }
-            }
-
-            circle2 = {
-                default: down,
-                down = {
-                    redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
-                    apply: {content = { circle2 = { margin: {top: 10.0} }}}
-                }
-                up = {
-                    redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
-                    apply: {content = { circle2 = { margin: {top: 3.0} }}}
-                }
-            }
-
-            circle3 = {
-                default: down,
-                down = {
-                    redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
-                    apply: {content = { circle3 = { margin: {top: 10.0} }}}
-                }
-                up = {
-                    redraw: true,
-                    from: {all: Forward {duration: (ANIMATION_DURATION * 0.5)}}
-                    apply: {content = { circle3 = { margin: {top: 3.0} }}}
-                }
+        show_bg: true,
+        draw_bg: {
+            color: #x000
+            uniform freq: 5.0,  // Animation frequency
+            uniform phase_offset: 102.0, // Phase difference
+            uniform dot_radius: 1.5, // Dot radius
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let amplitude = self.rect_size.y * 0.22;
+                let center_y = self.rect_size.y * 0.5;
+                // Create three circle SDFs
+                sdf.circle(
+                    self.rect_size.x * 0.25, 
+                    amplitude * sin(self.time * self.freq) + center_y, 
+                    self.dot_radius
+                );
+                sdf.fill(self.color);
+                sdf.circle(
+                    self.rect_size.x * 0.5, 
+                    amplitude * sin(self.time * self.freq + self.phase_offset) + center_y, 
+                    self.dot_radius
+                );
+                sdf.fill(self.color);
+                sdf.circle(
+                    self.rect_size.x * 0.75, 
+                    amplitude * sin(self.time * self.freq + self.phase_offset * 2) + center_y, 
+                    self.dot_radius
+                );
+                sdf.fill(self.color);
+                return sdf.result;
             }
         }
     }
@@ -83,37 +47,20 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct TypingAnimation {
     #[deref] view: View,
-    #[animator] animator: Animator,
-
-    #[live(0.65)] animation_duration: f64,
-    #[rust] timer: Timer,
-    #[rust] current_animated_dot: CurrentAnimatedDot,
+    #[live] time: f32,
+    #[rust] next_frame: NextFrame,
+    #[rust] is_play: bool,
 }
-
-#[derive(Copy, Clone, Default)]
-enum CurrentAnimatedDot {
-    #[default]
-    Dot1,
-    Dot2,
-    Dot3,
-}
-impl CurrentAnimatedDot {
-    fn next(&self) -> Self {
-        match self {
-            Self::Dot1 => Self::Dot2,
-            Self::Dot2 => Self::Dot3,
-            Self::Dot3 => Self::Dot1,
-        }
-    }
-}
-
 impl Widget for TypingAnimation {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.timer.is_event(event).is_some() {
-            self.update_animation(cx);
-        }
-        if self.animator_handle_event(cx, event).must_redraw() {
+        if let Some(ne) = self.next_frame.is_event(event) {
+            self.time += ne.time as f32;       
+            self.time = (self.time.round() as u32 % 360) as f32;
             self.redraw(cx);
+            if !self.is_play {
+                return
+            }
+            self.next_frame = cx.new_next_frame();
         }
 
         self.view.handle_event(cx, event, scope);
@@ -124,39 +71,19 @@ impl Widget for TypingAnimation {
     }
 }
 
-impl TypingAnimation {
-    pub fn update_animation(&mut self, cx: &mut Cx) {
-        self.current_animated_dot = self.current_animated_dot.next();
-
-        match self.current_animated_dot {
-            CurrentAnimatedDot::Dot1 => {
-                self.animator_play(cx, id!(circle1.up));
-                self.animator_play(cx, id!(circle3.down));
-            }
-            CurrentAnimatedDot::Dot2 => {
-                self.animator_play(cx, id!(circle1.down));
-                self.animator_play(cx, id!(circle2.up));
-            }
-            CurrentAnimatedDot::Dot3 => {
-                self.animator_play(cx, id!(circle2.down));
-                self.animator_play(cx, id!(circle3.up));
-            }
-        };
-
-        self.timer = cx.start_timeout(self.animation_duration * 0.5);
-    }
-}
 
 impl TypingAnimationRef {
+    /// Starts animation of the bouncing dots.
     pub fn animate(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.update_animation(cx);
+            inner.is_play = true;
+            inner.next_frame = cx.new_next_frame();
         }
     }
-
+    /// Stops animation of the bouncing dots.
     pub fn stop_animation(&self) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.timer = Timer::default();
+            inner.is_play = false;
         }
     }
 }

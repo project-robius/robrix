@@ -1,11 +1,12 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::widgets::*;
 
-    Divider = <View> {
+    use crate::shared::styles::*;
+
+    pub Divider = <View> {
         width: Fill, height: Fit
         flow: Down
         <RoundedView> {
@@ -15,7 +16,7 @@ live_design! {
         }
     }
 
-    LineH = <RoundedView> {
+    pub LineH = <RoundedView> {
         width: Fill,
         height: 2.0,
         margin: 0.0,
@@ -24,6 +25,6 @@ live_design! {
         draw_bg: {color: (COLOR_DIVIDER)}
     }
 
-    FillerX = <View> { width: Fill, height: Fit }
-    FillerY = <View> { width: Fit, height: Fill }
+    pub FillerX = <View> { width: Fill, height: Fit }
+    pub FillerY = <View> { width: Fit, height: Fill }
 }
