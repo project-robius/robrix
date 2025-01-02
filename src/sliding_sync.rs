@@ -38,6 +38,7 @@ use crate::{
     shared::popup_list::enqueue_popup_notification
 };
 
+
 #[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user name that should be used for the login.

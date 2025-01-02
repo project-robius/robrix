@@ -173,17 +173,13 @@ impl LiveHook for App {
 }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, cx: &mut Cx) {
+    fn handle_startup(&mut self, _cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
         self.update_login_visibility();
-        // Open the popup notification overlay on startup
-        // as the overlay content is a list of notifications.
-        // Nothing will be shown until there is a notification in the list.
-        self.ui.popup_notification(id!(popup)).open(cx);
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
@@ -196,7 +192,17 @@ impl MatchEvent for App {
                 self.update_login_visibility();
                 self.ui.redraw(cx);
             }
-
+            if let Some(popup_action) = action.downcast_ref() {
+                match popup_action {
+                    PopupNotificationAction::Open => {
+                        self.ui.popup_notification(id!(popup)).open(cx);
+                    }
+                    PopupNotificationAction::Close => {
+                        self.ui.popup_notification(id!(popup)).close(cx);
+                    }
+                    PopupNotificationAction::None => {}
+                }
+            }
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
@@ -234,7 +240,7 @@ impl MatchEvent for App {
                 }
                 RoomsPanelAction::None => { }
             }
-
+           
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
@@ -319,3 +325,11 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
+#[derive(Clone, DefaultNone, Debug)]
+pub enum PopupNotificationAction {
+    None,
+    /// Open popup notification layer
+    Open,
+    /// Close popup notification layer
+    Close,
+}

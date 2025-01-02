@@ -1,8 +1,11 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 
+use crate::app::PopupNotificationAction;
+
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 pub fn enqueue_popup_notification(update: String) {
+    Cx::post_action(PopupNotificationAction::Open);
     POPUP_NOTIFICATION.push(update);
 }
 
@@ -65,10 +68,7 @@ live_design! {
         width: Fit
         height: Fit
         flow: Down
-        popup = <PopupDialog> {
-            close_button = <PopupCloseButton> {}
-        }
-        popup_meta: <PopupDialog> {
+        popup_content: <PopupDialog> {
             room_status_label = <Label> {
                 width: 110
                 text: "......"
@@ -89,7 +89,7 @@ pub struct PopupList {
     #[layout]
     layout: Layout,
     #[live]
-    popup_meta: Option<LivePtr>,
+    popup_content: Option<LivePtr>,
     #[rust]
     popups: Vec<View>,
     #[rust]
@@ -98,16 +98,17 @@ pub struct PopupList {
 impl LiveHook for PopupList {
     fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
         for button in self.popups.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, live_id!(popup_meta).as_field()) {
+            if let Some(index) = nodes.child_by_name(index, live_id!(popup_content).as_field()) {
                 button.apply(cx, apply, index, nodes);
             }
         }
     }
 }
+
 impl Widget for PopupList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         while let Some(message) = POPUP_NOTIFICATION.pop() {
-            self.push(cx, message);
+            self.push(cx, message);            
         }
         for view in self.popups.iter_mut() {
             view.handle_event(cx, event, scope);
@@ -116,7 +117,11 @@ impl Widget for PopupList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        println!("draw_walk {:?}", std::time::Instant::now());
         let mut data = self.popups_data.iter();
+        if data.len() == 0 {
+            return DrawStep::done();
+        }
         cx.begin_turtle(walk, self.layout);
         for view in self.popups.iter_mut() {
             if let Some(status) = data.next_back() {
@@ -132,28 +137,38 @@ impl Widget for PopupList {
 impl PopupList {
     fn push(&mut self, cx: &mut Cx, message: String) {
         self.popups_data.push(message);
-        let meta = self.popup_meta;
+        let content = self.popup_content;
         if self.popups.len() < self.popups_data.len() {
             for _ in self.popups.len()..self.popups_data.len() {
-                self.popups.push(View::new_from_ptr(cx, meta));
+                self.popups.push(View::new_from_ptr(cx, content));
             }
         }
-        cx.redraw_area(self.area());
+        self.redraw(cx);
     }
 }
 impl WidgetMatchEvent for PopupList {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        let mut removed = false;
+        let mut removed_indices = Vec::new();
         for (i, view) in self.popups.iter().enumerate() {
             if view.button(id!(close_button)).clicked(actions) {
-                self.popups_data.remove(self.popups_data.len() - i - 1);
-                removed = true;
+                removed_indices.push(self.popups_data.len() - i - 1);
             }
         }
-        if removed {
-            for view in self.popups.iter_mut() {
-                view.redraw(cx);
-            }
+        if removed_indices.is_empty() {
+            return;
+        }
+        // Remove elements from the end to avoid shifting issues
+        for &i in removed_indices.iter().rev() {
+            self.popups_data.remove(i);
+        }
+        for view in self.popups.iter_mut() {
+            view.redraw(cx);
+        }
+        for &i in removed_indices.iter().rev() {
+            self.popups.remove(i);
+        }
+        if self.popups.is_empty() {
+            Cx::post_action(PopupNotificationAction::Close);
         }
     }
 }
