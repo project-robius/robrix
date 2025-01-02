@@ -120,7 +120,7 @@ impl Widget for PopupList {
         cx.begin_turtle(walk, self.layout);
         for view in self.popups.iter_mut() {
             if let Some(status) = data.next_back() {
-                view.label(id!(room_status_label)).set_text(&status);
+                view.label(id!(room_status_label)).set_text(status);
                 let walk = walk.with_margin_bottom(10.0);
                 let _ = view.draw_walk(cx, scope, walk);
             }
