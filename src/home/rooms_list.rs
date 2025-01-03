@@ -206,8 +206,9 @@ impl Deref for RoomDisplayFilter {
 }
 
 bitflags! {
+    /// The criteria that can be used to filter rooms in the `RoomDisplayFilter`.
     #[derive(Copy, Clone, PartialEq, Eq)]
-    pub struct RoomDisplayFilterType: u8 {
+    pub struct RoomFilterCriteria: u8 {
         const RoomId    = 0b0000_0001;
         const RoomName  = 0b0000_0010;
         const RoomAlias = 0b0000_0100;
@@ -216,8 +217,8 @@ bitflags! {
     }
 }
 
-impl Default for RoomDisplayFilterType {
-    fn default() -> Self { RoomDisplayFilterType::All }
+impl Default for RoomFilterCriteria {
+    fn default() -> Self { RoomFilterCriteria::All }
 }
 
 type SortFn = dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering;
@@ -225,7 +226,7 @@ type SortFn = dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering;
 /// A builder for creating a `RoomDisplayFilter` with a specific set of filter types and a sorting function.
 pub struct RoomDisplayFilterBuilder {
     keywords: String,
-    filter_types: RoomDisplayFilterType,
+    filter_criteria: RoomFilterCriteria,
     sort_fn: Option<Box<SortFn>>,
 }
 /// ## Example
@@ -246,7 +247,7 @@ impl RoomDisplayFilterBuilder {
     pub fn new() -> Self {
         Self {
             keywords: String::new(),
-            filter_types: RoomDisplayFilterType::default(),
+            filter_criteria: RoomFilterCriteria::default(),
             sort_fn: None,
         }
     }
@@ -256,8 +257,8 @@ impl RoomDisplayFilterBuilder {
         self
     }
 
-    fn set_filter_types(mut self, filter_types: RoomDisplayFilterType) -> Self {
-        self.filter_types = filter_types;
+    fn set_filter_criteria(mut self, filter_criteria: RoomFilterCriteria) -> Self {
+        self.filter_criteria = filter_criteria;
         self
     }
 
@@ -312,32 +313,32 @@ impl RoomDisplayFilterBuilder {
     }
 
     // Check if the keywords have a special prefix that indicates a pre-match filter check.
-    fn pre_match_filter_check(keywords: &str) -> (RoomDisplayFilterType, &str) {
+    fn pre_match_filter_check(keywords: &str) -> (RoomFilterCriteria, &str) {
         match keywords.chars().next() {
-            Some('!') => (RoomDisplayFilterType::RoomId, keywords),
-            Some('#') => (RoomDisplayFilterType::RoomAlias, keywords),
-            Some(':') => (RoomDisplayFilterType::RoomTags, keywords),
-            _ => (RoomDisplayFilterType::All, keywords),
+            Some('!') => (RoomFilterCriteria::RoomId, keywords),
+            Some('#') => (RoomFilterCriteria::RoomAlias, keywords),
+            Some(':') => (RoomFilterCriteria::RoomTags, keywords),
+            _ => (RoomFilterCriteria::All, keywords),
         }
     }
 
-    fn matches_filter(room: &RoomsListEntry, keywords: &str, filter_types: RoomDisplayFilterType) -> bool {
-        if filter_types.is_empty() {
+    fn matches_filter(room: &RoomsListEntry, keywords: &str, filter_criteria: RoomFilterCriteria) -> bool {
+        if filter_criteria.is_empty() {
             return false;
         }
 
         let (specific_type, cleaned_keywords) = Self::pre_match_filter_check(keywords);
 
-        if specific_type != RoomDisplayFilterType::All {
+        if specific_type != RoomFilterCriteria::All {
             // When using a special prefix, only check that specific type
             match specific_type {
-                RoomDisplayFilterType::RoomId if filter_types.contains(RoomDisplayFilterType::RoomId) => {
+                RoomFilterCriteria::RoomId if filter_criteria.contains(RoomFilterCriteria::RoomId) => {
                     Self::matches_room_id(room, cleaned_keywords)
                 }
-                RoomDisplayFilterType::RoomAlias if filter_types.contains(RoomDisplayFilterType::RoomAlias) => {
+                RoomFilterCriteria::RoomAlias if filter_criteria.contains(RoomFilterCriteria::RoomAlias) => {
                     Self::matches_room_alias(room, cleaned_keywords)
                 }
-                RoomDisplayFilterType::RoomTags if filter_types.contains(RoomDisplayFilterType::RoomTags) => {
+                RoomFilterCriteria::RoomTags if filter_criteria.contains(RoomFilterCriteria::RoomTags) => {
                     Self::matches_room_tags(room, cleaned_keywords)
                 }
                 _ => false
@@ -346,16 +347,16 @@ impl RoomDisplayFilterBuilder {
             // No special prefix, check all enabled filter types
             let mut matches = false;
 
-            if filter_types.contains(RoomDisplayFilterType::RoomId) {
+            if filter_criteria.contains(RoomFilterCriteria::RoomId) {
                 matches |= Self::matches_room_id(room, cleaned_keywords);
             }
-            if filter_types.contains(RoomDisplayFilterType::RoomName) {
+            if filter_criteria.contains(RoomFilterCriteria::RoomName) {
                 matches |= Self::matches_room_name(room, cleaned_keywords);
             }
-            if filter_types.contains(RoomDisplayFilterType::RoomAlias) {
+            if filter_criteria.contains(RoomFilterCriteria::RoomAlias) {
                 matches |= Self::matches_room_alias(room, cleaned_keywords);
             }
-            if filter_types.contains(RoomDisplayFilterType::RoomTags) {
+            if filter_criteria.contains(RoomFilterCriteria::RoomTags) {
                 matches |= Self::matches_room_tags(room, cleaned_keywords);
             }
 
@@ -365,14 +366,14 @@ impl RoomDisplayFilterBuilder {
 
     pub fn build(self) -> (RoomDisplayFilter, Option<Box<SortFn>>) {
         let keywords = self.keywords;
-        let filter_types = self.filter_types;
+        let filter_criteria = self.filter_criteria;
 
         let filter = RoomDisplayFilter(Box::new(move |room| {
-            if keywords.is_empty() || filter_types.is_empty() {
+            if keywords.is_empty() || filter_criteria.is_empty() {
                 return true;
             }
             let keywords = keywords.trim().to_lowercase();
-            Self::matches_filter(room, &keywords, self.filter_types)
+            Self::matches_filter(room, &keywords, self.filter_criteria)
         }));
 
         (filter, self.sort_fn)
@@ -419,6 +420,7 @@ pub struct RoomsList {
 }
 
 impl RoomsList {
+    /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
         self.status = if let Some(max_rooms) = self.max_known_rooms {
             format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
@@ -427,9 +429,11 @@ impl RoomsList {
         };
     }
 
-    fn update_search_status_rooms_count(&mut self) {
+    /// Updates the status message to show how many rooms are currently displayed
+    /// that match the current search filter.
+    fn update_status_matching_rooms(&mut self) {
         self.status = match self.displayed_rooms.len() {
-            0 => "No rooms found matching.".to_string(),
+            0 => "No matching rooms found.".to_string(),
             1 => "Found 1 matching room.".to_string(),
             n => format!("Found {} matching rooms.", n),
         }
@@ -610,6 +614,7 @@ impl Widget for RoomsList {
             list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                
                 let mut scope = Scope::empty();
 
                 // Draw the room preview for each room in the `displayed_rooms` list.
@@ -659,7 +664,7 @@ impl Widget for RoomsList {
 }
 
 impl WidgetMatchEvent for RoomsList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for action in actions {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
 
@@ -673,8 +678,8 @@ impl WidgetMatchEvent for RoomsList {
                 }
 
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                    .set_keywords(keywords)
-                    .set_filter_types(RoomDisplayFilterType::All)
+                    .set_keywords(keywords.clone())
+                    .set_filter_criteria(RoomFilterCriteria::All)
                     .build();
                 self.display_filter = filter;
 
@@ -700,7 +705,7 @@ impl WidgetMatchEvent for RoomsList {
 
                 // Update the displayed rooms list.
                 self.displayed_rooms = displayed_rooms;
-                self.update_search_status_rooms_count();
+                self.update_status_matching_rooms();
                 // Redraw the rooms list.
                 self.redraw(cx);
             }
