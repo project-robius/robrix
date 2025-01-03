@@ -117,7 +117,6 @@ impl Widget for PopupList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        println!("draw_walk {:?}", std::time::Instant::now());
         let mut data = self.popups_data.iter();
         if data.len() == 0 {
             return DrawStep::done();
