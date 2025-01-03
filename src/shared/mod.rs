@@ -3,6 +3,7 @@ use makepad_widgets::Cx;
 pub mod adaptive_view;
 pub mod avatar;
 pub mod clickable_view;
+pub mod color_tooltip;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
@@ -27,4 +28,5 @@ pub fn live_design(cx: &mut Cx) {
     typing_animation::live_design(cx);
     jump_to_bottom_button::live_design(cx);
     verification_badge::live_design(cx);
+    color_tooltip::live_design(cx);
 }

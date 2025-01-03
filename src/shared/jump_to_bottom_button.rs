@@ -19,55 +19,73 @@ live_design! {
         flow: Overlay,
         align: {x: 1.0, y: 1.0},
         visible: false,
-
-        jump_to_bottom_button = <IconButton> {
-            margin: {right: 15.0, bottom: 15.0},
-            width: 50, height: 50,
-            draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
-            icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
-            // draw a circular background for the button
-            draw_bg: {
-                instance background_color: #edededce,
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x);
-                    sdf.fill_keep(self.background_color);
-                    return sdf.result
-                }
-            }
-        }
-
-        // A badge overlay on the jump to bottom button showing unread messages
-        unread_message_badge = <View> {
-            width: 12, height: 12,
-            margin: {right: 33.0, bottom: 11.0},
-            visible: false,
-
-            show_bg: true,
-            draw_bg: {
-                color: (COLOR_UNREAD_MESSAGE_BADGE)
-                fn pixel(self) -> vec4 {
-                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x);
-                    sdf.fill_keep(self.color);
-                    return sdf.result;
+        <View> {
+            width: 65, height: 75,
+            align: {x: 0.5, y: 1.0},
+            flow: Overlay,
+            jump_to_bottom_button = <IconButton> {
+                width: 50, height: 50,
+                margin: {bottom: 8},
+                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
+                // draw a circular background for the button
+                draw_bg: {
+                    instance background_color: #edededce,
+                    fn pixel(self) -> vec4 {
+                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        let c = self.rect_size * 0.5;
+                        sdf.circle(c.x, c.x, c.x);
+                        sdf.fill_keep(self.background_color);
+                        return sdf.result
+                    }
                 }
             }
 
-            // // Label that displays the unread message count
-            // unread_messages_count = <Label> {
-            //     width: Fill,
-            //     height: Fill,
-            //     text: "",
-            //     align: {x: 0.5, y: 0.5},
-            //     draw_text: {
-            //         color: #ffffff,
-            //         text_style: {font_size: 8.0},
-            //     }
-            // }
+            // A badge overlay on the jump to bottom button showing unread messages
+            unread_message_badge = <View> {
+                width: 25, height: 20,
+                align: {
+                    x: 0.5,
+                    y: 0.5
+                }
+                visible: false,
+                flow: Overlay,
+                green_rounded_label = <View> {
+                    width: Fill,
+                    height: Fill,
+                    show_bg: true,
+                    draw_bg: {
+                        color: (COLOR_UNREAD_MESSAGE_BADGE)
+                        instance radius: 4.0
+                        // Adjust this border_width to larger value to make oval smaller 
+                        instance border_width: 2.0
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                            sdf.box(
+                                self.border_width,
+                                self.border_width,
+                                self.rect_size.x - (self.border_width * 2.0),
+                                self.rect_size.y - (self.border_width * 2.0),
+                                max(1.0, self.radius)
+                            )
+                            sdf.fill_keep(self.color)
+                            return sdf.result;
+                        }
+                    }
+                }
+                // Label that displays the unread message count
+                unread_messages_count = <Label> {
+                    width: Fit,
+                    height: Fit,
+                    text: "",
+                    draw_text: {
+                        color: #ffffff,
+                        text_style: {font_size: 8.0},
+                    }
+                }
+            }
         }
+        
     }
 }
 
@@ -108,11 +126,40 @@ impl JumpToBottomButton {
     /// Sets both the jump to bottom view and its unread message badge to be visible.
     ///
     /// This does not automatically redraw any views.
-    ///
-    /// TODO: in the future, we'll display the actual count of unread messages in the badge.
-    pub fn show_unread_message_badge(&mut self, _unread_message_count: usize) {
-        self.visible = true;
-        self.view(id!(unread_message_badge)).set_visible(true);
+    /// If unread_message_count is `0`, the unread message badge is hidden.
+    pub fn show_unread_message_badge(&mut self, cx: &mut Cx, count: UnreadMessageCount) {
+        match count {
+            UnreadMessageCount::Unknown => {
+                self.visible = true;
+                self.view(id!(unread_message_badge)).set_visible(true);
+                self.label(id!(unread_messages_count)).set_text("");
+            }
+            UnreadMessageCount::Known(0) => {
+                self.visible = false;
+                self.view(id!(unread_message_badge)).set_visible(false);
+                self.label(id!(unread_messages_count)).set_text("");
+            }
+            UnreadMessageCount::Known(unread_message_count) => {
+                self.visible = true;
+                self.view(id!(unread_message_badge)).set_visible(true);
+                let (border_size, plus_sign) = if unread_message_count > 99 {
+                    (0.0, "+")
+                } else if unread_message_count > 9 {
+                    (1.0, "")
+                } else {
+                    (2.0, "")
+                };
+                self.label(id!(unread_messages_count)).set_text(
+                    &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
+                );
+                self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                    }
+                });
+            }
+        }
+        
     }
 
     /// Updates the visibility of the jump to bottom button and the unread message badge
@@ -160,9 +207,9 @@ impl JumpToBottomButtonRef {
     }
 
     /// See [`JumpToBottomButton::show_unread_message_badge()`].
-    pub fn show_unread_message_badge(&self, unread_message_count: usize) {
+    pub fn show_unread_message_badge(&self, cx: &mut Cx, count: UnreadMessageCount) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_unread_message_badge(unread_message_count);
+            inner.show_unread_message_badge(cx, count);
         }
     }
 
@@ -177,4 +224,13 @@ impl JumpToBottomButtonRef {
             inner.update_from_actions(cx, portal_list, actions);
         }
     }
+}
+
+/// The number of unread messages in a room.
+#[derive(Clone, Debug)]
+pub enum UnreadMessageCount {
+    /// There are unread messages, but we do not know how many.
+    Unknown,
+    /// There are unread messages, and we know exactly how many.
+    Known(u64)
 }
