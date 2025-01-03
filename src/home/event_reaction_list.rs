@@ -90,8 +90,6 @@ struct ReactionData {
     tooltip_text: String,
     /// Boolean indicating if the current user is also a sender of the reaction
     includes_user: bool,
-    /// Calculated of the width of the reaction button
-    width: f64,
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -124,72 +122,34 @@ pub struct ReactionList {
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.layout.flow = Flow::RightWrap;
         cx.begin_turtle(walk, self.layout);
-        let rect = cx.turtle().rect();
-        let width: f64 = rect.size.x;
-        if !self.width_calculated {
-            // Records the button widths after the first draw
-            let mut prev_width: f64 = 0.0;
-            for (index, reaction_data) in
-                self.event_reaction_list.iter_mut().enumerate()
-            {
-                let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
-                    WidgetRef::new_from_ptr(cx, self.item).as_button()
-                });
-                target.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_num_react));
-                // Hide the button until the first draw
-                target.apply_over(
-                    cx,
-                    live! {
-                        draw_bg: { hide: 1.0 }
-                    },
-                );
-                let _ = target.draw(cx, scope);
-                let used = cx.turtle().used();
-                reaction_data.width = used.x - prev_width;
-                prev_width = used.x;
-            }
-    
-            self.width_calculated = true;
-        } else {
-            // With the width calculated from the first draw, 
-            let mut acc_width: f64 = 0.0;
-            for (index, reaction_data) in
-                self.event_reaction_list.iter().enumerate()
-            {
-                let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
-                    WidgetRef::new_from_ptr(cx, self.item).as_button()
-                });
-                target.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_num_react));
-                // Renders Green button for reaction that includes the client user
-                // Renders Grey button for reaction that does not include client user
-                let node_to_apply = if reaction_data.includes_user {
-                    live! {
-                        draw_bg: { hide: 0.0 , color: (EMOJI_BG_COLOR_INCLUDE_SELF) }
-                    }
-                } else {
-                    live! {
-                        draw_bg: { hide: 0.0, color: (EMOJI_BG_COLOR_NOT_INCLUDE_SELF) }
-                    }
-                };
-                // Unhide the button as we have the width of the buttons
-                target.apply_over(
-                    cx,
-                    node_to_apply
-                );
-                acc_width += reaction_data.width;
-                // Creates a new line if the accumulated width exceeds the available space
-                if acc_width > width {
-                    cx.turtle_new_line();
-                    acc_width = reaction_data.width;
-                    let used: DVec2 = cx.turtle().used();
-                    // Resets the turtle's width after each new line
-                    cx.turtle_mut().set_used(0.0, used.y);
+        for (index, reaction_data) in
+            self.event_reaction_list.iter().enumerate()
+        {
+            let target = self.children.get_or_insert(cx, LiveId(index as u64), |cx| {
+                WidgetRef::new_from_ptr(cx, self.item).as_button()
+            });
+            target.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_num_react));
+            // Renders Green button for reaction that includes the client user.
+            // Renders Grey button for reaction that does not include client user.
+            let node_to_apply = if reaction_data.includes_user {
+                live! {
+                    draw_bg: { hide: 0.0 , color: (EMOJI_BG_COLOR_INCLUDE_SELF) }
                 }
-                let _ = target.draw(cx, scope);                
-            }
+            } else {
+                live! {
+                    draw_bg: { hide: 0.0, color: (EMOJI_BG_COLOR_NOT_INCLUDE_SELF) }
+                }
+            };
+            // Unhide the button as we have the width of the buttons
+            target.apply_over(
+                cx,
+                node_to_apply
+            );
+            let _ = target.draw(cx, scope);                
         }
-    
+        
         cx.end_turtle();
         self.children.retain_visible();
         DrawStep::done()
@@ -337,7 +297,6 @@ impl ReactionListRef {
                     total_num_react,
                     tooltip_text,
                     includes_user,
-                    width: 0.0,
                 });
             }
             instance.room_id = Some(room_id);
