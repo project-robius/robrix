@@ -39,6 +39,7 @@ live_design! {
                 tooltip_label = <Label> {
                     width: Fill,
                     height: Fit,
+                    padding: {left: 5.0, right: 5.0}
                     draw_text: {
                         text_style: <REGULAR_TEXT> {}
                         color: #fff
@@ -145,6 +146,34 @@ impl ColorTooltip {
                 }
             },
         );
+    }
+
+    pub fn get_size(&self, cx: &mut Cx) -> Option<DVec2> {
+        let content = self.view(id!(content)) ;
+        let rect = content.area().rect(cx);
+        Some(rect.size)
+    }
+
+    pub fn get_full_dimensions(&self, cx: &mut Cx) -> Option<(DVec2, DVec2)> {
+        let content_size = self.view(id!(content)).area().rect(cx).size;
+        let bg_size = self.view(id!(tooltip_bg)).area().rect(cx).size;
+
+        Some((content_size, bg_size))
+    }
+
+    pub fn calculate_above_position(&self, cx: &mut Cx, rect: Rect) -> DVec2 {
+        let size = self.get_size(cx).unwrap_or(DVec2{x: 300.0, y: 30.0});
+
+        let center_x = rect.pos.x + (rect.size.x * 0.5);
+        let actual_height = self.view(id!(tooltip_bg)).area().rect(cx).size.y;
+
+        DVec2 {
+            x: center_x - (size.x * 0.5),
+            // If we directly use rect.pos.y, the top left corner of the tooltip will align with the top of the rectangle.
+            // If we want the tooltip to appear above the rectangle,
+            // we need to move the y-coordinate up by the height of the tooltip.
+            y: rect.pos.y - actual_height,
+        }
     }
 }
 
