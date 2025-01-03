@@ -12,7 +12,7 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent, MessageLikeEventType, TimelineEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Error, Room
+    }, sliding_sync::VersionBuilder, Client, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -2083,7 +2083,21 @@ fn spawn_fetch_room_avatar(room: Room) {
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
     match room.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
-        _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+        _ => {
+            if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+                if room_members.len() == 2 {
+                    if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
+                        return match non_account_member.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+                            Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+                            _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+                        };
+                    }
+                } else {
+                    return avatar_from_room_name(room_name.as_deref().unwrap_or_default());
+                }
+            }
+            avatar_from_room_name(room_name.as_deref().unwrap_or_default())
+        }
     }
 }
 
