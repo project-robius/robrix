@@ -193,16 +193,14 @@ impl MatchEvent for App {
                 self.update_login_visibility();
                 self.ui.redraw(cx);
             }
-            if let Some(popup_action) = action.downcast_ref() {
-                match popup_action {
-                    PopupNotificationAction::Open => {
-                        self.ui.popup_notification(id!(popup)).open(cx);
-                    }
-                    PopupNotificationAction::Close => {
-                        self.ui.popup_notification(id!(popup)).close(cx);
-                    }
-                    PopupNotificationAction::None => {}
+            match action.downcast_ref() {
+                Some(PopupNotificationAction::Open) => {
+                    self.ui.popup_notification(id!(popup)).open(cx);
                 }
+                Some(PopupNotificationAction::Close) => {
+                    self.ui.popup_notification(id!(popup)).close(cx);
+                }
+                _ => {}
             }
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
