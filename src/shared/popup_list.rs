@@ -13,6 +13,9 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
+
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::RobrixIconButton;
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
 
     PopupDialog = <RoundedView> {
@@ -65,18 +68,44 @@ live_design! {
     }
 
     pub PopupList = {{PopupList}} {
-        width: Fit
+        width: 190,
         height: Fit
         flow: Down
+        spacing: 0,
+        padding: 0,
         popup_content: <PopupDialog> {
-            room_status_label = <Label> {
-                width: 110
-                text: "......"
-                draw_text: {
-                    color: #000
+            flow: Down
+            padding: 0.0,
+            padding: {left: 20.0, bottom: 10.0}
+            spacing: 0,
+            <View> {
+                width: Fill,
+                height: Fit,
+                padding: 2,
+                align: {x: 0.98}
+                close_button = <RobrixIconButton> {
+                    width: 20,
+                    height: 20,
+                    margin: 0,
+                    padding: 0,
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE),
+                        fn get_color(self) -> vec4 {
+                            return #x0;
+                        }
+                    }
+                    icon_walk: {width: 14, height: 14}
                 }
             }
-            close_button = <PopupCloseButton> {}
+            
+            room_status_label = <Label> {
+                width: Fill,
+                text: "......"
+                draw_text: {
+                    color: #000,
+                    wrap: Word
+                }
+            }
         }
     }
 
