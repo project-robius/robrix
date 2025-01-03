@@ -99,6 +99,10 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         avatar: RoomPreviewAvatar,
     },
+    UpdateNumUnreadMessages {
+        room_id: OwnedRoomId,
+        new_num_unread_messages: u64,
+    },
     /// Remove the given room from the list of all rooms.
     RemoveRoom(OwnedRoomId),
     /// Update the tags for the given room.
@@ -141,6 +145,8 @@ pub struct RoomsListEntry {
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The number of unread messages in this room.
+    pub num_unread_messages: u64,
     /// The tags associated with this room, if any.
     /// This includes things like is_favourite, is_low_priority,
     /// whether the room is a server notice room, etc.
@@ -334,7 +340,14 @@ impl Widget for RoomsList {
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
-                    }
+                    },
+                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, new_num_unread_messages } => {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            room.num_unread_messages = new_num_unread_messages;
+                        } else {
+                            error!("Error: couldn't find room {room_id} to update unread count");
+                        }
+                    },
                     RoomsListUpdate::Tags { room_id, new_tags } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             room.tags = new_tags;
