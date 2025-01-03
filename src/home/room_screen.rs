@@ -17,7 +17,7 @@ use matrix_sdk::{
     OwnedServerName,
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
@@ -29,6 +29,7 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
+use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
 use super::loading_modal::{LoadingModalAction, LoadingModalState};
@@ -56,6 +57,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_modal::*;
+    use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -225,27 +227,6 @@ live_design! {
         }
     }
 
-    // An optional view used to show reactions beneath a message.
-    MessageAnnotations = <View> {
-        visible: false,
-        width: Fill,
-        height: Fit,
-        padding: {top: 5.0}
-
-        html_content = <MessageHtml> {
-            width: Fill,
-            height: Fit,
-            padding: { bottom: 5.0, top: 0.0 },
-            font_size: 10.5,
-            font_color: (REACTION_TEXT_COLOR),
-            draw_normal:      { color: (REACTION_TEXT_COLOR) },
-            draw_italic:      { color: (REACTION_TEXT_COLOR) },
-            draw_bold:        { color: (REACTION_TEXT_COLOR) },
-            draw_bold_italic: { color: (REACTION_TEXT_COLOR) },
-            draw_fixed:       { color: (REACTION_TEXT_COLOR) },
-            body: ""
-        }
-    }
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
@@ -391,7 +372,7 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
 
             message_menu = <MessageMenu> {}
@@ -431,7 +412,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -443,7 +424,7 @@ live_design! {
             content = {
                 padding: { left: 10.0 }
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -455,7 +436,7 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -973,6 +954,68 @@ live_design! {
                 }
             }
         }
+        room_screen_tooltip = <Tooltip> {
+            content: <View> {
+                flow: Overlay
+                width: Fit
+                height: Fit
+    
+                rounded_view = <RoundedView> {
+                    width: Fit,
+                    height: Fit,
+                    
+                    padding: 10,
+    
+                    draw_bg: {
+                        color: #fff,
+                        border_width: 1.0,
+                        border_color: #D0D5DD,
+                        radius: 2.,
+                        instance background_color: (#3b444b),
+                        // Height of isoceles triangle
+                        instance callout_triangle_height: 5.0,
+                        instance callout_y_offset: 15.0,
+                        fn pixel(self) -> vec4 {
+                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                            let rect_size = self.rect_size;
+                            // Main rounded rectangle
+                            sdf.box(
+                                // Minus 2.0 to overlap the triangle and rectangle
+                                (self.callout_triangle_height - 2.0) + self.border_width,
+                                0.0 + self.border_width,
+                                rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                rect_size.y - (self.border_width * 2.0),
+                                max(1.0, self.radius)
+                            )
+                            sdf.fill(self.background_color);
+                            sdf.translate(0.0, self.callout_y_offset);
+                            // Draw left-pointed arrow triangle
+                            sdf.move_to(self.callout_triangle_height, 0.0);
+                            sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                            sdf.line_to(0.0, self.callout_triangle_height);
+                            // Draw up-pointed arrow triangle
+                            // sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 20.0);
+                            // sdf.line_to(0.0, self.callout_triangle_height * 2.0);
+                            // sdf.line_to(self.callout_triangle_height, self.callout_triangle_height);
+                            sdf.close_path();
+                            
+                            sdf.fill((self.background_color));
+                            return sdf.result;
+                        }
+                        
+                    }
+    
+                    tooltip_label = <Label> {
+                        width: Fit,
+                        draw_text: {
+                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                            text_wrap: Word,
+                            color: (COLOR_PRIMARY)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -989,6 +1032,7 @@ pub struct RoomScreen {
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 }
+
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -1021,6 +1065,32 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
+            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
+                let seq = wr.reaction_list(id!(reaction_list));
+                if let RoomScreenTooltipActions::HoverIn { tooltip_pos, 
+                    tooltip_text, 
+                    tooltip_width, 
+                    callout_y_offset 
+                } = seq.hover_in(actions) {
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            rounded_view = {
+                                draw_bg: {
+                                    callout_y_offset: (callout_y_offset)
+                                }
+                                tooltip_label = {
+                                    width: (tooltip_width)
+                                }
+                            }
+                        }
+                    ));
+                }
+                if seq.hover_out(actions) {
+                    tooltip.hide(cx);
+                }
+            });
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -1902,9 +1972,6 @@ impl RoomScreen {
             Did you forget to save the timeline state back to the global map of states?",
         );
 
-        // Send request as `MatrixRequest` to check post permission.
-        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() });
-
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
@@ -2180,6 +2247,20 @@ impl RoomScreenRef {
     }
 }
 
+/// Actions for the room screen's tooltip.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenTooltipActions {
+    /// Mouse over event when the mouse is over the reaction button.
+    HoverIn {
+        tooltip_pos: DVec2,
+        tooltip_text: String,
+        tooltip_width: f64,
+        /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget.
+        callout_y_offset: f64,
+    },
+    HoverOut,
+    None,
+}
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
@@ -2889,7 +2970,8 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        item.reaction_list(id!(content.reaction_list))
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier());
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3368,45 +3450,6 @@ fn populate_preview_of_timeline_item(
     widget_out.show_html(html);
 }
 
-/// Draws the reactions beneath the given `message_item`.
-fn draw_reactions(
-    _cx: &mut Cx2d,
-    message_item: &WidgetRef,
-    reactions: &ReactionsByKeyBySender,
-    id: usize,
-) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
-    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-        return;
-    }
-
-    // The message annotations view is invisible by default, so we must set it to visible
-    // now that we know there are reactions to show.
-    message_item
-        .view(id!(content.message_annotations))
-        .set_visible(true);
-
-    let mut label_text = String::new();
-    for (reaction_raw, reaction_senders) in reactions.iter() {
-        // Just take the first char of the emoji, which ignores any variant selectors.
-        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-        let text_to_display = emojis::get(reaction_str)
-            .and_then(|e| e.shortcode())
-            .unwrap_or(reaction_raw);
-        let count = reaction_senders.len();
-        // log!("Found reaction {:?} with count {}", text_to_display, count);
-        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
-    }
-
-    // Debugging: draw the item ID as a reaction
-    if DRAW_ITEM_ID_REACTION {
-        label_text = format!("{label_text}<i>ID: {}</i>", id);
-    }
-
-    let html_reaction_view = message_item.html(id!(message_annotations.html_content));
-    html_reaction_view.set_text(&label_text);
-}
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
