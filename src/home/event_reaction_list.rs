@@ -99,17 +99,15 @@ pub struct ReactionList {
     #[walk]
     walk: Walk,
     /// A list of ReactionData which includes data required to draw the reaction buttons and their tooltips.
-    /// After the first draw, the button widths will be stored in this vector
     #[rust]
     event_reaction_list: Vec<ReactionData>,
     #[rust]
     room_id: Option<OwnedRoomId>,
     #[rust]
     timeline_event_id: Option<TimelineEventItemId>,
-    /// Has the width of the emoji buttons already been drawn and calculated beforehand?
-    #[rust]
-    width_calculated: bool,
-    /// Tooltip that appears when hovering over a reaction button, (Index in event_reaction_list, tooltip rendering rectangle's area, tooltip's text, callout's y offset)
+    /// If mouse is hovered in, stores the tooltip state.
+    /// It includes the index in event_reaction_list and it's roomscreen tooltip actions.
+    /// It is cleared when mouse leaves the particular reaction button.
     #[rust]
     tooltip_state: Option<(u64, RoomScreenTooltipActions)>
 }
@@ -295,7 +293,6 @@ impl ReactionListRef {
             }
             instance.room_id = Some(room_id);
             instance.timeline_event_id = Some(timeline_event_item_id);
-            instance.width_calculated = false;
         }
     }
 
