@@ -1036,8 +1036,8 @@ pub struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
-
 }
+
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -2251,15 +2251,15 @@ impl RoomScreenRef {
     }
 }
 
-/// Actions for the room screen's tooltip 
+/// Actions for the room screen's tooltip.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
-    /// Mouse over event when the mouse is over the reaction button
+    /// Mouse over event when the mouse is over the reaction button.
     HoverIn {
         tooltip_pos: DVec2,
         tooltip_text: String,
         tooltip_width: f64,
-        /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget
+        /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget.
         callout_y_offset: f64,
     },
     HoverOut,

@@ -43,19 +43,12 @@ live_design! {
                 instance border_width: 1.5
                 instance border_color: (#001A11)
                 instance radius: 3.0
-                // The first draw is to get the width of the button, so that we can use it in the second draw
-                // If hide >= 0.5, the button is hidden.
-                // Without hiding, the buttons layout may appear glitched at the start
-                instance hide: 0.0
                 fn get_color(self) -> vec4 {
                     return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
                 }
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                    if self.hide >= 0.5 {
-                        return sdf.result;
-                    }
                     sdf.box(
                         self.border_width,
                         self.border_width,
@@ -135,14 +128,13 @@ impl Widget for ReactionList {
             // Renders Grey button for reaction that does not include client user.
             let node_to_apply = if reaction_data.includes_user {
                 live! {
-                    draw_bg: { hide: 0.0 , color: (EMOJI_BG_COLOR_INCLUDE_SELF) }
+                    draw_bg: { color: (EMOJI_BG_COLOR_INCLUDE_SELF) }
                 }
             } else {
                 live! {
-                    draw_bg: { hide: 0.0, color: (EMOJI_BG_COLOR_NOT_INCLUDE_SELF) }
+                    draw_bg: { color: (EMOJI_BG_COLOR_NOT_INCLUDE_SELF) }
                 }
             };
-            // Unhide the button as we have the width of the buttons
             target.apply_over(
                 cx,
                 node_to_apply
@@ -159,13 +151,13 @@ impl Widget for ReactionList {
         let Some(timeline_event_id) = &self.timeline_event_id else {
             return;
         };
-        // Apply mouse-in tooltip effect on the reaction buttons
+        // Apply mouse-in tooltip effect on the reaction buttons.
         // Currently handling mouse-in effect using "event.hits(cx, widget_ref.area())" does not work.
         if let Event::MouseMove(e) = event {
             let uid = self.widget_uid();
             if self.tooltip_state.is_none() {
                 for (id, widget_ref) in self.children.iter() {
-                    // Widget.handle_event here does not cause the button to be highlighted when mouse over
+                    // Widget.handle_event here does not cause the button to be highlighted when mouse over.
                     // To make the button highlighted when mouse over, the iteration over the children needs to be done 
                     // outside Event::MouseMove.
                     let widget_rect = widget_ref.area().rect(cx);
@@ -175,8 +167,9 @@ impl Widget for ReactionList {
                                 x: widget_rect.pos.x + widget_rect.size.x,
                                 y: widget_rect.pos.y - widget_rect.size.y / 2.0
                             };
-                            // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state
-                            // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction button
+                            // Stores the event_reaction_list index together with the tooltip area and tooltip text into tooltip state.
+                            // The index will be used later to reset the tooltip state if the mouse leaves this particular reaction
+                            // button.
                             self.tooltip_state = Some((id.0, RoomScreenTooltipActions::HoverIn {
                                 tooltip_pos, 
                                 tooltip_text: reaction_data.tooltip_text.clone(), 
@@ -188,12 +181,13 @@ impl Widget for ReactionList {
                 }
             } else {
                 let mut reset_tooltip_state = false;
-                if let Some((ref index, hover_in_data)) = &self.tooltip_state {
+                if let Some((ref index, tooltip_actions)) = &self.tooltip_state {
                     self.children
                     .iter()
                     .for_each(|(id, widget_ref)| {
-                        // Search for the children with the same index as the tooltip state and check if the mouse leaves this particular reaction button
-                        // If so, post a HoverOut action to make the tooltip disable
+                        // Search for the children with the same index as the tooltip state
+                        // and check if the mouse leaves this particular reaction button.
+                        // If so, post a HoverOut action to make the tooltip disappear.
                         if id.0 != *index {
                             return;
                         }
@@ -204,9 +198,9 @@ impl Widget for ReactionList {
                             }
                         }
                     });
-                    // If the mouse does not leave this particular reaction button, post a HoverIn action
+                    // If the mouse does not leave this particular reaction button, propagate tooltip actions.
                     if !reset_tooltip_state {
-                        cx.widget_action(uid, &scope.path, hover_in_data.clone());
+                        cx.widget_action(uid, &scope.path, tooltip_actions.clone());
                     }
                 }
                 if reset_tooltip_state {
@@ -219,7 +213,7 @@ impl Widget for ReactionList {
             .iter()
             .for_each(|(_id, widget_ref)| {
                 if widget_ref.clicked(actions) {
-                    let text = widget_ref.text().clone();
+                    let text = widget_ref.text();
                     let reaction_string = text.rsplit_once(' ')
                     .map(|(prefix, _)| prefix)
                     .unwrap_or(&text);
