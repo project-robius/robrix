@@ -34,7 +34,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::jump_to_bottom_button::UnreadMessageCount, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -168,6 +168,7 @@ async fn login(
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                     status: format!("Logged in as {}. Loading rooms...", cli.username),
                 });
+                enqueue_popup_notification(format!("Logged in as {}. Loading rooms...", &cli.username));
                 if let Err(e) = persistent_state::save_session(&client, client_session).await {
                     error!("Failed to save session state to storage: {e:?}");
                 }
@@ -176,6 +177,7 @@ async fn login(
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                     status: format!("Failed to login as {}: {:?}", cli.username, login_result),
                 });
+                enqueue_popup_notification(format!("Failed to login as {}: {:?}", &cli.username, login_result));
                 bail!("Failed to login as {}: {login_result:?}", cli.username);
             }
         }
@@ -943,6 +945,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
+                            enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join main async loop task: {e:?}");
@@ -960,6 +963,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
+                            enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1169,6 +1173,7 @@ async fn async_main_loop(
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: format!("Login failed: {e:?}"),
                         });
+                        enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
                         None
                     }
                 }
@@ -1211,7 +1216,8 @@ async fn async_main_loop(
                                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                                     status: format!("Login failed: {e:?}"),
                                 });
-                            }
+                                enqueue_popup_notification(format!("Rooms list update error: {e:?}"));
+                    }
                         }
                     },
                     None => {
@@ -1228,6 +1234,9 @@ async fn async_main_loop(
     enqueue_rooms_list_update(RoomsListUpdate::Status {
         status: format!("Logged in as {}. Loading rooms...", client.user_id().unwrap()),
     });
+    if let Some(user_id) = client.user_id() {
+        enqueue_popup_notification(format!("Logged in as {}. Loading rooms...", user_id));
+    }
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 

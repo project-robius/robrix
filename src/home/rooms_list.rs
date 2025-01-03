@@ -4,7 +4,7 @@ use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
-use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::AppState, shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -427,6 +427,7 @@ impl RoomsList {
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
+        enqueue_popup_notification(self.status.clone());
     }
 
     /// Updates the status message to show how many rooms are currently displayed
@@ -438,6 +439,7 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
+
 }
 
 impl Widget for RoomsList {
@@ -528,6 +530,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::NotLoaded => {
                         self.status = "Loading rooms (waiting for homeserver)...".to_string();
+                        enqueue_popup_notification(self.status.clone());
                     }
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;

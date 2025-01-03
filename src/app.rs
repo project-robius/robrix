@@ -18,7 +18,8 @@ live_design! {
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
-
+    use crate::shared::popup_list::PopupList;
+    
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
     ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
@@ -127,6 +128,12 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+                    popup = <PopupNotification> {
+                        margin: {top:40,right: 15},
+                        content: {
+                            <PopupList> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -186,7 +193,15 @@ impl MatchEvent for App {
                 self.update_login_visibility();
                 self.ui.redraw(cx);
             }
-
+            match action.downcast_ref() {
+                Some(PopupNotificationAction::Open) => {
+                    self.ui.popup_notification(id!(popup)).open(cx);
+                }
+                Some(PopupNotificationAction::Close) => {
+                    self.ui.popup_notification(id!(popup)).close(cx);
+                }
+                _ => {}
+            }
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
@@ -309,3 +324,11 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
+#[derive(Clone, DefaultNone, Debug)]
+pub enum PopupNotificationAction {
+    None,
+    /// Open popup notification layer
+    Open,
+    /// Close popup notification layer
+    Close,
+}
