@@ -30,13 +30,7 @@ live_design! {
             width: Fit,
             height: Fit,
             padding: 6,
-            margin: {
-                top:3,
-                bottom:3,
-                left:3,
-                right:3
-
-            },
+            margin: { top: 3, bottom: 3, left: 3, right: 3 },
             draw_bg: {
                 instance color: (COLOR_BUTTON_GREY)
                 instance color_hover: (#fef65b)
