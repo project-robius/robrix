@@ -22,7 +22,7 @@ live_design! {
         width: Fill,
         height: Fit,
         flow: RightWrap,
-        margin: {top: (5.0)}
+        margin: {top: 5.0}
         padding:{
             right: (REACTION_LIST_PADDING_RIGHT)
         }
