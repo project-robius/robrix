@@ -239,7 +239,7 @@ impl ReactionListRef {
         timeline_event_item_id: TimelineEventItemId,
     ) {
         let Some(client_user_id) = get_client().and_then(|c| c.user_id().map(|user_id| user_id.to_owned()) ) else { return };
-        if let Some(mut instance) = self.borrow_mut() {
+        let Some(mut instance) = self.borrow_mut() else { return };
             instance.event_reaction_list = Vec::with_capacity(event_tl_item_reactions.len());
             for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
                 // Just take the first char of the emoji, which ignores any variant selectors.
