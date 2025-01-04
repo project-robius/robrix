@@ -319,12 +319,14 @@ pub fn ends_with_href(text: &str) -> bool {
 /// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
 /// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 other"));
 /// ```
-pub fn human_readable_list<S>(names: &[S]) -> String where S: AsRef<str> {
+pub fn human_readable_list<S>(names: &[S]) -> String
+where
+    S: AsRef<str>
+{
     const MAX_NAMES: usize = 5;
     let mut result = String::new();
     match names.len() {
-        0 => {
-        },
+        0 => { }
         1 => {
             result.push_str(names[0].as_ref());
         },
