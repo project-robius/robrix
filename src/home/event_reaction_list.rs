@@ -117,19 +117,14 @@ impl Widget for ReactionList {
             target.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_num_react));
             // Renders Green button for reaction that includes the client user.
             // Renders Grey button for reaction that does not include client user.
-            let node_to_apply = if reaction_data.includes_user {
-                live! {
-                    draw_bg: { color: (EMOJI_BG_COLOR_INCLUDE_SELF) }
-                }
+            let bg_color = if reaction_data.includes_user {
+                EMOJI_BG_COLOR_INCLUDE_SELF
             } else {
-                live! {
-                    draw_bg: { color: (EMOJI_BG_COLOR_NOT_INCLUDE_SELF) }
-                }
+                EMOJI_BG_COLOR_NOT_INCLUDE_SELF
             };
-            target.apply_over(
-                cx,
-                node_to_apply
-            );
+            target.apply_over(cx, live! {
+                draw_bg: { color: (bg_color) }
+            });
             let _ = target.draw(cx, scope);                
         }
         
