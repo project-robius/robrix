@@ -19,8 +19,9 @@ live_design! {
     COLOR_BUTTON_GREY = #B6BABF
     REACTION_LIST_PADDING_RIGHT = 30.0;
     pub ReactionList = {{ReactionList}} {
-        width: Fill, 
-        height: Fit, 
+        width: Fill,
+        height: Fit,
+        flow: RightWrap,
         margin: {top: (5.0)}
         padding:{
             right: (REACTION_LIST_PADDING_RIGHT)
@@ -28,7 +29,6 @@ live_design! {
         item: <Button> {
             width: Fit,
             height: Fit,
-            spacing: 20,
             padding: 6,
             margin: {
                 top:3,
@@ -113,7 +113,6 @@ pub struct ReactionList {
 }
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.layout.flow = Flow::RightWrap;
         cx.begin_turtle(walk, self.layout);
         for (index, reaction_data) in
             self.event_reaction_list.iter().enumerate()
