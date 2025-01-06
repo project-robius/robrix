@@ -9,7 +9,6 @@ live_design! {
     use crate::home::rooms_sidebar::RoomsSideBar;
     use crate::home::spaces_dock::SpacesDock;
     use crate::shared::styles::*;
-    use crate::shared::adaptive_view::AdaptiveView;
     use crate::shared::search_bar::SearchBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
 

@@ -1,6 +1,5 @@
 use makepad_widgets::*;
 
-use crate::shared::adaptive_view::DisplayContext;
 use crate::shared::color_tooltip::*;
 use crate::shared::verification_badge::{VerificationBadge, VerificationText};
 use crate::verification::VerificationStateAction;
@@ -15,7 +14,6 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::adaptive_view::AdaptiveView;
     use crate::shared::verification_badge::*;
     use crate::shared::color_tooltip::*;
 
@@ -204,7 +202,7 @@ impl Widget for Profile {
                         VerificationState::Unknown => vec4(0.2, 0.2, 0.2, 1.0),   // Grey
                     };
 
-                    let tooltip_pos = if cx.get_global::<DisplayContext>().is_desktop() {
+                    let tooltip_pos = if cx.display_context.is_desktop() {
                         DVec2 {
                             x: icons_rect.pos.x + icons_rect.size.x + 1.,
                             y: icons_rect.pos.y - 10.,
