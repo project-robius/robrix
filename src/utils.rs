@@ -310,7 +310,7 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-/// Converts a list of names into a human-readable string
+/// Converts a list of names into a human-readable string with a 5-name limit.
 ///
 /// # Examples
 /// ```

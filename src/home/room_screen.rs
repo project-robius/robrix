@@ -1973,6 +1973,9 @@ impl RoomScreen {
             Did you forget to save the timeline state back to the global map of states?",
         );
 
+        // Send request as `MatrixRequest` to check post permission.
+        submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() });
+
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = TIMELINE_STATES.lock().unwrap().remove(&room_id) {
             (existing, false)
         } else {
