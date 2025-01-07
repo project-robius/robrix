@@ -48,7 +48,7 @@ live_design! {
             draw_text: {
                 text_style: { font_size: 10 },
                 fn get_color(self) -> vec4 {
-                    return (COLOR_TEXT_INPUT_IDLE);
+                    return self.color;
                 }
             }
 
@@ -166,6 +166,17 @@ impl WidgetMatchEvent for SearchBar {
         let input = self.text_input(id!(input));
         let clear_button = self.button(id!(clear_button));
 
+        if input.text().is_empty() {
+            input.apply_over(
+                cx,
+                live!(
+                    draw_text: {
+                        color: (vec3(0.216, 0.216, 0.216)) // COLOR_TEXT_INPUT_IDLE -> #D8D8D8
+                    }
+                )
+            );
+        }
+
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(!keywords.is_empty());
@@ -182,12 +193,20 @@ impl WidgetMatchEvent for SearchBar {
                     &scope.path,
                     SearchBarAction::Search(keywords)
                 );
+                input.apply_over(
+                    cx,
+                    live!(
+                        draw_text: {
+                            color: (vec3(0., 0., 0.))
+                        }
+                    )
+                );
             }
         }
 
         // Handle user clicked the clear button
         if clear_button.clicked(actions) {
-            input.set_text_and_redraw(cx, "");
+            input.set_text("");
             clear_button.set_visible(false);
             input.set_key_focus(cx);
 
