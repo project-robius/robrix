@@ -1066,13 +1066,14 @@ impl Widget for RoomScreen {
 
         if let Event::Actions(actions) = event {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
-            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
-                let seq = wr.reaction_list(id!(reaction_list));
-                if let RoomScreenTooltipActions::HoverIn { tooltip_pos, 
+            for (_, wr) in portal_list.items_with_actions(actions) {
+                let reaction_list = wr.reaction_list(id!(reaction_list));
+                if let RoomScreenTooltipActions::HoverIn { 
+                    tooltip_pos, 
                     tooltip_text, 
                     tooltip_width, 
                     callout_y_offset 
-                } = seq.hover_in(actions) {
+                } = reaction_list.hover_in(actions) {
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
@@ -1087,10 +1088,10 @@ impl Widget for RoomScreen {
                         }
                     ));
                 }
-                if seq.hover_out(actions) {
+                if reaction_list.hover_out(actions) {
                     tooltip.hide(cx);
                 }
-            });
+            }
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
