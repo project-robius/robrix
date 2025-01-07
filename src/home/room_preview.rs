@@ -2,7 +2,6 @@ use makepad_widgets::*;
 
 use crate::{
     shared::{
-        adaptive_view::{AdaptiveViewWidgetExt, DisplayContext},
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt,
     },
@@ -19,7 +18,6 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
-    use crate::shared::adaptive_view::AdaptiveView;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
 
     RoomName = <Label> {
@@ -123,9 +121,13 @@ live_design! {
     }
 
     pub RoomPreview = {{RoomPreview}} {
+        flow: Down, height: Fit
+
         // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {
+            height: Fit
+
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
                 avatar = <Avatar> {
@@ -183,11 +185,11 @@ pub enum RoomPreviewAction {
 }
 
 impl LiveHook for RoomPreview {
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         // Adapt the preview based on the available space.
         self.view
             .adaptive_view(id!(adaptive_preview))
-            .set_variant_selector(cx, |_cx, parent_size| match parent_size.x {
+            .set_variant_selector(|_cx, parent_size| match parent_size.x {
                 width if width <= 70.0  => live_id!(OnlyIcon),
                 width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
@@ -277,7 +279,7 @@ impl Widget for RoomPreviewContent {
                 unread_badge.set_visible(false);
             }
 
-            if cx.get_global::<DisplayContext>().is_desktop() {
+            if cx.display_context.is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
             } else if room_info.is_selected {
                 // Mobile doesn't have a selected state. Always use the default colors.

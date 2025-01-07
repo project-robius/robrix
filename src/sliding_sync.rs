@@ -6,13 +6,13 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{Receipts, RoomMember}, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent, MessageLikeEventType, TimelineEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Error, Room
+    }, sliding_sync::VersionBuilder, Client, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -34,9 +34,8 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::jump_to_bottom_button::UnreadMessageCount, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
-
 
 #[derive(Parser, Debug, Default)]
 struct Cli {
@@ -287,6 +286,10 @@ pub enum MatrixRequest {
         /// * If `false` (recommended), details will be fetched from the server.
         local_only: bool,
     },
+    /// Request to fetch the number of unread messages in the given room.
+    GetNumberUnreadMessages {
+        room_id: OwnedRoomId,
+    },
     /// Request to ignore/block or unignore/unblock a user.
     IgnoreUser {
         /// Whether to ignore (`true`) or unignore (`false`) the user.
@@ -348,20 +351,28 @@ pub enum MatrixRequest {
         /// Whether to subscribe or unsubscribe from typing notices for this room.
         subscribe: bool,
     },
+    /// Subscribe to changes in the read receipts of our own user.
+    ///
+    /// This request does not return a response or notify the UI thread.
+    SubscribeToOwnUserReadReceiptsChanged {
+        room_id: OwnedRoomId,
+        /// Whether to subscribe or unsubscribe to changes in the read receipts of our own user for this room
+        subscribe: bool,
+    },
     /// Sends a read receipt for the given event in the given room.
-    ReadReceipt{
+    ReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
     /// Sends a fully-read receipt for the given event in the given room.
-    FullyReadReceipt{
+    FullyReadReceipt {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
     /// Sends a request checking if the currently logged-in user can send a message to the given room.
     ///
     /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
-    CheckCanUserSendMessage{
+    CheckCanUserSendMessage {
         room_id: OwnedRoomId,
     }
 }
@@ -399,7 +410,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-
+    let subscribe_to_current_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, bool>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -576,7 +587,25 @@ async fn async_worker(
                     }
                 });
             }
+            MatrixRequest::GetNumberUnreadMessages { room_id } => {
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
+                        continue;
+                    };
 
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+                let _get_unreads_task = Handle::current().spawn(async move {
+                    match sender.send(TimelineUpdate::NewUnreadMessagesCount(
+                        UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                    )) {
+                        Ok(_) => SignalToUI::set_ui_signal(),
+                        Err(e) => log!("Failed to send timeline update: {e:?} for GetNumberUnreadMessages request for room {room_id}"),
+                    }
+                });
+            }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _ignore_task = Handle::current().spawn(async move {
@@ -692,6 +721,54 @@ async fn async_worker(
                     // log!("Note: typing notifications recv loop has ended for room {}", room_id);
                 });
             }
+            MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
+
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {    
+                        log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let subscribe_to_current_user_read_receipt_changed = subscribe_to_current_user_read_receipt_changed.clone();
+
+                let _to_updates_task = Handle::current().spawn(async move {
+                    let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
+                    let read_receipt_change_mutex = subscribe_to_current_user_read_receipt_changed.clone();
+                    let mut read_receipt_change_mutex_guard = read_receipt_change_mutex.lock().await;
+                    if let Some(subscription) = read_receipt_change_mutex_guard.get(&room_id) {
+                        if *subscription && subscribe {
+                            return
+                        }
+                    } else if subscribe {
+                        read_receipt_change_mutex_guard.insert(room_id.clone(), true);
+                    }
+                    pin_mut!(update_receiver);
+                    if let Some(client_user_id) = current_user_id() {
+                        if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                            log!("Received own user read receipt: {receipt:?} {event_id:?}");
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
+                                error!("Failed to get own user read receipt: {e:?}"); 
+                            }
+                        }
+                        while (update_receiver.next().await).is_some() {
+                            let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
+                            let read_receipt_change = read_receipt_change.lock().await;
+                            let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
+                            if !subscribed_to_user_read_receipt {
+                                break;
+                            }
+                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
+                                    error!("Failed to get own user read receipt: {e:?}"); 
+                                }
+                            }
+                        }
+                    }
+                });
+            }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
             }
@@ -758,7 +835,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::ReadReceipt { room_id, event_id }=>{
+            MatrixRequest::ReadReceipt { room_id, event_id } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -775,7 +852,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::FullyReadReceipt { room_id, event_id }=>{
+            MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -785,10 +862,11 @@ async fn async_worker(
                     room_info.timeline.clone()
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
-                    let receipt = Receipts::new().fully_read_marker(event_id.clone());
-                    match timeline.send_multiple_receipts(receipt).await {
-                        Ok(()) => log!("Sent fully read receipt to room {room_id}, event {event_id}"),
-                        Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
+                    match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
+                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}", 
+                            if sent { "Sent" } else { "Already sent" }
+                        ),
+                        Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
                 });
             },
@@ -1015,7 +1093,6 @@ pub fn take_timeline_endpoints(
             })
         )
 }
-
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
@@ -1437,6 +1514,8 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
+        canonical_alias: room.canonical_alias(),
+        alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
     }));
@@ -2011,7 +2090,21 @@ fn spawn_fetch_room_avatar(room: Room) {
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
     match room.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
-        _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+        _ => {
+            if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+                if room_members.len() == 2 {
+                    if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
+                        return match non_account_member.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+                            Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+                            _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+                        };
+                    }
+                } else {
+                    return avatar_from_room_name(room_name.as_deref().unwrap_or_default());
+                }
+            }
+            avatar_from_room_name(room_name.as_deref().unwrap_or_default())
+        }
     }
 }
 
