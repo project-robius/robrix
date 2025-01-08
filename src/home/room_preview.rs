@@ -134,10 +134,9 @@ live_design! {
             height: Fit
 
             OnlyIcon = <RoomPreviewContent> {
+                align: {x: 0.5, y: 0.5}
+                padding: 5.
                 avatar = <Avatar> {}
-                <View> {
-                    unread_badge = <UnreadBadge> {}
-                }
             }
             IconAndName = <RoomPreviewContent> {
                 padding: 5.
