@@ -16,93 +16,7 @@ live_design! {
 
     IMG_APP_LOGO = dep("crate://self/resources/robrix_logo_alpha.png")
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
-    
-    LoginTextInput = <TextInput> {
-        width: Fill, height: Fit, margin: 0
-        align: {y: 0.5}
-        draw_bg: {
-            color: (COLOR_PRIMARY)
-            instance radius: 2.0
-            instance border_width: 0.8
-            instance border_color: #D0D5DD
-            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
 
-            fn get_color(self) -> vec4 {
-                return self.color
-            }
-
-            fn get_border_color(self) -> vec4 {
-                return self.border_color
-            }
-
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                sdf.box(
-                    self.inset.x + self.border_width,
-                    self.inset.y + self.border_width,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                    max(1.0, self.radius)
-                )
-                sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
-                }
-                return sdf.result;
-            }
-        }
-
-        draw_text: {
-            color: (MESSAGE_TEXT_COLOR),
-            text_style: <MESSAGE_TEXT_STYLE>{},
-
-            fn get_color(self) -> vec4 {
-                return mix(
-                    self.color,
-                    #B,
-                    self.is_empty
-                )
-            }
-        }
-
-
-        // TODO find a way to override colors
-        draw_cursor: {
-            instance focus: 0.0
-            uniform border_radius: 0.5
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    0.,
-                    0.,
-                    self.rect_size.x,
-                    self.rect_size.y,
-                    self.border_radius
-                )
-                sdf.fill(mix(#fff, #bbb, self.focus));
-                return sdf.result
-            }
-        }
-
-        // TODO find a way to override colors
-        draw_selection: {
-            instance hover: 0.0
-            instance focus: 0.0
-            uniform border_radius: 2.0
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                sdf.box(
-                    0.,
-                    0.,
-                    self.rect_size.x,
-                    self.rect_size.y,
-                    self.border_radius
-                )
-                sdf.fill(mix(#eee, #ddd, self.focus)); // Pad color
-                return sdf.result
-            }
-        }
-    }
     SsoButton = <RoundedView> {
         width: Fit,
         height: Fit,
@@ -136,13 +50,15 @@ live_design! {
         draw_bg: {
             color: (COLOR_PRIMARY)
         }
-        align: {x: 0.5, y: 0.5}
+        // Note: *do NOT* vertically center this, it will break scrolling.
+        align: {x: 0.5}
 
         <RoundedView> {
             width: Fit, height: Fit
             flow: Down
             align: {x: 0.5, y: 0.5}
             padding: 30
+            margin: 40
             spacing: 15.0
 
             show_bg: true,
@@ -166,12 +82,12 @@ live_design! {
                 text: "Login to Robrix"
             }
 
-            user_id_input = <LoginTextInput> {
+            user_id_input = <RobrixTextInput> {
                 width: 250, height: 40
                 empty_message: "User ID"
             }
 
-            password_input = <LoginTextInput> {
+            password_input = <RobrixTextInput> {
                 width: 250, height: 40
                 empty_message: "Password"
                 draw_text: { text_style: { is_secret: true } }
@@ -185,7 +101,7 @@ live_design! {
                     width: 215, height: Fit,
                     flow: Down,
 
-                    homeserver_input = <LoginTextInput> {
+                    homeserver_input = <RobrixTextInput> {
                         width: 215, height: 30,
                         empty_message: "matrix.org"
                         draw_text: {
