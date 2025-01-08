@@ -4,7 +4,7 @@ use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
-use crate::{app::AppState, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -90,6 +90,11 @@ pub enum RoomsListUpdate {
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
+    /// Update the number of unread messages for the given room.
+    UpdateNumUnreadMessages {
+        room_id: OwnedRoomId,
+        count: UnreadMessageCount
+    },
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
@@ -99,10 +104,6 @@ pub enum RoomsListUpdate {
     UpdateRoomAvatar {
         room_id: OwnedRoomId,
         avatar: RoomPreviewAvatar,
-    },
-    UpdateNumUnreadMessages {
-        room_id: OwnedRoomId,
-        new_num_unread_messages: u64,
     },
     /// Remove the given room from the list of all rooms.
     RemoveRoom(OwnedRoomId),
@@ -481,6 +482,20 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
+                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, count } => {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            match count {
+                                UnreadMessageCount::Unknown => {
+                                    room.num_unread_messages = 0;
+                                }
+                                UnreadMessageCount::Known(count) => {
+                                    room.num_unread_messages = count;
+                                }
+                            }
+                        } else {
+                            error!("Error: couldn't find room {room_id} to update unread messages count");
+                        }
+                    }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             let was_displayed = (self.display_filter)(room);
@@ -538,13 +553,6 @@ impl Widget for RoomsList {
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
-                    },
-                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, new_num_unread_messages } => {
-                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            room.num_unread_messages = new_num_unread_messages;
-                        } else {
-                            error!("Error: couldn't find room {room_id} to update unread count");
-                        }
                     },
                     RoomsListUpdate::Tags { room_id, new_tags } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {

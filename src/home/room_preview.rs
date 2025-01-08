@@ -100,14 +100,19 @@ live_design! {
         }
     }
 
-    UnreadBadge = <RoundedView> {
-        width: 18.0, height: 18.0
+    UnreadBadge = <View> {
+        width: 16.0, height: 16.0
         show_bg: true
         align: { x: 0.5, y: 0.5 }
-        padding: 2.0
         draw_bg: {
-            color: #D0CFD1,
-            radius: 5.0
+            instance background_color: #FF0000
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let c = self.rect_size * 0.5;
+                sdf.circle(c.x, c.x, c.x)
+                sdf.fill_keep(self.background_color);
+                return sdf.result
+            }
         }
         unread_message_count = <Label> {
             text: "?"
@@ -129,12 +134,9 @@ live_design! {
             height: Fit
 
             OnlyIcon = <RoomPreviewContent> {
-                align: {x: 0.5, y: 0.5}
-                avatar = <Avatar> {
-                    align: { x: 1.0, y: 0.0 }
-                    unread_badge = <UnreadBadge> {
-                        flow: Overlay
-                    }
+                avatar = <Avatar> {}
+                <View> {
+                    unread_badge = <UnreadBadge> {}
                 }
             }
             IconAndName = <RoomPreviewContent> {
@@ -271,10 +273,15 @@ impl Widget for RoomPreviewContent {
             let unread_badge = self.view(id!(unread_badge));
 
             if room_info.num_unread_messages > 0 {
+                if room_info.num_unread_messages > 99 {
+                    // We don't need to show unread messages over 99, so we show 99+ instead.
+                    unread_badge.label(id!(unread_message_count)).set_text("99+");
+                } else {
+                    unread_badge
+                        .label(id!(unread_message_count))
+                        .set_text(&room_info.num_unread_messages.to_string());
+                }
                 unread_badge.set_visible(true);
-                unread_badge
-                    .label(id!(unread_message_count))
-                    .set_text(&room_info.num_unread_messages.to_string());
             } else {
                 unread_badge.set_visible(false);
             }
