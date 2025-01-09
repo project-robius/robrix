@@ -3893,7 +3893,7 @@ pub enum MessageAction {
 	event_id: Option<OwnedEventId>,
 	original_json: Option<serde_json::Value>,
     },
-    /// The message event source modal should be clossed
+    /// The message event source modal should be closed
     MessageSourceModalClose,
     None,
 }

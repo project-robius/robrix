@@ -121,7 +121,7 @@ impl MessageMenuButton {
     }
 }
 
-/// Message menu trait. Allows to centralize the functionality accross various menus implementations.
+/// Message menu trait. Allows to centralize the functionality across various menus implementations.
 trait MessageMenu {
     fn item_id(&self) -> Option<usize>;
     fn room_screen_widget_uid(&self) -> Option<WidgetUid>;
