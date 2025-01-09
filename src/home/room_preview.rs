@@ -2,26 +2,23 @@ use makepad_widgets::*;
 
 use crate::{
     shared::{
-        adaptive_view::{AdaptiveViewWidgetExt, DisplayContext},
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt,
     },
     utils::{self, relative_format},
 };
 
-use super::rooms_list::{RoomPreviewAvatar, RoomPreviewEntry};
+use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -103,10 +100,14 @@ live_design! {
         }
     }
 
-    RoomPreview = {{RoomPreview}} {
-        // Wraps the RoomPreviewContent in an AdaptiveView
-        // to change the displayed content (and its layout) based on the available space in the sidebar.
+    pub RoomPreview = {{RoomPreview}} {
+        flow: Down, height: Fit
+
+        // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
+        // (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {
+            height: Fit
+
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
                 padding: 5.
@@ -122,7 +123,8 @@ live_design! {
                 avatar = <Avatar> {}
                 <View> {
                     flow: Down
-                    width: Fill, height: Fit
+                    width: Fill, height: 60
+                    spacing: 5
                     header = <View> {
                         width: Fill, height: Fit
                         flow: Right
@@ -152,11 +154,11 @@ pub enum RoomPreviewAction {
 }
 
 impl LiveHook for RoomPreview {
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         // Adapt the preview based on the available space.
         self.view
             .adaptive_view(id!(adaptive_preview))
-            .set_variant_selector(cx, |_cx, parent_size| match parent_size.x {
+            .set_variant_selector(|_cx, parent_size| match parent_size.x {
                 width if width <= 70.0  => live_id!(OnlyIcon),
                 width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
@@ -166,7 +168,7 @@ impl LiveHook for RoomPreview {
 
 impl Widget for RoomPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid().clone();
+        let uid = self.widget_uid();
 
         match event.hits(cx, self.view.area()) {
             Hit::FingerDown(_fe) => {
@@ -209,7 +211,7 @@ impl Widget for RoomPreviewContent {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let Some(room_info) = scope.props.get::<RoomPreviewEntry>() {
+        if let Some(room_info) = scope.props.get::<RoomsListEntry>() {
             if let Some(ref name) = room_info.room_name {
                 self.view.label(id!(room_name)).set_text(name);
             }
@@ -235,7 +237,7 @@ impl Widget for RoomPreviewContent {
                 }
             }
 
-            if cx.get_global::<DisplayContext>().is_desktop() {
+            if cx.display_context.is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
             } else if room_info.is_selected {
                 // Mobile doesn't have a selected state. Always use the default colors.

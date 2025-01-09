@@ -3,14 +3,12 @@ use makepad_widgets::*;
 use super::room_screen::MessageAction;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import makepad_draw::shader::std::*;
-    import makepad_draw::shader::draw_color::DrawColor;
-
-    import crate::shared::styles::*;
-    import crate::shared::icon_button::*;
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::*;
 
     ICO_REPLY = dep("crate://self/resources/icons/reply.svg")
 
@@ -44,7 +42,7 @@ live_design! {
 	text: "View Source"
     }
 
-    MessageActionBar = {{MessageActionBar}} {
+    pub MessageActionBar = {{MessageActionBar}} {
         width: Fit
         height: Fit
         flow: Overlay
@@ -69,7 +67,7 @@ live_design! {
         }
     }
 
-    MessageContextMenu = {{MessageContextMenu}} {
+    pub MessageContextMenu = {{MessageContextMenu}} {
         width: Fit
         height: Fit
         flow: Overlay

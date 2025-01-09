@@ -5,17 +5,17 @@ use crate::app::{AppState, SelectedRoom};
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::home::light_themed_dock::*;
-    import crate::home::welcome_screen::WelcomeScreen;
-    import crate::home::rooms_sidebar::RoomsSideBar;
-    import crate::home::room_screen::RoomScreen;
+    use crate::shared::styles::*;
+    use crate::home::light_themed_dock::*;
+    use crate::home::welcome_screen::WelcomeScreen;
+    use crate::home::rooms_sidebar::RoomsSideBar;
+    use crate::home::room_screen::RoomScreen;
 
-    MainDesktopUI = {{MainDesktopUI}} {
+   pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
             width: Fill,
             height: Fill,
@@ -242,15 +242,12 @@ impl MatchEvent for MainDesktopUI {
                 }
                 // When dropping a tab, move it to the new position
                 DockAction::Drop(drop_event) => {
+                    // from inside the dock, otherwise it's an external file
                     if let DragItem::FilePath {
-                        path: _,
-                        internal_id,
-                    } = &drop_event.items[0]
-                    {
-                        // from inside the dock, otherwise it's an external file
-                        if let Some(internal_id) = internal_id {
-                            dock.drop_move(cx, drop_event.abs, *internal_id);
-                        }
+                        internal_id: Some(internal_id),
+                        ..
+                    } = &drop_event.items[0] {
+                        dock.drop_move(cx, drop_event.abs, *internal_id);
                     }
                 }
                 _ => (),

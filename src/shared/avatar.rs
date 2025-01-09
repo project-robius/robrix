@@ -17,11 +17,11 @@ use crate::{
 };
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -30,7 +30,7 @@ live_design! {
     // once it is available.
     //
     // The Avatar view (either text or image) is masked by a circle.
-    Avatar = {{Avatar}} {
+    pub Avatar = {{Avatar}} {
         width: 36.0,
         height: 36.0,
         // centered horizontally and vertically.
@@ -146,10 +146,10 @@ impl Avatar {
     ///    Only the first non-`@` letter (Unicode grapheme) is displayed.
     pub fn show_text<T: AsRef<str>>(
         &mut self,
-        info: Option<(OwnedUserId, Option<String>, OwnedRoomId)>,
+        info: Option<AvatarTextInfo>,
         username: T,
     ) {
-        self.info = info.map(|(user_id, username, room_id)|
+        self.info = info.map(|AvatarTextInfo { user_id, username, room_id }|
             UserProfileAndRoomId {
                 user_profile: UserProfile {
                     user_id,
@@ -176,7 +176,7 @@ impl Avatar {
     ///    If `image_set_function` returns an error, no change is made to the avatar.
     pub fn show_image<F, E>(
         &mut self,
-        info: Option<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)>,
+        info: Option<AvatarImageInfo>,
         image_set_function: F,
     ) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
@@ -187,7 +187,7 @@ impl Avatar {
             self.view(id!(img_view)).set_visible(true);
             self.view(id!(text_view)).set_visible(false);
 
-            self.info = info.map(|(user_id, username, room_id, img_data)|
+            self.info = info.map(|AvatarImageInfo { user_id, username, room_id, img_data }|
                 UserProfileAndRoomId {
                     user_profile: UserProfile {
                         user_id,
@@ -215,7 +215,7 @@ impl AvatarRef {
     /// See [`Avatar::show_text()`].
     pub fn show_text<T: AsRef<str>>(
         &self,
-        info: Option<(OwnedUserId, Option<String>, OwnedRoomId)>,
+        info: Option<AvatarTextInfo>,
         username: T,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
@@ -226,7 +226,7 @@ impl AvatarRef {
     /// See [`Avatar::show_image()`].
     pub fn show_image<F, E>(
         &self,
-        info: Option<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)>,
+        info: Option<AvatarImageInfo>,
         image_set_function: F,
     ) -> Result<(), E>
         where F: FnOnce(ImageRef) -> Result<(), E>
@@ -254,4 +254,29 @@ pub enum AvatarDisplayStatus {
     Text,
     /// The avatar is displaying an image.
     Image,
+}
+
+/// Information about a text-based Avatar. 
+pub struct AvatarTextInfo {
+    pub user_id: OwnedUserId,
+    pub username: Option<String>,
+    pub room_id: OwnedRoomId,
+}
+impl From<(OwnedUserId, Option<String>, OwnedRoomId)> for AvatarTextInfo {
+    fn from((user_id, username, room_id): (OwnedUserId, Option<String>, OwnedRoomId)) -> Self {
+        Self { user_id, username, room_id }
+    }
+}
+
+/// Information about an image-based avatar.
+pub struct AvatarImageInfo {
+    pub user_id: OwnedUserId,
+    pub username: Option<String>,
+    pub room_id: OwnedRoomId,
+    pub img_data: Arc<[u8]>,
+}
+impl From<(OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)> for AvatarImageInfo {
+    fn from((user_id, username, room_id, img_data): (OwnedUserId, Option<String>, OwnedRoomId, Arc<[u8]>)) -> Self {
+        Self { user_id, username, room_id, img_data }
+    }
 }
