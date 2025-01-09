@@ -105,7 +105,7 @@ live_design! {
         show_bg: true
         align: { x: 0.5, y: 0.5 }
         draw_bg: {
-            instance background_color: #FF0000
+            instance background_color: (COLOR_TEXT_IDLE)
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let c = self.rect_size * 0.5;
@@ -136,7 +136,13 @@ live_design! {
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
                 padding: 5.
-                avatar = <Avatar> {}
+                <View> {
+                    height: Fit
+                    flow: Overlay
+                    align: { x: 1.0 }
+                    avatar = <Avatar> {}
+                    unread_badge = <UnreadBadge> {}
+                }
             }
             IconAndName = <RoomPreviewContent> {
                 padding: 5.
@@ -163,8 +169,10 @@ live_design! {
                         timestamp = <Timestamp> {}
                         <View> {
                             width: Fill, height: Fill
-                            align: { x: 1.0, y: 0.5 }
-                            unread_badge = <UnreadBadge> {}
+                            align: { x: 1.0 }
+                            unread_badge = <UnreadBadge> {
+                                margin: { top: 5. } // Align the badge with the timestamp, same as the message preview's margin top.
+                            }
                         }
                     }
                 }
