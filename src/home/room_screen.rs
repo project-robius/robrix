@@ -52,6 +52,7 @@ live_design! {
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
+    use crate::home::room_info_sliding_pane::RoomMembersSlidingPane;
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
@@ -566,6 +567,30 @@ live_design! {
         }
     }
 
+    TabsSpace = <View> {
+        width: Fill, height: Fit,
+        flow: Right,
+        show_bg: true,
+        padding: { top: 5.0, bottom: 5.0, left: 5.0, right: 5.0 },
+        draw_bg: {
+            color: #EEF2F4,
+        }
+
+        room_tabs = <View> {
+            width: Fit, height: Fit,
+            spacing: 10.0,
+
+            room_info = <RobrixIconButton> {
+                padding: {left: 15, right: 15}
+                text: "Info",
+                draw_icon: {
+                    svg_file: (ICO_USER)
+                }
+                icon_walk: { width: 12, height: 12 }
+            }
+        }
+
+    }
 
     // The top space is used to display a loading message while the room is being paginated.
     TopSpace = <View> {
@@ -711,6 +736,8 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
+
+        room_tabs_space = <TabsSpace> {}
 
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
@@ -858,6 +885,14 @@ live_design! {
 
             // The top space should be displayed on top of the timeline
             top_space = <TopSpace> { }
+
+            <View> {
+                width: Fill,
+                height: Fill,
+                align: { x: 1.0 },
+                flow: Right,
+                room_members_sliding_pane = <RoomMembersSlidingPane> { }
+            }
 
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
