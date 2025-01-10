@@ -377,13 +377,17 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_inner.set_status(
                         &format!("Auto-logging in as user {user_id}...")
                     );
-                    login_status_modal_inner.button_ref().set_text("Cancel");
+                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    login_status_modal_button.set_text("Cancel");
+                    login_status_modal_button.set_enabled(false); // Login cancel not yet supported
                     login_status_modal.open(cx);
                 }
                 Some(LoginAction::Status { title, status }) => {
                     login_status_modal_inner.set_title(title);
                     login_status_modal_inner.set_status(status);
-                    login_status_modal_inner.button_ref().set_text("Cancel");
+                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    login_status_modal_button.set_text("Cancel");
+                    login_status_modal_button.set_enabled(false); // Login cancel not yet supported
                     login_status_modal.open(cx);
 
                     sso_search_button.set_enabled(true);
@@ -397,13 +401,17 @@ impl MatchEvent for LoginScreen {
                     homeserver_input.set_text("");
                     login_status_modal_inner.set_title("Login Succeeded");
                     login_status_modal_inner.set_status("You are now logged in.\n\nLoading your rooms now...");
-                    login_status_modal_inner.button_ref().set_text("Okay");
+                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    login_status_modal_button.set_text("Okay");
+                    login_status_modal_button.set_enabled(true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
                     login_status_modal_inner.set_title("Login Failed");
                     login_status_modal_inner.set_status(error);
-                    login_status_modal_inner.button_ref().set_text("Okay");
+                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    login_status_modal_button.set_text("Okay");
+                    login_status_modal_button.set_enabled(true);
                     login_status_modal.open(cx);
                     self.redraw(cx);
                 }
@@ -448,7 +456,9 @@ impl MatchEvent for LoginScreen {
         if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
             login_status_modal_inner.set_title("Querying login types");
             login_status_modal_inner.set_status("Fetching supported login types from the homeserver...");
-            login_status_modal_inner.button_ref().set_text("Cancel");
+            let login_status_modal_button = login_status_modal_inner.button_ref();
+            login_status_modal_button.set_text("Cancel");
+            login_status_modal_button.set_enabled(false); // Login cancel not yet supported
             login_status_modal.open(cx);
             
             self.prev_homeserver_url = Some(homeserver_input.text());

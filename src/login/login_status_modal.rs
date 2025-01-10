@@ -7,6 +7,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
 
+    // A modal dialog that displays the status of a login attempt.
     pub LoginStatusModal = {{LoginStatusModal}} {
         width: Fit,
         height: Fit
@@ -81,6 +82,7 @@ live_design! {
     }
 }
 
+/// A modal dialog that displays the status of a login attempt.
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginStatusModal {
     #[deref] view: View,
@@ -108,15 +110,13 @@ impl WidgetMatchEvent for LoginStatusModal {
         let widget_uid = self.widget_uid();
         let button = self.button(id!(button));
 
-        let mut needs_redraw = false;
-
         let modal_dismissed = actions
             .iter()
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
         if button.clicked(actions) || modal_dismissed {
-            // TODO: send a login request cancel action, if/when we support them
-
+            // Here, we could optionally attempt to cancel the in-flight login request.
+            // But our background async task doesn't yet support that, so we do nothing atm.
 
             // If the modal was dismissed by clicking outside of it, we MUST NOT emit
             // a `LoginStatusModalAction::Close` action, as that would cause
@@ -124,10 +124,6 @@ impl WidgetMatchEvent for LoginStatusModal {
             if !modal_dismissed {
                 cx.widget_action(widget_uid, &scope.path, LoginStatusModalAction::Close);
             }
-        }
-
-        if needs_redraw {
-            self.redraw(cx);
         }
     }
 }
