@@ -8,12 +8,14 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
 
     pub LoginStatusModal = {{LoginStatusModal}} {
-        width: Fit
+        width: Fit,
         height: Fit
         align: {x: 0.5}
 
         <RoundedView> {
-            width: 250,
+            // Halfway between the login screen background (320 px wide)
+            // and the login screen's buttons/content (250 px wide).
+            width: ((320+250)/2),
             height: Fit,
             flow: Down,
             align: {x: 0.5}
@@ -44,6 +46,7 @@ live_design! {
 
             status = <Label> {
                 width: Fill
+                margin: {top: 5, bottom: 5}
                 draw_text: {
                     text_style: <REGULAR_TEXT>{
                         font_size: 11.5,
@@ -59,7 +62,7 @@ live_design! {
                 height: Fit,
                 flow: Right
                 align: {x: 1.0}
-                margin: {top: 5, bottom: 10}
+                margin: {top: 10}
 
                 button = <RobrixIconButton> {
                     width: Fit, height: Fit

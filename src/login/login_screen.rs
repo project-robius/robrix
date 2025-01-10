@@ -27,7 +27,7 @@ live_design! {
         visible: true,
         padding: 10,
         // margin: 10,
-        margin: { left: 15.5, right: 15.5, top: 10, bottom: 10}
+        margin: { left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg: {
             border_width: 0.5,
             border_color: (#6c6c6c),
@@ -48,230 +48,239 @@ live_design! {
     }
 
 
-    pub LoginScreen = {{LoginScreen}}<ScrollXYView> {
-        width: Fill, height: Fill
+    pub LoginScreen = {{LoginScreen}} {
+        width: Fill, height: Fill,
+        align: {x: 0.5, y: 0.5}
         show_bg: true,
         draw_bg: {
-            color: (COLOR_PRIMARY)
+            color: #FFF
         }
-        // Note: *do NOT* vertically center this, it will break scrolling.
-        align: {x: 0.5}
 
-        <View> {
-            width: 250, height: Fit,
+        <ScrollXYView> {
+            width: Fit, height: Fill,
+            // Note: *do NOT* vertically center this, it will break scrolling.
             align: {x: 0.5}
-            flow: Overlay,
-
+            show_bg: true,
+            draw_bg: {
+                color: (COLOR_PRIMARY)
+            }
+        
             <RoundedView> {
-                width: Fit, height: Fit
-                flow: Down
-                align: {x: 0.5, y: 0.5}
-                padding: 30
                 margin: 40
-                spacing: 15.0
+                width: Fit, height: Fit
+                align: {x: 0.5, y: 0.5}
+                flow: Overlay,
 
                 show_bg: true,
                 draw_bg: {
                     color: (COLOR_SECONDARY)
-                }
-
-                logo_image = <Image> {
-                    fit: Smallest,
-                    width: 80
-                    source: (IMG_APP_LOGO),
-                }
-
-                title = <Label> {
-                    width: Fit, height: Fit
-                    margin: { bottom: 10 }
-                    draw_text: {
-                        color: (COLOR_TEXT)
-                        text_style: <TITLE_TEXT>{font_size: 16.0}
-                    }
-                    text: "Login to Robrix"
-                }
-
-                user_id_input = <RobrixTextInput> {
-                    width: 250, height: 40
-                    empty_message: "User ID"
-                }
-
-                password_input = <RobrixTextInput> {
-                    width: 250, height: 40
-                    empty_message: "Password"
-                    draw_text: { text_style: { is_secret: true } }
+                    radius: 6.0
                 }
 
                 <View> {
-                    width: 250, height: Fit,
-                    align: {x: 0.5}
-                    flow: Right,
+                    width: Fit, height: Fit
+                    flow: Down
+                    align: {x: 0.5, y: 0.5}
+                    padding: 30
+                    margin: 40
+                    spacing: 15.0
+
+                    logo_image = <Image> {
+                        fit: Smallest,
+                        width: 80
+                        source: (IMG_APP_LOGO),
+                    }
+
+                    title = <Label> {
+                        width: Fit, height: Fit
+                        margin: { bottom: 10 }
+                        draw_text: {
+                            color: (COLOR_TEXT)
+                            text_style: <TITLE_TEXT>{font_size: 16.0}
+                        }
+                        text: "Login to Robrix"
+                    }
+
+                    user_id_input = <RobrixTextInput> {
+                        width: 250, height: 40
+                        empty_message: "User ID"
+                    }
+
+                    password_input = <RobrixTextInput> {
+                        width: 250, height: 40
+                        empty_message: "Password"
+                        draw_text: { text_style: { is_secret: true } }
+                    }
+
                     <View> {
-                        width: 215, height: Fit,
-                        flow: Down,
-
-                        homeserver_input = <RobrixTextInput> {
-                            width: 215, height: 30,
-                            empty_message: "matrix.org"
-                            draw_text: {
-                                text_style: <TITLE_TEXT>{font_size: 10.0}
-                            }
-                        }
-
+                        width: 250, height: Fit,
+                        align: {x: 0.5}
+                        flow: Right,
                         <View> {
-                            width: 215,
-                            height: Fit,
-                            flow: Right,
-                            padding: {top: 3, left: 2, right: 2}
-                            spacing: 0.0,
-                            align: {x: 0.5, y: 0.5} // center horizontally and vertically
+                            width: 215, height: Fit,
+                            flow: Down,
 
-                            left_line = <LineH> {
-                                draw_bg: { color: #C8C8C8 }
-                            }
-
-                            <Label> {
-                                width: Fit, height: Fit
+                            homeserver_input = <RobrixTextInput> {
+                                width: 215, height: 30,
+                                empty_message: "matrix.org"
                                 draw_text: {
-                                    color: #8C8C8C
-                                    text_style: <REGULAR_TEXT>{font_size: 9}
+                                    text_style: <TITLE_TEXT>{font_size: 10.0}
                                 }
-                                text: "Homeserver URL (optional)"
                             }
 
-                            right_line = <LineH> {
-                                draw_bg: { color: #C8C8C8 }
+                            <View> {
+                                width: 215,
+                                height: Fit,
+                                flow: Right,
+                                padding: {top: 3, left: 2, right: 2}
+                                spacing: 0.0,
+                                align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+                                left_line = <LineH> {
+                                    draw_bg: { color: #C8C8C8 }
+                                }
+
+                                <Label> {
+                                    width: Fit, height: Fit
+                                    draw_text: {
+                                        color: #8C8C8C
+                                        text_style: <REGULAR_TEXT>{font_size: 9}
+                                    }
+                                    text: "Homeserver URL (optional)"
+                                }
+
+                                right_line = <LineH> {
+                                    draw_bg: { color: #C8C8C8 }
+                                }
                             }
-                        }
 
-                    }
-                    sso_search_button = <RobrixIconButton> {
-                        width: 28, height: 28,
-                        margin: { left: 5, top: 1}
-                        draw_icon: {
-                            svg_file: (ICON_SEARCH)
                         }
-                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        sso_search_button = <RobrixIconButton> {
+                            width: 28, height: 28,
+                            margin: { left: 5, top: 1}
+                            draw_icon: {
+                                svg_file: (ICON_SEARCH)
+                            }
+                            icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                        }
                     }
-                }
 
-                login_button = <RobrixIconButton> {
-                    width: 250, height: 40
-                    padding: 10
-                    margin: {top: 5, bottom: 10}
-                    draw_bg: {
-                        color: (COLOR_SELECTED_PRIMARY)
-                    }
-                    draw_text: {
-                        color: (COLOR_PRIMARY)
-                        text_style: <REGULAR_TEXT> {}
-                    }
-                    text: "Login"
-                }
-
-                left_line = <LineH> {
-                    margin: {bottom: -5}
-                    draw_bg: { color: #C8C8C8 }
-                }
-                <Label> {
-                    width: Fit, height: Fit
-                    draw_text: {
-                        color: (COLOR_TEXT)
-                        text_style: <TITLE_TEXT>{font_size: 11.0}
-                    }
-                    text: "Or, login with an SSO provider:"
-                }
-
-                sso_view = <View> {
-                    align: {x: 0.5}
-                    width: 250, height: Fit,
-                    margin: {left: 5, right: 5} // make the inner view 240 pixels wide
-                    flow: RightWrap,
-                    apple_button = <SsoButton> {
-                        image = <SsoImage> {
-                            source: dep("crate://self/resources/img/apple.png")
+                    login_button = <RobrixIconButton> {
+                        width: 250, height: 40
+                        padding: 10
+                        margin: {top: 5, bottom: 10}
+                        draw_bg: {
+                            color: (COLOR_SELECTED_PRIMARY)
                         }
-                    }
-                    facebook_button = <SsoButton> {
-                        image = <SsoImage> {
-                            source: dep("crate://self/resources/img/facebook.png")
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                            text_style: <REGULAR_TEXT> {}
                         }
+                        text: "Login"
                     }
-                    github_button = <SsoButton> {
-                        image = <SsoImage> {
-                            source: dep("crate://self/resources/img/github.png")
-                        }
-                    }
-                    github_button = <SsoButton> {
-                        image = <SsoImage> {
-                            source: dep("crate://self/resources/img/github.png")
-                        }
-                    }
-                    gitlab_button = <SsoButton> {
-                        image = <SsoImage> {
-                            source: dep("crate://self/resources/img/gitlab.png")
-                        }
-                    }
-                    google_button = <SsoButton> {
-                        image = <SsoImage> {
-                            source: dep("crate://self/resources/img/google.png")
-                        }
-                    }
-                }
-
-                <View> {
-                    width: 215,
-                    height: Fit,
-                    flow: Right,
-                    padding: 3,
-                    spacing: 0.0,
-                    align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
                     left_line = <LineH> {
+                        margin: {bottom: -5}
                         draw_bg: { color: #C8C8C8 }
                     }
-
                     <Label> {
                         width: Fit, height: Fit
                         draw_text: {
-                            color: #x6c6c6c
-                            text_style: <REGULAR_TEXT>{}
+                            color: (COLOR_TEXT)
+                            text_style: <TITLE_TEXT>{font_size: 11.0}
                         }
-                        text: "Don't have an account?"
+                        text: "Or, login with an SSO provider:"
                     }
 
-                    right_line = <LineH> {
-                        draw_bg: { color: #C8C8C8 }
+                    sso_view = <View> {
+                        align: {x: 0.5}
+                        width: 250, height: Fit,
+                        margin: {left: 5, right: 5} // make the inner view 240 pixels wide
+                        flow: RightWrap,
+                        apple_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/apple.png")
+                            }
+                        }
+                        facebook_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/facebook.png")
+                            }
+                        }
+                        github_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/github.png")
+                            }
+                        }
+                        github_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/github.png")
+                            }
+                        }
+                        gitlab_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/gitlab.png")
+                            }
+                        }
+                        google_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/google.png")
+                            }
+                        }
+                    }
+
+                    <View> {
+                        width: 250,
+                        height: Fit,
+                        flow: Right,
+                        // padding: 3,
+                        spacing: 0.0,
+                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+                        left_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
+                        }
+
+                        <Label> {
+                            width: Fit, height: Fit
+                            padding: {left: 1, right: 1}
+                            draw_text: {
+                                color: #x6c6c6c
+                                text_style: <REGULAR_TEXT>{}
+                            }
+                            text: "Don't have an account?"
+                        }
+
+                        right_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
+                        }
+                    }
+                    
+                    signup_button = <RobrixIconButton> {
+                        width: Fit, height: Fit
+                        padding: {left: 15, right: 15, top: 10, bottom: 10}
+                        margin: {bottom: 5}
+                        draw_bg: {
+                            color: (COLOR_SELECTED_PRIMARY)
+                        }
+                        draw_text: {
+                            color: (COLOR_PRIMARY)
+                            text_style: <REGULAR_TEXT> {}
+                        }
+
+                        text: "Sign up here"
                     }
                 }
-                
-                signup_button = <Button> {
-                    width: Fit, height: Fit
-                    margin: {top: -10}
-                    padding: {left: 15, right: 15, top: 10, bottom: 10}
-                    draw_text: {
-                        // color: (MESSAGE_TEXT_COLOR)
-                        fn get_color(self) -> vec4 {
-                            return MESSAGE_TEXT_COLOR
-                        }
-                        text_style: <REGULAR_TEXT>{}
+
+                // The modal that pops up to display login status messages,
+                // such as when the user is logging in or when there is an error.
+                login_status_modal = <Modal> {
+                    // width: Fit, height: Fit,
+                    // align: {x: 0.5, y: 0.5},
+
+                    content: {
+                        login_status_modal_inner = <LoginStatusModal> {}
                     }
-                    draw_bg: {
-                        bodybottom: #DDDDDD
-                    }
-
-                    text: "Sign up here"
-                }
-            }
-
-            // The modal that pops up to display login status messages,
-            // such as when the user is logging in or when there is an error.
-            login_status_modal = <Modal> {
-                height: Fit,
-                align: {x: 0.5, y: 0.5},
-
-                content: {
-                    login_status_modal_inner = <LoginStatusModal> {}
                 }
             }
         }
