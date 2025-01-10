@@ -2,7 +2,7 @@ use std::{borrow::Cow, ops::{Deref, DerefMut}, sync::Arc};
 use makepad_widgets::*;
 use matrix_sdk::{room::{RoomMember, RoomMemberRole}, ruma::{events::room::member::MembershipState, OwnedMxcUri, OwnedRoomId, OwnedUserId}};
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, shared::avatar::AvatarWidgetExt, sliding_sync::{current_user_id, get_client, is_user_ignored, submit_async_request, MatrixRequest}, utils
+    avatar_cache::{self, AvatarCacheEntry}, shared::avatar::AvatarWidgetExt, sliding_sync::{current_user_id, is_user_ignored, submit_async_request, MatrixRequest}, utils
 };
 
 use super::user_profile_cache::{self, get_user_profile_and_room_member};
@@ -545,7 +545,7 @@ impl Widget for UserProfileSlidingPane {
         //    * The button text changes to "Unignore" if the user is already ignored.
         let is_pane_showing_current_account = info.room_member.as_ref()
             .map(|rm| rm.is_account_user())
-            .unwrap_or_else(|| current_user_id() == Some(&info.user_id));
+            .unwrap_or_else(|| current_user_id().is_some_and(|uid| &uid == &info.user_id));
 
         // TODO: uncomment the line below once the `direct_message_button` logic is implemented.
         // self.button(id!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
