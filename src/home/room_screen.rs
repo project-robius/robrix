@@ -3057,50 +3057,52 @@ fn populate_image_message_content(
         }
     }
 
-    match image_info_source.and_then(|(image_info, _)|image_info).map(|image_info|image_info.thumbnail_source) {
-        Some(Some(MediaSource::Plain(mxc_uri))) => {
-            // now that we've obtained the image URI and its metadata, try to fetch the image.
-            match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
-                MediaCacheEntry::Loaded(data) => {
-                    let show_image_result = text_or_image_ref.show_image(|img| {
-                        utils::load_png_or_jpg(&img, cx, &data)
-                            .map(|()| img.size_in_pixels(cx).unwrap())
-                    });
-                    if let Err(e) = show_image_result {
-                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                        error!("{err_str}");
-                        text_or_image_ref.show_text(&err_str);
-                    }
+    match image_info_source.and_then(|(image_info, _)|image_info)
+        .map(|image_info|image_info.thumbnail_source) {
+            Some(Some(MediaSource::Plain(mxc_uri))) => {
+                // Now that we've obtained thumbnail of the image URI and its metadata.
+                // Let's try to fetch it.
+                match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+                    MediaCacheEntry::Loaded(data) => {
+                        let show_image_result = text_or_image_ref.show_image(|img| {
+                            utils::load_png_or_jpg(&img, cx, &data)
+                                .map(|()| img.size_in_pixels(cx).unwrap())
+                        });
+                        if let Err(e) = show_image_result {
+                            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                            error!("{err_str}");
+                            text_or_image_ref.show_text(&err_str);
+                        }
 
-                    // We're done drawing the image message content, so mark it as fully drawn.
-                    true
-                }
-                MediaCacheEntry::Requested => {
-                    text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
-                    // Do not consider this image as being fully drawn, as we're still fetching it.
-                    false
-                }
-                MediaCacheEntry::Failed => {
-                    text_or_image_ref
-                        .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
-                    // For now, we consider this as being "complete". In the future, we could support
-                    // retrying to fetch the image on a user click/tap.
-                    true
+                        // We're done drawing thumbnail of the image message content, so mark it as fully drawn.
+                        true
+                    }
+                    MediaCacheEntry::Requested => {
+                        text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
+                        // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
+                        false
+                    }
+                    MediaCacheEntry::Failed => {
+                        text_or_image_ref
+                            .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                        // For now, we consider this as being "complete". In the future, we could support
+                        // retrying to fetch thumbnail of the image on a user click/tap.
+                        true
+                    }
                 }
             }
-        }
-        Some(Some(MediaSource::Encrypted(encrypted))) => {
-            text_or_image_ref.show_text(format!(
-                "{body}\n\n[TODO] fetch encrypted image at {:?}",
-                encrypted.url
-            ));
-            // We consider this as "fully drawn" since we don't yet support encryption.
-            true
-        }
-        Some(None) | None => {
-            text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
-            true
-        }
+            Some(Some(MediaSource::Encrypted(encrypted))) => {
+                text_or_image_ref.show_text(format!(
+                    "{body}\n\n[TODO] fetch encrypted image at {:?}",
+                    encrypted.url
+                ));
+                // We consider this as "fully drawn" since we don't yet support encryption.
+                true
+            }
+            Some(None) | None => {
+                text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
+                true
+            }
     }
 }
 
