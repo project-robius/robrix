@@ -2987,7 +2987,7 @@ fn populate_image_message_content(
                     MediaCacheEntry::Loaded(data) => {
                         let show_image_result = text_or_image_ref.show_image(|img| {
                             utils::load_png_or_jpg(&img, cx, &data)
-                                .map(|()| img.size_in_pixels(cx).unwrap())
+                                .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                         });
                         if let Err(e) = show_image_result {
                             let err_str = format!("{body}\n\nFailed to display image: {e:?}");
