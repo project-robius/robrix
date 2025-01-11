@@ -1111,7 +1111,7 @@ impl Widget for RoomScreen {
                     }
                     MessageAction::ContextMenuOpen { item_id, coords } => {
                         let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
-                        let mut message_context_menu = message_context_menu_modal.message_context_menu(id!(message_context_menu));
+                        let message_context_menu = message_context_menu_modal.message_context_menu(id!(message_context_menu));
 
                         // the modal's (0, 0) point is this view, not the screen,so we need to compensate for that.
                         let coords = coords - self.view.area().rect(cx).pos;
@@ -1141,7 +1141,7 @@ impl Widget for RoomScreen {
                     }
                     MessageAction::ActionBarOpen { item_id, message_rect } => {
                         let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
-                        let mut message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
 
                         let margin_x = 50.;
 
@@ -1164,7 +1164,7 @@ impl Widget for RoomScreen {
                     }
                     _ => {}
                 }
-	    }
+            }
 
             // close message action bar if scrolled.
             if portal_list.scrolled(actions) {

@@ -13,33 +13,33 @@ live_design! {
     ICO_REPLY = dep("crate://self/resources/icons/reply.svg")
 
     ReplyButton = <RobrixIconButton> {
-	width: Fit
-	height: Fit
+        width: Fit
+        height: Fit
 
-	draw_bg: {
-	    radius: 4.
-	}
-	draw_icon: {
-	    svg_file: (ICO_REPLY)
-	}
-	icon_walk: {width: 10, height: 10}
+        draw_bg: {
+            radius: 4.
+        }
+        draw_icon: {
+            svg_file: (ICO_REPLY)
+        }
+        icon_walk: {width: 10, height: 10}
 
-	text: "Reply"
+        text: "Reply"
     }
 
     ViewSourceButton = <RobrixIconButton> {
-	width: Fit
-	height: Fit
+        width: Fit
+        height: Fit
 
-	draw_bg: {
-	    radius: 4.
-	}
-	draw_icon: {
-	    svg_file: (ICO_REPLY)
-	}
-	icon_walk: {width: 10, height: 10}
+        draw_bg: {
+            radius: 4.
+        }
+        draw_icon: {
+            svg_file: (ICO_REPLY)
+        }
+        icon_walk: {width: 10, height: 10}
 
-	text: "View Source"
+        text: "View Source"
     }
 
     pub MessageActionBar = {{MessageActionBar}} {
@@ -51,7 +51,7 @@ live_design! {
             width: Fit,
             height: Fit,
             flow: Right,
-	    padding: 2
+            padding: 2
 
             draw_bg: {
                 color: #fff,
@@ -60,10 +60,9 @@ live_design! {
                 radius: 4.
             }
 
-	    reply_button = <ReplyButton> {
-		text: ""
-	    }
-
+            reply_button = <ReplyButton> {
+                text: ""
+            }
         }
     }
 
@@ -76,7 +75,7 @@ live_design! {
             width: 150,
             height: Fit,
             flow: Down,
-	    padding: 2
+            padding: 2
 
             draw_bg: {
                 color: #fff,
@@ -85,11 +84,11 @@ live_design! {
                 radius: 4.
             }
 
-	    reply_button = <ReplyButton> {
-		width: Fill
-		align: {x: 0}
-		text: "Reply"
-	    }
+            reply_button = <ReplyButton> {
+                width: Fill
+                align: {x: 0}
+                text: "Reply"
+            }
         }
     }
 }
@@ -106,8 +105,8 @@ impl MessageMenuButton {
         cx: &mut Cx,
         scope: &mut Scope,
         button: &MessageMenuButton,
-	item_id: usize,
-	room_screen_widget_uid: WidgetUid,
+        item_id: usize,
+        room_screen_widget_uid: WidgetUid,
     ) {
         match button {
             MessageMenuButton::Reply => {
@@ -117,7 +116,7 @@ impl MessageMenuButton {
                     MessageAction::MessageReplyButtonClicked(item_id),
                 );
             }
-        };
+        }
     }
 }
 
@@ -125,7 +124,7 @@ impl MessageMenuButton {
 trait MessageMenu {
     fn item_id(&self) -> Option<usize>;
     fn room_screen_widget_uid(&self) -> Option<WidgetUid>;
-    /// A map of the button type and the menu's button ref. 
+    /// A map of the button type and the menu's button ref.
     fn button_mapping(&self) -> Vec<(ButtonRef, MessageMenuButton)>;
     /// Function used for closing the menu
     fn signal_close(&mut self, cx: &mut Cx, scope: &mut Scope);
@@ -148,8 +147,7 @@ trait MessageMenu {
             return;
         };
 
-	button.handle_default(cx, scope, button, item_id, room_screen_widget_uid);
-
+        button.handle_default(cx, scope, button, item_id, room_screen_widget_uid);
         self.signal_close(cx, scope);
     }
 
@@ -217,30 +215,34 @@ impl MessageMenu for MessageContextMenu {
 
 impl WidgetMatchEvent for MessageContextMenu {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-	self.handle_buttons(cx, actions, scope)
+        self.handle_buttons(cx, actions, scope)
     }
 }
 
 impl MessageContextMenu {
-    pub fn initialize_with_data(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, message_widget_uid: WidgetUid, item_id: usize) {
-	self.room_screen_widget_uid = Some(room_screen_widget_uid);
-	self.message_widget_uid = Some(message_widget_uid);
+    pub fn initialize_with_data(
+        &mut self,
+        cx: &mut Cx,
+        room_screen_widget_uid: WidgetUid,
+        message_widget_uid: WidgetUid,
+        item_id: usize,
+    ) {
+        self.room_screen_widget_uid = Some(room_screen_widget_uid);
+        self.message_widget_uid = Some(message_widget_uid);
         self.item_id = Some(item_id);
         self.redraw(cx);
     }
 }
 
 impl MessageContextMenuRef {
-    pub fn initialize_with_data(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, message_widget_uid: WidgetUid, item_id: usize) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.initialize_with_data(cx, room_screen_widget_uid, message_widget_uid, item_id);
+    pub fn initialize_with_data(&self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, message_widget_uid: WidgetUid, item_id: usize) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.initialize_with_data(cx, room_screen_widget_uid, message_widget_uid, item_id);
+        }
     }
 
     pub fn message_widget_uid(&self) -> Option<WidgetUid> {
-        let inner = self.borrow_mut()?;
-	inner.message_widget_uid
+        self.borrow().and_then(|inner| inner.message_widget_uid)
     }
 }
 
@@ -297,29 +299,27 @@ impl MessageMenu for MessageActionBar {
 
 impl WidgetMatchEvent for MessageActionBar {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-	self.handle_buttons(cx, actions, scope)
+        self.handle_buttons(cx, actions, scope)
     }
 }
 
 impl MessageActionBar {
     pub fn selected(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, message_widget_uid: WidgetUid, item_id: usize) {
-	self.room_screen_widget_uid = Some(room_screen_widget_uid);
-	self.message_widget_uid = Some(message_widget_uid);
+        self.room_screen_widget_uid = Some(room_screen_widget_uid);
+        self.message_widget_uid = Some(message_widget_uid);
         self.item_id = Some(item_id);
         self.redraw(cx);
     }
 }
 
 impl MessageActionBarRef {
-    pub fn initialize_with_data(&mut self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, message_widget_uid: WidgetUid, item_id: usize) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.selected(cx, room_screen_widget_uid, message_widget_uid, item_id);
+    pub fn initialize_with_data(&self, cx: &mut Cx, room_screen_widget_uid: WidgetUid, message_widget_uid: WidgetUid, item_id: usize) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.selected(cx, room_screen_widget_uid, message_widget_uid, item_id);
+        }
     }
 
     pub fn message_widget_uid(&self) -> Option<WidgetUid> {
-        let inner = self.borrow_mut()?;
-	inner.message_widget_uid
+        self.borrow_mut().and_then(|inner| inner.message_widget_uid)
     }
 }

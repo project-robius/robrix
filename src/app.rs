@@ -241,7 +241,7 @@ impl MatchEvent for App {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
-	    // message source modal handling.
+            // message source modal handling.
             match action.as_widget_action().cast() {
                 MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
                    // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
