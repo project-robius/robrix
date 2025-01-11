@@ -2620,7 +2620,7 @@ fn populate_message_view(
                 prev_msg_sender == event_tl_item.sender()
                     && ts_millis.0
                         .checked_sub(prev_event_tl_item.timestamp().0)
-                        .map_or(false, |d| d < uint!(600000)) // 10 mins in millis
+                        .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
             }
             _ => false,
         },

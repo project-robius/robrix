@@ -18,8 +18,8 @@ live_design! {
             }
         }
 
-        content : <View> {
-            width: 300
+        content: <View> {
+            width: 250
             height: Fit
             visible: false,
             padding: 2.0
