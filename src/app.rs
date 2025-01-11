@@ -160,19 +160,19 @@ impl LiveRegister for App {
 }
 
 impl LiveHook for App {
-    fn after_update_from_doc(&mut self, _cx:&mut Cx) {
-        self.update_login_visibility();
+    fn after_update_from_doc(&mut self, cx: &mut Cx) {
+        self.update_login_visibility(cx);
     }
 }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
+    fn handle_startup(&mut self, cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        self.update_login_visibility();
+        self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
@@ -183,7 +183,7 @@ impl MatchEvent for App {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
-                self.update_login_visibility();
+                self.update_login_visibility(cx);
                 self.ui.redraw(cx);
             }
 
@@ -276,10 +276,15 @@ impl AppMain for App {
 }
 
 impl App {
-    fn update_login_visibility(&self) {
-        let login_visible = !self.app_state.logged_in;
-        self.ui.view(id!(login_screen_view)).set_visible(login_visible);
-        self.ui.view(id!(home_screen_view)).set_visible(!login_visible);
+    fn update_login_visibility(&self, cx: &mut Cx) {
+        let show_login = !self.app_state.logged_in;
+        self.ui.view(id!(login_screen_view)).set_visible(show_login);
+        self.ui.view(id!(home_screen_view)).set_visible(!show_login);
+        if !show_login {
+            self.ui
+                .modal(id!(login_screen_view.login_screen.login_status_modal))
+                .close(cx);
+        }
     }
 }
 
