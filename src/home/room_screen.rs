@@ -28,7 +28,6 @@ use crate::{
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}, 
-    home::message_context_menu::MessageContextMenuWidgetExt,
     home::message_context_menu::MessageActionBarWidgetRefExt,
 };
 use rangemap::RangeSet;
@@ -960,22 +959,21 @@ impl Widget for RoomScreen {
                             continue;
                         };
 
-                        let Some(message_event) = event_tl_item.content().as_message() else {
-			    continue;
-			};
+                        let Some(_message_event) = event_tl_item.content().as_message() else {
+                            continue;
+                        };
 
-			let original_json: Option<serde_json::Value> = event_tl_item.original_json().map(|raw_event| {
-			    serde_json::to_value(raw_event).ok()
-			}).flatten();
-			let room_id = self.room_id.to_owned();
-			let event_id = event_tl_item.event_id().map(|e| e.to_owned());
+                        let original_json: Option<serde_json::Value> = event_tl_item
+                            .original_json()
+                            .and_then(|raw_event| serde_json::to_value(raw_event).ok());
+                        let room_id = self.room_id.to_owned();
+                        let event_id = event_tl_item.event_id().map(|e| e.to_owned());
 
-			cx.widget_action(
-			    widget_uid,
-			    &scope.path,
-			    MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
-			);
-
+                        cx.widget_action(
+                            widget_uid,
+                            &scope.path,
+                            MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
+                        );
                     }
                     MessageAction::MessageReplyButtonClicked(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
@@ -3870,8 +3868,8 @@ pub enum MessageAction {
     MessageHighlight(usize),
     /// The user requested opening the message context menu
     ContextMenuOpen {
-	item_id: usize,
-	coords: DVec2,
+        item_id: usize,
+        coords: DVec2,
     },
     /// The user requested closing the message context menu
     ContextMenuClose,
@@ -3889,9 +3887,9 @@ pub enum MessageAction {
     ViewSourceButtonClicked(usize),
     /// The message event source modal should be oppened
     MessageSourceModalOpen {
-	room_id: Option<OwnedRoomId>,
-	event_id: Option<OwnedEventId>,
-	original_json: Option<serde_json::Value>,
+        room_id: Option<OwnedRoomId>,
+        event_id: Option<OwnedEventId>,
+        original_json: Option<serde_json::Value>,
     },
     /// The message event source modal should be closed
     MessageSourceModalClose,
@@ -3973,7 +3971,7 @@ impl Widget for Message {
 
 
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(body)).area()) {
-            let right_click = fe.device.mouse_button().map_or(false, |button| button == 3);
+            let right_click = fe.device.mouse_button().is_some_and(|button| button == 3);
             if right_click {
                 cx.widget_action(
                     room_screen_widget_uid,
