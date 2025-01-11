@@ -1528,7 +1528,7 @@ impl RoomScreen {
                             submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
                         }
                     }
-                    
+
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
@@ -2129,7 +2129,7 @@ impl RoomScreen {
                                     event_id: last_event_id.to_owned(),
                                 });
                             }
-                            
+
                         }
                     }
                 }
@@ -3057,8 +3057,8 @@ fn populate_image_message_content(
         }
     }
 
-    match image_info_source.map(|(_, source)| source) {
-        Some(MediaSource::Plain(mxc_uri)) => {
+    match image_info_source.and_then(|(image_info, _)|image_info).map(|image_info|image_info.thumbnail_source) {
+        Some(Some(MediaSource::Plain(mxc_uri))) => {
             // now that we've obtained the image URI and its metadata, try to fetch the image.
             match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
                 MediaCacheEntry::Loaded(data) => {
@@ -3089,7 +3089,7 @@ fn populate_image_message_content(
                 }
             }
         }
-        Some(MediaSource::Encrypted(encrypted)) => {
+        Some(Some(MediaSource::Encrypted(encrypted))) => {
             text_or_image_ref.show_text(format!(
                 "{body}\n\n[TODO] fetch encrypted image at {:?}",
                 encrypted.url
@@ -3097,11 +3097,10 @@ fn populate_image_message_content(
             // We consider this as "fully drawn" since we don't yet support encryption.
             true
         }
-        None => {
+        Some(None) | None => {
             text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
             true
         }
-
     }
 }
 
