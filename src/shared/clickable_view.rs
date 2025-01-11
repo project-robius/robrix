@@ -47,4 +47,9 @@ impl ClickableViewRef {
         }
         false
     }
+    pub fn set_visible(&self, visible: bool) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = visible
+        }
+    }
 }
