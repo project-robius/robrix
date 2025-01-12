@@ -99,7 +99,10 @@ pub async fn restore_session(
     }
     let status_str = format!("Loading previous session file for {user_id}...");
     log!("{status_str}: '{}'", session_file.display());
-    Cx::post_action(LoginAction::Status(status_str));
+    Cx::post_action(LoginAction::Status {
+        title: "Restoring session".into(),
+        status: status_str,
+    });
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
@@ -111,7 +114,10 @@ pub async fn restore_session(
         client_session.homeserver,
     );
     log!("{status_str}");
-    Cx::post_action(LoginAction::Status(status_str));
+    Cx::post_action(LoginAction::Status {
+        title: "Connecting to homeserver".into(),
+        status: status_str,
+    });
 
     // Build the client with the previous settings from the session.
     let client = Client::builder()
@@ -124,7 +130,10 @@ pub async fn restore_session(
 
     let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
-    Cx::post_action(LoginAction::Status(status_str));
+    Cx::post_action(LoginAction::Status {
+        title: "Authenticating session".into(),
+        status: status_str,
+    });
 
     // Restore the Matrix user session.
     client.restore_session(user_session).await?;
