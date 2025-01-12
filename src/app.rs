@@ -2,10 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomListAction},
-    verification::VerificationAction,
-    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
-    login::login_screen::LoginAction,
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -127,6 +124,11 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+                    // message_source_modal = <Modal> {
+                    //     content: {
+                    //         message_source_modal_inner = <MessageSourceModal> {}
+                    //     }
+                    // }
                 }
             } // end of body
         }
@@ -160,19 +162,19 @@ impl LiveRegister for App {
 }
 
 impl LiveHook for App {
-    fn after_update_from_doc(&mut self, _cx:&mut Cx) {
-        self.update_login_visibility();
+    fn after_update_from_doc(&mut self, cx: &mut Cx) {
+        self.update_login_visibility(cx);
     }
 }
 
 impl MatchEvent for App {
-    fn handle_startup(&mut self, _cx: &mut Cx) {
+    fn handle_startup(&mut self, cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
         // such that background threads/tasks will be able to can access it.
         let _app_data_dir = crate::app_data_dir();
         log!("App::handle_startup(): app_data_dir: {:?}", _app_data_dir);
 
-        self.update_login_visibility();
+        self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
@@ -183,7 +185,7 @@ impl MatchEvent for App {
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
-                self.update_login_visibility();
+                self.update_login_visibility(cx);
                 self.ui.redraw(cx);
             }
 
@@ -238,6 +240,18 @@ impl MatchEvent for App {
             if let VerificationModalAction::Close = action.as_widget_action().cast() {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
+
+            // message source modal handling.
+            match action.as_widget_action().cast() {
+                MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
+                   // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
+                   // self.ui.modal(id!(message_source_modal)).open(cx);
+                }
+                MessageAction::MessageSourceModalClose => {
+                    self.ui.modal(id!(message_source_modal)).close(cx);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -276,10 +290,15 @@ impl AppMain for App {
 }
 
 impl App {
-    fn update_login_visibility(&self) {
-        let login_visible = !self.app_state.logged_in;
-        self.ui.view(id!(login_screen_view)).set_visible(login_visible);
-        self.ui.view(id!(home_screen_view)).set_visible(!login_visible);
+    fn update_login_visibility(&self, cx: &mut Cx) {
+        let show_login = !self.app_state.logged_in;
+        self.ui.view(id!(login_screen_view)).set_visible(show_login);
+        self.ui.view(id!(home_screen_view)).set_visible(!show_login);
+        if !show_login {
+            self.ui
+                .modal(id!(login_screen_view.login_screen.login_status_modal))
+                .close(cx);
+        }
     }
 }
 
@@ -308,4 +327,3 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
-

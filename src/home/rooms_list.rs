@@ -284,16 +284,18 @@ impl RoomDisplayFilterBuilder {
     fn matches_room_name(room: &RoomsListEntry, keywords: &str) -> bool {
         room.room_name
             .as_ref()
-            .map_or(false, |name| name.to_lowercase().contains(keywords))
+            .is_some_and(|name| name.to_lowercase().contains(keywords))
     }
 
     fn matches_room_alias(room: &RoomsListEntry, keywords: &str) -> bool {
-        room.canonical_alias
+        let matches_canonical_alias = room.canonical_alias
             .as_ref()
-            .map_or(false, |alias| alias.as_str().eq_ignore_ascii_case(keywords))
-            || room.alt_aliases
-                .iter()
-                .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
+            .is_some_and(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
+        let matches_alt_aliases = room.alt_aliases
+            .iter()
+            .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
+
+        matches_canonical_alias || matches_alt_aliases
     }
 
     fn matches_room_tags(room: &RoomsListEntry, keywords: &str) -> bool {
@@ -312,7 +314,7 @@ impl RoomDisplayFilterBuilder {
             }
         }
 
-        room.tags.as_ref().map_or(false, |room_tags| {
+        room.tags.as_ref().is_some_and(|room_tags| {
             search_tags.iter().all(|search_tag| {
                 room_tags.iter().any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
             })
