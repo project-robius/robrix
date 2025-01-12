@@ -55,6 +55,7 @@ live_design! {
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
+    use crate::shared::image_viewer::ImageViewer;
     use crate::home::loading_modal::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -718,6 +719,9 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
+            }
+            image_viewer = <ImageViewer> {
+
             }
 
             keyboard_view = <KeyboardView> {

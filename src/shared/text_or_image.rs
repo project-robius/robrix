@@ -74,13 +74,14 @@ impl Widget for TextOrImage {
 }
 
 impl MatchEvent for TextOrImage {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+    fn handle_actions(&mut self, _: &mut Cx, actions: &Actions) {
         if self.clickable_view(id!(image_view)).clicked(actions) {
             log!("Image clicked");
             Cx::post_action(ImageViewerAction::Open);
         }
     }
 }
+
 impl TextOrImage {
     /// Sets the text content, which will be displayed on future draw operations.
     ///
