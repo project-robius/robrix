@@ -483,17 +483,14 @@ impl Widget for RoomsList {
                         }
                     }
                     RoomsListUpdate::UpdateNumUnreadMessages { room_id, count } => {
-                        self.all_rooms
-                            .get_mut(&room_id)
-                            .map(|room| {
-                                room.num_unread_messages = match count {
-                                    UnreadMessageCount::Unknown => 0,
-                                    UnreadMessageCount::Known(count) => count,
-                                };
-                            })
-                            .unwrap_or_else(|| {
-                                error!("Error: couldn't find room {} to update unread messages count", room_id);
-                            })
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            room.num_unread_messages = match count {
+                                UnreadMessageCount::Unknown => 0,
+                                UnreadMessageCount::Known(count) => count,
+                            };
+                        } else {
+                            error!("Error: couldn't find room {} to update unread messages count", room_id);
+                        }
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
