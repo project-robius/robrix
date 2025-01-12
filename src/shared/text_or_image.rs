@@ -5,12 +5,17 @@
 
 use makepad_widgets::*;
 
+use crate::shared::image_viewer::ImageViewerAction;
+
+use super::clickable_view::ClickableViewWidgetExt;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-    
+
     use crate::shared::styles::*;
+    use crate::shared::clickable_view::ClickableView;
 
     pub TextOrImage = {{TextOrImage}} {
         width: Fill, height: Fit,
@@ -32,9 +37,9 @@ live_design! {
                 }
             }
         }
-        image_view = <View> {
+        image_view = <ClickableView> {
             visible: false,
-            cursor: NotAllowed, // we don't yet support clicking on the image
+            cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
@@ -43,7 +48,6 @@ live_design! {
         }
     }
 }
-
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
@@ -60,11 +64,21 @@ pub struct TextOrImage {
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatchEvent for TextOrImage {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.clickable_view(id!(image_view)).clicked(actions) {
+            log!("Image clicked");
+            Cx::post_action(ImageViewerAction::Open);
+        }
     }
 }
 impl TextOrImage {
@@ -74,7 +88,7 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, text: T) {
-        self.view(id!(image_view)).set_visible(false);
+        self.clickable_view(id!(image_view)).set_visible(false);
         self.view(id!(text_view)).set_visible(true);
         self.view.label(id!(text_view.label)).set_text(text.as_ref());
         self.status = TextOrImageStatus::Text;
@@ -97,7 +111,7 @@ impl TextOrImage {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.view(id!(image_view)).set_visible(true);
+                self.clickable_view(id!(image_view)).set_visible(true);
                 self.view(id!(text_view)).set_visible(false);
                 Ok(())
             }
