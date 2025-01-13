@@ -1,10 +1,10 @@
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
-use crate::utils::human_readable_list;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
-use matrix_sdk_ui::timeline::{ReactionsByKeyBySender, TimelineEventItemId};
+use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk_ui::timeline::{ReactionInfo, ReactionsByKeyBySender, TimelineEventItemId};
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::home::room_screen::RoomScreenTooltipActions;
+use indexmap::IndexMap;
 
 const TOOLTIP_WIDTH: f64 = 100.0;
 const EMOJI_BG_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
@@ -69,17 +69,20 @@ live_design! {
     }
     
 }
-struct ReactionData {
+#[derive(Clone, Debug)]
+pub struct ReactionData {
     /// Refers to emoji string after conversion from reaction_raw
-    emoji: String,
+    pub emoji: String,
     /// Original reaction string from the backend before emoji conversion
-    reaction_raw: String,
+    pub reaction_raw: String,
     /// Total number of people reacted to the emoji
-    total_number_reacted: usize,
-    /// Tooltip text display when mouse over the reaction button
-    tooltip_text: String,
+    pub total_number_reacted: usize,
     /// Boolean indicating if the current user is also a sender of the reaction
-    includes_user: bool,
+    pub includes_user: bool,
+    /// List of users who have reacted to the emoji
+    pub reaction_senders: IndexMap<OwnedUserId, ReactionInfo>,
+    /// The ID of the room that the reaction is for
+    pub room_id: OwnedRoomId
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -120,11 +123,11 @@ impl Widget for ReactionList {
                         x: widget_rect.pos.x + widget_rect.size.x,
                         y: widget_rect.pos.y - widget_rect.size.y / 2.0
                     };
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn {
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton {
                         tooltip_pos, 
-                        tooltip_text: reaction_data.tooltip_text.clone(), 
                         tooltip_width: TOOLTIP_WIDTH, 
-                        callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0
+                        callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0,
+                        reaction_data: reaction_data.clone()
                     });
                     break;
                 }
@@ -183,23 +186,21 @@ impl ReactionListRef {
                     log!("Failed to parse emoji: {}", reaction_raw);
                     reaction_raw
                 });
-            
-            let tooltip_text_arr: Vec<String> = reaction_senders.iter().map(|(sender, _react_info)| {
+            for (sender, _) in reaction_senders.iter() {
                 if sender == &client_user_id {
                     includes_user = true;
                 }
-                get_user_profile_and_room_member(cx, sender.clone(), &room_id, true).0
-                    .map(|user_profile| user_profile.displayable_name().to_string())
-                    .unwrap_or(sender.to_string())
-            }).collect();
-            let mut tooltip_text = human_readable_list(&tooltip_text_arr);                
-            tooltip_text.push_str(&format!("\nreacted with: {}", emoji_text));
+                // Cache the reaction sender's user profile so that tooltip will show displayable name 
+                let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
+            }
+   
             let reaction_data = ReactionData {
                 reaction_raw: reaction_raw.to_string(),
                 emoji: emoji_text.to_string(),
                 total_number_reacted,
-                tooltip_text,
                 includes_user,
+                reaction_senders: reaction_senders.clone(),
+                room_id: room_id.clone(),
             };
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
             button.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_number_reacted));

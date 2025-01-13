@@ -50,6 +50,7 @@ url = "2.5.0"
 emojis = "0.6.1"
 bytesize = "1.3.0"
 bitflags = "2.6.0"
+indexmap = "2.6.0"
 
 ###################################################################################################
 #### Note: we now enable the usage of `rustls-tls` and the `bundled-sqlite` features in the 2  ####

@@ -32,7 +32,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::loading_modal::{LoadingModalAction, LoadingModalState};
+use super::{event_reaction_list::ReactionData, loading_modal::{LoadingModalAction, LoadingModalState}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -1068,12 +1068,19 @@ impl Widget for RoomScreen {
             let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
-                if let RoomScreenTooltipActions::HoverIn { 
+                if let RoomScreenTooltipActions::HoverInReactionButton { 
                     tooltip_pos, 
-                    tooltip_text, 
                     tooltip_width, 
-                    callout_y_offset 
+                    callout_y_offset, 
+                    reaction_data
                 } = reaction_list.hover_in(actions) {
+                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
+                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                            .map(|user_profile| user_profile.displayable_name().to_string())
+                            .unwrap_or(sender.to_string())
+                    }).collect();
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
+                    tooltip_text.push_str(&format!("\nreacted with: {}", reaction_data.emoji));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
@@ -2255,14 +2262,16 @@ impl RoomScreenRef {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
     /// Mouse over event when the mouse is over the reaction button.
-    HoverIn {
+    HoverInReactionButton {
         tooltip_pos: DVec2,
-        tooltip_text: String,
         tooltip_width: f64,
         /// Calculated Y offset required such that the pointed arrow
         /// is pointed towards the center of the hovered widget.
         callout_y_offset: f64,
+        /// Includes the List of users who have reacted to the emoji
+        reaction_data: ReactionData
     },
+    /// Mouse out event and clear tooltip
     HoverOut,
     None,
 }
