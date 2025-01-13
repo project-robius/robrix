@@ -113,11 +113,12 @@ impl Widget for ReactionList {
         DrawStep::done()
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        
         let uid = self.widget_uid();
         for (widget_ref, reaction_data) in self.children.iter() {
+            println!("widget_ref.area() {:?} emoji {:?}", widget_ref.area(), reaction_data.emoji);
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
+                    println!("finger hover in");
                     let widget_rect = widget_ref.area().rect(cx);
                     let tooltip_pos =  DVec2 {
                         x: widget_rect.pos.x + widget_rect.size.x,
@@ -136,6 +137,7 @@ impl Widget for ReactionList {
                     break;
                 }
                 Hit::FingerDown(_) => {
+                    println!("finger down");
                     let Some(room_id) = &self.room_id else { return };
                     let Some(timeline_event_id) = &self.timeline_event_id else {
                         return;
@@ -147,7 +149,7 @@ impl Widget for ReactionList {
                     });
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                     break;
-                }
+                },
                 _ => { }
             }
         }

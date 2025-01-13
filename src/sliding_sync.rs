@@ -12,7 +12,7 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent, MessageLikeEventType, TimelineEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, Error, Room, RoomMemberships
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -39,9 +39,9 @@ use crate::{
 
 #[derive(Parser, Debug, Default)]
 struct Cli {
-    /// The user name that should be used for the login.
+    /// The user ID to login with.
     #[clap(value_parser)]
-    username: String,
+    user_id: String,
 
     /// The password that should be used for the login.
     #[clap(value_parser)]
@@ -66,7 +66,7 @@ struct Cli {
 impl From<LoginByPassword> for Cli {
     fn from(login: LoginByPassword) -> Self {
         Self {
-            username: login.user_id,
+            user_id: login.user_id,
             password: login.password,
             homeserver: None,
             proxy: None,
@@ -81,7 +81,7 @@ impl From<LoginByPassword> for Cli {
 async fn build_client(
     cli: &Cli,
     data_dir: &Path,
-) -> anyhow::Result<(Client, ClientSessionPersisted)> {
+) -> Result<(Client, ClientSessionPersisted), ClientBuildError> {
     // Generate a unique subfolder name for the client database,
     // which allows multiple clients to run simultaneously.
     let now = chrono::Local::now();
@@ -159,14 +159,14 @@ async fn login(
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
-                .login_username(&cli.username, &cli.password)
+                .login_username(&cli.user_id, &cli.password)
                 .initial_device_display_name("robrix-un-pw")
                 .send()
                 .await?;
             if client.logged_in() {
                 log!("Logged in successfully? {:?}", client.logged_in());
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
-                    status: format!("Logged in as {}. Loading rooms...", cli.username),
+                    status: format!("Logged in as {}. Loading rooms...", cli.user_id),
                 });
                 if let Err(e) = persistent_state::save_session(&client, client_session).await {
                     error!("Failed to save session state to storage: {e:?}");
@@ -174,9 +174,9 @@ async fn login(
                 Ok((client, None))
             } else {
                 enqueue_rooms_list_update(RoomsListUpdate::Status {
-                    status: format!("Failed to login as {}: {:?}", cli.username, login_result),
+                    status: format!("Failed to login as {}: {:?}", cli.user_id, login_result),
                 });
-                bail!("Failed to login as {}: {login_result:?}", cli.username);
+                bail!("Failed to login as {}: {login_result:?}", cli.user_id);
             }
         }
 
@@ -196,7 +196,10 @@ async fn populate_login_types(
     homeserver_url: &str,
     login_types: &mut Vec<LoginType>,
 ) -> Result<()> {
-    Cx::post_action(LoginAction::Status(String::from("Fetching Login Types ...")));
+    Cx::post_action(LoginAction::Status {
+        title: "Querying login types".into(),
+        status: "Fetching supported login types from the homeserver...".into(),
+    });
     let homeserver_url = if homeserver_url.is_empty() {
         DEFAULT_HOMESERVER
     } else {
@@ -1147,7 +1150,7 @@ async fn async_main_loop(
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
     let cli_has_valid_username_password = cli_parse_result.as_ref()
-        .is_ok_and(|cli| !cli.username.is_empty() && !cli.password.is_empty());
+        .is_ok_and(|cli| !cli.user_id.is_empty() && !cli.password.is_empty());
     log!("CLI parsing succeeded? {}. CLI has valid UN+PW? {}",
         cli_parse_result.as_ref().is_ok(),
         cli_has_valid_username_password,
@@ -1161,7 +1164,7 @@ async fn async_main_loop(
     let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
             username_to_full_user_id(
-                &cli.username,
+                &cli.user_id,
                 cli.homeserver.as_deref(),
             )
         );
@@ -1171,25 +1174,31 @@ async fn async_main_loop(
         if let Ok(session) = persistent_state::restore_session(specified_username).await {
             Some(session)
         } else {
-            let status_err = "Failed to restore previous user session. Please login again.";
+            let status_err = "Could not restore previous user session.\n\nPlease login again.";
             log!("{status_err}");
-            Cx::post_action(LoginAction::Status(status_err.to_string()));
+            Cx::post_action(LoginAction::LoginFailure(status_err.to_string()));
 
             if let Ok(cli) = &cli_parse_result {
-                let status_str = format!("Attempting auto-login from CLI arguments as user '{}'...", cli.username);
-                log!("{status_str}");
-                Cx::post_action(LoginAction::Status(status_str));
+                log!("Attempting auto-login from CLI arguments as user '{}'...", cli.user_id);
+                Cx::post_action(LoginAction::CliAutoLogin {
+                    user_id: cli.user_id.clone(),
+                    homeserver: cli.homeserver.clone(),
+                });
                 let mut login_types: Vec<LoginType> = Vec::new();
                 let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
                 if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                     error!("Populating Login types failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {e:?}")));
+                    Cx::post_action(LoginAction::LoginFailure(
+                        format!("Failed to fetch supported login types from homeserver {homeserver_url}.\n\n{e:?}")
+                    ));
                 }
                 match login(cli, LoginRequest::LoginByCli, &login_types).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
-                        Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
+                        Cx::post_action(LoginAction::LoginFailure(
+                            format!("Could not login with CLI-provided arguments.\n\nPlease login manually.\n\nError: {e:?}")
+                        ));
                         enqueue_rooms_list_update(RoomsListUpdate::Status {
                             status: format!("Login failed: {e:?}"),
                         });
@@ -1212,7 +1221,9 @@ async fn async_main_loop(
             // Display the available Identity providers by fetching the login types
             if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
                 error!("Populating Login types failed for {homeserver_url}: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed for {homeserver_url} {e:?}")));
+                Cx::post_action(LoginAction::LoginFailure(
+                    format!("Failed to fetch supported login types from homeserver {homeserver_url}.\n\nError: {e:?}")
+                ));
             }
             loop {
                 log!("Waiting for login request...");
@@ -1221,7 +1232,9 @@ async fn async_main_loop(
                         if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
                             if let Err(e) = populate_login_types(&homeserver_url, &mut login_types).await {
                                 error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(format!("Populating Login types failed {homeserver_url} {e:?}")));
+                                Cx::post_action(LoginAction::LoginFailure(
+                                    format!("Failed to fetch supported login types from homeserver {homeserver_url}.\n\nError: {e:?}")
+                                ));
                             }
                             continue
                         }
@@ -1231,7 +1244,7 @@ async fn async_main_loop(
                             }
                             Err(e) => {
                                 error!("Login failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(format!("Login failed: {e:?}")));
+                                Cx::post_action(LoginAction::LoginFailure(format!("{e:?}")));
                                 enqueue_rooms_list_update(RoomsListUpdate::Status {
                                     status: format!("Login failed: {e:?}"),
                                 });
@@ -2151,15 +2164,23 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
-    Cx::post_action(LoginAction::Status(String::from("Opening Browser ...")));
+    Cx::post_action(LoginAction::Status {
+        title: "Opening your browser...".into(),
+        status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+    });
     let cli = Cli {
         homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
         ..Default::default()
     };
     Handle::current().spawn(async move {
-        let Ok((client, client_session)) = build_client(&cli, app_data_dir()).await else {
-            Cx::post_action(LoginAction::LoginFailure("Failed to establish client".to_string()));
-            return;
+        let (client, client_session) = match build_client(&cli, app_data_dir()).await {
+            Ok(success) => success,
+            Err(e) => {
+                Cx::post_action(LoginAction::LoginFailure(
+                    format!("Could not create client object.\n\nError: {e}")
+                ));
+                return;
+            }
         };
         let mut is_logged_in = false;
         match client
@@ -2204,8 +2225,8 @@ async fn spawn_sso_server(
             }
             Err(e) => {
                 if !is_logged_in {
-                    error!("Login by SSO failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(format!("Login by SSO failed {e}")));
+                    error!("SSO Login failed: {e:?}");
+                    Cx::post_action(LoginAction::LoginFailure(format!("SSO login failed: {e}")));
                 }
             }
         }

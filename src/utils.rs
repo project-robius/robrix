@@ -233,9 +233,9 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
         let link_txt = link.as_str();
         // Only linkify the URL if it's not already part of an HTML href attribute.
         let is_link_within_href_attr = text.get(..link.start())
-            .map_or(false, ends_with_href);
+            .is_some_and(ends_with_href);
         let is_link_within_html_tag = text.get(link.end() ..)
-            .map_or(false, |after| after.trim_end().starts_with("</a>"));
+            .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
         if is_link_within_href_attr || is_link_within_html_tag {
             linkified_text = format!(

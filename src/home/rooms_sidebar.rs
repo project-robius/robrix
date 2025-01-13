@@ -9,7 +9,6 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::adaptive_view::AdaptiveView;
     use crate::shared::search_bar::SearchBar;
 
     use crate::home::rooms_list::RoomsList;
