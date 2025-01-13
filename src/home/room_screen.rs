@@ -2259,7 +2259,8 @@ pub enum RoomScreenTooltipActions {
         tooltip_pos: DVec2,
         tooltip_text: String,
         tooltip_width: f64,
-        /// Calculated Y offset required such that the pointed arrow is pointed towards the center of the hovered widget.
+        /// Calculated Y offset required such that the pointed arrow
+        /// is pointed towards the center of the hovered widget.
         callout_y_offset: f64,
     },
     HoverOut,
