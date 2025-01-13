@@ -33,7 +33,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{{event_reaction_list::ReactionData, loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt}};
+use super::{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -58,6 +58,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_modal::*;
+    use crate::home::message_context_menu::*;
     use crate::home::message_context_menu::*;
     use crate::home::event_reaction_list::*;
 
@@ -200,32 +201,6 @@ live_design! {
                     return sdf.result;
                 }
             }
-        }
-    }
-
-    // A view that shows action buttons for a message,
-    // with buttons for sending a reply (and in the future, reactions).
-    MessageMenu = <RoundedView> {
-        visible: true,
-        width: Fit,
-        height: Fit,
-        align: {x: 1, y: 0}
-
-        draw_bg: {
-            border_width: 0.0,
-            border_color: #000,
-            radius: 2.0
-        }
-
-        reply_button = <IconButton> {
-            visible: false
-            width: Fit,
-            height: Fit,
-
-            draw_icon: {
-                svg_file: (ICO_REPLY),
-            }
-            icon_walk: {width: 15, height: 15, margin: {top: 4.0}}
         }
     }
 

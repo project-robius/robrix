@@ -245,13 +245,13 @@ impl Widget for MatrixHtmlSpan {
                 // Draw the spoiler reason text in an italic gray font.
                 tf.font_colors.push(COLOR_SPOILER_REASON);
                 tf.italic.push();
-                tf.push_size_rel_scale(0.8);
+                // tf.push_size_rel_scale(0.8);
                 if reason.is_empty() {
                     tf.draw_text(cx, " [Spoiler]  ");
                 } else {
                     tf.draw_text(cx, &format!(" [Spoiler: {}]  ", reason));
                 }
-                tf.font_sizes.pop();
+                // tf.font_sizes.pop();
                 tf.italic.pop();
                 tf.font_colors.pop();
 
