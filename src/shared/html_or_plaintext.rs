@@ -3,7 +3,7 @@
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 
 /// The color of the text used to print the spoiler reason before the hidden text.
-//const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
+const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
 
 live_design! {
     use link::theme::*;
@@ -224,7 +224,7 @@ impl Widget for MatrixHtmlSpan {
         tf.areas_tracker.push_tracker();
         let mut pushed_color = false;
         let mut pushed_inline_code = false;
-        //let mut old_code_color = None;
+        let mut old_code_color = None;
 
         if let Some(fg_color) = self.fg_color {
             tf.font_colors.push(fg_color);
@@ -235,23 +235,23 @@ impl Widget for MatrixHtmlSpan {
             // Reuse the inline code drawblock to set the background color.
             tf.inline_code.push();
             pushed_inline_code = true;
-            // old_code_color = Some(tf.draw_block.code_color);
-            // tf.draw_block.code_color = bg_color;
+            old_code_color = Some(tf.draw_block.code_color);
+            tf.draw_block.code_color = bg_color;
         }
 
         match &self.spoiler {
             SpoilerDisplay::Hidden { reason }
             | SpoilerDisplay::Revealed { reason } => {
                 // Draw the spoiler reason text in an italic gray font.
-                //tf.font_colors.push(COLOR_SPOILER_REASON);
+                tf.font_colors.push(COLOR_SPOILER_REASON);
                 tf.italic.push();
-                // tf.push_size_rel_scale(0.8);
+                tf.push_size_rel_scale(0.8);
                 if reason.is_empty() {
                     tf.draw_text(cx, " [Spoiler]  ");
                 } else {
                     tf.draw_text(cx, &format!(" [Spoiler: {}]  ", reason));
                 }
-                // tf.font_sizes.pop();
+                tf.font_sizes.pop();
                 tf.italic.pop();
                 tf.font_colors.pop();
 
@@ -260,17 +260,17 @@ impl Widget for MatrixHtmlSpan {
                     // Use a background color that is the same as the foreground color,
                     // which is a hacky way to make the spoiled text non-readable.
                     // In the future, we should use a proper blur effect.
-                    // let spoiler_bg_color = self.fg_color
-                    //     .or_else(|| tf.font_colors.last().copied())
-                    //     .unwrap_or(tf.font_color);
+                    let spoiler_bg_color = self.fg_color
+                        .or_else(|| tf.font_colors.last().copied())
+                        .unwrap_or(tf.font_color);
 
-                    // tf.inline_code.push();
-                    // let old_bg_color = tf.draw_block.code_color;
-                    // tf.draw_block.code_color = spoiler_bg_color;
+                    tf.inline_code.push();
+                    let old_bg_color = tf.draw_block.code_color;
+                    tf.draw_block.code_color = spoiler_bg_color;
 
-                    // tf.draw_text(cx, self.text.as_ref());
+                    tf.draw_text(cx, self.text.as_ref());
 
-                    // tf.draw_block.code_color = old_bg_color;
+                    tf.draw_block.code_color = old_bg_color;
                     tf.inline_code.pop();
 
                 } else {
@@ -288,9 +288,9 @@ impl Widget for MatrixHtmlSpan {
         if pushed_inline_code {
             tf.inline_code.pop();
         }
-        // if let Some(old_code_color) = old_code_color {
-        //     tf.draw_block.code_color = old_code_color;
-        // }
+        if let Some(old_code_color) = old_code_color {
+            tf.draw_block.code_color = old_code_color;
+        }
 
         let (start, end) = tf.areas_tracker.pop_tracker();
         self.drawn_areas = SmallVec::from(

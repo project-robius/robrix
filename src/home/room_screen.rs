@@ -1035,7 +1035,7 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
+            let tooltip = self.tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton { 
@@ -1051,7 +1051,6 @@ impl Widget for RoomScreen {
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
                     tooltip_text.push_str(&format!("\nreacted with: {}", reaction_data.emoji));
-                    println!("tooltip_text {:?}", tooltip_text);
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
