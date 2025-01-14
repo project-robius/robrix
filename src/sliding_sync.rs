@@ -607,6 +607,10 @@ async fn async_worker(
                         Ok(_) => SignalToUI::set_ui_signal(),
                         Err(e) => log!("Failed to send timeline update: {e:?} for GetNumberUnreadMessages request for room {room_id}"),
                     }
+                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                        room_id: room_id.clone(),
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                    });
                 });
             }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
@@ -852,6 +856,11 @@ async fn async_worker(
                         Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
                         Err(_e) => error!("Failed to send read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
+                    // Also update the number of unread messages in the room.
+                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                        room_id: room_id.clone(),
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                    });
                 });
             },
 
@@ -871,6 +880,11 @@ async fn async_worker(
                         ),
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
                     }
+                    // Also update the number of unread messages in the room.
+                    enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+                        room_id: room_id.clone(),
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                    });
                 });
             },
 
@@ -1429,6 +1443,12 @@ async fn update_room(
                 new_tags,
             });
         }
+
+        enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
+            room_id: new_room_id.clone(),
+            count: UnreadMessageCount::Known(new_room.num_unread_messages()),
+        });
+
         Ok(())
     }
     else {
@@ -1517,6 +1537,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         room_id: room_id.clone(),
         latest,
         tags: room.tags().await.ok().flatten(),
+        num_unread_messages: room.num_unread_messages(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
