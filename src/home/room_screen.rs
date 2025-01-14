@@ -4018,23 +4018,17 @@ impl Widget for Message {
 
         // push timer handling
         let push_total_duration = 1.0;
-        // Change to mouse position detection for body if not event hit is not passed to inner children 
-        if let Event::MouseDown(MouseDownEvent{abs,..}) = event {
-            if self.view(id!(body)).area().rect(cx).contains(*abs) {
-                if let PushStatus::None = self.push_status {
-                    self.push_status = PushStatus::Pushing(*abs);
-                    self.timer = cx.start_interval(push_total_duration);
-                    self.redraw(cx);
-                }
+        if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            if let PushStatus::None = self.push_status {
+                self.push_status = PushStatus::Pushing(fe.abs);
+                self.timer = cx.start_interval(push_total_duration);
+                self.redraw(cx);
             }
         }
         // cancel timer on finger up or move
-        // Change to mouse position detection for body if not event hit is not passed to inner children 
-        if let Event::MouseUp(MouseUpEvent{abs,..}) | Event::MouseMove(MouseMoveEvent{abs,..}) = event {
-            if self.view(id!(body)).area().rect(cx).contains(*abs) {
-                cx.stop_timer(self.timer);
-                self.push_status = PushStatus::None;
-            }
+        if let Hit::FingerUp(_) | Hit::FingerMove(_) = event.hits(cx, self.view(id!(body)).area()) {
+            cx.stop_timer(self.timer);
+            self.push_status = PushStatus::None;
         }
         // if the time passed, handle on push completed.
         if let PushStatus::Pushing(abs_pos) = &self.push_status {
@@ -4053,21 +4047,17 @@ impl Widget for Message {
 
             self.redraw(cx);
         }
-        // Change to mouse position detection for body if not event hit is not passed to inner children 
-
-        if let Event::MouseUp(fe) = event {
-            if self.view(id!(body)).area().rect(cx).contains(fe.abs) {
-                let right_click = fe.button == 1;
-                if right_click {
-                    cx.widget_action(
-                        room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::ContextMenuOpen {
-                            item_id: self.item_id,
-                            coords: fe.abs,
-                        }
-                    );
-                }
+        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            let right_click = fe.device.mouse_button().is_some_and(|button| button == 3);
+            if right_click {
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::ContextMenuOpen {
+                        item_id: self.item_id,
+                        coords: fe.abs,
+                    }
+                );
             }
         }
         
