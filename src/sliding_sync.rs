@@ -15,10 +15,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, Error, Room
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState},
-    sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent, MembershipChange},
-    Timeline,
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -1164,11 +1161,10 @@ async fn async_main_loop(
         .await?;
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
-    handle_sync_once(client.clone());
     let room_list_service = sync_service.room_list_service();
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
-    let all_rooms_list = room_list_service.all_rooms().await?;
+    let all_rooms_list = room_list_service.clone().all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
 
     let (room_diff_stream, room_list_dynamic_entries_controller) =
@@ -1191,7 +1187,7 @@ async fn async_main_loop(
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in &new_rooms {
-                        add_new_room(new_room).await?;
+                        add_new_room(new_room, room_list_service.clone()).await?;
                     }
                     all_known_rooms.append(new_rooms);
                 }
@@ -1203,12 +1199,12 @@ async fn async_main_loop(
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    add_new_room(&new_room).await?;
+                    add_new_room(&new_room, room_list_service.clone()).await?;
                     all_known_rooms.push_front(new_room);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    add_new_room(&new_room).await?;
+                    add_new_room(&new_room, room_list_service.clone()).await?;
                     all_known_rooms.push_back(new_room);
                 }
                 VectorDiff::PopFront => {
@@ -1227,13 +1223,13 @@ async fn async_main_loop(
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    add_new_room(&new_room).await?;
+                    add_new_room(&new_room, room_list_service.clone()).await?;
                     all_known_rooms.insert(index, new_room);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
                     let old_room = all_known_rooms.get(index).expect("BUG: Set index out of bounds");
-                    update_room(old_room, &changed_room).await?;
+                    update_room(old_room, &changed_room, room_list_service.clone()).await?;
                     all_known_rooms.set(index, changed_room);
                 }
                 VectorDiff::Remove { index: remove_index } => {
@@ -1252,7 +1248,7 @@ async fn async_main_loop(
                                 if LOG_ROOM_LIST_DIFFS {
                                     log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
                                 }
-                                update_room(&room, new_room).await?;
+                                update_room(&room, new_room, room_list_service.clone()).await?;
                                 all_known_rooms.insert(*insert_index, new_room.clone());
                                 next_diff_was_handled = true;
                             }
@@ -1289,7 +1285,7 @@ async fn async_main_loop(
                     ALL_ROOM_INFO.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
-                        add_new_room(room).await?;
+                        add_new_room(room, room_list_service.clone()).await?;
                     }
                     all_known_rooms = new_rooms;
                 }
@@ -1305,6 +1301,7 @@ async fn async_main_loop(
 async fn update_room(
     old_room: &room_list_service::Room,
     new_room: &room_list_service::Room,
+    room_list_service: Arc<RoomListService>,
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
     let mut room_avatar_changed = false;
@@ -1347,7 +1344,7 @@ async fn update_room(
             old_room.room_id(), new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room).await
+        add_new_room(new_room, room_list_service).await
     }
 }
 
@@ -1362,7 +1359,7 @@ fn remove_room(room: &room_list_service::Room) {
 
 
 /// Invoked when the room list service has received an update with a brand new room.
-async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
+async fn add_new_room(room: &room_list_service::Room, room_list_service: Arc<RoomListService>) -> Result<()> {
     let room_id = room.room_id().to_owned();
 
     // NOTE: the call to `sync_up()` never returns, so I'm not sure how to force a room to fully sync.
@@ -1375,6 +1372,8 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
     //     log!("Room {room_id} is now fully synced? {}", room.is_state_fully_synced());
     // }
 
+    // This will sync the room 
+    room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
     if let Some(tombstoned_info) = room.tombstone() {
@@ -1542,14 +1541,8 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
         }
     });
 }
-/// Synchronize the client's state with the latest state on the server.
-/// Without this, there will be discrepancies in the read receipts
-/// Note: There is extra warning introduced "Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None"
-fn handle_sync_once(client: Client) {
-    Handle::current().spawn(async move {
-        let _ = client.sync_once(SyncSettings::new()).await;
-    });
-}
+
+
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
 ///
 /// If the sender profile of the event is not yet available, this function will

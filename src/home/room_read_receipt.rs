@@ -1,5 +1,6 @@
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
