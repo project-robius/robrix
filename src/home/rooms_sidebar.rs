@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::shared::search_bar::SearchBarAction;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -7,7 +9,7 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::search_bar::SearchBar;
 
     use crate::home::rooms_list::RoomsList;
 
@@ -34,6 +36,11 @@ live_design! {
                 text_style: <TITLE_TEXT>{}
             }
         }
+        search_bar = <SearchBar> {
+            input = {
+                empty_message: "Search rooms..."
+            }
+        }
         <CachedWidget> {
             rooms_list = <RoomsList> {}
         }
@@ -53,6 +60,13 @@ live_design! {
     }
 }
 
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomsViewAction {
+    /// Search for rooms
+    Search(String),
+    None,
+}
+
 #[derive(Widget, Live, LiveHook)]
 pub struct RoomsView {
     #[deref]
@@ -62,9 +76,27 @@ pub struct RoomsView {
 impl Widget for RoomsView {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
     }
     
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for RoomsView {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+        for action in actions {
+            match action.as_widget_action().cast() {
+                SearchBarAction::Search(keywords) => {
+                    cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search(keywords.clone()));
+                }
+                SearchBarAction::ResetSearch => {
+                    cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search("".to_string()));
+                }
+                _ => {}
+            }
+        }
     }
 }

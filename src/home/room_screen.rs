@@ -1,14 +1,14 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::{Instant, SystemTime}};
+use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
 
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
-        events::{room::{
+        events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
@@ -26,13 +26,14 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::JumpToBottomButtonWidgetExt, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}, 
+    home::message_context_menu::MessageActionBarWidgetRefExt,
 };
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{loading_modal::{LoadingModalAction, LoadingModalState}, room_read_receipt::populate_read_receipts};
+use super::{{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt}, room_read_receipt::populate_read_receipts};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -51,12 +52,14 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
+    use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_modal::*;
+    use crate::home::message_context_menu::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -197,32 +200,6 @@ live_design! {
                     return sdf.result;
                 }
             }
-        }
-    }
-
-    // A view that shows action buttons for a message,
-    // with buttons for sending a reply (and in the future, reactions).
-    MessageMenu = <RoundedView> {
-        visible: true,
-        width: Fit,
-        height: Fit,
-        align: {x: 1, y: 0}
-
-        draw_bg: {
-            border_width: 0.0,
-            border_color: #000,
-            radius: 2.0
-        }
-
-        reply_button = <IconButton> {
-            visible: false
-            width: Fit,
-            height: Fit,
-
-            draw_icon: {
-                svg_file: (ICO_REPLY),
-            }
-            icon_walk: {width: 15, height: 15, margin: {top: 4.0}}
         }
     }
 
@@ -397,7 +374,6 @@ live_design! {
             avatar_row = <AvatarRow> {
                 margin: { right: 73 }
             }
-            message_menu = <MessageMenu> {}
             // leave space for reply button (simulate a min width).
             // once the message menu is done with overlays this wont be necessary.
             <View> {
@@ -710,11 +686,6 @@ live_design! {
         }
     }
 
-
-    IMG_SMILEY_FACE_BW = dep("crate://self/resources/img/smiley_face_bw.png")
-    IMG_PLUS = dep("crate://self/resources/img/plus.png")
-    IMG_KEYBOARD_ICON = dep("crate://self/resources/img/keyboard_icon.png")
-
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
@@ -835,90 +806,11 @@ live_design! {
                         text: "",
                     }
 
-                    message_input = <TextInput> {
-                        width: Fill, height: Fit, margin: 0
+                    message_input = <RobrixTextInput> {
+                        width: Fill, height: Fit,
+                        margin: 0,
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
-                        draw_bg: {
-                            color: (COLOR_PRIMARY)
-                            instance radius: 2.0
-                            instance border_width: 0.8
-                            instance border_color: #D0D5DD
-                            instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-
-                            fn get_color(self) -> vec4 {
-                                return self.color
-                            }
-
-                            fn get_border_color(self) -> vec4 {
-                                return self.border_color
-                            }
-
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                                sdf.box(
-                                    self.inset.x + self.border_width,
-                                    self.inset.y + self.border_width,
-                                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                                    max(1.0, self.radius)
-                                )
-                                sdf.fill_keep(self.get_color())
-                                if self.border_width > 0.0 {
-                                    sdf.stroke(self.get_border_color(), self.border_width)
-                                }
-                                return sdf.result;
-                            }
-                        }
-                        draw_text: {
-                            color: (MESSAGE_TEXT_COLOR),
-                            text_style: <MESSAGE_TEXT_STYLE>{},
-
-                            fn get_color(self) -> vec4 {
-                                return mix(
-                                    self.color,
-                                    #B,
-                                    self.is_empty
-                                )
-                            }
-                        }
-
-                        // TODO find a way to override colors
-                        draw_cursor: {
-                            instance focus: 0.0
-                            uniform border_radius: 0.5
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                sdf.box(
-                                    0.,
-                                    0.,
-                                    self.rect_size.x,
-                                    self.rect_size.y,
-                                    self.border_radius
-                                )
-                                sdf.fill(mix(#0f0, #0b0, self.focus));
-                                return sdf.result
-                            }
-                        }
-
-                        // TODO find a way to override colors
-                        draw_selection: {
-                            instance hover: 0.0
-                            instance focus: 0.0
-                            uniform border_radius: 2.0
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                sdf.box(
-                                    0.,
-                                    0.,
-                                    self.rect_size.x,
-                                    self.rect_size.y,
-                                    self.border_radius
-                                )
-                                sdf.fill(mix(#dfffd6, #bfffb0, self.focus));
-                                return sdf.result
-                            }
-                        }
                     }
 
                     send_message_button = <IconButton> {
@@ -965,6 +857,39 @@ live_design! {
             loading_modal = <Modal> {
                 content: {
                     loading_modal_inner = <LoadingModal> {}
+                }
+            }
+
+            message_context_menu_modal = <Modal> {
+                align: {x: 0.0, y: 0.0}
+                bg_view: {
+                    visible: false
+                }
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+
+                    message_context_menu = <MessageContextMenu> {}
+                }
+            }
+
+            message_action_bar_popup = <PopupNotification> {
+                align: {x: 0.0, y: 0.0}
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+
+                    message_action_bar = <MessageActionBar> {}
                 }
             }
         }
@@ -1029,8 +954,6 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// 5 secs timer when scroll ends
-    #[rust] fully_read_timer: Timer,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1064,7 +987,7 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
+            let tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverIn { tooltip_pos, tooltip_text, tooltip_width } = seq.hover_in(actions) {
@@ -1086,6 +1009,34 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
+                    MessageAction::ViewSourceButtonClicked(item_id) => {
+                        let Some(tl) = self.tl_state.as_mut() else {
+                            continue;
+                        };
+
+                        let Some(event_tl_item) = tl.items
+                            .get(item_id)
+                            .and_then(|tl_item| tl_item.as_event().cloned())
+                        else {
+                            continue;
+                        };
+
+                        let Some(_message_event) = event_tl_item.content().as_message() else {
+                            continue;
+                        };
+
+                        let original_json: Option<serde_json::Value> = event_tl_item
+                            .original_json()
+                            .and_then(|raw_event| serde_json::to_value(raw_event).ok());
+                        let room_id = self.room_id.to_owned();
+                        let event_id = event_tl_item.event_id().map(|e| e.to_owned());
+
+                        cx.widget_action(
+                            widget_uid,
+                            &scope.path,
+                            MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
+                        );
+                    }
                     MessageAction::MessageReplyButtonClicked(item_id) => {
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
@@ -1214,6 +1165,73 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+
+                match action.as_widget_action().cast() {
+                    MessageAction::ContextMenuClose => {
+                        let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
+                        message_context_menu_modal.close(cx);
+                    }
+                    MessageAction::ContextMenuOpen { item_id, coords } => {
+                        let message_context_menu_modal = self.modal(id!(message_context_menu_modal));
+                        let message_context_menu = message_context_menu_modal.message_context_menu(id!(message_context_menu));
+
+                        // the modal's (0, 0) point is this view, not the screen,so we need to compensate for that.
+                        let coords = coords - self.view.area().rect(cx).pos;
+
+                        message_context_menu_modal.apply_over(
+                            cx,
+                            live! {
+                                content: { margin: { left: (coords.x), top: (coords.y) } }
+                            },
+                        );
+
+                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
+                            message_context_menu.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
+                            message_context_menu_modal.open(cx);
+                        }
+                    }
+                    MessageAction::ActionBarClose => {
+                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+
+                        // close only if the active message is requesting it to avoid double closes.
+                        if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
+                            if action.as_widget_action().widget_uid_eq(message_widget_uid).is_some() {
+                                message_action_bar_popup.close(cx);
+                            }
+                        }
+                    }
+                    MessageAction::ActionBarOpen { item_id, message_rect } => {
+                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+
+                        let margin_x = 50.;
+
+                        let coords = dvec2(
+                            (message_rect.pos.x + message_rect.size.x) - margin_x,
+                            message_rect.pos.y,
+                        );
+
+                        message_action_bar_popup.apply_over(
+                            cx,
+                            live! {
+                                content: { margin: { left: (coords.x), top: (coords.y) } }
+                            },
+                        );
+                        
+                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
+                            message_action_bar_popup.open(cx);
+                            message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // close message action bar if scrolled.
+            if portal_list.scrolled(actions) {
+                let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                message_action_bar_popup.close(cx);
             }
 
             // Set visibility of loading message banner based of pagination logic
@@ -1308,19 +1326,6 @@ impl Widget for RoomScreen {
                     typing: !new_text.is_empty(),
                 });
             }
-        }
-
-        // Mark events as fully read after they have been displayed on screen for 5 seconds.
-        if self.fully_read_timer.is_event(event).is_some() {
-            if let (Some(ref mut tl_state), Some(ref _room_id)) = (&mut self.tl_state, &self.room_id) {
-                for (k, (room, event, start, ref mut moved_to_queue)) in &mut tl_state.read_event_hashmap {
-                    if start.elapsed() > std::time::Duration::new(5, 0) && !*moved_to_queue{
-                        tl_state.marked_fully_read_queue.insert(k.clone(), (room.clone(), event.clone()));
-                        *moved_to_queue = true;
-                    }
-                }
-            }
-            cx.stop_timer(self.fully_read_timer);
         }
 
         if self.animator_handle_event(cx, event).must_redraw() {
@@ -1583,7 +1588,8 @@ impl RoomScreen {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
                             portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
                             tl.prev_first_index = Some(new_item_idx);
-                            cx.stop_timer(self.fully_read_timer);
+                            // Set scrolled_past_read_marker false when we jump to a new event
+                            tl.scrolled_past_read_marker = false;
                         }
                     }
                     //
@@ -1595,10 +1601,13 @@ impl RoomScreen {
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
                     if is_append && !portal_list.is_at_end() {
-                        // log!("is_append was true, showing unread message badge on the jump to bottom button visible");
-                        jump_to_bottom.show_unread_message_badge(1);
+                        if let Some(room_id) = &self.room_id {
+                            // Immediately show the unread badge with no count while we fetch the actual count in the background.
+                            jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
+                            submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
+                        }
                     }
-
+                    
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
@@ -1631,6 +1640,9 @@ impl RoomScreen {
                     }
                     tl.items = new_items;
                     done_loading = true;
+                }
+                TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
+                    jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.room_id);
@@ -1742,6 +1754,9 @@ impl RoomScreen {
 
                     input_bar.set_visible(can_user_send_message);
                     can_not_send_message_notice.set_visible(!can_user_send_message);
+                }
+                TimelineUpdate::OwnUserReadReceipt(receipt) => {
+                    tl.latest_own_user_receipt = Some(receipt);
                 }
             }
         }
@@ -1988,8 +2003,8 @@ impl RoomScreen {
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
                 last_scrolled_index: usize::MAX,
                 prev_first_index: None,
-                read_event_hashmap: HashMap::new(),
-                marked_fully_read_queue: HashMap::new(),
+                scrolled_past_read_marker: false,
+                latest_own_user_receipt: None,
             };
             (new_tl_state, true)
         };
@@ -2003,6 +2018,7 @@ impl RoomScreen {
             }
         );
 
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id: room_id.clone(), subscribe: true });
         // Kick off a back pagination request for this room. This is "urgent",
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
@@ -2136,7 +2152,7 @@ impl RoomScreen {
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
-        cx: &mut Cx,
+        _cx: &mut Cx,
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
@@ -2145,51 +2161,54 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-
         let Some(tl_state) = self.tl_state.as_mut() else { return };
-        let Some(room_id) = self.room_id.as_ref() else { return };
+
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
             if *index != first_index {
-                // scroll changed
-                self.fully_read_timer = cx.start_interval(5.0);
-                let time_now = std::time::Instant::now();
-                if first_index > *index {
-                    // Store visible event messages with current time into a hashmap
-                    let mut read_receipt_event = None;
-                    for r in first_index .. (first_index + portal_list.visible_items() + 1) {
-                        if let Some(v) = tl_state.items.get(r) {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                read_receipt_event = Some(e.to_owned());
-                                tl_state.read_event_hashmap
-                                    .entry(e.to_string())
-                                    .or_insert_with(|| (room_id.clone(), e.to_owned(), time_now, false));
+                if first_index >= *index {
+                    // Get event_id and timestamp for the last visible event
+                    let Some((last_event_id, last_timestamp)) = tl_state
+                        .items
+                        .get(first_index + portal_list.visible_items())
+                        .and_then(|f| f.as_event())
+                        .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                    else {
+                        *index = first_index;
+                        return;
+                    };
+                    submit_async_request(MatrixRequest::ReadReceipt {
+                        room_id: tl_state.room_id.clone(),
+                        event_id: last_event_id.to_owned(),
+                    });
+                    if tl_state.scrolled_past_read_marker {
+                        submit_async_request(MatrixRequest::FullyReadReceipt {
+                            room_id: tl_state.room_id.clone(),
+                            event_id: last_event_id.to_owned(),
+                        });
+                    } else {
+                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
+                        .and_then(|receipt| receipt.ts) {
+                            let Some((_first_event_id, first_timestamp)) = tl_state
+                                .items
+                                .get(first_index)
+                                .and_then(|f| f.as_event())
+                                .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                                else {
+                                    *index = first_index;
+                                    return;
+                                };
+                            if own_user_receipt_timestamp >= &first_timestamp
+                                && own_user_receipt_timestamp <= &last_timestamp
+                            {
+                                tl_state.scrolled_past_read_marker = true;
+                                submit_async_request(MatrixRequest::FullyReadReceipt {
+                                    room_id: tl_state.room_id.clone(),
+                                    event_id: last_event_id.to_owned(),
+                                });
                             }
+                            
                         }
-                    }
-                    if let Some(event_id) = read_receipt_event {
-                        submit_async_request(MatrixRequest::ReadReceipt { room_id: room_id.clone(), event_id });
-                    }
-                    let mut fully_read_receipt_event = None;
-                    // Implements sending fully read receipts when message is scrolled out of first row
-                    for r in *index..first_index {
-                        if let Some(v) = tl_state.items.get(r) {
-                            if let Some(e) = v.as_event().and_then(|f| f.event_id()) {
-                                let mut to_remove = vec![];
-                                for (event_id_string, (_, event_id)) in &tl_state.marked_fully_read_queue {
-                                    if e == event_id {
-                                        fully_read_receipt_event = Some(event_id.clone());
-                                        to_remove.push(event_id_string.clone());
-                                    }
-                                }
-                                for r in to_remove {
-                                    tl_state.marked_fully_read_queue.remove(&r);
-                                }
-                            }
-                        }
-                    }
-                    if let Some(event_id) = fully_read_receipt_event {
-                        submit_async_request(MatrixRequest::FullyReadReceipt { room_id: room_id.clone(), event_id: event_id.clone()});
                     }
                 }
                 *index = first_index;
@@ -2275,6 +2294,8 @@ pub enum TimelineUpdate {
         /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
     },
+    /// The updated number of unread messages in the room.
+    NewUnreadMessagesCount(UnreadMessageCount),
     /// The target event ID was found at the given `index` in the timeline items vector.
     ///
     /// This means that the RoomScreen widget can scroll the timeline up to this event,
@@ -2317,9 +2338,10 @@ pub enum TimelineUpdate {
         /// The list of users (their displayable name) who are currently typing in this room.
         users: Vec<String>,
     },
-    /// A notice that the permission of user's ability to send messages in this room,
-    /// this condition is simple so that we only use `bool`
-    CanUserSendMessage (bool)
+    /// An update containing whether the user is permitted to send messages in this room.
+    CanUserSendMessage(bool),
+    /// An update to the currently logged-in user's own read receipt for this room.
+    OwnUserReadReceipt(Receipt),
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2401,9 +2423,24 @@ struct TimelineUiState {
     /// at which point we submit a backwards pagination request to fetch more events.
     last_scrolled_index: usize,
 
+    /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
+    ///
+    /// This index is saved before the timeline undergoes any jumps, e.g.,
+    /// receiving new items, major scroll changes, or other timeline view jumps.
     prev_first_index: Option<usize>,
-    read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
-    marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
+
+    /// Whether the user has scrolled past their latest read marker.
+    ///
+    /// This is used to determine whether we should send a fully-read receipt
+    /// after the user scrolls past their "read marker", i.e., their latest fully-read receipt.
+    /// Its value is determined by comparing the fully-read event's timestamp with the
+    /// first and last timestamp of displayed events in the timeline.
+    /// When scrolling down, if the value is true, we send a fully-read receipt
+    /// for the last visible event in the timeline.
+    ///
+    /// When new message come in, this value is reset to `false`.
+    scrolled_past_read_marker: bool,
+    latest_own_user_receipt: Option<Receipt>,
 }
 
 #[derive(Default, Debug)]
@@ -2653,7 +2690,7 @@ fn populate_message_view(
                 prev_msg_sender == event_tl_item.sender()
                     && ts_millis.0
                         .checked_sub(prev_event_tl_item.timestamp().0)
-                        .map_or(false, |d| d < uint!(600000)) // 10 mins in millis
+                        .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
             }
             _ => false,
         },
@@ -3809,6 +3846,40 @@ pub enum MessageAction {
     },
     /// The message at the given item index in the timeline should be highlighted.
     MessageHighlight(usize),
+    /// The user requested opening the message context menu
+    ContextMenuOpen {
+        item_id: usize,
+        coords: DVec2,
+    },
+    /// The user requested closing the message context menu
+    ContextMenuClose,
+    /// The user requested opening the message action bar
+    ActionBarOpen {
+        /// At the given timeline item index
+        item_id: usize,
+        /// The message rect, so the action bar can be possitioned relative to it
+        message_rect: Rect,
+    },
+    /// The user requested closing the message action bar
+    ActionBarClose,
+    /// The user clicked the view source button,
+    /// requesting to see the message (at the given timeline item index) source
+    ViewSourceButtonClicked(usize),
+    /// The message event source modal should be oppened
+    MessageSourceModalOpen {
+        room_id: Option<OwnedRoomId>,
+        event_id: Option<OwnedEventId>,
+        original_json: Option<serde_json::Value>,
+    },
+    /// The message event source modal should be closed
+    MessageSourceModalClose,
+    None,
+}
+
+#[derive(Debug, Clone, Default)]
+enum PushStatus {
+    Pushing(DVec2),
+    #[default]
     None,
 }
 
@@ -3818,6 +3889,11 @@ pub struct Message {
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
     #[rust(false)] mentions_user: bool,
+
+    #[rust]
+    timer: Timer,
+    #[rust]
+    push_status: PushStatus,
 
     #[rust] can_be_replied_to: bool,
     #[rust] item_id: usize,
@@ -3838,14 +3914,52 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
 
-        let Some(widget_uid) = self.room_screen_widget_uid else { return };
+        let Some(room_screen_widget_uid) = self.room_screen_widget_uid else { return };
+        let message_widget_uid = self.widget_uid();
 
-        if let Event::Actions(actions) = event {
-            if self.view.button(id!(reply_button)).clicked(actions) {
+        // push timer handling
+        let push_total_duration = 1.0;
+        if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            if let PushStatus::None = self.push_status {
+                self.push_status = PushStatus::Pushing(fe.abs);
+                self.timer = cx.start_interval(push_total_duration);
+                self.redraw(cx);
+            }
+        }
+        // cancel timer on finger up or move
+        if let Hit::FingerUp(_) | Hit::FingerMove(_) = event.hits(cx, self.view(id!(body)).area()) {
+            cx.stop_timer(self.timer);
+            self.push_status = PushStatus::None;
+        }
+        // if the time passed, handle on push completed.
+        if let PushStatus::Pushing(abs_pos) = &self.push_status {
+            if self.timer.is_event(event).is_some() {
                 cx.widget_action(
-                    widget_uid,
+                    room_screen_widget_uid,
                     &scope.path,
-                    MessageAction::MessageReplyButtonClicked(self.item_id),
+                    MessageAction::ContextMenuOpen {
+                        item_id: self.item_id,
+                        coords: *abs_pos,
+                    }
+                );
+                cx.stop_timer(self.timer);
+                self.push_status = PushStatus::None;
+            }
+
+            self.redraw(cx);
+        }
+
+
+        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(body)).area()) {
+            let right_click = fe.device.mouse_button().is_some_and(|button| button == 3);
+            if right_click {
+                cx.widget_action(
+                    room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::ContextMenuOpen {
+                        item_id: self.item_id,
+                        coords: fe.abs,
+                    }
                 );
             }
         }
@@ -3854,7 +3968,7 @@ impl Widget for Message {
             if fe.was_tap() {
                 if let Some(ref replied_to_event) = self.replied_to_event_id {
                     cx.widget_action(
-                        widget_uid,
+                        room_screen_widget_uid,
                         &scope.path,
                         MessageAction::ReplyPreviewClicked {
                             reply_message_item_id: self.item_id,
@@ -3881,13 +3995,30 @@ impl Widget for Message {
 
         if let Event::MouseMove(e) = event {
             let hovered = self.view.area().rect(cx).contains(e.abs);
-            if (self.hovered != hovered) || (!hovered && self.animator_in_state(cx, id!(hover.on)))
-            {
-                self.hovered = hovered;
 
-                // TODO: Once we have a context menu, the messageMenu can be displayed on hover or push only
-                // self.view.view(id!(message_menu)).set_visible(hovered);
-                let hover_animator = if self.hovered {
+            let hover_changed = self.hovered != hovered;
+            let animation_needs_update = hovered != self.animator_in_state(cx, id!(hover.on));
+
+            if hover_changed {
+                if hovered {
+                    cx.widget_action(
+                        message_widget_uid,
+                        &scope.path,
+                        MessageAction::ActionBarOpen {
+                            item_id: self.item_id,
+                            message_rect: self.view.area().rect(cx)
+                        }
+                    );
+                } else {
+                    cx.widget_action(message_widget_uid, &scope.path, MessageAction::ActionBarClose);
+                }
+
+
+                self.hovered = hovered;
+            }
+
+            if animation_needs_update {
+                let hover_animator = if hovered {
                     id!(hover.on)
                 } else {
                     id!(hover.off)
@@ -3910,10 +4041,6 @@ impl Widget for Message {
                 )
             )
         }
-
-        self.view
-            .button(id!(reply_button))
-            .set_visible(self.can_be_replied_to);
 
         self.view.draw_walk(cx, scope, walk)
     }
