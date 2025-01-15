@@ -137,7 +137,7 @@ impl Widget for PopupList {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.popups.len() == 0 {
+        if self.popups.is_empty() {
             return DrawStep::done();
         }
         cx.begin_turtle(walk, self.layout);
