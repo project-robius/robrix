@@ -119,7 +119,7 @@ pub struct PopupList {
     layout: Layout,
     #[live]
     popup_content: Option<LivePtr>,
-    /// A list of tuple containing individual widget and it's content in the order they were pushed.
+    /// A list of tuples containing individual widgets and their content in the order they were added.
     #[rust]
     popups: Vec<(View, String)>,
 }
