@@ -5,8 +5,6 @@
 
 use makepad_widgets::*;
 
-use super::clickable_view::ClickableViewWidgetExt;
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -35,7 +33,7 @@ live_design! {
                 }
             }
         }
-        image_view = <ClickableView> {
+        image_view = <View> {
             visible: false,
             cursor: Hand,
             width: Fill, height: Fit,
@@ -77,7 +75,7 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, text: T) {
-        self.clickable_view(id!(image_view)).set_visible(false);
+        self.view(id!(image_view)).set_visible(false);
         self.view(id!(text_view)).set_visible(true);
         self.view.label(id!(text_view.label)).set_text(text.as_ref());
         self.status = TextOrImageStatus::Text;
@@ -100,7 +98,7 @@ impl TextOrImage {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.clickable_view(id!(image_view)).set_visible(true);
+                self.view(id!(image_view)).set_visible(true);
                 self.view(id!(text_view)).set_visible(false);
                 Ok(())
             }
