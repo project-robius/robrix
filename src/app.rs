@@ -343,6 +343,7 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
+/// Popup notification actions
 #[derive(Clone, DefaultNone, Debug)]
 pub enum PopupNotificationAction {
     None,

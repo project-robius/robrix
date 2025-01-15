@@ -4,6 +4,10 @@ use makepad_widgets::*;
 use crate::app::PopupNotificationAction;
 
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
+
+/// Posts a PopupNotificationAction::Open action and adds a new popup notification with the given text.
+/// The notification will be shown in the order it was added, and will be removed when it is closed by the user.
+/// After pushing a new popup, the list will be redrawn.
 pub fn enqueue_popup_notification(update: String) {
     Cx::post_action(PopupNotificationAction::Open);
     POPUP_NOTIFICATION.push(update);
@@ -75,7 +79,6 @@ live_design! {
         padding: 0,
         popup_content: <PopupDialog> {
             flow: Down
-            padding: 0.0,
             padding: {left: 20.0, bottom: 10.0}
             spacing: 0,
             <View> {
