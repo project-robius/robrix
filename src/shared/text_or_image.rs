@@ -5,8 +5,6 @@
 
 use makepad_widgets::*;
 
-use crate::shared::image_viewer::ImageViewerAction;
-
 use super::clickable_view::ClickableViewWidgetExt;
 
 live_design! {
@@ -64,21 +62,11 @@ pub struct TextOrImage {
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl MatchEvent for TextOrImage {
-    fn handle_actions(&mut self, _: &mut Cx, actions: &Actions) {
-        if self.clickable_view(id!(image_view)).clicked(actions) {
-            log!("Image clicked");
-            Cx::post_action(ImageViewerAction::Open);
-        }
     }
 }
 
