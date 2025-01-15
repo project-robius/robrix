@@ -372,14 +372,9 @@ live_design! {
                 message_annotations = <MessageAnnotations> {}
             }
             avatar_row = <AvatarRow> {
-                margin: { right: 73 }
+                margin: { right: 80 }
             }
-            // leave space for reply button (simulate a min width).
-            // once the message menu is done with overlays this wont be necessary.
-            <View> {
-                width: 1,
-                height: 1
-            }
+            
         }
     }
 
@@ -904,7 +899,7 @@ live_design! {
                     width: Fit,
                     height: Fit,
     
-                    padding: {left:10, top: 19, right: 10, bottom: 10},
+                    padding: {left:10, top: 20, right: 10, bottom: 10},
     
                     draw_bg: {
                         color: #fff,
@@ -2708,7 +2703,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2731,7 +2725,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2759,7 +2752,6 @@ fn populate_message_view(
         MessageOrStickerType::ServerNotice(sn) => {
             is_server_notice = true;
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
 
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -2808,7 +2800,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2851,7 +2842,6 @@ fn populate_message_view(
                 live_id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
 
             if existed && item_drawn_status.content_drawn {
                 (item, true)
@@ -2875,7 +2865,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2894,7 +2883,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2912,7 +2900,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2930,7 +2917,6 @@ fn populate_message_view(
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2944,7 +2930,6 @@ fn populate_message_view(
         MessageOrStickerType::VerificationRequest(verification) => {
             let template = live_id!(Message);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2973,7 +2958,6 @@ fn populate_message_view(
         }
         other => {
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
-            populate_read_receipts(&item, cx, room_id, event_tl_item);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2991,6 +2975,7 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
         draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3916,7 +3901,7 @@ impl Widget for Message {
 
         let Some(room_screen_widget_uid) = self.room_screen_widget_uid else { return };
         let message_widget_uid = self.widget_uid();
-
+        self.view.handle_event(cx, event, scope);
         // push timer handling
         let push_total_duration = 1.0;
         if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
@@ -4027,7 +4012,7 @@ impl Widget for Message {
             }
         }
 
-        self.view.handle_event(cx, event, scope);
+        
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

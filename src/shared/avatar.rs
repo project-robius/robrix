@@ -94,9 +94,6 @@ pub struct Avatar {
     #[deref] view: View,
 
     #[rust] info: Option<UserProfileAndRoomId>,
-    // Bool indicating that operation to fetch the User's profile for avatar is inflight
-    // Do not request User's profile again when request is inflight
-    #[rust] request_inflight: bool,
 }
 
 impl Widget for Avatar {
@@ -307,12 +304,6 @@ impl Avatar {
                         (profile_name, avatar_state)
                     }
                     None => {
-                        if !self.request_inflight {
-                            submit_async_request(MatrixRequest::GetUserProfile { 
-                                user_id: avatar_user_id.to_owned(), room_id: Some(room_id.to_owned()), local_only: false 
-                            });
-                            self.request_inflight = true;
-                        }
                         (None, AvatarState::Unknown)
                     }
                 }

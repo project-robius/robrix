@@ -78,16 +78,9 @@ impl Widget for AvatarRow {
         if self.total_num_seen == 0 { return; }
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(finger_event) => {
-                // Temporary hack to improve the issue that the tooltip is cut off by the right side of the screen
-                // As the width of the tooltip not currently calculated, it is difficult to prevent the tooltip from being cut off
-                // If the mouse position is too close to right side of the screen, the tooltip will be left-aligned to the reaction button 
-                let tooltip_pos = if finger_event.abs.x > cx.default_window_size().x - TOOLTIP_LENGTH {
-                    DVec2 {
-                        x: self.area.rect(cx).pos.x,
-                        y: finger_event.abs.y
-                    }
-                } else {
-                    finger_event.abs
+                let tooltip_pos = DVec2 {
+                    x: self.area.rect(cx).pos.x,
+                    y: finger_event.abs.y
                 };
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn{
                     tooltip_pos,
