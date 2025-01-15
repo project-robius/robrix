@@ -98,7 +98,7 @@ live_design! {
                 }
             }
             
-            room_status_label = <Label> {
+            popup_label = <Label> {
                 width: Fill,
                 text: "......"
                 draw_text: {
@@ -111,7 +111,7 @@ live_design! {
 
 }
 
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct PopupList {
     #[deref]
     view: View,
@@ -119,81 +119,62 @@ pub struct PopupList {
     layout: Layout,
     #[live]
     popup_content: Option<LivePtr>,
+    /// A list of tuple containing individual widget and it's content in the order they were pushed.
     #[rust]
-    popups: Vec<View>,
-    #[rust]
-    popups_data: Vec<String>,
+    popups: Vec<(View, String)>,
 }
-impl LiveHook for PopupList {
-    fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
-        for button in self.popups.iter_mut() {
-            if let Some(index) = nodes.child_by_name(index, live_id!(popup_content).as_field()) {
-                button.apply(cx, apply, index, nodes);
-            }
-        }
-    }
-}
+
 
 impl Widget for PopupList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         while let Some(message) = POPUP_NOTIFICATION.pop() {
             self.push(cx, message);            
         }
-        for view in self.popups.iter_mut() {
+        for (view, _) in self.popups.iter_mut() {
             view.handle_event(cx, event, scope);
         }
         self.widget_match_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mut data = self.popups_data.iter();
-        if data.len() == 0 {
+        if self.popups.len() == 0 {
             return DrawStep::done();
         }
         cx.begin_turtle(walk, self.layout);
-        for view in self.popups.iter_mut() {
-            if let Some(status) = data.next_back() {
-                view.label(id!(room_status_label)).set_text(status);
-                let walk = walk.with_margin_bottom(10.0);
-                let _ = view.draw_walk(cx, scope, walk);
-            }
+        for (view, data) in self.popups.iter_mut() {
+            view.label(id!(popup_label)).set_text(data);
+            let walk = walk.with_margin_bottom(10.0);
+            let _ = view.draw_walk(cx, scope, walk);
         }
         cx.end_turtle();
         DrawStep::done()
     }
 }
 impl PopupList {
+    /// Add a new popup to the list. The popup's content is a string given by the `message` parameter.
+    /// The popup will be displayed in the order it was added. The popup will be removed from the list
+    /// when it is closed by the user. The list will be redrawn after pushing a new popup.
     fn push(&mut self, cx: &mut Cx, message: String) {
-        self.popups_data.push(message);
-        let content = self.popup_content;
-        if self.popups.len() < self.popups_data.len() {
-            for _ in self.popups.len()..self.popups_data.len() {
-                self.popups.push(View::new_from_ptr(cx, content));
-            }
-        }
+        self.popups.push((View::new_from_ptr(cx, self.popup_content), message));
         self.redraw(cx);
     }
 }
 impl WidgetMatchEvent for PopupList {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         let mut removed_indices = Vec::new();
-        for (i, view) in self.popups.iter().enumerate() {
+        for (i, (view, _data)) in self.popups.iter().enumerate() {
             if view.button(id!(close_button)).clicked(actions) {
-                removed_indices.push(self.popups_data.len() - i - 1);
+                removed_indices.push(i);
             }
         }
         if removed_indices.is_empty() {
             return;
         }
-        // Remove elements from the end to avoid shifting issues
-        for &i in removed_indices.iter().rev() {
-            self.popups_data.remove(i);
-        }
-        for view in self.popups.iter_mut() {
-            view.redraw(cx);
-        }
-        for &i in removed_indices.iter().rev() {
+        for &i in removed_indices.iter() {
             self.popups.remove(i);
+        }
+        for (view, _) in self.popups.iter_mut() {
+            view.redraw(cx);
         }
         if self.popups.is_empty() {
             Cx::post_action(PopupNotificationAction::Close);
@@ -202,9 +183,7 @@ impl WidgetMatchEvent for PopupList {
 }
 
 impl PopupListRef {
-    /// Add a new popup to the list. The popup's content is a string given by the `message` parameter.
-    /// The popup will be displayed in the order it was added. The popup will be removed from the list
-    /// when it is closed by the user. The list will be redrawn after pushing a new popup.
+    /// See [`PopupList::push()`].
     pub fn push(&self, cx: &mut Cx, message: String) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.push(cx, message);
