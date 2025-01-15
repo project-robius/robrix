@@ -372,7 +372,7 @@ live_design! {
                 message_annotations = <MessageAnnotations> {}
             }
             avatar_row = <AvatarRow> {
-                margin: { right: 80 }
+                margin: { right: 80 } // Add right margin so that tooltip will not be cut off
             }
             
         }
