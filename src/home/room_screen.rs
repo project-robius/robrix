@@ -2262,6 +2262,7 @@ pub enum RoomScreenTooltipActions {
         tooltip_text: String,
         tooltip_width: f64,
     },
+    /// Mouse out event and clear tooltip
     HoverOut,
     None,
 }
