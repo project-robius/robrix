@@ -371,9 +371,7 @@ live_design! {
 
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {
-                margin: { right: 80 } // Add right margin so that tooltip will not be cut off
-            }
+            avatar_row = <AvatarRow> {}
             
         }
     }
@@ -420,7 +418,6 @@ live_design! {
                 message = <TextOrImage> { }
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {}
         }
     }
 
