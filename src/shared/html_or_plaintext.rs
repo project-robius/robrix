@@ -1,6 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri}, OwnedServerName};
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -16,6 +17,51 @@ live_design! {
     // For some reason, they're not the same. That's TBD.
     // HTML_LINE_SPACING = 6.0
     // HTML_TEXT_HEIGHT_FACTOR = 1.1
+
+    pub RobrixPillTag = {{RobrixPillTag}} {
+        visible: false,
+        width: Fit, height: Fit,
+        align: {x: 0., y: 0.}
+
+        // avatar = <Avatar> {
+        //     height: 20.0, width: 20.0,
+        // }
+        avatar = <View> {
+            width: 20.0, height: 20.0,
+            show_bg: true,
+            draw_bg: {
+                color: #CC299E,
+            }
+        }
+
+        title_or_url = <Label> {
+            text: "RobrixPill placeholder",
+            draw_text: {
+                wrap: Word,
+                color: #f,
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 12.0 },
+            }
+        }
+    }
+
+    pub RoomTag = <RobrixPillTag> {
+        visible: true,
+        show_bg: true,
+        draw_bg: {
+            color: #52B2AC
+        }
+        title = {
+            text: "RoomTag placeholder",
+        }
+    }
+
+    // This is an HTML subwidget used to handle `<a>` tags.
+    // specifically: matrix.to links to show different pill styles and other customizations.
+    pub MatrixHtmlLink = {{MatrixHtmlLink}} {
+        width: Fit, height: Fit,
+
+        room_tag = <RoomTag> {}
+    }
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
@@ -52,9 +98,7 @@ live_design! {
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
 
-        a = {
-            padding: {left: 1.0, right: 1.5},
-        }
+        a = <MatrixHtmlLink> { }
 
         body: "[<i> HTML message placeholder</i>]",
     }
@@ -95,6 +139,129 @@ live_design! {
     }
 }
 
+#[derive(Live, Widget)]
+struct MatrixHtmlLink {
+    #[deref] view: View,
+
+    #[live] pub text: ArcStringMut,
+    #[live] pub url: String,
+}
+
+impl LiveHook for MatrixHtmlLink {
+    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
+        match apply.from {
+            ApplyFrom::NewFromDoc { .. } => {
+                let scope = apply.scope.as_ref().unwrap();
+                let doc = scope.props.get::<HtmlDoc>().unwrap();
+                let mut walker = doc.new_walker_with_index(scope.index + 1);
+
+                if let Some((lc, attr)) = walker.while_attr_lc() {
+                    match lc {
+                        live_id!(href) => self.url = attr.into(),
+                        _ => (),
+                    }
+                }
+            }
+            _ => ()
+        }
+    }
+}
+
+impl Widget for MatrixHtmlLink {
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // https://matrix.to/#/#rust-embedded:matrix.org
+        // https://matrix.to/#/@tyreseluo0103:matrix.org
+
+        let handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+            match id {
+                MatrixId::Room(room_id) => {
+                    log!("TODO: open room {}", room_id);
+                    true
+                }
+                MatrixId::RoomAlias(room_alias) => {
+                    log!("TODO: open room alias {}", room_alias);
+                    true
+                }
+                MatrixId::User(user_id) => {
+                    log!("Opening matrix.to user link for {}", user_id);
+                    true
+                }
+                MatrixId::Event(room_id, event_id) => {
+                    log!("TODO: open event {} in room {}", event_id, room_id);
+                    true
+                }
+                _ => false,
+            }
+        };
+
+        let mut link_was_handled = false;
+        if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
+            link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+        }
+        if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
+            link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+        }
+
+        if !link_was_handled {
+            log!("Opening URL \"{}\"", &self.url);
+            if let Err(e) = robius_open::Uri::new(&self.url).open() {
+                error!("Failed to open URL {:?}. Error: {:?}", &self.url, e);
+            }
+        }
+
+        self.label(id!(room_tag.title_or_url)).set_text_and_redraw(cx, self.text.as_ref());
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn text(&self) -> String {
+        self.text.as_ref().to_string()
+    }
+
+    fn set_text(&mut self, v: &str) {
+        self.text.as_mut_empty().push_str(v);
+    }}
+
+impl MatrixHtmlLink {
+    fn get_html_link_type(&self, url: &str) -> Option<(&MatrixId, &Vec<OwnedServerName>)> {
+        if let Ok(matrix_to_uri) = MatrixToUri::parse(url) {
+            log!("MatrixToUri: {:?}", matrix_to_uri);
+            Some((
+                matrix_to_uri.id(),
+                matrix_to_uri.via()
+            ));
+        }
+
+        if let Ok(matrix_uri) = MatrixUri::parse(url) {
+            log!("MatrixUri: {:?}", matrix_uri);
+            Some((
+                matrix_uri.id(),
+                matrix_uri.via()
+            ));
+        }
+        None
+    }
+}
+
+#[derive(LiveHook, Live, Widget)]
+pub struct RobrixPillTag {
+    #[deref] view: View,
+}
+
+impl Widget for RobrixPillTag {
+
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Live, Widget)]
