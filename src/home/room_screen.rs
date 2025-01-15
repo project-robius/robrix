@@ -2256,7 +2256,7 @@ impl RoomScreenRef {
 /// Actions for the room screen's tooltip 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
-    /// The mouse is hovering over the ??? (see below)
+    /// The mouse is hovering over a subwidget within this RoomScreen.
     HoverIn {
         tooltip_pos: DVec2,
         tooltip_text: String,
