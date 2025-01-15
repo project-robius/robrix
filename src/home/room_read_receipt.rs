@@ -6,7 +6,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
-const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW : usize = 5;
+const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW: usize = 5; 
 const TOOLTIP_LENGTH: f64 = 100.0;
 
 live_design! {
@@ -18,7 +18,7 @@ live_design! {
     use crate::shared::styles::*;
 
     pub AvatarRow = {{AvatarRow}} {
-        button: <Avatar> {
+        avatar_template: <Avatar> {
             width: 15.0,
             height: 15.0,
             text_view = { 
@@ -32,7 +32,7 @@ live_design! {
         margin: {top: 12, right: 120, bottom: 3, left: 10},
         width: Fit,
         height: 30,
-        plus: <Label> {
+        plus_template: <Label> {
             draw_text: {
                 color: #x0,
                 text_style: <TITLE_TEXT>{ font_size: 11}
@@ -41,33 +41,38 @@ live_design! {
         }
     }
 }
-
+/// The widget that displays a list of read receipts.
 #[derive(Live, Widget, LiveHook)]
 pub struct AvatarRow {
     #[redraw]
     #[live]
     draw_text: DrawText,
     #[deref]
-    pub deref: View,
+    deref: View,
     #[walk]
     walk: Walk,
+    /// The template for the avatars
     #[live]
-    button: Option<LivePtr>,
+    avatar_template: Option<LivePtr>,
     #[layout]
     layout: Layout,
+    /// Label template for truncated number of people seen
     #[live]
-    plus: Option<LivePtr>,
+    plus_template: Option<LivePtr>,
     // A vector containing its avatarRef, its drawn status and username
     // Storing the drawn status helps prevent unnecessary set avatar in the draw_walk function
     #[rust]
     buttons: Vec<(AvatarRef, bool, String)>,
     #[rust]
     label: Option<LabelRef>,
+    /// The total number of receipts seen
     #[rust]
     total_num_seen: usize,
+    /// The area of the widget
     #[redraw] 
     #[rust] 
     area: Area,
+    /// The human readable usernames for tooltip
     #[rust]
     human_readable_usernames: String, 
 }
@@ -115,7 +120,7 @@ impl AvatarRow {
     /// Set a row of Avatars based on receipt index map
     ///
     /// Given a sequence of receipts, this will set each of the first MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW
-    /// Avatars in this row to the corresponding user's avatar, and
+    /// avatars in this row to the corresponding user's avatar, and
     /// display the given number of total receipts as a label. The
     /// index map is expected to yield tuples of (user_id, receipt),
     /// where the receipt is ignored.
@@ -128,11 +133,11 @@ impl AvatarRow {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW, receipts_map.len()) {
-                self.buttons.push((WidgetRef::new_from_ptr(cx, self.button).as_avatar(), false, String::new()));
+                self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false, String::new()));
             }
         }
         self.total_num_seen = receipts_map.len();
-        self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
+        self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
         for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
             if !*drawn {
                 let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
@@ -153,7 +158,7 @@ impl AvatarRowRef {
             RoomScreenTooltipActions::None
         }
     }
-    /// Handles hover out action
+    /// Returns true if the action is a hover out
     pub fn hover_out(&self, actions: &Actions) -> bool {
         if let Some(item) = actions.find_widget_action(self.widget_uid()) {
             matches!(item.cast(), RoomScreenTooltipActions::HoverOut)
@@ -169,7 +174,7 @@ impl AvatarRowRef {
             0
         }
     }
-    /// Set a row of Avatars based on receipt's index map
+    /// See [`AvatarRow::set_avatar_row()`].
     pub fn set_avatar_row(&mut self, cx: &mut Cx, room_id: &RoomId, event_id: Option<&EventId>, receipts_map: &IndexMap<OwnedUserId, Receipt>) {
         if let Some(ref mut inner) = self.borrow_mut() {
             inner.set_avatar_row(cx, room_id, event_id, receipts_map);
