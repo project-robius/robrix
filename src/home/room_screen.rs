@@ -985,7 +985,7 @@ impl Widget for RoomScreen {
             let tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverIn { tooltip_pos, tooltip_text, tooltip_width } = seq.hover_in(actions) {
+                if let RoomScreenTooltipActions::HoverInReadReceipt { tooltip_pos, tooltip_text, tooltip_width } = seq.hover_in(actions) {
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
@@ -2256,8 +2256,8 @@ impl RoomScreenRef {
 /// Actions for the room screen's tooltip 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
-    /// The mouse is hovering over a subwidget within this RoomScreen.
-    HoverIn {
+    /// The mouse is hovering over read receipt within this RoomScreen.
+    HoverInReadReceipt {
         tooltip_pos: DVec2,
         tooltip_text: String,
         tooltip_width: f64,
@@ -3901,7 +3901,7 @@ impl Widget for Message {
 
         let Some(room_screen_widget_uid) = self.room_screen_widget_uid else { return };
         let message_widget_uid = self.widget_uid();
-        self.view.handle_event(cx, event, scope);
+        
         // push timer handling
         let push_total_duration = 1.0;
         if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
@@ -4011,8 +4011,7 @@ impl Widget for Message {
                 self.animator_play(cx, hover_animator);
             }
         }
-
-        
+        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

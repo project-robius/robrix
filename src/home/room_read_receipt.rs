@@ -82,7 +82,7 @@ impl Widget for AvatarRow {
                     x: self.area.rect(cx).pos.x,
                     y: finger_event.abs.y
                 };
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverIn{
+                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
                     tooltip_pos,
                     tooltip_text: format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), 
                     tooltip_width: TOOLTIP_LENGTH
