@@ -3897,8 +3897,8 @@ pub enum MessageAction {
 }
 
 #[derive(Debug, Clone, Default)]
-enum PushStatus {
-    Pushing(DVec2),
+enum LongPressState {
+    Pressing(DVec2),
     #[default]
     None,
 }
@@ -3908,17 +3908,21 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
-    #[rust(false)] mentions_user: bool,
+    
+    /// A timer used to detect long presses on the message body.
+    #[rust] long_press_timer: Timer,
+    /// The current status of the long-press gesture on the message body.
+    #[rust] long_press_state: LongPressState,
 
-    #[rust]
-    timer: Timer,
-    #[rust]
-    push_status: PushStatus,
-
+    /// Whether this message mentions the current logged-in user.
+    #[rust] mentions_user: bool,
+    /// Whether this message is one that can be replied to.
     #[rust] can_be_replied_to: bool,
+    /// The index of this message in its room's timeline.
     #[rust] item_id: usize,
     /// The event ID of the message that this message is replying to, if any.
     #[rust] replied_to_event_id: Option<OwnedEventId>,
+    /// The widget ID of the RoomScreen that contains this message.
     #[rust] room_screen_widget_uid: Option<WidgetUid>
 }
 
@@ -3937,23 +3941,15 @@ impl Widget for Message {
         let Some(room_screen_widget_uid) = self.room_screen_widget_uid else { return };
         let message_widget_uid = self.widget_uid();
 
-        // push timer handling
-        let push_total_duration = 1.0;
-        if let Hit::FingerDown(fe) = event.hits(cx, self.view(id!(body)).area()) {
-            if let PushStatus::None = self.push_status {
-                self.push_status = PushStatus::Pushing(fe.abs);
-                self.timer = cx.start_interval(push_total_duration);
-                self.redraw(cx);
-            }
-        }
-        // cancel timer on finger up or move
-        if let Hit::FingerUp(_) | Hit::FingerMove(_) = event.hits(cx, self.view(id!(body)).area()) {
-            cx.stop_timer(self.timer);
-            self.push_status = PushStatus::None;
-        }
-        // if the time passed, handle on push completed.
-        if let PushStatus::Pushing(abs_pos) = &self.push_status {
-            if self.timer.is_event(event).is_some() {
+        /// 500ms long press is default on Android/iOS
+        const LONG_PRESS_DURATION: f64 = 0.500;
+
+        // Here, we handle bringing up the context menu for a message,
+        // which occurs upon a long press or a right-click event on the message body itself.
+        //
+        // We first check if the timer is up, indicating a prior long press has completed.
+        if let LongPressState::Pressing(abs_pos) = &self.long_press_state {
+            if self.long_press_timer.is_event(event).is_some() {
                 cx.widget_action(
                     room_screen_widget_uid,
                     &scope.path,
@@ -3962,17 +3958,28 @@ impl Widget for Message {
                         coords: *abs_pos,
                     }
                 );
-                cx.stop_timer(self.timer);
-                self.push_status = PushStatus::None;
+                cx.stop_timer(self.long_press_timer);
+                self.long_press_state = LongPressState::None;
+                // I don't think we need to redraw here, as nothing visual is happening.
+                // self.redraw(cx);
             }
-
-            self.redraw(cx);
         }
-
-
-        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(body)).area()) {
-            let right_click = fe.device.mouse_button().is_some_and(|button| button == 3);
-            if right_click {
+        // Then, we handle other context menu events: a long press start/end, and right-click.
+        //
+        // NOTE: the `true`/`false` argument to `hits_with_capture_overload` makes NO DIFFERENCE...
+        match event.hits_with_capture_overload(cx, self.view(id!(body)).area(), true) {
+            // a long press has started
+            Hit::FingerDown(fe) => {
+                if matches!(self.long_press_state, LongPressState::None) {
+                    self.long_press_state = LongPressState::Pressing(fe.abs);
+                    self.long_press_timer = cx.start_interval(LONG_PRESS_DURATION);
+                    // I don't think we need to redraw here, as nothing visual is happening.
+                    // self.redraw(cx);
+                }
+            }
+            // a right-click event
+            // TODO: this is macOS-specific mouse button numbering.
+            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|button| button == 1 || button == 3) => {
                 cx.widget_action(
                     room_screen_widget_uid,
                     &scope.path,
@@ -3982,8 +3989,17 @@ impl Widget for Message {
                     }
                 );
             }
+            // a long press has ended
+            Hit::FingerUp(_) | Hit::FingerMove(_) => {
+                cx.stop_timer(self.long_press_timer);
+                self.long_press_state = LongPressState::None;
+            }
+            _ => { }
         }
 
+        // TODO: move this to the event handler for any reply preview content,
+        //       since we also want this jump-to-reply behavior for the reply preview
+        //       that appears above the message input box when you click the reply button.
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.was_tap() {
                 if let Some(ref replied_to_event) = self.replied_to_event_id {
@@ -4013,6 +4029,8 @@ impl Widget for Message {
             }
         }
 
+        // TODO: I think this could be more efficient if we only handle
+        //       hover in/out actions rather than every mouse movement.
         if let Event::MouseMove(e) = event {
             let hovered = self.view.area().rect(cx).contains(e.abs);
 
