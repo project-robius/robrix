@@ -29,13 +29,6 @@ live_design! {
                 }
             }
         }
-        <Label> {
-            text: "Rooms"
-            draw_text: {
-                color: #x0
-                text_style: <TITLE_TEXT>{}
-            }
-        }
         search_bar = <SearchBar> {
             input = {
                 empty_message: "Search rooms..."
@@ -56,7 +49,7 @@ live_design! {
             padding: {top: 17., left: 17., right: 17.}
             flow: Down, spacing: 7
             width: Fill, height: Fill
-        }        
+        }
     }
 }
 
@@ -78,7 +71,7 @@ impl Widget for RoomsView {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }

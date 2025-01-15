@@ -1,0 +1,3068 @@
+src/app.rs:175:9 - App::handle_startup(): app_data_dir: "/home/lym/.local/share/robrix"
+src/app.rs:179:9 - App::handle_startup(): starting matrix sdk loop
+src/sliding_sync.rs:415:5 - Started async_worker task.
+src/sliding_sync.rs:1140:5 - Most recent user ID: Some("@aaravlu:matrix.org")
+src/sliding_sync.rs:1144:5 - CLI parsing succeeded? false. CLI has valid UN+PW? false
+src/sliding_sync.rs:1152:5 - Waiting for login? false
+src/sliding_sync.rs:1161:9 - Trying to restore session for user: Some("@aaravlu:matrix.org")
+src/persistent_state.rs:101:5 - Loading previous session file for @aaravlu:matrix.org...: '/home/lym/.local/share/robrix/aaravlu_matrix.org/persistent_state/session'
+src/persistent_state.rs:116:5 - Loaded session file for @aaravlu:matrix.org. Trying to connect to homeserver (https://matrix-client.matrix.org/)...
+[2m2025-01-15T03:24:13.906855Z[0m [32m INFO[0m [1mbuild[0m[1m{[0m[3mhomeserver[0m[2m=[0mServerNameOrHomeserverUrl("https://matrix-client.matrix.org/")[1m}[0m[2m:[0m [2mmatrix_sdk::client::builder[0m[2m:[0m selected sliding sync version [3mversion[0m[2m=[0mNative
+src/persistent_state.rs:132:5 - Authenticating previous login session for @aaravlu:matrix.org...
+[2m2025-01-15T03:24:13.962883Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::backups[0m[2m:[0m Setting up secret listeners and trying to resume backups
+src/verification.rs:25:5 - Initial verification state is Unknown
+src/sliding_sync.rs:1594:5 - Initial ignored-user list is: []
+[2m2025-01-15T03:24:13.963817Z[0m [32m INFO[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Activated a backup [3mbackup_key[0m[2m=[0mMegolmV1BackupKey { key: "0zq8xfDQGmAunfO1Vz4E+uWppXhGDaeZ4qibVOnfkQ0", version: Some("3") }
+[2m2025-01-15T03:24:13.963847Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::backups[0m[2m:[0m Backup state changed from Unknown to Enabled
+[2m2025-01-15T03:24:13.963859Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Setting up account data listeners and trying to setup recovery
+src/home/rooms_list.rs:579:17 - RoomsList: processed 1 updates to the list of all rooms
+src/app.rs:186:17 - Received LoginAction::LoginSuccess, hiding login view.
+src/sliding_sync.rs:1630:5 - Initial sync service state is Idle
+src/sliding_sync.rs:1646:5 - Initial room list loading state is Loaded { maximum_number_of_rooms: Some(5) }
+src/sliding_sync.rs:1633:13 - Received a sync service state update: Running
+[2m2025-01-15T03:24:13.969000Z[0m [32m INFO[0m [1mnext_sync_with_lock[0m[2m:[0m[1msync_once[0m[2m:[0m [2mmatrix_sdk::sliding_sync[0m[2m:[0m Marking all tracked users as dirty
+[2m2025-01-15T03:24:13.984226Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!IemiTbwVankHTFiEoh:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+src/sliding_sync.rs:1649:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(5) }
+[2m2025-01-15T03:24:13.997048Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!IemiTbwVankHTFiEoh:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-15T03:24:13.997389Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!IemiTbwVankHTFiEoh:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1743:5 - Starting timeline subscriber for room !IemiTbwVankHTFiEoh:matrix.org...
+src/sliding_sync.rs:1745:5 - Received initial timeline update of 2 items for room !IemiTbwVankHTFiEoh:matrix.org.
+src/sliding_sync.rs:1560:5 - Adding new room !IemiTbwVankHTFiEoh:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-15T03:24:14.005777Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!WfZsmtnxbxTdoYPkaT:greyface.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-15T03:24:14.011384Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!WfZsmtnxbxTdoYPkaT:greyface.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-15T03:24:14.012049Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!WfZsmtnxbxTdoYPkaT:greyface.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1743:5 - Starting timeline subscriber for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/sliding_sync.rs:1745:5 - Received initial timeline update of 2 items for room !WfZsmtnxbxTdoYPkaT:greyface.org.
+src/sliding_sync.rs:1560:5 - Adding new room !WfZsmtnxbxTdoYPkaT:greyface.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-15T03:24:14.019658Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ddnLMXyILAzUofbiMe:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-15T03:24:14.024131Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ddnLMXyILAzUofbiMe:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-15T03:24:14.024429Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ddnLMXyILAzUofbiMe:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1743:5 - Starting timeline subscriber for room !ddnLMXyILAzUofbiMe:matrix.org...
+src/sliding_sync.rs:1745:5 - Received initial timeline update of 2 items for room !ddnLMXyILAzUofbiMe:matrix.org.
+src/sliding_sync.rs:1560:5 - Adding new room !ddnLMXyILAzUofbiMe:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-15T03:24:14.034682Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-15T03:24:14.039802Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!MBODbHgvBJVjeKDAhl:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-15T03:24:14.040073Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1743:5 - Starting timeline subscriber for room !MBODbHgvBJVjeKDAhl:matrix.org...
+src/sliding_sync.rs:1745:5 - Received initial timeline update of 2 items for room !MBODbHgvBJVjeKDAhl:matrix.org.
+src/sliding_sync.rs:1560:5 - Adding new room !MBODbHgvBJVjeKDAhl:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-15T03:24:14.047445Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-15T03:24:14.051077Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ugrySPqOXlcmORZIwY:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-15T03:24:14.051258Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1743:5 - Starting timeline subscriber for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/sliding_sync.rs:1745:5 - Received initial timeline update of 2 items for room !ugrySPqOXlcmORZIwY:matrix.org.
+src/sliding_sync.rs:1560:5 - Adding new room !ugrySPqOXlcmORZIwY:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:579:17 - RoomsList: processed 12 updates to the list of all rooms
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org...
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org...
+[2m2025-01-15T03:24:14.311296Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Recovery state changed from Unknown to Enabled
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+[2m2025-01-15T03:24:15.108194Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$WrLC6uWcYUfDto1nMzRMKE-Avzm7ExRUx_VVjwDMegg" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:13:55.662Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:edovrwKptvEQGGLXGs1IleJukotZxNo+gpk9gJ+uySg" [3msession_id[0m[2m=[0m"+4zeLQVxVXREmZG9mHF2rdSeMy+P39TnIdd3Y32yrBE" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-15T03:24:15.127125Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$PRR9Cvz1GKaRR9sDRrWac3PglNOfvigckaDPLcC_KCE" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:04:32.899Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-15T03:24:15.146167Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$6oZANyY0TCQ4btosWSmzovwwZk3aQb7drYeAa4TiQP0" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:00:17.966Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-15T03:24:15.163883Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$zvoxVs_cZU2v3MZy49OswxL-sBYAooFW1fqytA6CTY8" [3morigin_server_ts[0m[2m=[0m"2024-12-27T09:58:55.761Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"Fb3z4bsEqlOP1zptAC4oYYcohzmmevg5saAj7NAmY/w" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-15T03:24:15.166994Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$o5bpwDcWC23A1iwzaxRsSQqjAEOvazf9pK8kW7Dywlo" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:08:50.491Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"jGsojiSXSEU0hZe/DTAGom2PSI3aBtLg0eK4qFJ/FVM" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/verification.rs:28:13 - Received a verification state update: Verified
+[2m2025-01-15T03:24:15.181537Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$gRnz_ldT7UO2zhEQOzYy_x4j-1XtdMbw1eJ81bwauxE" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:02:42.866Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"uwVZcLlrryU4794Ep1BSZcTPH893VzL7QAyc6Tq6Iuw" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+[2m2025-01-15T03:24:15.194978Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$hOsE28O0LOMbfIA0fQ0CLZHWqVKov1VY0KiFHchm3cI" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:02:13.189Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"uwVZcLlrryU4794Ep1BSZcTPH893VzL7QAyc6Tq6Iuw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-15T03:24:15.206427Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_24960885_3357653364_3688752779_263459386_1436675422_11070988779_0_414480", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$Krnx4mRd3gFhZgtxahlzkt5A42c19gM8z3Z3NhMOPOY" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:01:19.275Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"uwVZcLlrryU4794Ep1BSZcTPH893VzL7QAyc6Tq6Iuw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org, hit start of timeline? no
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:1649:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(5) }
+src/home/rooms_list.rs:579:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/room_screen.rs:1966:13 - Sending a first-time backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org
+src/home/room_screen.rs:1538:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/sliding_sync.rs:518:21 - Sending fetch room members request for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/sliding_sync.rs:520:21 - Completed fetch room members request for room !ugrySPqOXlcmORZIwY:matrix.org.
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/sliding_sync.rs:758:29 - Received own user read receipt: Receipt { ts: Some(2025-01-14T10:00:36.666), thread: Unthreaded } "$3XUDItnydrDfMaJBNgSyL3Yb64vhiNuHIFUGoAKtNds"
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/room_screen.rs:1966:13 - Sending a first-time backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org
+src/home/room_screen.rs:1538:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/sliding_sync.rs:518:21 - Sending fetch room members request for room !ddnLMXyILAzUofbiMe:matrix.org...
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org...
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/sliding_sync.rs:520:21 - Completed fetch room members request for room !ddnLMXyILAzUofbiMe:matrix.org.
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/room_screen.rs:1966:13 - Sending a first-time backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org
+src/home/room_screen.rs:1538:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/sliding_sync.rs:518:21 - Sending fetch room members request for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/profile/user_profile_cache.rs:208:21 - Did not find User @phil.catalyst:matrix.org in cache, fetching from server.
+src/sliding_sync.rs:529:21 - Sending get user profile request: user: @phil.catalyst:matrix.org, room: None, local_only: false...
+src/profile/user_profile_cache.rs:208:21 - Did not find User @forevernoob:matrix.org in cache, fetching from server.
+src/sliding_sync.rs:529:21 - Sending get user profile request: user: @forevernoob:matrix.org, room: None, local_only: false...
+src/profile/user_profile_cache.rs:208:21 - Did not find User @inkbottle:matrix.org in cache, fetching from server.
+src/sliding_sync.rs:529:21 - Sending get user profile request: user: @inkbottle:matrix.org, room: None, local_only: false...
+src/profile/user_profile_cache.rs:208:21 - Did not find User @cor:goblin.sh in cache, fetching from server.
+src/sliding_sync.rs:529:21 - Sending get user profile request: user: @cor:goblin.sh, room: None, local_only: false...
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org, hit start of timeline? yes
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/sliding_sync.rs:586:25 - Successfully completed get user profile request: user: @forevernoob:matrix.org, room: None, local_only: false.
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/sliding_sync.rs:586:25 - Successfully completed get user profile request: user: @inkbottle:matrix.org, room: None, local_only: false.
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/sliding_sync.rs:586:25 - Successfully completed get user profile request: user: @phil.catalyst:matrix.org, room: None, local_only: false.
+src/home/room_screen.rs:1966:13 - Sending a first-time backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org
+src/home/room_screen.rs:1538:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/sliding_sync.rs:518:21 - Sending fetch room members request for room !MBODbHgvBJVjeKDAhl:matrix.org...
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/sliding_sync.rs:442:21 - Starting backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org...
+src/sliding_sync.rs:520:21 - Completed fetch room members request for room !MBODbHgvBJVjeKDAhl:matrix.org.
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/sliding_sync.rs:586:25 - Successfully completed get user profile request: user: @cor:goblin.sh, room: None, local_only: false.
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org, hit start of timeline? yes
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org, hit start of timeline? no
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/room_screen.rs:1538:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/sliding_sync.rs:454:29 - Completed backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org, hit start of timeline? no
+src/home/room_screen.rs:1538:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666
+src/home/rooms_list.rs:652:17 - item_id: 0
+src/home/rooms_list.rs:652:17 - item_id: 1
+src/home/rooms_list.rs:689:29 - common room index: 1
+src/home/rooms_list.rs:652:17 - item_id: 2
+src/home/rooms_list.rs:689:29 - common room index: 2
+src/home/rooms_list.rs:652:17 - item_id: 3
+src/home/rooms_list.rs:689:29 - common room index: 3
+src/home/rooms_list.rs:652:17 - item_id: 4
+src/home/rooms_list.rs:669:29 - direct room index: 4
+src/home/rooms_list.rs:652:17 - item_id: 5
+src/home/rooms_list.rs:652:17 - item_id: 6
+src/home/rooms_list.rs:652:17 - item_id: 7
+src/home/rooms_list.rs:652:17 - item_id: 8
+src/home/rooms_list.rs:652:17 - item_id: 9
+src/home/rooms_list.rs:726:13 - 666

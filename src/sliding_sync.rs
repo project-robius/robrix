@@ -732,7 +732,7 @@ async fn async_worker(
 
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {    
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
                     };
@@ -756,8 +756,8 @@ async fn async_worker(
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                             log!("Received own user read receipt: {receipt:?} {event_id:?}");
-                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
-                                error!("Failed to get own user read receipt: {e:?}"); 
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
                         while (update_receiver.next().await).is_some() {
@@ -768,8 +768,8 @@ async fn async_worker(
                                 break;
                             }
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
-                                    error!("Failed to get own user read receipt: {e:?}"); 
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                    error!("Failed to get own user read receipt: {e:?}");
                                 }
                             }
                         }
@@ -875,7 +875,7 @@ async fn async_worker(
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}", 
+                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}",
                             if sent { "Sent" } else { "Already sent" }
                         ),
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
@@ -1533,6 +1533,9 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         |ev| get_latest_event_details(ev, &room_id)
     );
 
+    // We judge whether the given room is direct here.
+    let is_direct = room.is_direct().await.unwrap_or(false);
+
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
         room_id: room_id.clone(),
         latest,
@@ -1545,6 +1548,7 @@ async fn add_new_room(room: &room_list_service::Room) -> Result<()> {
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
+        is_direct,
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
@@ -2140,7 +2144,7 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
-            .find(|&g| g != "@") 
+            .find(|&g| g != "@")
             .map(ToString::to_string)
             .unwrap_or_default()
     )
