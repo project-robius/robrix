@@ -4,7 +4,7 @@ use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
-use crate::{app::AppState, shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -90,6 +90,11 @@ pub enum RoomsListUpdate {
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
     },
+    /// Update the number of unread messages for the given room.
+    UpdateNumUnreadMessages {
+        room_id: OwnedRoomId,
+        count: UnreadMessageCount
+    },
     /// Update the displayable name for the given room.
     UpdateRoomName {
         room_id: OwnedRoomId,
@@ -142,6 +147,8 @@ pub struct RoomsListEntry {
     pub room_id: OwnedRoomId,
     /// The displayable name of this room, if known.
     pub room_name: Option<String>,
+    /// The number of unread messages in this room.
+    pub num_unread_messages: u64,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -277,16 +284,18 @@ impl RoomDisplayFilterBuilder {
     fn matches_room_name(room: &RoomsListEntry, keywords: &str) -> bool {
         room.room_name
             .as_ref()
-            .map_or(false, |name| name.to_lowercase().contains(keywords))
+            .is_some_and(|name| name.to_lowercase().contains(keywords))
     }
 
     fn matches_room_alias(room: &RoomsListEntry, keywords: &str) -> bool {
-        room.canonical_alias
+        let matches_canonical_alias = room.canonical_alias
             .as_ref()
-            .map_or(false, |alias| alias.as_str().eq_ignore_ascii_case(keywords))
-            || room.alt_aliases
-                .iter()
-                .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
+            .is_some_and(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
+        let matches_alt_aliases = room.alt_aliases
+            .iter()
+            .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
+
+        matches_canonical_alias || matches_alt_aliases
     }
 
     fn matches_room_tags(room: &RoomsListEntry, keywords: &str) -> bool {
@@ -305,7 +314,7 @@ impl RoomDisplayFilterBuilder {
             }
         }
 
-        room.tags.as_ref().map_or(false, |room_tags| {
+        room.tags.as_ref().is_some_and(|room_tags| {
             search_tags.iter().all(|search_tag| {
                 room_tags.iter().any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
             })
@@ -477,6 +486,16 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
+                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, count } => {
+                        if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            room.num_unread_messages = match count {
+                                UnreadMessageCount::Unknown => 0,
+                                UnreadMessageCount::Known(count) => count,
+                            };
+                        } else {
+                            error!("Error: couldn't find room {} to update unread messages count", room_id);
+                        }
+                    }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             let was_displayed = (self.display_filter)(room);
@@ -535,7 +554,7 @@ impl Widget for RoomsList {
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
-                    }
+                    },
                     RoomsListUpdate::Tags { room_id, new_tags } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             room.tags = new_tags;
