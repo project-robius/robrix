@@ -58,7 +58,7 @@ pub struct AvatarRow {
     #[live]
     plus: Option<LivePtr>,
     // A vector containing its avatarRef, its drawn status and username
-    // Storing the drawn status helps prevent unnecessary user profile request in the draw_walk function
+    // Storing the drawn status helps prevent unnecessary set avatar in the draw_walk function
     #[rust]
     buttons: Vec<(AvatarRef, bool, String)>,
     #[rust]
@@ -134,7 +134,6 @@ impl AvatarRow {
         self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus).as_label());
         for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
-            // Set avatar_profile_opt to be None so that the function may fetch the user profile from profile cache
             if !*drawn {
                 let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
                 *drawn = drawn_status;
