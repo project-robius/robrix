@@ -884,38 +884,38 @@ live_design! {
                     message_action_bar = <MessageActionBar> {}
                 }
             }
-        }
-        
-        room_screen_tooltip = <Tooltip> {
-            content: <View> {
-                flow: Overlay
-                width: Fit
-                height: Fit
-    
-                rounded_view = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-    
-                    padding: {left:10, top: 20, right: 10, bottom: 10},
-    
-                    draw_bg: {
-                        color: #fff,
-                        border_width: 1.0,
-                        border_color: #D0D5DD,
-                        radius: 2.
-                    }
-    
-                    tooltip_label = <Label> {
+
+            room_screen_tooltip = <Tooltip> {
+                content: <View> {
+                    flow: Overlay
+                    width: Fit
+                    height: Fit
+
+                    rounded_view = <RoundedView> {
                         width: Fit,
-                        draw_text: {
-                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
-                            text_wrap: Word,
-                            color: #000
+                        height: Fit,
+                        padding: {left:10, top: 20, right: 10, bottom: 10},
+
+                        draw_bg: {
+                            color: #fff,
+                            border_width: 1.0,
+                            border_color: #D0D5DD,
+                            radius: 2.
+                        }
+
+                        tooltip_label = <Label> {
+                            width: Fit,
+                            draw_text: {
+                                text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                                text_wrap: Word,
+                                color: #000
+                            }
                         }
                     }
                 }
             }
         }
+
         animator: {
             typing_notice_animator = {
                 default: show,
