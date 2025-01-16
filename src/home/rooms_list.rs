@@ -683,11 +683,9 @@ impl Widget for RoomsList {
 
             list.set_item_range(cx, 0, list_end_index);
 
-            let mut sasa = (0..count).map(|i|{(i, false)}).collect::<Vec<_>>();
+            let mut displayed_rooms_index_with_should_continue = (0..count).map(|i|{(i, false)}).collect::<Vec<_>>();
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                log!("sasa: {:?}", sasa);
-                log!("item_id: {item_id}");
                 let mut scope = Scope::empty();
 
                 let item = if item_id == 0 {
@@ -699,7 +697,7 @@ impl Widget for RoomsList {
                     let mut item = WidgetRef::empty();
                     let mut room_index = None;
 
-                    for (a, b) in sasa.iter_mut() {
+                    for (a, b) in displayed_rooms_index_with_should_continue.iter_mut() {
                         if *b {
                             continue;
                         }
@@ -715,7 +713,7 @@ impl Widget for RoomsList {
                     }
 
                     if let Some(pos) = room_index {
-                        sasa.get_mut(pos).unwrap().1 = true;
+                        displayed_rooms_index_with_should_continue.get_mut(pos).unwrap().1 = true;
                         item = list.item(cx, item_id, live_id!(room_preview));
 
                         if let Some(room_info) = self.displayed_rooms.get(pos)
@@ -752,7 +750,7 @@ impl Widget for RoomsList {
 
 
 
-                    for (a, b) in sasa.iter() {
+                    for (a, b) in displayed_rooms_index_with_should_continue.iter() {
                         if *b {
                             continue;
                         }
@@ -768,7 +766,7 @@ impl Widget for RoomsList {
                     }
 
                     if let Some(pos) = room_index {
-                        sasa.get_mut(pos).unwrap().1 = true;
+                        displayed_rooms_index_with_should_continue.get_mut(pos).unwrap().1 = true;
                         item = list.item(cx, item_id, live_id!(room_preview));
 
                         if let Some(room_info) = self.displayed_rooms.get(pos)
