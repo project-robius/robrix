@@ -1,7 +1,12 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
+use makepad_vector::geometry::Arc;
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri}, OwnedServerName};
+use matrix_sdk::{ruma::{events::room::avatar, matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId}, sliding_sync::http::msc3575::response::Room, OwnedServerName};
+
+use crate::{avatar_cache::{get_avatar, AvatarCacheEntry}, sliding_sync::get_client, utils};
+
+use super::avatar::AvatarWidgetExt;
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -12,6 +17,7 @@ live_design! {
     use link::widgets::*;
     
     use crate::shared::styles::*;
+    use crate::shared::avatar::Avatar;
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
@@ -21,20 +27,16 @@ live_design! {
     pub RobrixPillTag = {{RobrixPillTag}} {
         visible: false,
         width: Fit, height: Fit,
-        align: {x: 0., y: 0.}
-
-        // avatar = <Avatar> {
-        //     height: 20.0, width: 20.0,
-        // }
-        avatar = <View> {
-            width: 20.0, height: 20.0,
-            show_bg: true,
-            draw_bg: {
-                color: #CC299E,
-            }
+        align: {x: 0.5, y: 0.5},
+        spacing: 5.0,
+        avatar = <Avatar> {
+            height: 20.0, width: 20.0,
+            text_view = { text = { draw_text: {
+                text_style: <TITLE_TEXT>{ font_size: 10.0 }
+            }}}
         }
 
-        title_or_url = <Label> {
+        title = <Label> {
             text: "RobrixPill placeholder",
             draw_text: {
                 wrap: Word,
@@ -48,7 +50,7 @@ live_design! {
         visible: true,
         show_bg: true,
         draw_bg: {
-            color: #52B2AC
+            color: #DC633D
         }
         title = {
             text: "RoomTag placeholder",
@@ -59,7 +61,6 @@ live_design! {
     // specifically: matrix.to links to show different pill styles and other customizations.
     pub MatrixHtmlLink = {{MatrixHtmlLink}} {
         width: Fit, height: Fit,
-
         room_tag = <RoomTag> {}
     }
 
@@ -174,47 +175,19 @@ impl Widget for MatrixHtmlLink {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // https://matrix.to/#/#rust-embedded:matrix.org
-        // https://matrix.to/#/@tyreseluo0103:matrix.org
-
-        let handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-            match id {
-                MatrixId::Room(room_id) => {
-                    log!("TODO: open room {}", room_id);
-                    true
-                }
-                MatrixId::RoomAlias(room_alias) => {
-                    log!("TODO: open room alias {}", room_alias);
-                    true
-                }
-                MatrixId::User(user_id) => {
-                    log!("Opening matrix.to user link for {}", user_id);
-                    true
-                }
-                MatrixId::Event(room_id, event_id) => {
-                    log!("TODO: open event {} in room {}", event_id, room_id);
-                    true
-                }
-                _ => false,
-            }
-        };
-
         let mut link_was_handled = false;
         if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
-            link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+            link_was_handled |= self.handle_martix_to_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
         }
         if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
-            link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+            link_was_handled |= self.handle_martix_to_link(cx, matrix_uri.id(), matrix_uri.via());
         }
 
         if !link_was_handled {
-            log!("Opening URL \"{}\"", &self.url);
-            if let Err(e) = robius_open::Uri::new(&self.url).open() {
-                error!("Failed to open URL {:?}. Error: {:?}", &self.url, e);
-            }
+            self.label(id!(room_tag.title)).set_text(self.text.as_ref());
+            self.redraw(cx);
         }
 
-        self.label(id!(room_tag.title_or_url)).set_text_and_redraw(cx, self.text.as_ref());
         self.view.draw_walk(cx, scope, walk)
     }
 
@@ -226,24 +199,36 @@ impl Widget for MatrixHtmlLink {
         self.text.as_mut_empty().push_str(v);
     }}
 
+// 当cache中没有对应房间，用户的头像和alias时，我们一开始不需要渲染，只需要设置默认的头及原始id，当用户点击后再进行懒加载。
 impl MatrixHtmlLink {
-    fn get_html_link_type(&self, url: &str) -> Option<(&MatrixId, &Vec<OwnedServerName>)> {
-        if let Ok(matrix_to_uri) = MatrixToUri::parse(url) {
-            log!("MatrixToUri: {:?}", matrix_to_uri);
-            Some((
-                matrix_to_uri.id(),
-                matrix_to_uri.via()
-            ));
-        }
+    fn handle_martix_to_link(&mut self, cx: &mut Cx2d, id: &MatrixId, _via: &[OwnedServerName]) -> bool {
+        let avatar = self.view.avatar(id!(avatar));
 
-        if let Ok(matrix_uri) = MatrixUri::parse(url) {
-            log!("MatrixUri: {:?}", matrix_uri);
-            Some((
-                matrix_uri.id(),
-                matrix_uri.via()
-            ));
+        match id {
+            MatrixId::Room(room_id) => {
+                avatar.show_text(None, "R");
+                self.label(id!(room_tag.title)).set_text_and_redraw(cx, room_id.as_str());
+                true
+            }
+            MatrixId::RoomAlias(room_alias) => {
+                avatar.show_text(None, "R");
+                self.label(id!(room_tag.title)).set_text_and_redraw(cx, room_alias.as_str());
+                true
+            }
+            MatrixId::User(user_id) => {
+                avatar.show_text(None, "U");
+                self.label(id!(room_tag.title)).set_text_and_redraw(cx, user_id.as_str());
+                true
+            }
+            MatrixId::Event(room_id, event_id) => {
+                avatar.show_text(None, "M");
+                self.label(id!(room_tag.title)).set_text_and_redraw(cx, "Message in room");
+                true
+            }
+            _ => {
+                false
+            }
         }
-        None
     }
 }
 
