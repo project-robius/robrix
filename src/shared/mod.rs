@@ -1,7 +1,6 @@
 use makepad_widgets::Cx;
 
 pub mod avatar;
-pub mod clickable_view;
 pub mod color_tooltip;
 pub mod helpers;
 pub mod html_or_plaintext;
@@ -20,7 +19,6 @@ pub fn live_design(cx: &mut Cx) {
     helpers::live_design(cx);
     icon_button::live_design(cx);
     search_bar::live_design(cx);
-    clickable_view::live_design(cx);
     avatar::live_design(cx);
     text_or_image::live_design(cx);
     html_or_plaintext::live_design(cx);
