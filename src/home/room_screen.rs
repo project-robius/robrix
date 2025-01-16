@@ -3972,7 +3972,6 @@ impl Widget for Message {
             // We must ensure that this Message's child widgets *do* receive `FingerDown` hits,
             // because future `FingerUp` hits won't work if a prior `FingerDown` hit didn't occur.
             Hit::FingerDown(_fd) => {
-                // log!("Message Hit::FingerDown: marking as handled: false");
                 false
             }
             // a right-click event
@@ -3980,83 +3979,23 @@ impl Widget for Message {
             Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|button| button == 1) => {
                 // Mark this hit as handled, such that a right-click event
                 // doesn't propagate to the child widget view.
-                // log!("Message Hit::FingerUp: right-click, marking as handled: true");
-                true // should be true
+                true
             }
             // A long press was released
             Hit::FingerUp(_) => {
                 // If we're ending a long press, then we should mark this hit as handled,
                 // such that the end of the long press event doesn't propagate to the child widget view.
                 let val = matches!(self.long_press_state, LongPressState::Pressing(_));
-                // log!("Message Hit::FingerUp/FingerMove: marking as handled: {}", val);
                 val
             }
             // Finger movements should always be propagated to the child widget view
             // such that hover events always work.
             Hit::FingerMove(_) => {
-                // log!("Message Hit::FingerMove: marking as handled: false");
                 false
             }
             _other => {
                 // Don't mark this hit as handled, such that this event will
                 // propagate to the child widget view.
-
-                // match _other {
-                //     Hit::KeyFocus(_) => {
-                //         log!("Message other Hit::KeyFocus: marking as handled: false");
-                //     }
-                //     Hit::KeyFocusLost(_) => {
-                //         log!("Message other Hit::KeyFocusLost: marking as handled: false");
-                //     }
-                //     Hit::KeyDown(_) => {
-                //         log!("Message other Hit::KeyDown: marking as handled: false");
-                //     }
-                //     Hit::KeyUp(_) => {
-                //         log!("Message other Hit::KeyUp: marking as handled: false");
-                //     }
-                //     Hit::Trigger(_) => {
-                //         log!("Message other Hit::Trigger: marking as handled: false");
-                //     }
-                //     Hit::TextInput(_) => {
-                //         log!("Message other Hit::TextInput: marking as handled: false");
-                //     }
-                //     Hit::TextCopy(_) => {
-                //         log!("Message other Hit::TextCopy: marking as handled: false");
-                //     }
-                //     Hit::TextCut(_) => {
-                //         log!("Message other Hit::TextCut: marking as handled: false");
-                //     }
-                //     Hit::FingerScroll(_) => {
-                //         log!("Message other Hit::FingerScroll: marking as handled: false");
-                //     }
-                //     Hit::FingerDown(_) => {
-                //         log!("Message other Hit::FingerDown: marking as handled: false");
-                //     }
-                //     Hit::FingerMove(_) => {
-                //         log!("Message other Hit::FingerMove: marking as handled: false");
-                //     }
-                //     Hit::FingerHoverIn(_) => {
-                //         // log!("Message other Hit::FingerHoverIn: marking as handled: false");
-                //     }
-                //     Hit::FingerHoverOver(_) => {
-                //         // log!("Message other Hit::FingerHoverOver: marking as handled: false");
-                //     }
-                //     Hit::FingerHoverOut(_) => {
-                //         // log!("Message other Hit::FingerHoverOut: marking as handled: false");
-                //     }
-                //     Hit::FingerUp(_) => {
-                //         log!("Message other Hit::FingerUp: marking as handled: false");
-                //     }
-                //     Hit::DesignerPick(_) => {
-                //         log!("Message other Hit::DesignerPick: marking as handled: false");
-                //     }
-                //     Hit::BackPressed => {
-                //         log!("Message other Hit::BackPressed: marking as handled: false");
-                //     }
-                //     Hit::Nothing => {
-                //     }
-                // }
-
                 false
             }
         };
@@ -4065,30 +4004,6 @@ impl Widget for Message {
             self.view(id!(body)).area(),
             mark_as_handled_fn,
         );
-        // if !matches!(hit, Hit::Nothing) && !matches!(hit, Hit::FingerHoverIn(_)) {
-        //     log!("Got main Hit::{}",
-        //         match &hit {
-        //             Hit::KeyFocus(_) => "KeyFocus",
-        //             Hit::KeyFocusLost(_) => "KeyFocusLost",
-        //             Hit::KeyDown(_) => "KeyDown",
-        //             Hit::KeyUp(_) => "KeyUp",
-        //             Hit::Trigger(_) => "Trigger",
-        //             Hit::TextInput(_) => "TextInput",
-        //             Hit::TextCopy(_) => "TextCopy",
-        //             Hit::TextCut(_) => "TextCut",
-        //             Hit::FingerScroll(_) => "FingerScroll",
-        //             Hit::FingerDown(_) => "FingerDown",
-        //             Hit::FingerMove(_) => "FingerMove",
-        //             Hit::FingerHoverIn(_) => "FingerHoverIn",
-        //             Hit::FingerHoverOver(_) => "FingerHoverOver",
-        //             Hit::FingerHoverOut(_) => "FingerHoverOut",
-        //             Hit::FingerUp(_) => "FingerUp",
-        //             Hit::DesignerPick(_) => "DesignerPick",
-        //             Hit::BackPressed => "BackPressed",
-        //             Hit::Nothing => "Nothing",
-        //         }
-        //     );
-        // }
         match hit {
             // a long press has started
             Hit::FingerDown(fe) => {
@@ -4170,7 +4085,6 @@ impl Widget for Message {
                 } else {
                     cx.widget_action(message_widget_uid, &scope.path, MessageAction::ActionBarClose);
                 }
-
 
                 self.hovered = hovered;
             }
