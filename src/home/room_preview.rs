@@ -100,6 +100,31 @@ live_design! {
         }
     }
 
+    UnreadBadge = <View> {
+        width: 16.0, height: 16.0
+        show_bg: true
+        align: { x: 0.5, y: 0.5 }
+        draw_bg: {
+            instance background_color: (COLOR_TEXT_IDLE)
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let c = self.rect_size * 0.5;
+                sdf.circle(c.x, c.x, c.x)
+                sdf.fill_keep(self.background_color);
+                return sdf.result
+            }
+        }
+        unread_message_count = <Label> {
+            text: "?"
+            draw_text:{
+                color: #FFF
+                text_style: <TIMESTAMP_TEXT_STYLE>{
+                    font_size: 7.5
+                },
+            }
+        }
+    }
+
     pub RoomPreview = {{RoomPreview}} {
         flow: Down, height: Fit
 
@@ -111,30 +136,45 @@ live_design! {
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
                 padding: 5.
-                avatar = <Avatar> {}
+                <View> {
+                    height: Fit
+                    flow: Overlay
+                    align: { x: 1.0 }
+                    avatar = <Avatar> {}
+                    unread_badge = <UnreadBadge> {}
+                }
             }
             IconAndName = <RoomPreviewContent> {
                 padding: 5.
                 align: {x: 0.5, y: 0.5}
                 avatar = <Avatar> {}
                 room_name = <RoomName> {}
+                unread_badge = <UnreadBadge> {}
             }
             FullPreview = <RoomPreviewContent> {
                 avatar = <Avatar> {}
                 <View> {
-                    flow: Down
+                    flow: Right
                     width: Fill, height: 60
-                    spacing: 5
-                    header = <View> {
-                        width: Fill, height: Fit
-                        flow: Right
-                        spacing: 10.
-                        align: {y: 0.5}
-
+                    align: { x: 0.5, y: 0.5 }
+                    left = <View> {
+                        width: Fill, height: Fill,
+                        flow: Down,
                         room_name = <RoomName> {}
-                        timestamp = <Timestamp> {}
+                        preview = <MessagePreview> {}
                     }
-                    preview = <MessagePreview> {}
+                    right = <View> {
+                        width: Fit, height: Fill,
+                        flow: Down,
+                        timestamp = <Timestamp> {}
+                        <View> {
+                            width: Fill, height: Fill
+                            align: { x: 1.0 }
+                            unread_badge = <UnreadBadge> {
+                                margin: { top: 5. } // Align the badge with the timestamp, same as the message preview's margin top.
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -235,6 +275,22 @@ impl Widget for RoomPreviewContent {
                         |img| utils::load_png_or_jpg(&img, cx, img_bytes),
                     );
                 }
+            }
+
+            let unread_badge = self.view(id!(unread_badge));
+
+            if room_info.num_unread_messages > 0 {
+                if room_info.num_unread_messages > 99 {
+                    // We don't need to show unread messages over 99, so we show 99+ instead.
+                    unread_badge.label(id!(unread_message_count)).set_text("99+");
+                } else {
+                    unread_badge
+                        .label(id!(unread_message_count))
+                        .set_text(&room_info.num_unread_messages.to_string());
+                }
+                unread_badge.set_visible(true);
+            } else {
+                unread_badge.set_visible(false);
             }
 
             if cx.display_context.is_desktop() {
