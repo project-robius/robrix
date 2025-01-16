@@ -1,5 +1,7 @@
-use std::{cmp::Ordering, collections::HashMap, ops::{Deref}};
+use std::{cmp::Ordering, collections::HashMap, ops::Deref};
+
 use crossbeam_queue::SegQueue;
+
 use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
@@ -681,9 +683,10 @@ impl Widget for RoomsList {
 
             list.set_item_range(cx, 0, list_end_index);
 
-            let mut display_rooms = self.displayed_rooms.clone();
+            let mut sasa = (0..count).map(|i|{(i, false)}).collect::<Vec<_>>();
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                log!("sasa: {:?}", sasa);
                 log!("item_id: {item_id}");
                 let mut scope = Scope::empty();
 
@@ -694,42 +697,45 @@ impl Widget for RoomsList {
                 }
                 else if item_id >= start_people_index && item_id <= last_people_index {
                     let mut item = WidgetRef::empty();
-                    let mut new_room_id = None;
+                    let mut room_index = None;
 
-                    while let Some(room_info) =display_rooms.pop().and_then(|room_id|{self.all_rooms.get(&room_id)}) {
-                        let room_id = room_info.room_id.clone();
-                        if room_info.is_direct {
-                            new_room_id = Some(room_id);
-                            break;
-                        } else {
-                            display_rooms.insert(0, room_id);
+                    for (a, b) in sasa.iter_mut() {
+                        if *b {
+                            continue;
+                        }
+
+                        if let Some(room_info) = self.displayed_rooms.get(*a)
+                            .and_then(|room_id|{self.all_rooms.get(room_id)})
+                        {
+                            if room_info.is_direct {
+                                room_index = Some(*a);
+                                break;
+                            }
                         }
                     }
 
-                    if new_room_id.is_some() {
+                    if let Some(pos) = room_index {
+                        sasa.get_mut(pos).unwrap().1 = true;
                         item = list.item(cx, item_id, live_id!(room_preview));
 
-                        let room_id = new_room_id.unwrap();
-                        let pos = self.displayed_rooms.iter().position(|id| id == &room_id).unwrap();
-                        let room_info = self.all_rooms.get_mut(&room_id).unwrap();
+                        if let Some(room_info) = self.displayed_rooms.get(pos)
+                            .and_then(|room_id|{self.all_rooms.get_mut(room_id)})
+                        {
+                            self.displayed_rooms_map.insert(item.widget_uid(), pos);
+                            room_info.is_selected = self.current_active_room_index == Some(pos);
 
-
-                        self.displayed_rooms_map.insert(item.widget_uid(), pos);
-                        room_info.is_selected = self.current_active_room_index == Some(pos);
-
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
-                            room_info.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: room_info.room_id.clone(),
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
-                            });
+                            // Paginate the room if it hasn't been paginated yet.
+                            if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
+                                room_info.has_been_paginated = true;
+                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                    room_id: room_info.room_id.clone(),
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            scope = Scope::with_props(&*room_info);
                         }
-
-                        scope = Scope::with_props(&*room_info);
                     }
-
                     item
                 }
                 else if item_id == blank_index {
@@ -742,46 +748,59 @@ impl Widget for RoomsList {
                 }
                 else if item_id >= start_room_index && item_id <= last_room_index {
                     let mut item = WidgetRef::empty();
-                    let mut new_room_id = None;
-                    while let Some(room_info) =display_rooms.pop().and_then(|room_id|{self.all_rooms.get(&room_id)}) {
-                        let room_id = room_info.room_id.clone();
-                        if !room_info.is_direct {
-                            new_room_id = Some(room_id);
-                            break;
-                        } else {
-                            display_rooms.insert(0, room_id);
+                    let mut room_index = None;
+
+
+
+                    for (a, b) in sasa.iter() {
+                        if *b {
+                            continue;
+                        }
+
+                        if let Some(room_info) = self.displayed_rooms.get(*a)
+                            .and_then(|room_id|{self.all_rooms.get(room_id)})
+                        {
+                            if !room_info.is_direct {
+                                room_index = Some(*a);
+                                break;
+                            }
                         }
                     }
 
-                    if new_room_id.is_some() {
+                    if let Some(pos) = room_index {
+                        sasa.get_mut(pos).unwrap().1 = true;
                         item = list.item(cx, item_id, live_id!(room_preview));
 
-                        let room_id = new_room_id.unwrap();
-                        let pos = self.displayed_rooms.iter().position(|id| id == &room_id).unwrap();
-                        let room_info = self.all_rooms.get_mut(&room_id).unwrap();
+                        if let Some(room_info) = self.displayed_rooms.get(pos)
+                            .and_then(|room_id|{self.all_rooms.get_mut(room_id)})
+                        {
+                            self.displayed_rooms_map.insert(item.widget_uid(), pos);
+                            room_info.is_selected = self.current_active_room_index == Some(pos);
 
-
-                        self.displayed_rooms_map.insert(item.widget_uid(), pos);
-                        room_info.is_selected = self.current_active_room_index == Some(pos);
-
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
-                            room_info.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: room_info.room_id.clone(),
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
-                            });
+                            // Paginate the room if it hasn't been paginated yet.
+                            if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
+                                room_info.has_been_paginated = true;
+                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                    room_id: room_info.room_id.clone(),
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            scope = Scope::with_props(&*room_info);
                         }
-
-                        scope = Scope::with_props(&*room_info);
                     }
                     item
                 }
                 else if item_id == status_label_index {
-                    list.item(cx, 0, live_id!(rooms_orpeople_label))
+                    let item = list.item(cx, item_id, live_id!(status_label));
+                    item.as_view().apply_over(cx, live!{
+                        height: Fit,
+                        label = { text: (&self.status) }
+                    });
+                    item
+
                 } else {
-                    list.item(cx, 0, live_id!(rooms_or_people_label))
+                    list.item(cx, 0, live_id!(self.displayed_rooms))
                 };
 
                 item.draw_all(cx, &mut scope);
