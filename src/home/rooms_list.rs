@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, ops::Deref};
+use std::{cmp::Ordering, collections::HashMap, ops::{Deref, Index}};
 use crossbeam_queue::SegQueue;
 use imbl::HashSet;
 use makepad_widgets::*;
@@ -646,118 +646,119 @@ impl Widget for RoomsList {
 
         let count = self.displayed_rooms.len();
 
-        // There are 5 extra items: two headers: `People` and `Rooms`,
-        // one `<Blank>` at the end of header `Rooms`,
-        // one `bottom_filler` at the second from the bottom of the list,
-        // and one `<StatusLabel>` at the bottom of the list.
-        //
-        // And some specially common items: `<Empty>`, their count is equal to `self.not_direct_rooms_count`.
-        // `count + self.not_direct_rooms_count + 5` is total, we minus one as index.
-        let list_end_index = count + self.not_direct_rooms_count + 4;
-        // Minus one as index.
-        let status_label_id = list_end_index - 1;
-
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
+            if count == 0 { continue }
+
+            // There are 5 extra items: two headers: `People` and `Rooms`,
+            // one `<Blank>` at the end of header `Rooms`,
+            // one `bottom_filler` at the second from the bottom of the list,
+            // and one `<StatusLabel>` at the bottom of the list.
+            //
+            // And some specially common items: `<Empty>`, their count is equal to `self.not_direct_rooms_count`.
+            // `count + 5` is total, we minus one as index.
+
+            let list_end_index = count + 4;
+            // Minus one as index.
+            let status_label_index = list_end_index - 1;
+
+            let blank_index = count - self.not_direct_rooms_count + 1;
+
+            let rooms_header_index = blank_index + 1;
+
+            let bottom_filler_index = list_end_index;
+
+            let start_room_index = rooms_header_index + 1;
+
+            let last_room_index = count + 2;
+
+            let start_people_index = 1;
+
+            let last_people_index = count - self.not_direct_rooms_count;
+
+
             // We only care about drawing the portal list.
             let portal_list_ref = list_item.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
             list.set_item_range(cx, 0, list_end_index);
 
-            let mut not_direct_rooms_id = Vec::new();
-            let mut add_people_header_or_not = true;
-            let mut add_blank_or_not = true;
+            let mut display_rooms = self.displayed_rooms.clone();
 
             while let Some(item_id) = list.next_visible_item(cx) {
                 log!("item_id: {item_id}");
                 let mut scope = Scope::empty();
 
-                if item_id == 0 {
+                let item = if item_id == 0 {
                     let item = list.item(cx, 0, live_id!(rooms_or_people_label));
                     item.set_text("People");
-                    item.draw_all(cx, &mut scope);
-                    continue;
+                    item
                 }
-
-                // We get `OwnedRoomId` via index `item_id - 1` because the first item is the `People` header.
-                let displayed_room_index = item_id - 1;
-
-                // Draw the room preview for each room in the `displayed_rooms` list.
-                let room_to_draw = self.displayed_rooms
-                    .get(displayed_room_index)
-                    .and_then(|room_id| self.all_rooms.get_mut(room_id));
-                let item =
-                    if let Some(room_info) = room_to_draw {
-                        if room_info.is_direct {
-                            let item = list.item(cx, item_id, live_id!(room_preview));
-                            self.displayed_rooms_map.insert(item.widget_uid(), displayed_room_index);
-                            room_info.is_selected = self.current_active_room_index == Some(displayed_room_index);
-
-                            // Paginate the room if it hasn't been paginated yet.
-                            if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
-                                room_info.has_been_paginated = true;
-                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                    room_id: room_info.room_id.clone(),
-                                    num_events: 50,
-                                    direction: PaginationDirection::Backwards,
-                                });
+                else if item_id >= start_people_index && item_id <= last_people_index {
+                    let mut item = WidgetRef::empty();
+                    loop {
+                        if !display_rooms.is_empty() {
+                            let room_id = display_rooms.pop().unwrap();
+                            if let Some(room_info) = self.all_rooms.get(&room_id) {
+                                if room_info.is_direct {
+                                    item = list.item(cx, item_id, live_id!(room_preview));
+                                    scope = Scope::with_props(&*room_info);
+                                } else {
+                                    display_rooms.insert(0, room_id.clone());
+                                }
                             }
-
-                            // Pass the room info down to the RoomPreview widget via Scope.
-                            scope = Scope::with_props(&*room_info);
-                            item
                         } else {
-                            not_direct_rooms_id.push((room_info.room_id.clone(), displayed_room_index));
-                            list.item(cx, item_id, live_id!(empty))
+                            break;
                         }
                     }
-                    else if add_blank_or_not {
-                        add_blank_or_not = false;
-                        list.item(cx, item_id, live_id!(blank))
-                    }
-                    else if add_people_header_or_not {
-                        add_people_header_or_not = false;
-                        let item =  list.item(cx, item_id, live_id!(rooms_or_people_label));
-                        item.set_text("Rooms");
-                        item
-                    }
-                    else if let Some((room_id, displayed_room_index)) = not_direct_rooms_id.pop() {
-                        if let Some(room_info) = self.all_rooms.get_mut(&room_id) {
-                           let item = list.item(cx, item_id, live_id!(room_preview));
-                           self.displayed_rooms_map.insert(item.widget_uid(), displayed_room_index);
-                           room_info.is_selected = self.current_active_room_index == Some(displayed_room_index);
+                    item
+                }
+                else if item_id == blank_index {
+                    list.item(cx, item_id, live_id!(rooms_or_people_label))
+                }
+                else if item_id == rooms_header_index {
+                    list.item(cx, item_id, live_id!(rooms_or_people_label))
+                }
+                else if item_id >= start_room_index && item_id <= last_room_index {
+                    let mut item = WidgetRef::empty();
+                    loop {
+                        if !display_rooms.is_empty() {
+                            let room_id = display_rooms.pop().unwrap();
+                            if let Some(room_info) = self.all_rooms.get_mut(&room_id) {
+                                let mut scope = Scope::empty();
+                                if !room_info.is_direct {
+                                    item = list.item(cx, item_id, live_id!(room_preview));
+                                    let pos = self.displayed_rooms.iter().position(|id| id == &room_id).unwrap();
 
-                           // Paginate the room if it hasn't been paginated yet.
-                           if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
-                               room_info.has_been_paginated = true;
-                               submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                   room_id: room_info.room_id.clone(),
-                                   num_events: 50,
-                                   direction: PaginationDirection::Backwards,
-                               });
-                           }
+                                    self.displayed_rooms_map.insert(item.widget_uid(), pos);
+                                    room_info.is_selected = self.current_active_room_index == Some(pos);
 
-                           // Pass the room info down to the RoomPreview widget via Scope.
-                           scope = Scope::with_props(&*room_info);
-                           item
-                       } else {
-                           continue;
-                       }
+                                    // Paginate the room if it hasn't been paginated yet.
+                                    if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
+                                        room_info.has_been_paginated = true;
+                                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                            room_id: room_info.room_id.clone(),
+                                            num_events: 50,
+                                            direction: PaginationDirection::Backwards,
+                                        });
+                                        }
+                                scope = Scope::with_props(&*room_info);
+                                }
+                                else {
+                                    display_rooms.insert(0, room_id.clone());
+                                }
+                        }
+                    } else {
+                        break;
                     }
-                    // Draw the status label as the bottom entry.
-                    else if item_id == status_label_id {
-                        let item = list.item(cx, item_id, live_id!(status_label));
-                        item.as_view().apply_over(cx, live!{
-                            height: Fit,
-                            label = { text: (&self.status) }
-                        });
-                        item
                     }
-                    // Draw a filler entry to take up space at the bottom of the portal list.
-                    else {
-                        list.item(cx, item_id, live_id!(bottom_filler))
-                    };
+                    item
+                }
+                else if item_id == status_label_index {
+                    list.item(cx, 0, live_id!(rooms_or_people_label))
+                } else {
+                    list.item(cx, 0, live_id!(rooms_or_people_label))
+                };
 
                 item.draw_all(cx, &mut scope);
             }
