@@ -176,7 +176,7 @@ impl ReactionListRef {
     ) {
         let Some(client_user_id) = current_user_id() else { return };
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.children.clear(); //Inefficient, as populate_ but we don't want to compare the event_tl_item_reactions
+        inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
         for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
             let total_number_reacted = reaction_senders.len();
             let mut includes_user: bool = false;
