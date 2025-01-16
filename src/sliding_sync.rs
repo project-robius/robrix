@@ -1268,7 +1268,7 @@ async fn async_main_loop(
     let room_list_service = sync_service.room_list_service();
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
-    let all_rooms_list = room_list_service.clone().all_rooms().await?;
+    let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
 
     let (room_diff_stream, room_list_dynamic_entries_controller) =
@@ -1654,7 +1654,6 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
         }
     });
 }
-
 
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
 ///
