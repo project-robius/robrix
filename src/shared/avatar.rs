@@ -219,10 +219,11 @@ impl Avatar {
     /// # Returns
     /// A `Hit` representing the type of interaction (hover, click, etc.)
     fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
+        
         event.hits_with_options(
             cx,
             self.area(),
-            HitOptions::new().with_sweep_area(sweep_area))
+            HitOptions::default().with_sweep_area(sweep_area))
     }
     /// Sets the given avatar and returns a displayable username based on the
     /// given profile and user ID of the sender of the event with the given event ID.
