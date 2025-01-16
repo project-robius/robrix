@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, ops::{Deref, Index}};
+use std::{cmp::Ordering, collections::HashMap, ops::{Deref}};
 use crossbeam_queue::SegQueue;
 use imbl::HashSet;
 use makepad_widgets::*;
@@ -666,8 +666,6 @@ impl Widget for RoomsList {
 
             let rooms_header_index = blank_index + 1;
 
-            let bottom_filler_index = list_end_index;
-
             let start_room_index = rooms_header_index + 1;
 
             let last_room_index = count + 2;
@@ -696,66 +694,92 @@ impl Widget for RoomsList {
                 }
                 else if item_id >= start_people_index && item_id <= last_people_index {
                     let mut item = WidgetRef::empty();
-                    loop {
-                        if !display_rooms.is_empty() {
-                            let room_id = display_rooms.pop().unwrap();
-                            if let Some(room_info) = self.all_rooms.get(&room_id) {
-                                if room_info.is_direct {
-                                    item = list.item(cx, item_id, live_id!(room_preview));
-                                    scope = Scope::with_props(&*room_info);
-                                } else {
-                                    display_rooms.insert(0, room_id.clone());
-                                }
-                            }
-                        } else {
+                    let mut new_room_id = None;
+
+                    while let Some(room_info) =display_rooms.pop().and_then(|room_id|{self.all_rooms.get(&room_id)}) {
+                        let room_id = room_info.room_id.clone();
+                        if room_info.is_direct {
+                            new_room_id = Some(room_id);
                             break;
+                        } else {
+                            display_rooms.insert(0, room_id);
                         }
                     }
+
+                    if new_room_id.is_some() {
+                        item = list.item(cx, item_id, live_id!(room_preview));
+
+                        let room_id = new_room_id.unwrap();
+                        let pos = self.displayed_rooms.iter().position(|id| id == &room_id).unwrap();
+                        let room_info = self.all_rooms.get_mut(&room_id).unwrap();
+
+
+                        self.displayed_rooms_map.insert(item.widget_uid(), pos);
+                        room_info.is_selected = self.current_active_room_index == Some(pos);
+
+                        // Paginate the room if it hasn't been paginated yet.
+                        if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
+                            room_info.has_been_paginated = true;
+                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                room_id: room_info.room_id.clone(),
+                                num_events: 50,
+                                direction: PaginationDirection::Backwards,
+                            });
+                        }
+
+                        scope = Scope::with_props(&*room_info);
+                    }
+
                     item
                 }
                 else if item_id == blank_index {
-                    list.item(cx, item_id, live_id!(rooms_or_people_label))
+                    list.item(cx, item_id, live_id!(blank))
                 }
                 else if item_id == rooms_header_index {
-                    list.item(cx, item_id, live_id!(rooms_or_people_label))
+                    let item = list.item(cx, 0, live_id!(rooms_or_people_label));
+                    item.set_text("Rooms");
+                    item
                 }
                 else if item_id >= start_room_index && item_id <= last_room_index {
                     let mut item = WidgetRef::empty();
-                    loop {
-                        if !display_rooms.is_empty() {
-                            let room_id = display_rooms.pop().unwrap();
-                            if let Some(room_info) = self.all_rooms.get_mut(&room_id) {
-                                let mut scope = Scope::empty();
-                                if !room_info.is_direct {
-                                    item = list.item(cx, item_id, live_id!(room_preview));
-                                    let pos = self.displayed_rooms.iter().position(|id| id == &room_id).unwrap();
-
-                                    self.displayed_rooms_map.insert(item.widget_uid(), pos);
-                                    room_info.is_selected = self.current_active_room_index == Some(pos);
-
-                                    // Paginate the room if it hasn't been paginated yet.
-                                    if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
-                                        room_info.has_been_paginated = true;
-                                        submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                            room_id: room_info.room_id.clone(),
-                                            num_events: 50,
-                                            direction: PaginationDirection::Backwards,
-                                        });
-                                        }
-                                scope = Scope::with_props(&*room_info);
-                                }
-                                else {
-                                    display_rooms.insert(0, room_id.clone());
-                                }
+                    let mut new_room_id = None;
+                    while let Some(room_info) =display_rooms.pop().and_then(|room_id|{self.all_rooms.get(&room_id)}) {
+                        let room_id = room_info.room_id.clone();
+                        if !room_info.is_direct {
+                            new_room_id = Some(room_id);
+                            break;
+                        } else {
+                            display_rooms.insert(0, room_id);
                         }
-                    } else {
-                        break;
                     }
+
+                    if new_room_id.is_some() {
+                        item = list.item(cx, item_id, live_id!(room_preview));
+
+                        let room_id = new_room_id.unwrap();
+                        let pos = self.displayed_rooms.iter().position(|id| id == &room_id).unwrap();
+                        let room_info = self.all_rooms.get_mut(&room_id).unwrap();
+
+
+                        self.displayed_rooms_map.insert(item.widget_uid(), pos);
+                        room_info.is_selected = self.current_active_room_index == Some(pos);
+
+                        // Paginate the room if it hasn't been paginated yet.
+                        if PREPAGINATE_VISIBLE_ROOMS && !room_info.has_been_paginated {
+                            room_info.has_been_paginated = true;
+                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                room_id: room_info.room_id.clone(),
+                                num_events: 50,
+                                direction: PaginationDirection::Backwards,
+                            });
+                        }
+
+                        scope = Scope::with_props(&*room_info);
                     }
                     item
                 }
                 else if item_id == status_label_index {
-                    list.item(cx, 0, live_id!(rooms_or_people_label))
+                    list.item(cx, 0, live_id!(rooms_orpeople_label))
                 } else {
                     list.item(cx, 0, live_id!(rooms_or_people_label))
                 };
