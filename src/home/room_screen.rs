@@ -3090,17 +3090,19 @@ fn populate_image_message_content(
                 }
 
                 // We're done drawing thumbnail of the image message content, so mark it as fully drawn.
+                fully_drawn = true
             }
             MediaCacheEntry::Requested => {
                 text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
                 // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
-                fully_drawn = false;
+                fully_drawn = true
             }
             MediaCacheEntry::Failed => {
                 text_or_image_ref
                     .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
+                fully_drawn = true
             }
         };
 
