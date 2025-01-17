@@ -9,9 +9,8 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-
+    
     use crate::shared::styles::*;
-    use crate::shared::clickable_view::ClickableView;
 
     pub TextOrImage = {{TextOrImage}} {
         width: Fill, height: Fit,
@@ -35,7 +34,7 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Hand,
+            cursor: NotAllowed, // we don't yet support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
@@ -44,6 +43,7 @@ live_design! {
         }
     }
 }
+
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
@@ -67,7 +67,6 @@ impl Widget for TextOrImage {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-
 impl TextOrImage {
     /// Sets the text content, which will be displayed on future draw operations.
     ///
