@@ -3120,7 +3120,7 @@ fn populate_image_message_content(
             ));
         },
 
-        Some((Some(image_info), MediaSource::Plain(mxc_uri))) => {
+        Some((Some(image_info), source)) => {
             match image_info.thumbnail_source {
                 Some(MediaSource::Plain(thumbnail_mxc_uri)) => {
                     // Now that we've obtained thumbnail of the image URI and its metadata.
@@ -3136,7 +3136,18 @@ fn populate_image_message_content(
                 },
                 None => {
                     // We fetch origin of the media again if `image_info.thumbnail_source` is None.
-                    fetch_and_show_image(mxc_uri.clone());
+                    match source {
+                        MediaSource::Plain(mxc_uri) => {
+                            fetch_and_show_image(mxc_uri.clone());
+                        }
+                        MediaSource::Encrypted(encrypted) => {
+                            // We consider this as "fully drawn" since we don't yet support encryption.
+                            text_or_image_ref.show_text(format!(
+                                "{body}\n\n[TODO] fetch encrypted image at {:?}",
+                                encrypted.url
+                            ));
+                        }
+                    }
                 }
             }
         },
