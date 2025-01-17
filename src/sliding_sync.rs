@@ -7,12 +7,12 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
+        api::client::{self, profile::{self, get_profile}, receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent, MessageLikeEventType, TimelineEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
@@ -377,6 +377,9 @@ pub enum MatrixRequest {
     /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
     CheckCanUserSendMessage {
         room_id: OwnedRoomId,
+    },
+    FetchUserDisplayNameAndAvatar {
+        user_id: OwnedUserId
     }
 }
 
@@ -897,6 +900,23 @@ async fn async_worker(
 
                     if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
                         error!("Failed to send the result of if user can send message: {e}")
+                    }
+                });
+            },
+            MatrixRequest::FetchUserDisplayNameAndAvatar { user_id, on_fetched  } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_task = Handle::current().spawn(async move {
+                    let request = profile::get_profile::v3::Request::new(user_id.clone());
+                    let response = client.send(request, None).await;
+                    match response {
+                        Ok(response) => {
+                            let display_name = response.displayname;
+                            let avatar_url = response.avatar_url;
+                            on_fetched(display_name, avatar_url);
+                        }
+                        Err(e) => {
+                            log!("Failed to fetch pure user profile for {user_id}: {e:?}");
+                        }
                     }
                 });
             }
