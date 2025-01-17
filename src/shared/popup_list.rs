@@ -1,16 +1,15 @@
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 
-use crate::app::PopupNotificationAction;
-
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 
-/// Posts a PopupNotificationAction::Open action and adds a new popup notification with the given text.
+/// Posts a PopupNotificationAction::Open action
+/// 
+/// Adds a new popup notification with the given text.
 /// The notification will be shown in the order it was added, and will be removed when it is closed by the user.
-/// After pushing a new popup, the list will be redrawn.
-pub fn enqueue_popup_notification(update: String) {
+pub fn enqueue_popup_notification(message: String) {
     Cx::post_action(PopupNotificationAction::Open);
-    POPUP_NOTIFICATION.push(update);
+    POPUP_NOTIFICATION.push(message);
 }
 
 live_design! {
@@ -114,12 +113,14 @@ live_design! {
 
 }
 
+/// A widget that displays a vertical list of popups.
 #[derive(Live, LiveHook, Widget)]
 pub struct PopupList {
     #[deref]
     view: View,
     #[layout]
     layout: Layout,
+    /// A pointer to the popup content widget.
     #[live]
     popup_content: Option<LivePtr>,
     /// A list of tuples containing individual widgets and their content in the order they were added.
@@ -154,10 +155,11 @@ impl Widget for PopupList {
     }
 }
 impl PopupList {
-    /// Add a new popup to the list. The popup's content is a string given by the `message` parameter.
-    /// The popup will be displayed in the order it was added. The popup will be removed from the list
-    /// when it is closed by the user. The list will be redrawn after pushing a new popup.
-    fn push(&mut self, cx: &mut Cx, message: String) {
+    /// Adds a new popup with a close button to the right side of the screen. 
+    /// 
+    /// The popup's content is a string given by the `message` parameter.
+    /// New popup will be displayed below the previous ones. 
+    pub fn push(&mut self, cx: &mut Cx, message: String) {
         self.popups.push((View::new_from_ptr(cx, self.popup_content), message));
         self.redraw(cx);
     }
@@ -192,4 +194,14 @@ impl PopupListRef {
             inner.push(cx, message);
         }
     }
+}
+
+/// Popup notification actions
+#[derive(Clone, DefaultNone, Debug)]
+pub enum PopupNotificationAction {
+    None,
+    /// Open popup notification layer
+    Open,
+    /// Close popup notification layer
+    Close,
 }
