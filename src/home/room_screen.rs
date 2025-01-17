@@ -55,7 +55,6 @@ live_design! {
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
-    use crate::shared::image_viewer::ImageViewer;
     use crate::home::loading_modal::*;
     use crate::home::message_context_menu::*;
 
@@ -687,9 +686,6 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
-            }
-            image_viewer = <ImageViewer> {
-
             }
 
             keyboard_view = <KeyboardView> {
@@ -3078,7 +3074,8 @@ fn populate_image_message_content(
         }
     }
 
-    let mut fully_drawn = true;
+    let mut fully_drawn = false;
+
     let mut fetch_and_show_image = |mxc_uri: OwnedMxcUri|
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
             MediaCacheEntry::Loaded(data) => {
@@ -3114,11 +3111,11 @@ fn populate_image_message_content(
         },
 
         Some((None, MediaSource::Encrypted(encrypted))) => {
+            // We consider this as "fully drawn" since we don't yet support encryption.
             text_or_image_ref.show_text(format!(
                 "{body}\n\n[TODO] fetch encrypted image at {:?}",
                 encrypted.url
             ));
-            // We consider this as "fully drawn" since we don't yet support encryption.
         },
 
         Some((Some(image_info), MediaSource::Plain(mxc_uri))) => {
@@ -3129,11 +3126,11 @@ fn populate_image_message_content(
                     fetch_and_show_image(thumbnail_mxc_uri.clone());
                 },
                 Some(MediaSource::Encrypted(encrypted)) => {
+                    // We consider this as "fully drawn" since we don't yet support encryption.
                     text_or_image_ref.show_text(format!(
                         "{body}\n\n[TODO] fetch encrypted image at {:?}",
                         encrypted.url
                     ));
-                    // We consider this as "fully drawn" since we don't yet support encryption.
                 },
                 None => {
                     // We fetch origin of the media again if `image_info.thumbnail_source` is None.
