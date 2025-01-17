@@ -56,39 +56,23 @@ live_design! {
         }
     }
 
-    PopupCloseButton = <Button> {
-        width: Fit,
-        height: Fit,
-        margin: {top: -8}
-
-        draw_icon: {
-            svg_file: (ICO_CLOSE),
-            fn get_color(self) -> vec4 {
-                return #000;
-            }
-        }
-        icon_walk: {width: 12, height: 12}
-    }
-
     pub PopupList = {{PopupList}} {
-        width: 190,
+        width: 180,
         height: Fit
         flow: Down
         spacing: 0,
-        padding: 0,
         popup_content: <PopupDialog> {
             flow: Down
-            padding: {left: 20.0, bottom: 10.0}
-            spacing: 0,
+            padding: {top: 5, right: 10, bottom: 5, left: 10}
             <View> {
                 width: Fill,
                 height: Fit,
-                padding: 2,
-                align: {x: 0.98}
+                align: {x: 1.0}
+                // The "X" close button on the top right
                 close_button = <RobrixIconButton> {
                     width: 20,
                     height: 20,
-                    margin: 0,
+                    margin: {right: 0},
                     padding: 0,
                     draw_icon: {
                         svg_file: (ICON_CLOSE),
@@ -99,7 +83,6 @@ live_design! {
                     icon_walk: {width: 14, height: 14}
                 }
             }
-            
             popup_label = <Label> {
                 width: Fill,
                 text: "......"
@@ -114,7 +97,7 @@ live_design! {
 }
 
 /// A widget that displays a vertical list of popups.
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct PopupList {
     #[deref]
     view: View,
@@ -128,6 +111,15 @@ pub struct PopupList {
     popups: Vec<(View, String)>,
 }
 
+impl LiveHook for PopupList {
+    fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
+        for (button, _ ) in self.popups.iter_mut() {
+            if let Some(index) = nodes.child_by_name(index, live_id!(popup_content).as_field()) {
+                button.apply(cx, apply, index, nodes);
+            }
+        }
+    }
+}
 
 impl Widget for PopupList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
