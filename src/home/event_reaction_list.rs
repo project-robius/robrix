@@ -161,7 +161,8 @@ impl Widget for ReactionList {
                     widget_ref.apply_over(cx, live! {
                         draw_bg: { color: (bg_color) , border_color: (border_color) }
                     });
-
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                    cx.set_cursor(MouseCursor::Hand);
                     break;
                 },
                 Hit::FingerUp(_) => {
@@ -201,11 +202,13 @@ impl ReactionListRef {
         id: usize,
     ) {
         const DRAW_ITEM_ID_REACTION: bool = false;
-        if event_tl_item_reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-            return;
-        }
+        
         let Some(client_user_id) = current_user_id() else { return };
         let Some(mut inner) = self.borrow_mut() else { return };
+        if event_tl_item_reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
+            inner.children.clear();
+            return;
+        }
         inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
         for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
             // Just take the first char of the emoji, which ignores any variant selectors.

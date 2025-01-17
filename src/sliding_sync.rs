@@ -933,7 +933,10 @@ async fn async_worker(
                 let _toggle_reaction_task = Handle::current().spawn(async move {
                     log!("Toggle Reaction to room {room_id}: ...");
                     match timeline.toggle_reaction(&timeline_event_id, &reaction).await {
-                        Ok(_send_handle) => log!("Sent toggle reaction to room {room_id} {reaction}."),
+                        Ok(_send_handle) => {
+                            SignalToUI::set_ui_signal();
+                            log!("Sent toggle reaction to room {room_id} {reaction}.")
+                        },
                         Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
                     }
                 });
