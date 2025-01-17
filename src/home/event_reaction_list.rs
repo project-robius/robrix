@@ -7,8 +7,11 @@ use crate::home::room_screen::RoomScreenTooltipActions;
 use indexmap::IndexMap;
 
 const TOOLTIP_WIDTH: f64 = 100.0;
-const EMOJI_BG_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
-const EMOJI_BG_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
+const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
+const EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
+
+const EMOJI_BG_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.89, y: 0.967, z: 0.929, w: 1.0 }; // LightGreen
+const EMOJI_BG_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.968, y: 0.976, z: 0.98, w: 1.0 }; // LightGrey
 
 live_design! {
     use link::theme::*;
@@ -37,6 +40,7 @@ live_design! {
                 instance border_width: 1.5
                 instance border_color: #001A11
                 instance radius: 3.0
+                instance hover: 0.0
                 fn get_color(self) -> vec4 {
                     return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
                 }
@@ -52,8 +56,8 @@ live_design! {
                     )
                     sdf.fill_keep(self.get_color())
                     if self.border_width > 0.0 {
-                        let stroke_color = mix(self.get_color(), self.border_color, 0.2);
-                        sdf.stroke(stroke_color, self.border_width)
+                        //let stroke_color = mix(self.get_color(), self.border_color, 0.2);
+                        sdf.stroke(self.border_color, self.border_width)
                     }
                     return sdf.result;
                 }
@@ -113,7 +117,7 @@ impl Widget for ReactionList {
         DrawStep::done()
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid();
+        let uid: WidgetUid = self.widget_uid();
         for (widget_ref, reaction_data) in self.children.iter() {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
@@ -128,14 +132,17 @@ impl Widget for ReactionList {
                         callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0,
                         reaction_data: reaction_data.clone()
                     });
+                    cx.set_cursor(MouseCursor::Hand);
+                    widget_ref.apply_over_and_redraw(cx, live!(draw_bg: {hover: 1.0}));
                     break;
                 }
                 Hit::FingerHoverOut(_) => {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                    widget_ref.apply_over_and_redraw(cx, live!(draw_bg: {hover: 0.0}));
+                    cx.set_cursor(MouseCursor::Arrow);
                     break;
                 }
                 Hit::FingerDown(_) => {
-                    println!("finger down");
                     let Some(room_id) = &self.room_id else { return };
                     let Some(timeline_event_id) = &self.timeline_event_id else {
                         return;
@@ -145,9 +152,24 @@ impl Widget for ReactionList {
                         timeline_event_id: timeline_event_id.clone(),
                         reaction: reaction_data.reaction_raw.clone(),
                     });
+                    // update the reaction button before the timeline is updated
+                    let (bg_color, border_color) = if !reaction_data.includes_user {
+                        (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
+                    } else {
+                        (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+                    };
+                    widget_ref.apply_over(cx, live! {
+                        draw_bg: { color: (bg_color) , border_color: (border_color) }
+                    });
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+
                     break;
                 },
+                Hit::FingerUp(_) => {
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                    cx.set_cursor(MouseCursor::Hand);
+                    break;
+                }
                 _ => { }
             }
         }
@@ -173,14 +195,22 @@ impl ReactionListRef {
         event_tl_item_reactions: &ReactionsByKeyBySender,
         room_id: OwnedRoomId,
         timeline_event_item_id: TimelineEventItemId,
+        id: usize,
     ) {
+        const DRAW_ITEM_ID_REACTION: bool = false;
+        if event_tl_item_reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
+            return;
+        }
         let Some(client_user_id) = current_user_id() else { return };
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
         for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
+            // Just take the first char of the emoji, which ignores any variant selectors.
+            let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
+            let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
             let total_number_reacted = reaction_senders.len();
             let mut includes_user: bool = false;
-            let emoji_text = emojis::get(reaction_raw)
+            let emoji_text = emojis::get(reaction_str)
                 .and_then(|e| e.shortcode())
                 .unwrap_or_else(|| {
                     log!("Failed to parse emoji: {}", reaction_raw);
@@ -193,7 +223,12 @@ impl ReactionListRef {
                 // Cache the reaction sender's user profile so that tooltip will show displayable name 
                 let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
             }
-   
+            let mut emoji_text = emoji_text.to_string();
+
+            // Debugging: draw the item ID as a reaction
+            if DRAW_ITEM_ID_REACTION {
+                emoji_text = format!("{emoji_text}\n ID: {}", id);
+            }
             let reaction_data = ReactionData {
                 reaction_raw: reaction_raw.to_string(),
                 emoji: emoji_text.to_string(),
@@ -204,13 +239,13 @@ impl ReactionListRef {
             };
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
             button.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_number_reacted));
-            let bg_color = if reaction_data.includes_user {
-                EMOJI_BG_COLOR_INCLUDE_SELF
+            let (bg_color, border_color) = if reaction_data.includes_user {
+                (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
             } else {
-                EMOJI_BG_COLOR_NOT_INCLUDE_SELF
+                (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
             };
             button.apply_over(cx, live! {
-                draw_bg: { color: (bg_color) }
+                draw_bg: { color: (bg_color) , border_color: (border_color) }
             });
             inner.children.push((button, reaction_data));
         }

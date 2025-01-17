@@ -882,6 +882,68 @@ live_design! {
                     message_action_bar = <MessageActionBar> {}
                 }
             }
+            room_screen_tooltip = <Tooltip> {
+                content: <View> {
+                    flow: Overlay
+                    width: Fit
+                    height: Fit
+        
+                    rounded_view = <RoundedView> {
+                        width: Fit,
+                        height: Fit,
+                        
+                        padding: 10,
+        
+                        draw_bg: {
+                            color: #fff,
+                            border_width: 1.0,
+                            border_color: #D0D5DD,
+                            radius: 2.,
+                            instance background_color: (#3b444b),
+                            // Height of isoceles triangle
+                            instance callout_triangle_height: 5.0,
+                            instance callout_y_offset: 15.0,
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let rect_size = self.rect_size;
+                                // Main rounded rectangle
+                                sdf.box(
+                                    // Minus 2.0 to overlap the triangle and rectangle
+                                    (self.callout_triangle_height - 2.0) + self.border_width,
+                                    0.0 + self.border_width,
+                                    rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                    rect_size.y - (self.border_width * 2.0),
+                                    max(1.0, self.radius)
+                                )
+                                sdf.fill(self.background_color);
+                                sdf.translate(0.0, self.callout_y_offset);
+                                // Draw left-pointed arrow triangle
+                                sdf.move_to(self.callout_triangle_height, 0.0);
+                                sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                                sdf.line_to(0.0, self.callout_triangle_height);
+                                // Draw up-pointed arrow triangle
+                                // sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 20.0);
+                                // sdf.line_to(0.0, self.callout_triangle_height * 2.0);
+                                // sdf.line_to(self.callout_triangle_height, self.callout_triangle_height);
+                                sdf.close_path();
+                                
+                                sdf.fill((self.background_color));
+                                return sdf.result;
+                            }
+                            
+                        }
+        
+                        tooltip_label = <Label> {
+                            width: Fit,
+                            draw_text: {
+                                text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                                text_wrap: Word,
+                                color: (COLOR_PRIMARY)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         animator: {
@@ -899,68 +961,7 @@ live_design! {
                 }
             }
         }
-        room_screen_tooltip = <Tooltip> {
-            content: <View> {
-                flow: Overlay
-                width: Fit
-                height: Fit
-    
-                rounded_view = <RoundedView> {
-                    width: Fit,
-                    height: Fit,
-                    
-                    padding: 10,
-    
-                    draw_bg: {
-                        color: #fff,
-                        border_width: 1.0,
-                        border_color: #D0D5DD,
-                        radius: 2.,
-                        instance background_color: (#3b444b),
-                        // Height of isoceles triangle
-                        instance callout_triangle_height: 5.0,
-                        instance callout_y_offset: 15.0,
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            let rect_size = self.rect_size;
-                            // Main rounded rectangle
-                            sdf.box(
-                                // Minus 2.0 to overlap the triangle and rectangle
-                                (self.callout_triangle_height - 2.0) + self.border_width,
-                                0.0 + self.border_width,
-                                rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
-                                rect_size.y - (self.border_width * 2.0),
-                                max(1.0, self.radius)
-                            )
-                            sdf.fill(self.background_color);
-                            sdf.translate(0.0, self.callout_y_offset);
-                            // Draw left-pointed arrow triangle
-                            sdf.move_to(self.callout_triangle_height, 0.0);
-                            sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
-                            sdf.line_to(0.0, self.callout_triangle_height);
-                            // Draw up-pointed arrow triangle
-                            // sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 20.0);
-                            // sdf.line_to(0.0, self.callout_triangle_height * 2.0);
-                            // sdf.line_to(self.callout_triangle_height, self.callout_triangle_height);
-                            sdf.close_path();
-                            
-                            sdf.fill((self.background_color));
-                            return sdf.result;
-                        }
-                        
-                    }
-    
-                    tooltip_label = <Label> {
-                        width: Fit,
-                        draw_text: {
-                            text_style: <THEME_FONT_REGULAR>{font_size: 9},
-                            text_wrap: Word,
-                            color: (COLOR_PRIMARY)
-                        }
-                    }
-                }
-            }
-        }
+        
     }
 }
 
@@ -3025,7 +3026,7 @@ fn populate_message_view(
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list))
-            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier());
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
