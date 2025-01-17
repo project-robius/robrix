@@ -1008,6 +1008,7 @@ impl Widget for RoomScreen {
             //       and wrap it in a `if let Event::Signal` conditional.
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
+            cx.widget_action(widget_uid, &scope.path, RoomScreenTooltipActions::HoverOut);
         }
 
         if let Event::Actions(actions) = event {
@@ -1564,7 +1565,6 @@ impl RoomScreen {
         let mut should_continue_backwards_pagination = false;
         let mut num_updates = 0;
         let mut typing_users = Vec::new();
-
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {

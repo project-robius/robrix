@@ -337,7 +337,7 @@ where
         },
         _ => {
             let display_count = names.len().min(MAX_NAMES);
-            for (i, name) in names.iter().take(display_count -1 ).enumerate() {
+            for (i, name) in names.iter().take(display_count - 1).enumerate() {
                 if i > 0 {
                     result.push_str(", ");
                 }

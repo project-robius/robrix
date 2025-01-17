@@ -133,12 +133,12 @@ impl Widget for ReactionList {
                         reaction_data: reaction_data.clone()
                     });
                     cx.set_cursor(MouseCursor::Hand);
-                    widget_ref.apply_over_and_redraw(cx, live!(draw_bg: {hover: 1.0}));
+                    widget_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));
                     break;
                 }
                 Hit::FingerHoverOut(_) => {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
-                    widget_ref.apply_over_and_redraw(cx, live!(draw_bg: {hover: 0.0}));
+                    widget_ref.apply_over(cx, live!(draw_bg: {hover: 0.0}));
                     cx.set_cursor(MouseCursor::Arrow);
                     break;
                 }
@@ -161,7 +161,6 @@ impl Widget for ReactionList {
                     widget_ref.apply_over(cx, live! {
                         draw_bg: { color: (bg_color) , border_color: (border_color) }
                     });
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
 
                     break;
                 },
@@ -172,6 +171,10 @@ impl Widget for ReactionList {
                 }
                 _ => { }
             }
+        }
+        if let Event::Scroll(_) = event {
+            cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+            cx.set_cursor(MouseCursor::Hand);
         }
     }    
 }
