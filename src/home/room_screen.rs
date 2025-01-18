@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, image_viewer::{ImageViewerRef, ImageViewerWidgetExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, image_viewer::{ImageViewerRef, ImageViewerWidgetExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageClickAction, TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
 };
 use rangemap::RangeSet;
@@ -1076,6 +1076,12 @@ impl Widget for RoomScreen {
 
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
+
+                if let Some(TextOrImageClickAction::SelfWidgetUid(text_or_image_uid)) = action.downcast_ref() {
+                    let image_viewer = self.view.image_viewer(id!(image_viewer));
+                    image_viewer.show_and_fill_image(cx, text_or_image_uid, &mut tl.media_cache);
+                }
+
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -3139,7 +3145,9 @@ fn populate_image_message_content(
 
     match image_info_source {
         Some((None, media_source)) => {
-            //TODO:
+            if let MediaSource::Plain(mx_uri) = media_source.clone() {
+                image_viewer.insert_date(text_or_image_ref.widget_uid(), mx_uri);
+            }
 
             // We fetch the original (full-size) media if it does not have a thumbnail.
             fetch_and_show_media_source(media_source);
@@ -3147,7 +3155,9 @@ fn populate_image_message_content(
 
         },
         Some((Some(image_info), media_source)) => {
-
+            if let MediaSource::Plain(mx_uri) = media_source.clone() {
+                image_viewer.insert_date(text_or_image_ref.widget_uid(), mx_uri);
+            }
 
             if let Some(thumbnail_source) =  image_info.thumbnail_source {
                 fetch_and_show_media_source(thumbnail_source);

@@ -9,7 +9,7 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-    
+
     use crate::shared::styles::*;
 
     pub TextOrImage = {{TextOrImage}} {
@@ -57,9 +57,30 @@ pub struct TextOrImage {
     // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
 }
+#[derive(Debug, Clone, DefaultNone)]
+pub enum TextOrImageClickAction {
+    SelfWidgetUid(WidgetUid),
+    None
+}
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if TextOrImageStatus::Image != self.status() { return };
+
+        let image_view_area = self.view.view(id!(image_view)).area();
+
+        match event.hits(cx, image_view_area) {
+            Hit::FingerDown(_fe) => {
+                cx.set_key_focus(image_view_area);
+            }
+            Hit::FingerUp(fe) => {
+                if fe.was_tap() {
+                    Cx::post_action(TextOrImageClickAction::SelfWidgetUid(self.view.widget_uid()));
+                }
+            }
+            _ => (),
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 

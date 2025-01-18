@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedMxcUri;
 
+use crate::{media_cache::{MediaCache, MediaCacheEntry}, utils};
+
 live_design! {
     use link::theme::*;
     use link::widgets::*;
@@ -45,7 +47,7 @@ pub struct ImageViewer {
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    Open,
+    Open(WidgetUid),
     None,
 }
 
@@ -73,11 +75,33 @@ impl ImageViewer {
     fn insert_date(&mut self, text_or_image_uid: WidgetUid, mx_uri: OwnedMxcUri) {
         self.widgetref_image_uri_map.insert(text_or_image_uid, mx_uri);
     }
+    fn show_and_fill_image(&mut self, cx: &mut Cx, text_or_image_uid: &WidgetUid, media_cache: &mut MediaCache) {
+        if let Some(mxc_uri) = self.widgetref_image_uri_map.get(text_or_image_uid) {
+            match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+                MediaCacheEntry::Loaded(data) => {
+                    let image_view = self.view.image(id!(image_view));
+
+                    utils::load_png_or_jpg(&image_view, cx, &data).unwrap();
+                }
+                MediaCacheEntry::Requested => {
+
+                }
+                MediaCacheEntry::Failed => {
+
+                }
+            };
+        };
+    }
 }
 impl ImageViewerRef {
     pub fn insert_date(&self, text_or_image_uid: WidgetUid, mx_uri: OwnedMxcUri) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.insert_date(text_or_image_uid, mx_uri);
+        }
+    }
+    pub fn show_and_fill_image(&self, cx: &mut Cx, text_or_image_uid: &WidgetUid, media_cache: &mut MediaCache) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.show_and_fill_image(cx, text_or_image_uid, media_cache);
         }
     }
 }
