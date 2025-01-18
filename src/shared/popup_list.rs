@@ -22,11 +22,10 @@ live_design! {
     ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
 
     PopupDialog = <RoundedView> {
-        width: 200
+        width: 275
         height: Fit
         margin: {top: 20, right: 20}
-        padding: {top: 20, right: 20, bottom: 20, left: 20}
-        spacing: 15
+        padding: 0
 
         show_bg: true
         draw_bg: {
@@ -57,39 +56,43 @@ live_design! {
     }
 
     pub PopupList = {{PopupList}} {
-        width: 180,
+        width: 275,
         height: Fit
         flow: Down
         spacing: 0,
         popup_content: <PopupDialog> {
-            flow: Down
-            padding: {top: 5, right: 10, bottom: 5, left: 10}
+            flow: Right
+            padding: {top: 5, right: 5, bottom: 5, left: 10}
+            align: {y: 0.0}
+
             <View> {
                 width: Fill,
                 height: Fit,
-                align: {x: 1.0}
-                // The "X" close button on the top right
-                close_button = <RobrixIconButton> {
-                    width: 20,
-                    height: 20,
-                    margin: {right: 0},
-                    padding: 0,
-                    draw_icon: {
-                        svg_file: (ICON_CLOSE),
-                        fn get_color(self) -> vec4 {
-                            return #x0;
-                        }
+                align: {x: 0.0, y: 0.5}
+                padding: {left: 5, top: 10, bottom: 10, right: 0}
+                popup_label = <Label> {
+                    width: Fill,
+                    height: Fit,
+                    draw_text: {
+                        color: #000,
+                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+                        wrap: Word
                     }
-                    icon_walk: {width: 14, height: 14}
                 }
             }
-            popup_label = <Label> {
-                width: Fill,
-                text: "......"
-                draw_text: {
-                    color: #000,
-                    wrap: Word
+            // The "X" close button on the top right
+            close_button = <RobrixIconButton> {
+                width: Fit,
+                height: Fit,
+                margin: {left: 0, top: 4, bottom: 4, right: 4},
+                padding: 8,
+                draw_icon: {
+                    svg_file: (ICON_CLOSE),
+                    fn get_color(self) -> vec4 {
+                        return #x888;
+                    }
                 }
+                icon_walk: {width: 12, height: 12}
             }
         }
     }

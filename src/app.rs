@@ -120,7 +120,7 @@ live_design! {
                         login_screen = <LoginScreen> {}
                     }
                     popup = <PopupNotification> {
-                        margin: {top:40,right: 15},
+                        margin: {top: 45, right: 13},
                         content: {
                             <PopupList> {}
                         }
