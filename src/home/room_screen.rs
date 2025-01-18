@@ -21,13 +21,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
-    home::message_context_menu::MessageActionBarWidgetRefExt,
 };
 use rangemap::RangeSet;
 
@@ -1187,6 +1186,7 @@ impl Widget for RoomScreen {
                 log!("Add location button clicked; requesting current location...");
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
+                    enqueue_popup_notification(String::from("Failed to initialize location services."));
                 }
                 self.show_location_preview(cx);
             }
@@ -1832,6 +1832,7 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                    enqueue_popup_notification("Could not open URL: {url}".to_string());
                 }
             }
             true
@@ -3063,20 +3064,22 @@ fn populate_image_message_content(
         )
         .unwrap_or_default();
 
-    // If we have a known mimetype and it's not an image (e.g., an animated)
-    // then show a message about it being unsupported.
+    // If we have a known mimetype and it's not a static image,
+    // then show a message about it being unsupported (e.g., for animated gifs).
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(format!(
                 "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
-            return true;
+            return true; // consider this as fully drawn
         }
     }
 
     let mut fully_drawn = false;
 
-    let mut fetch_and_show_image = |mxc_uri: OwnedMxcUri|
+    // A closure that fetches and shows the image from the given `mxc_uri`,
+    // marking it as fully drawn if the image was available.
+    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri|
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(|img| {
@@ -3089,53 +3092,54 @@ fn populate_image_message_content(
                     text_or_image_ref.show_text(&err_str);
                 }
 
-                // We're done drawing thumbnail of the image message content, so mark it as fully drawn.
-                fully_drawn = true
+                // We're done drawing the image, so mark it as fully drawn.
+                fully_drawn = true;
             }
             MediaCacheEntry::Requested => {
                 text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
                 // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
-                fully_drawn = true
+                fully_drawn = false;
             }
             MediaCacheEntry::Failed => {
                 text_or_image_ref
                     .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
-                fully_drawn = true
+                fully_drawn = true;
             }
         };
 
-    let mut match_media_source = |media_source: MediaSource| {
+    let mut fetch_and_show_media_source = |media_source: MediaSource| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
-            // We consider this as "fully drawn" since we don't yet support encryption.
-            text_or_image_ref.show_text(format!(
-                "{body}\n\n[TODO] fetch encrypted image at {:?}",
-                encrypted.url
-            ));
+                // We consider this as "fully drawn" since we don't yet support encryption.
+                text_or_image_ref.show_text(format!(
+                    "{body}\n\n[TODO] fetch encrypted image at {:?}",
+                    encrypted.url
+                ));
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image(mxc_uri)
+                fetch_and_show_image_uri(mxc_uri)
             }
         }
     };
 
     match image_info_source {
         Some((None, media_source)) => {
-            // We fetch the origin of the media if its thumbnail doesnot exist.
-            match_media_source(media_source);
+            // We fetch the original (full-size) media if it does not have a thumbnail.
+            fetch_and_show_media_source(media_source);
         },
-
         Some((Some(image_info), media_source)) => {
-            if let Some(media_source) =  image_info.thumbnail_source {
-                match_media_source(media_source);
+            if let Some(thumbnail_source) =  image_info.thumbnail_source {
+                fetch_and_show_media_source(thumbnail_source);
             } else {
-                match_media_source(media_source);
+                fetch_and_show_media_source(media_source);
             }
         },
-
-        None => { }
+        None => {
+            text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
+            fully_drawn = true;
+        }
     }
 
     fully_drawn
