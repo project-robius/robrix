@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -15,7 +15,8 @@ live_design! {
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
-
+    use crate::shared::popup_list::PopupList;
+    
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
     ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
@@ -118,12 +119,18 @@ live_design! {
                         visible: true
                         login_screen = <LoginScreen> {}
                     }
-
+                    popup = <PopupNotification> {
+                        margin: {top: 45, right: 13},
+                        content: {
+                            <PopupList> {}
+                        }
+                    }
                     verification_modal = <Modal> {
                         content: {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+                    
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -188,7 +195,15 @@ impl MatchEvent for App {
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
             }
-
+            match action.downcast_ref() {
+                Some(PopupNotificationAction::Open) => {
+                    self.ui.popup_notification(id!(popup)).open(cx);
+                }
+                Some(PopupNotificationAction::Close) => {
+                    self.ui.popup_notification(id!(popup)).close(cx);
+                }
+                _ => {}
+            }
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomListAction::Selected {
