@@ -1187,7 +1187,7 @@ impl Widget for RoomScreen {
                 log!("Add location button clicked; requesting current location...");
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
-                    enqueue_popup_notification(format!("Failed to initialize location services."));
+                    enqueue_popup_notification(String::from("Failed to initialize location services."));
                 }
                 self.show_location_preview(cx);
             }
