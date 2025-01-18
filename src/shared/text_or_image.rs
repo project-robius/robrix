@@ -71,12 +71,14 @@ impl Widget for TextOrImage {
 
         match event.hits(cx, image_view_area) {
             Hit::FingerDown(_fe) => {
+                log!("Clicked");
                 cx.set_key_focus(image_view_area);
+                Cx::post_action(TextOrImageClickAction::SelfWidgetUid(self.widget_uid()));
             }
             Hit::FingerUp(fe) => {
-                if fe.was_tap() {
-                    Cx::post_action(TextOrImageClickAction::SelfWidgetUid(self.view.widget_uid()));
-                }
+
+                // if fe.was_tap() {
+                // }
             }
             _ => (),
         }

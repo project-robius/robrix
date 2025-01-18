@@ -1,0 +1,464 @@
+Error expanding live file src/shared/image_viewer.rs:8:355 - cant find target: IMG_DEFAULT_AVATAR
+   origin: /home/lym/.cargo/git/checkouts/makepad-b7233cffc1e4fd87/a0ab113/platform/live_compiler/src/live_eval.rs:120 
+src/app.rs:182:9 - App::handle_startup(): app_data_dir: "/home/lym/.local/share/robrix"
+src/app.rs:186:9 - App::handle_startup(): starting matrix sdk loop
+src/sliding_sync.rs:417:5 - Started async_worker task.
+src/sliding_sync.rs:1152:5 - Most recent user ID: Some("@aaravlu:matrix.org")
+src/sliding_sync.rs:1156:5 - CLI parsing succeeded? false. CLI has valid UN+PW? false
+src/sliding_sync.rs:1164:5 - Waiting for login? false
+src/sliding_sync.rs:1173:9 - Trying to restore session for user: Some("@aaravlu:matrix.org")
+src/persistent_state.rs:101:5 - Loading previous session file for @aaravlu:matrix.org...: '/home/lym/.local/share/robrix/aaravlu_matrix.org/persistent_state/session'
+src/persistent_state.rs:116:5 - Loaded session file for @aaravlu:matrix.org. Trying to connect to homeserver (https://matrix-client.matrix.org/)...
+[2m2025-01-18T06:05:20.394035Z[0m [32m INFO[0m [1mbuild[0m[1m{[0m[3mhomeserver[0m[2m=[0mServerNameOrHomeserverUrl("https://matrix-client.matrix.org/")[1m}[0m[2m:[0m [2mmatrix_sdk::client::builder[0m[2m:[0m selected sliding sync version [3mversion[0m[2m=[0mNative
+src/persistent_state.rs:132:5 - Authenticating previous login session for @aaravlu:matrix.org...
+[2m2025-01-18T06:05:20.458723Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::backups[0m[2m:[0m Setting up secret listeners and trying to resume backups
+src/verification.rs:25:5 - Initial verification state is Unknown
+src/sliding_sync.rs:1604:5 - Initial ignored-user list is: []
+[2m2025-01-18T06:05:20.460256Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Setting up account data listeners and trying to setup recovery
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+src/app.rs:193:17 - Received LoginAction::LoginSuccess, hiding login view.
+src/sliding_sync.rs:1640:5 - Initial sync service state is Idle
+src/sliding_sync.rs:1656:5 - Initial room list loading state is Loaded { maximum_number_of_rooms: Some(16) }
+src/sliding_sync.rs:1643:13 - Received a sync service state update: Running
+[2m2025-01-18T06:05:20.466081Z[0m [32m INFO[0m [1mnext_sync_with_lock[0m[2m:[0m[1msync_once[0m[2m:[0m [2mmatrix_sdk::sliding_sync[0m[2m:[0m Marking all tracked users as dirty
+[2m2025-01-18T06:05:20.487596Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!WfZsmtnxbxTdoYPkaT:greyface.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+src/sliding_sync.rs:1659:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(16) }
+[2m2025-01-18T06:05:20.496403Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!WfZsmtnxbxTdoYPkaT:greyface.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.496814Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!WfZsmtnxbxTdoYPkaT:greyface.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 0 items for room !WfZsmtnxbxTdoYPkaT:greyface.org.
+src/sliding_sync.rs:1570:5 - Adding new room !WfZsmtnxbxTdoYPkaT:greyface.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.505812Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ddnLMXyILAzUofbiMe:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.513216Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ddnLMXyILAzUofbiMe:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.513541Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ddnLMXyILAzUofbiMe:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !ddnLMXyILAzUofbiMe:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !ddnLMXyILAzUofbiMe:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !ddnLMXyILAzUofbiMe:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.527073Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!uFHFUnrZpEtRWbpFsT:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.531444Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!uFHFUnrZpEtRWbpFsT:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.532058Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!uFHFUnrZpEtRWbpFsT:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !uFHFUnrZpEtRWbpFsT:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !uFHFUnrZpEtRWbpFsT:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !uFHFUnrZpEtRWbpFsT:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.542907Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!wOlkWNmgkAZFxbTaqj:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.547470Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!wOlkWNmgkAZFxbTaqj:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.547728Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!wOlkWNmgkAZFxbTaqj:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !wOlkWNmgkAZFxbTaqj:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !wOlkWNmgkAZFxbTaqj:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !wOlkWNmgkAZFxbTaqj:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.555568Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!xHcpmMTfmMmEAaYiug:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.560269Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!xHcpmMTfmMmEAaYiug:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.560729Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!xHcpmMTfmMmEAaYiug:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !xHcpmMTfmMmEAaYiug:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !xHcpmMTfmMmEAaYiug:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !xHcpmMTfmMmEAaYiug:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.568574Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!zMuVRxoqjyxyjSEBXc:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.576277Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!zMuVRxoqjyxyjSEBXc:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.576671Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!zMuVRxoqjyxyjSEBXc:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !zMuVRxoqjyxyjSEBXc:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !zMuVRxoqjyxyjSEBXc:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !zMuVRxoqjyxyjSEBXc:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.592403Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!fOOzymDEHiIIUtmlBE:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.600256Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!fOOzymDEHiIIUtmlBE:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.600896Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!fOOzymDEHiIIUtmlBE:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !fOOzymDEHiIIUtmlBE:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !fOOzymDEHiIIUtmlBE:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !fOOzymDEHiIIUtmlBE:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.609106Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!cJFtAIkwxuofiSYkPN:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.614062Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!cJFtAIkwxuofiSYkPN:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.614379Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!cJFtAIkwxuofiSYkPN:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !cJFtAIkwxuofiSYkPN:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !cJFtAIkwxuofiSYkPN:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !cJFtAIkwxuofiSYkPN:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.634205Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!IemiTbwVankHTFiEoh:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.642602Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!IemiTbwVankHTFiEoh:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.642915Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!IemiTbwVankHTFiEoh:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !IemiTbwVankHTFiEoh:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !IemiTbwVankHTFiEoh:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !IemiTbwVankHTFiEoh:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.658824Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!HLUidcjosfPlYRFoqX:matrix.debian.social" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.666414Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!HLUidcjosfPlYRFoqX:matrix.debian.social[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.666809Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!HLUidcjosfPlYRFoqX:matrix.debian.social" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !HLUidcjosfPlYRFoqX:matrix.debian.social...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !HLUidcjosfPlYRFoqX:matrix.debian.social.
+src/sliding_sync.rs:1570:5 - Adding new room !HLUidcjosfPlYRFoqX:matrix.debian.social to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.685985Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.696388Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!MBODbHgvBJVjeKDAhl:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.697148Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !MBODbHgvBJVjeKDAhl:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !MBODbHgvBJVjeKDAhl:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !MBODbHgvBJVjeKDAhl:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.714232Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.722131Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ugrySPqOXlcmORZIwY:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.722552Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !ugrySPqOXlcmORZIwY:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !ugrySPqOXlcmORZIwY:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.742494Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!jWRCtEnjGkNJJJxtcB:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.749620Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!jWRCtEnjGkNJJJxtcB:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.750193Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!jWRCtEnjGkNJJJxtcB:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !jWRCtEnjGkNJJJxtcB:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !jWRCtEnjGkNJJJxtcB:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !jWRCtEnjGkNJJJxtcB:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.766153Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!hKwFRvooxscFyToTfI:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.814575Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!hKwFRvooxscFyToTfI:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.815146Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!hKwFRvooxscFyToTfI:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !hKwFRvooxscFyToTfI:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !hKwFRvooxscFyToTfI:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !hKwFRvooxscFyToTfI:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.833543Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ZVBGnTSVYUGWMArNVx:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-01-18T06:05:20.852425Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ZVBGnTSVYUGWMArNVx:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.853075Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ZVBGnTSVYUGWMArNVx:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !ZVBGnTSVYUGWMArNVx:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !ZVBGnTSVYUGWMArNVx:matrix.org.
+src/sliding_sync.rs:1570:5 - Adding new room !ZVBGnTSVYUGWMArNVx:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-01-18T06:05:20.863699Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!kbcNFRhdGTiryBHugo:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+src/home/rooms_list.rs:568:17 - RoomsList: processed 31 updates to the list of all rooms
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+[2m2025-01-18T06:05:20.893094Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!kbcNFRhdGTiryBHugo:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-01-18T06:05:20.893483Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!kbcNFRhdGTiryBHugo:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1753:5 - Starting timeline subscriber for room !kbcNFRhdGTiryBHugo:matrix.org...
+src/sliding_sync.rs:1755:5 - Received initial timeline update of 2 items for room !kbcNFRhdGTiryBHugo:matrix.org.
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org...
+src/sliding_sync.rs:1570:5 - Adding new room !kbcNFRhdGTiryBHugo:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !uFHFUnrZpEtRWbpFsT:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !wOlkWNmgkAZFxbTaqj:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !xHcpmMTfmMmEAaYiug:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !zMuVRxoqjyxyjSEBXc:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !fOOzymDEHiIIUtmlBE:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !cJFtAIkwxuofiSYkPN:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !IemiTbwVankHTFiEoh:matrix.org...
+[2m2025-01-18T06:05:21.415796Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Recovery state changed from Unknown to Incomplete
+src/verification.rs:28:13 - Received a verification state update: Unverified
+src/home/rooms_list.rs:568:17 - RoomsList: processed 2 updates to the list of all rooms
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !xHcpmMTfmMmEAaYiug:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org, hit start of timeline? no
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+src/verification.rs:28:13 - Received a verification state update: Unverified
+[2m2025-01-18T06:05:22.927772Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !IemiTbwVankHTFiEoh:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !zMuVRxoqjyxyjSEBXc:matrix.org, hit start of timeline? no
+[2m2025-01-18T06:05:23.432212Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !uFHFUnrZpEtRWbpFsT:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !fOOzymDEHiIIUtmlBE:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !ddnLMXyILAzUofbiMe:matrix.org, hit start of timeline? no
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !cJFtAIkwxuofiSYkPN:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !HLUidcjosfPlYRFoqX:matrix.debian.social...
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !HLUidcjosfPlYRFoqX:matrix.debian.social, hit start of timeline? no
+/home/lym/.cargo/git/checkouts/makepad-b7233cffc1e4fd87/a0ab113/platform/src/live_cx.rs:46:9 - 
+#############################################
+
+Makepad needs the nightly only proc_macro_span feature for accurate line information in errors
+To install nightly use rustup:
+
+rustup install nightly
+
+Please build your makepad application in this way on Unix:
+
+MAKEPAD=lines cargo +nightly build yourapp_etc
+
+And on Windows:
+
+set MAKEPAD=lines&cargo +nightly build yourapp_etc'
+
+#############################################
+
+/home/lym/.cargo/git/checkouts/makepad-b7233cffc1e4fd87/a0ab113/platform/src/live_cx.rs:184:17 - Apply error: src/shared/image_viewer.rs:8:327 - wrong value type. Prop: source primitive: Dependency value: None
+   origin: /home/lym/.cargo/git/checkouts/makepad-b7233cffc1e4fd87/a0ab113/platform/src/live_prims.rs:898  None
+src/home/room_screen.rs:1981:13 - Sending a first-time backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org
+src/home/room_screen.rs:1552:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/sliding_sync.rs:522:21 - Sending fetch room members request for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org...
+src/sliding_sync.rs:524:21 - Completed fetch room members request for room !WfZsmtnxbxTdoYPkaT:greyface.org.
+src/sliding_sync.rs:762:29 - Received own user read receipt: Receipt { ts: Some(2025-01-17T04:00:56.552), thread: Unthreaded } "$XW31eEU1jsRcf3HUl1AlTNZmWmHLfxHd1d62P_hfR34"
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !WfZsmtnxbxTdoYPkaT:greyface.org, hit start of timeline? no
+src/home/room_screen.rs:2461:17 - Found matching event ID $5wKh0ZU0iRKFXkLZHEKbbGV5fvApsPI-KqZKEB5NQus at index 69 in new items list, corresponding to current item index 35 at pos offset -163.03494954427083
+src/home/room_screen.rs:1541:29 - Timeline::handle_event(): jumping view from event index 35 to new index 69, scroll -163.03494954427083, event ID $5wKh0ZU0iRKFXkLZHEKbbGV5fvApsPI-KqZKEB5NQus
+src/home/room_screen.rs:1690:21 - Timeline::handle_event(): media fetched for room !WfZsmtnxbxTdoYPkaT:greyface.org
+src/shared/text_or_image.rs:74:17 - Clicked
+src/home/room_screen.rs:1081:21 - RRRRR
+src/shared/image_viewer.rs:81:13 - Some!
+src/home/room_screen.rs:1690:21 - Timeline::handle_event(): media fetched for room !WfZsmtnxbxTdoYPkaT:greyface.org
+src/shared/text_or_image.rs:74:17 - Clicked
+src/home/room_screen.rs:1081:21 - RRRRR
+src/shared/image_viewer.rs:81:13 - Some!
+src/shared/image_viewer.rs:84:21 - Receive origin image
+src/shared/image_viewer.rs:93:25 - Success
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !wOlkWNmgkAZFxbTaqj:matrix.org, hit start of timeline? no
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/sliding_sync.rs:1659:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(16) }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+[2m2025-01-18T06:05:53.904147Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/sliding_sync.rs:888:37 - Already sent fully read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $f5Su2_YGVldmeNWmMMO91Q6VsjFF-Izuw-eqrXaJ34k
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/sliding_sync.rs:866:37 - Sent read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $f5Su2_YGVldmeNWmMMO91Q6VsjFF-Izuw-eqrXaJ34k
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+[2m2025-01-18T06:06:05.710805Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 865.0, y: 734.7466430664063 } }
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org...
+src/sliding_sync.rs:444:21 - Starting backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org...
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:06:11.675657Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$o5bpwDcWC23A1iwzaxRsSQqjAEOvazf9pK8kW7Dywlo" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:08:50.491Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"jGsojiSXSEU0hZe/DTAGom2PSI3aBtLg0eK4qFJ/FVM" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-18T06:06:11.698530Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$gRnz_ldT7UO2zhEQOzYy_x4j-1XtdMbw1eJ81bwauxE" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:02:42.866Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"uwVZcLlrryU4794Ep1BSZcTPH893VzL7QAyc6Tq6Iuw" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:06:11.718401Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$hOsE28O0LOMbfIA0fQ0CLZHWqVKov1VY0KiFHchm3cI" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:02:13.189Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"uwVZcLlrryU4794Ep1BSZcTPH893VzL7QAyc6Tq6Iuw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-18T06:06:11.737067Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t13-5565854823_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MBODbHgvBJVjeKDAhl:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$Krnx4mRd3gFhZgtxahlzkt5A42c19gM8z3Z3NhMOPOY" [3morigin_server_ts[0m[2m=[0m"2025-01-11T04:01:19.275Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:I/n0s2T889Dp769fHHVU/MzUG3rBeRl+9pC983mdZkE" [3msession_id[0m[2m=[0m"uwVZcLlrryU4794Ep1BSZcTPH893VzL7QAyc6Tq6Iuw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !MBODbHgvBJVjeKDAhl:matrix.org, hit start of timeline? no
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:06:12.059941Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$WrLC6uWcYUfDto1nMzRMKE-Avzm7ExRUx_VVjwDMegg" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:13:55.662Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:edovrwKptvEQGGLXGs1IleJukotZxNo+gpk9gJ+uySg" [3msession_id[0m[2m=[0m"+4zeLQVxVXREmZG9mHF2rdSeMy+P39TnIdd3Y32yrBE" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-18T06:06:12.080084Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$PRR9Cvz1GKaRR9sDRrWac3PglNOfvigckaDPLcC_KCE" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:04:32.899Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:06:12.099177Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$6oZANyY0TCQ4btosWSmzovwwZk3aQb7drYeAa4TiQP0" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:00:17.966Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-01-18T06:06:12.122233Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { from: "t14-5565854853_757284974_38180970_3363760457_3696870196_263505662_1437986892_11072257054_0_416079", dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$zvoxVs_cZU2v3MZy49OswxL-sBYAooFW1fqytA6CTY8" [3morigin_server_ts[0m[2m=[0m"2024-12-27T09:58:55.761Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"Fb3z4bsEqlOP1zptAC4oYYcohzmmevg5saAj7NAmY/w" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/sliding_sync.rs:456:29 - Completed backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org, hit start of timeline? no
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:06:34.080174Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:06:56.362658Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/sliding_sync.rs:888:37 - Already sent fully read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $f5Su2_YGVldmeNWmMMO91Q6VsjFF-Izuw-eqrXaJ34k
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+src/sliding_sync.rs:866:37 - Already sent read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $XW31eEU1jsRcf3HUl1AlTNZmWmHLfxHd1d62P_hfR34
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:888:37 - Already sent fully read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $XW31eEU1jsRcf3HUl1AlTNZmWmHLfxHd1d62P_hfR34
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+[2m2025-01-18T06:07:14.877445Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+src/sliding_sync.rs:866:37 - Sent read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $f5Su2_YGVldmeNWmMMO91Q6VsjFF-Izuw-eqrXaJ34k
+src/home/rooms_list.rs:568:17 - RoomsList: processed 3 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+src/sliding_sync.rs:866:37 - Already sent read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $XW31eEU1jsRcf3HUl1AlTNZmWmHLfxHd1d62P_hfR34
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:888:37 - Already sent fully read receipt to room !WfZsmtnxbxTdoYPkaT:greyface.org for event $XW31eEU1jsRcf3HUl1AlTNZmWmHLfxHd1d62P_hfR34
+src/home/rooms_list.rs:568:17 - RoomsList: processed 1 updates to the list of all rooms
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }
+DRAWING RECT Rect { pos: DVec2 { x: 415.0, y: 65.25333404541016 }, size: DVec2 { x: 1505.0, y: 945.7466430664063 } }

@@ -1078,6 +1078,7 @@ impl Widget for RoomScreen {
                 let Some(tl) = self.tl_state.as_mut() else { return };
 
                 if let Some(TextOrImageClickAction::SelfWidgetUid(text_or_image_uid)) = action.downcast_ref() {
+                    log!("RRRRR");
                     let image_viewer = self.view.image_viewer(id!(image_viewer));
                     image_viewer.show_and_fill_image(cx, text_or_image_uid, &mut tl.media_cache);
                 }

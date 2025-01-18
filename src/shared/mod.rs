@@ -28,4 +28,5 @@ pub fn live_design(cx: &mut Cx) {
     popup_list::live_design(cx);
     verification_badge::live_design(cx);
     color_tooltip::live_design(cx);
+    image_viewer::live_design(cx);
 }
