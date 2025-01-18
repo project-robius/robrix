@@ -3,13 +3,13 @@ use makepad_widgets::*;
 
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 
-/// Posts a PopupNotificationAction::Open action
+/// Displays a new popup notification with the given message.
 /// 
-/// Adds a new popup notification with the given text.
-/// The notification will be shown in the order it was added, and will be removed when it is closed by the user.
+/// Popup notifications will be shown in the order they were enqueued,
+/// and are currently only removed when manually closed by the user.
 pub fn enqueue_popup_notification(message: String) {
-    Cx::post_action(PopupNotificationAction::Open);
     POPUP_NOTIFICATION.push(message);
+    Cx::post_action(PopupNotificationAction::Open);
 }
 
 live_design! {
