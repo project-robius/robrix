@@ -12,6 +12,7 @@ pub mod text_or_image;
 pub mod typing_animation;
 pub mod popup_list;
 pub mod verification_badge;
+pub mod image_viewer;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.

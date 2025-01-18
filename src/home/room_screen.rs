@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, image_viewer::{ImageViewerRef, ImageViewerWidgetExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
 };
 use rangemap::RangeSet;
@@ -48,6 +48,7 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::image_viewer::ImageViewer;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
@@ -687,6 +688,8 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
+            image_viewer = <ImageViewer> {}
+
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -1305,6 +1308,9 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+
+        let image_viewer = self.view.image_viewer(id!(image_viewer));
+
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1357,6 +1363,7 @@ impl Widget for RoomScreen {
                                     &mut tl_state.media_cache,
                                     item_drawn_status,
                                     room_screen_widget_uid,
+                                    Some(image_viewer.clone())
                                 )
                             }
                             TimelineItemContent::Sticker(sticker) => {
@@ -1372,6 +1379,7 @@ impl Widget for RoomScreen {
                                     &mut tl_state.media_cache,
                                     item_drawn_status,
                                     room_screen_widget_uid,
+                                    None,
                                 )
                             }
                             TimelineItemContent::RedactedMessage => populate_small_state_event(
@@ -2600,7 +2608,8 @@ fn populate_message_view(
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
-    room_screen_widget_uid: WidgetUid
+    room_screen_widget_uid: WidgetUid,
+    image_viewer: Option<ImageViewerRef>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
 
@@ -2780,14 +2789,17 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let image_info = mtype.get_image_info();
-                let is_image_fully_drawn = populate_image_message_content(
-                    cx,
-                    &item.text_or_image(id!(content.message)),
-                    image_info,
-                    message.body(),
-                    media_cache,
-                );
-                new_drawn_status.content_drawn = is_image_fully_drawn;
+                if let Some(image_viewer) = image_viewer {
+                    let is_image_fully_drawn = populate_image_message_content(
+                        cx,
+                        &item.text_or_image(id!(content.message)),
+                        image_info,
+                        message.body(),
+                        media_cache,
+                        image_viewer,
+                    );
+                    new_drawn_status.content_drawn = is_image_fully_drawn;
+                }
                 (item, false)
             }
         }
@@ -3055,6 +3067,7 @@ fn populate_image_message_content(
     image_info_source: Option<(Option<ImageInfo>, MediaSource)>,
     body: &str,
     media_cache: &mut MediaCache,
+    image_viewer: ImageViewerRef,
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
@@ -3126,10 +3139,16 @@ fn populate_image_message_content(
 
     match image_info_source {
         Some((None, media_source)) => {
+            //TODO:
+
             // We fetch the original (full-size) media if it does not have a thumbnail.
             fetch_and_show_media_source(media_source);
+
+
         },
         Some((Some(image_info), media_source)) => {
+
+
             if let Some(thumbnail_source) =  image_info.thumbnail_source {
                 fetch_and_show_media_source(thumbnail_source);
             } else {
@@ -3930,7 +3949,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
-    
+
     /// A timer used to detect long presses on the message body.
     #[rust] long_press_timer: Timer,
     /// The current status of the long-press gesture on the message body.
