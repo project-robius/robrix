@@ -342,4 +342,3 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
-

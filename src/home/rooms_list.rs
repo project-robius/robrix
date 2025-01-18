@@ -447,7 +447,6 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
-
 }
 
 impl Widget for RoomsList {
