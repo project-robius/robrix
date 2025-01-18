@@ -12,9 +12,8 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, UserId
-    },
-    OwnedServerName,
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
+    }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -1155,7 +1154,7 @@ impl Widget for RoomScreen {
                                 content: { margin: { left: (coords.x), top: (coords.y) } }
                             },
                         );
-                        
+
                         if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
                             message_action_bar_popup.open(cx);
                             message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
@@ -1546,7 +1545,7 @@ impl RoomScreen {
                             submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
                         }
                     }
-                    
+
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
@@ -2148,7 +2147,7 @@ impl RoomScreen {
                                     event_id: last_event_id.to_owned(),
                                 });
                             }
-                            
+
                         }
                     }
                 }
@@ -3065,63 +3064,85 @@ fn populate_image_message_content(
         )
         .unwrap_or_default();
 
-    // If we have a known mimetype and it's not an image (e.g., an animated)
-    // then show a message about it being unsupported.
+    // If we have a known mimetype and it's not a static image,
+    // then show a message about it being unsupported (e.g., for animated gifs).
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
             text_or_image_ref.show_text(format!(
                 "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
             ));
-            return true;
+            return true; // consider this as fully drawn
         }
     }
 
-    match image_info_source.map(|(_, source)| source) {
-        Some(MediaSource::Plain(mxc_uri)) => {
-            // now that we've obtained the image URI and its metadata, try to fetch the image.
-            match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
-                MediaCacheEntry::Loaded(data) => {
-                    let show_image_result = text_or_image_ref.show_image(|img| {
-                        utils::load_png_or_jpg(&img, cx, &data)
-                            .map(|()| img.size_in_pixels(cx).unwrap())
-                    });
-                    if let Err(e) = show_image_result {
-                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                        error!("{err_str}");
-                        text_or_image_ref.show_text(&err_str);
-                    }
+    let mut fully_drawn = false;
 
-                    // We're done drawing the image message content, so mark it as fully drawn.
-                    true
+    // A closure that fetches and shows the image from the given `mxc_uri`,
+    // marking it as fully drawn if the image was available.
+    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri|
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+            MediaCacheEntry::Loaded(data) => {
+                let show_image_result = text_or_image_ref.show_image(|img| {
+                    utils::load_png_or_jpg(&img, cx, &data)
+                        .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+                });
+                if let Err(e) = show_image_result {
+                    let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                    error!("{err_str}");
+                    text_or_image_ref.show_text(&err_str);
                 }
-                MediaCacheEntry::Requested => {
-                    text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
-                    // Do not consider this image as being fully drawn, as we're still fetching it.
-                    false
-                }
-                MediaCacheEntry::Failed => {
-                    text_or_image_ref
-                        .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
-                    // For now, we consider this as being "complete". In the future, we could support
-                    // retrying to fetch the image on a user click/tap.
-                    true
-                }
+
+                // We're done drawing the image, so mark it as fully drawn.
+                fully_drawn = true;
+            }
+            MediaCacheEntry::Requested => {
+                text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
+                // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
+                fully_drawn = false;
+            }
+            MediaCacheEntry::Failed => {
+                text_or_image_ref
+                    .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                // For now, we consider this as being "complete". In the future, we could support
+                // retrying to fetch thumbnail of the image on a user click/tap.
+                fully_drawn = true;
+            }
+        };
+
+    let mut fetch_and_show_media_source = |media_source: MediaSource| {
+        match media_source {
+            MediaSource::Encrypted(encrypted) => {
+                // We consider this as "fully drawn" since we don't yet support encryption.
+                text_or_image_ref.show_text(format!(
+                    "{body}\n\n[TODO] fetch encrypted image at {:?}",
+                    encrypted.url
+                ));
+            },
+            MediaSource::Plain(mxc_uri) => {
+                fetch_and_show_image_uri(mxc_uri)
             }
         }
-        Some(MediaSource::Encrypted(encrypted)) => {
-            text_or_image_ref.show_text(format!(
-                "{body}\n\n[TODO] fetch encrypted image at {:?}",
-                encrypted.url
-            ));
-            // We consider this as "fully drawn" since we don't yet support encryption.
-            true
-        }
+    };
+
+    match image_info_source {
+        Some((None, media_source)) => {
+            // We fetch the original (full-size) media if it does not have a thumbnail.
+            fetch_and_show_media_source(media_source);
+        },
+        Some((Some(image_info), media_source)) => {
+            if let Some(thumbnail_source) =  image_info.thumbnail_source {
+                fetch_and_show_media_source(thumbnail_source);
+            } else {
+                fetch_and_show_media_source(media_source);
+            }
+        },
         None => {
             text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
-            true
+            fully_drawn = true;
         }
-
     }
+
+    fully_drawn
 }
 
 
