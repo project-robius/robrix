@@ -131,7 +131,7 @@ impl VerificationBadgeRef {
         if let Some(mut inner) = self.0.borrow_mut::<VerificationBadge>() {
             if inner.verification_state != state {
                 inner.verification_state = state;
-                inner.update_icon_visibility();
+                inner.update_icon_visibility(cx);
                 inner.redraw(cx);
             }
         }
@@ -139,15 +139,15 @@ impl VerificationBadgeRef {
 }
 
 impl VerificationBadge {
-    pub fn update_icon_visibility(&mut self) {
+    pub fn update_icon_visibility(&mut self, cx: &mut Cx) {
         let (yes, no, unk) = match self.verification_state {
             VerificationState::Unknown => (false, false, true),
             VerificationState::Unverified => (false, true, false),
             VerificationState::Verified => (true, false, false),
         };
 
-        self.view(id!(icon_yes)).set_visible(yes);
-        self.view(id!(icon_no)).set_visible(no);
-        self.view(id!(icon_unk)).set_visible(unk);
+        self.view(id!(icon_yes)).set_visible(cx, yes);
+        self.view(id!(icon_no)).set_visible(cx, no);
+        self.view(id!(icon_unk)).set_visible(cx, unk);
     }
 }

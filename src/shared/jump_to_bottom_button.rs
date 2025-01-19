@@ -114,10 +114,10 @@ impl JumpToBottomButton {
     /// * If `is_at_bottom` is `false`, only the main jump to bottom "parent" view
     ///   is made visible; the unread message badge is *not* made visible, as that is done
     ///   via a separate call to [`JumpToBottomButton::show_unread_message_badge()`].
-    pub fn update_visibility(&mut self, is_at_bottom: bool) {
+    pub fn update_visibility(&mut self, cx: &mut Cx, is_at_bottom: bool) {
         if is_at_bottom {
             self.visible = false;
-            self.view(id!(unread_message_badge)).set_visible(false);
+            self.view(id!(unread_message_badge)).set_visible(cx, false);
         } else {
             self.visible = true;
         }
@@ -131,17 +131,17 @@ impl JumpToBottomButton {
         match count {
             UnreadMessageCount::Unknown => {
                 self.visible = true;
-                self.view(id!(unread_message_badge)).set_visible(true);
-                self.label(id!(unread_messages_count)).set_text("");
+                self.view(id!(unread_message_badge)).set_visible(cx, true);
+                self.label(id!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(0) => {
                 self.visible = false;
-                self.view(id!(unread_message_badge)).set_visible(false);
-                self.label(id!(unread_messages_count)).set_text("");
+                self.view(id!(unread_message_badge)).set_visible(cx, false);
+                self.label(id!(unread_messages_count)).set_text(cx, "");
             }
             UnreadMessageCount::Known(unread_message_count) => {
                 self.visible = true;
-                self.view(id!(unread_message_badge)).set_visible(true);
+                self.view(id!(unread_message_badge)).set_visible(cx, true);
                 let (border_size, plus_sign) = if unread_message_count > 99 {
                     (0.0, "+")
                 } else if unread_message_count > 9 {
@@ -150,6 +150,7 @@ impl JumpToBottomButton {
                     (2.0, "")
                 };
                 self.label(id!(unread_messages_count)).set_text(
+                    cx,
                     &format!("{}{plus_sign}", std::cmp::min(unread_message_count, 99))
                 );
                 self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
@@ -186,9 +187,9 @@ impl JumpToBottomButton {
                 SCROLL_TO_BOTTOM_SPEED,
                 None,
             );
-            self.update_visibility(false);
+            self.update_visibility(cx, false);
         } else {
-            self.update_visibility(portal_list.is_at_end());
+            self.update_visibility(cx, portal_list.is_at_end());
         }
 
         if self.visible != was_visible {
@@ -200,9 +201,9 @@ impl JumpToBottomButton {
 
 impl JumpToBottomButtonRef {
     /// See [`JumpToBottomButton::update_visibility()`].
-    pub fn update_visibility(&self, is_at_bottom: bool) {
+    pub fn update_visibility(&self, cx: &mut Cx, is_at_bottom: bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.update_visibility(is_at_bottom);
+            inner.update_visibility(cx, is_at_bottom);
         }
     }
 

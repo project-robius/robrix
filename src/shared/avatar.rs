@@ -124,12 +124,12 @@ impl Widget for Avatar {
         self.view.draw_walk(cx, scope, walk)
     }
 
-    fn set_text(&mut self, v: &str) {
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
         let f = utils::user_name_first_letter(v)
             .unwrap_or("?").to_uppercase();
-        self.label(id!(text_view.text)).set_text(&f);
-        self.view(id!(img_view)).set_visible(false);
-        self.view(id!(text_view)).set_visible(true);
+        self.label(id!(text_view.text)).set_text(cx, &f);
+        self.view(id!(img_view)).set_visible(cx, false);
+        self.view(id!(text_view)).set_visible(cx, true);
     }
 }
 
@@ -146,6 +146,7 @@ impl Avatar {
     ///    Only the first non-`@` letter (Unicode grapheme) is displayed.
     pub fn show_text<T: AsRef<str>>(
         &mut self,
+        cx: &mut Cx,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
@@ -159,7 +160,7 @@ impl Avatar {
                 room_id,
             }
         );
-        self.set_text(username.as_ref());
+        self.set_text(cx, username.as_ref());
     }
 
     /// Sets the image content of this avatar, making the image visible
@@ -170,22 +171,23 @@ impl Avatar {
     ///    the user name, user ID, room ID, and avatar image data.
     ///    * Set this to `Some` to enable a user to click/tap on the Avatar itself.
     ///    * Set this to `None` to disable the click/tap action.
-    /// * `image_set_function`: - a function that is passed in an [ImageRef] that refers
-    ///    to the image that will be displayed in this avatar.
+    /// * `image_set_function`: - a function that is passed in the `&mut Cx`
+    ///    and an [ImageRef] that refers to the image that will be displayed in this avatar.
     ///    This allows the caller to set the image contents in any way they want.
     ///    If `image_set_function` returns an error, no change is made to the avatar.
     pub fn show_image<F, E>(
         &mut self,
+        cx: &mut Cx,
         info: Option<AvatarImageInfo>,
         image_set_function: F,
     ) -> Result<(), E>
-        where F: FnOnce(ImageRef) -> Result<(), E>
+        where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
     {
         let img_ref = self.image(id!(img_view.img));
-        let res = image_set_function(img_ref);
+        let res = image_set_function(cx, img_ref);
         if res.is_ok() {
-            self.view(id!(img_view)).set_visible(true);
-            self.view(id!(text_view)).set_visible(false);
+            self.view(id!(img_view)).set_visible(cx, true);
+            self.view(id!(text_view)).set_visible(cx, false);
 
             self.info = info.map(|AvatarImageInfo { user_id, username, room_id, img_data }|
                 UserProfileAndRoomId {
@@ -215,24 +217,26 @@ impl AvatarRef {
     /// See [`Avatar::show_text()`].
     pub fn show_text<T: AsRef<str>>(
         &self,
+        cx: &mut Cx,
         info: Option<AvatarTextInfo>,
         username: T,
     ) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_text(info, username);
+            inner.show_text(cx, info, username);
         }
     }
 
     /// See [`Avatar::show_image()`].
     pub fn show_image<F, E>(
         &self,
+        cx: &mut Cx,
         info: Option<AvatarImageInfo>,
         image_set_function: F,
     ) -> Result<(), E>
-        where F: FnOnce(ImageRef) -> Result<(), E>
+        where F: FnOnce(&mut Cx, ImageRef) -> Result<(), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_image(info, image_set_function)
+            inner.show_image(cx, info, image_set_function)
         } else {
             Ok(())
         }

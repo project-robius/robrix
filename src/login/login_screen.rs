@@ -338,17 +338,17 @@ impl MatchEvent for LoginScreen {
             let password = password_input.text();
             let homeserver = homeserver_input.text();
             if user_id.is_empty() {
-                login_status_modal_inner.set_title("Missing User ID");
-                login_status_modal_inner.set_status("Please enter a valid User ID.");
-                login_status_modal_inner.button_ref().set_text("Okay");
+                login_status_modal_inner.set_title(cx, "Missing User ID");
+                login_status_modal_inner.set_status(cx, "Please enter a valid User ID.");
+                login_status_modal_inner.button_ref().set_text(cx, "Okay");
             } else if password.is_empty() {
-                login_status_modal_inner.set_title("Missing Password");
-                login_status_modal_inner.set_status("Please enter a valid password.");
-                login_status_modal_inner.button_ref().set_text("Okay");
+                login_status_modal_inner.set_title(cx, "Missing Password");
+                login_status_modal_inner.set_status(cx, "Please enter a valid password.");
+                login_status_modal_inner.button_ref().set_text(cx, "Okay");
             } else {
-                login_status_modal_inner.set_title("Logging in");
-                login_status_modal_inner.set_status("Waiting for a login response...");
-                login_status_modal_inner.button_ref().set_text("Cancel");
+                login_status_modal_inner.set_title(cx, "Logging in");
+                login_status_modal_inner.set_status(cx, "Waiting for a login response...");
+                login_status_modal_inner.button_ref().set_text(cx, "Cancel");
                 submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
                     user_id,
                     password,
@@ -356,7 +356,7 @@ impl MatchEvent for LoginScreen {
                 })));
             }
             login_status_modal.open(cx);
-            sso_search_button.set_enabled(self.prev_homeserver_url == Some(homeserver_input.text()));
+            sso_search_button.set_enabled(cx, self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
         
@@ -370,48 +370,49 @@ impl MatchEvent for LoginScreen {
             // Handle login-related actions received from background async tasks.
             match action.downcast_ref() {
                 Some(LoginAction::CliAutoLogin { user_id, homeserver }) => {
-                    user_id_input.set_text(user_id);
-                    password_input.set_text("");
-                    homeserver_input.set_text(homeserver.as_deref().unwrap_or_default());
-                    login_status_modal_inner.set_title("Logging in via CLI");
+                    user_id_input.set_text(cx, user_id);
+                    password_input.set_text(cx, "");
+                    homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
+                    login_status_modal_inner.set_title(cx, "Logging in via CLI");
                     login_status_modal_inner.set_status(
+                        cx,
                         &format!("Auto-logging in as user {user_id}...")
                     );
                     let login_status_modal_button = login_status_modal_inner.button_ref();
-                    login_status_modal_button.set_text("Cancel");
-                    login_status_modal_button.set_enabled(false); // Login cancel not yet supported
+                    login_status_modal_button.set_text(cx, "Cancel");
+                    login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
                     login_status_modal.open(cx);
                 }
                 Some(LoginAction::Status { title, status }) => {
-                    login_status_modal_inner.set_title(title);
-                    login_status_modal_inner.set_status(status);
+                    login_status_modal_inner.set_title(cx, title);
+                    login_status_modal_inner.set_status(cx, status);
                     let login_status_modal_button = login_status_modal_inner.button_ref();
-                    login_status_modal_button.set_text("Cancel");
-                    login_status_modal_button.set_enabled(false); // Login cancel not yet supported
+                    login_status_modal_button.set_text(cx, "Cancel");
+                    login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
                     login_status_modal.open(cx);
 
-                    sso_search_button.set_enabled(true);
+                    sso_search_button.set_enabled(cx, true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginSuccess) => {
                     // The main `App` component handles showing the main screen
                     // and hiding the login screen & login status modal.
-                    user_id_input.set_text("");
-                    password_input.set_text("");
-                    homeserver_input.set_text("");
-                    login_status_modal_inner.set_title("Login Succeeded");
-                    login_status_modal_inner.set_status("You are now logged in.\n\nLoading your rooms now...");
+                    user_id_input.set_text(cx, "");
+                    password_input.set_text(cx, "");
+                    homeserver_input.set_text(cx, "");
+                    login_status_modal_inner.set_title(cx, "Login Succeeded");
+                    login_status_modal_inner.set_status(cx, "You are now logged in.\n\nLoading your rooms now...");
                     let login_status_modal_button = login_status_modal_inner.button_ref();
-                    login_status_modal_button.set_text("Okay");
-                    login_status_modal_button.set_enabled(true);
+                    login_status_modal_button.set_text(cx, "Okay");
+                    login_status_modal_button.set_enabled(cx, true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
-                    login_status_modal_inner.set_title("Login Failed");
-                    login_status_modal_inner.set_status(error);
+                    login_status_modal_inner.set_title(cx, "Login Failed");
+                    login_status_modal_inner.set_status(cx, error);
                     let login_status_modal_button = login_status_modal_inner.button_ref();
-                    login_status_modal_button.set_text("Okay");
-                    login_status_modal_button.set_enabled(true);
+                    login_status_modal_button.set_text(cx, "Okay");
+                    login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
                     self.redraw(cx);
                 }
@@ -437,13 +438,13 @@ impl MatchEvent for LoginScreen {
                     for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
                         for ip in identity_providers.iter() {
                             if ip.id.contains(brand) {
-                                view_ref.set_visible(true);
+                                view_ref.set_visible(cx, true);
                                 break;
                             }
                         }  
                     }
                     self.identity_providers = identity_providers.clone();
-                    sso_search_button.set_enabled(true);
+                    sso_search_button.set_enabled(cx, true);
                     // Hide the status modal such that the user can see the newly-populated SSO buttons.
                     login_status_modal.close(cx);
                     self.redraw(cx);
@@ -454,18 +455,18 @@ impl MatchEvent for LoginScreen {
 
         // If the homeserver "search" button was clicked, fetch supported login types.
         if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
-            login_status_modal_inner.set_title("Querying login types");
-            login_status_modal_inner.set_status("Fetching supported login types from the homeserver...");
+            login_status_modal_inner.set_title(cx, "Querying login types");
+            login_status_modal_inner.set_status(cx, "Fetching supported login types from the homeserver...");
             let login_status_modal_button = login_status_modal_inner.button_ref();
-            login_status_modal_button.set_text("Cancel");
-            login_status_modal_button.set_enabled(false); // Login cancel not yet supported
+            login_status_modal_button.set_text(cx, "Cancel");
+            login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
             login_status_modal.open(cx);
             
             self.prev_homeserver_url = Some(homeserver_input.text());
             submit_async_request(MatrixRequest::Login(LoginRequest::HomeserverLoginTypesQuery(homeserver_input.text())));
-            sso_search_button.set_enabled(false);
+            sso_search_button.set_enabled(cx, false);
             for view_ref in self.view_set(button_set).iter() {
-                view_ref.set_visible(false);
+                view_ref.set_visible(cx, false);
             }
             self.redraw(cx);
         }

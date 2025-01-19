@@ -130,13 +130,13 @@ impl WidgetMatchEvent for LoginStatusModal {
 
 impl LoginStatusModal {
     /// Sets the title text displayed in the modal.
-    fn set_title(&mut self, title: &str) {
-        self.label(id!(title)).set_text(title);
+    fn set_title(&mut self, cx: &mut Cx, title: &str) {
+        self.label(id!(title)).set_text(cx, title);
     }
 
     /// Sets the status text displayed in the body of the modal.
-    fn set_status(&mut self, status: &str) {
-        self.label(id!(status)).set_text(status);
+    fn set_status(&mut self, cx: &mut Cx, status: &str) {
+        self.label(id!(status)).set_text(cx, status);
     }
 
     /// Returns a reference to the modal's button, enabling you to set its properties.
@@ -147,16 +147,16 @@ impl LoginStatusModal {
 
 impl LoginStatusModalRef {
     /// See [`LoginStatusModal::set_title()`].
-    pub fn set_title(&self, title: &str) {
+    pub fn set_title(&self, cx: &mut Cx, title: &str) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_title(title);
+            inner.set_title(cx, title);
         }
     }
 
     /// See [`LoginStatusModal::set_status()`].
-    pub fn set_status(&self, status: &str) {
+    pub fn set_status(&self, cx: &mut Cx, status: &str) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_status(status);
+            inner.set_status(cx, status);
         }
     }
 

@@ -253,26 +253,27 @@ impl Widget for RoomPreviewContent {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_info) = scope.props.get::<RoomsListEntry>() {
             if let Some(ref name) = room_info.room_name {
-                self.view.label(id!(room_name)).set_text(name);
+                self.view.label(id!(room_name)).set_text(cx, name);
             }
             if let Some((ts, msg)) = room_info.latest.as_ref() {
                 if let Some(human_readable_date) = relative_format(ts) {
                     self.view
                         .label(id!(timestamp))
-                        .set_text(&human_readable_date);
+                        .set_text(cx, &human_readable_date);
                 }
                 self.view
                     .html_or_plaintext(id!(latest_message))
-                    .show_html(msg);
+                    .show_html(cx, msg);
             }
             match room_info.avatar {
                 RoomPreviewAvatar::Text(ref text) => {
-                    self.view.avatar(id!(avatar)).show_text(None, text);
+                    self.view.avatar(id!(avatar)).show_text(cx, None, text);
                 }
                 RoomPreviewAvatar::Image(ref img_bytes) => {
                     let _ = self.view.avatar(id!(avatar)).show_image(
+                        cx,
                         None, // don't make room preview avatars clickable.
-                        |img| utils::load_png_or_jpg(&img, cx, img_bytes),
+                        |cx, img| utils::load_png_or_jpg(&img, cx, img_bytes),
                     );
                 }
             }
@@ -282,15 +283,15 @@ impl Widget for RoomPreviewContent {
             if room_info.num_unread_messages > 0 {
                 if room_info.num_unread_messages > 99 {
                     // We don't need to show unread messages over 99, so we show 99+ instead.
-                    unread_badge.label(id!(unread_message_count)).set_text("99+");
+                    unread_badge.label(id!(unread_message_count)).set_text(cx, "99+");
                 } else {
                     unread_badge
                         .label(id!(unread_message_count))
-                        .set_text(&room_info.num_unread_messages.to_string());
+                        .set_text(cx, &room_info.num_unread_messages.to_string());
                 }
-                unread_badge.set_visible(true);
+                unread_badge.set_visible(cx, true);
             } else {
-                unread_badge.set_visible(false);
+                unread_badge.set_visible(cx, false);
             }
 
             if cx.display_context.is_desktop() {
