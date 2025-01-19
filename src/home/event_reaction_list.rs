@@ -6,7 +6,7 @@ use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::home::room_screen::RoomScreenTooltipActions;
 use indexmap::IndexMap;
 
-const TOOLTIP_WIDTH: f64 = 100.0;
+const TOOLTIP_WIDTH: f64 = 200.0;
 const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
 const EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
 
@@ -118,19 +118,40 @@ impl Widget for ReactionList {
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid: WidgetUid = self.widget_uid();
+        let app_state = scope.data.get::<crate::app::AppState>().unwrap();
+        
         for (widget_ref, reaction_data) in self.children.iter() {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
                     let widget_rect = widget_ref.area().rect(cx);
-                    let tooltip_pos =  DVec2 {
-                        x: widget_rect.pos.x + widget_rect.size.x,
-                        y: widget_rect.pos.y - widget_rect.size.y / 2.0
+                    let mut too_close_to_right = false;
+                    if let Some(window_geom) = &app_state.window_geom {
+                        if (widget_rect.pos.x + widget_rect.size.x) + TOOLTIP_WIDTH > window_geom.inner_size.x {
+                            too_close_to_right = true;
+                        }
+                    }
+                    let tooltip_pos =  if too_close_to_right {
+                        DVec2 {
+                            x: widget_rect.pos.x + (widget_rect.size.x - TOOLTIP_WIDTH),
+                            y: widget_rect.pos.y + widget_rect.size.y
+                        }
+                    } else {
+                        DVec2 {
+                            x: widget_rect.pos.x + widget_rect.size.x,
+                            y: widget_rect.pos.y - widget_rect.size.y / 2.0
+                        }
+                    };
+                    let callout_offset = if too_close_to_right {
+                        TOOLTIP_WIDTH - (widget_rect.size.x - 5.0) / 2.0
+                    } else {
+                        (widget_rect.size.y - 5.0) / 2.0 + 10.0
                     };
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton {
                         tooltip_pos, 
                         tooltip_width: TOOLTIP_WIDTH, 
-                        callout_y_offset: (widget_rect.size.y - 5.0) / 2.0 + 10.0,
-                        reaction_data: reaction_data.clone()
+                        callout_offset,
+                        reaction_data: reaction_data.clone(),
+                        pointing_up: too_close_to_right,
                     });
                     cx.set_cursor(MouseCursor::Hand);
                     widget_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));

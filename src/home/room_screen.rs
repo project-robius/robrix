@@ -889,7 +889,7 @@ live_design! {
                     height: Fit
         
                     rounded_view = <RoundedView> {
-                        width: Fit,
+                        width: Fill,
                         height: Fit,
                         
                         padding: 10,
@@ -902,29 +902,44 @@ live_design! {
                             instance background_color: (#3b444b),
                             // Height of isoceles triangle
                             instance callout_triangle_height: 5.0,
-                            instance callout_y_offset: 15.0,
+                            instance callout_offset: 15.0,
+                            instance pointing_up: 0.0,
                             fn pixel(self) -> vec4 {
                                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                                 let rect_size = self.rect_size;
                                 // Main rounded rectangle
-                                sdf.box(
-                                    // Minus 2.0 to overlap the triangle and rectangle
-                                    (self.callout_triangle_height - 2.0) + self.border_width,
-                                    0.0 + self.border_width,
-                                    rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
-                                    rect_size.y - (self.border_width * 2.0),
-                                    max(1.0, self.radius)
-                                )
-                                sdf.fill(self.background_color);
-                                sdf.translate(0.0, self.callout_y_offset);
-                                // Draw left-pointed arrow triangle
-                                sdf.move_to(self.callout_triangle_height, 0.0);
-                                sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
-                                sdf.line_to(0.0, self.callout_triangle_height);
-                                // Draw up-pointed arrow triangle
-                                // sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 20.0);
-                                // sdf.line_to(0.0, self.callout_triangle_height * 2.0);
-                                // sdf.line_to(self.callout_triangle_height, self.callout_triangle_height);
+                                if self.pointing_up >= 0.5 {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        self.border_width,
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) ,
+                                        rect_size.y - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 0.0);
+                                     // Draw up-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(0.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(self.callout_triangle_height, 0.0);
+                                } else {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        0.0 + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        rect_size.y - (self.border_width * 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(0.0, self.callout_offset);
+                                    // Draw left-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height, 0.0);
+                                    sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                                    sdf.line_to(0.0, self.callout_triangle_height);
+                                }
+                                
                                 sdf.close_path();
                                 
                                 sdf.fill((self.background_color));
@@ -934,7 +949,8 @@ live_design! {
                         }
         
                         tooltip_label = <Label> {
-                            width: Fit,
+                            width: Fill,
+                            height: Fit,
                             draw_text: {
                                 text_style: <THEME_FONT_REGULAR>{font_size: 9},
                                 text_wrap: Word,
@@ -1018,8 +1034,9 @@ impl Widget for RoomScreen {
                 if let RoomScreenTooltipActions::HoverInReactionButton { 
                     tooltip_pos, 
                     tooltip_width, 
-                    callout_y_offset, 
-                    reaction_data
+                    callout_offset, 
+                    reaction_data,
+                    pointing_up
                 } = reaction_list.hover_in(actions) {
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
@@ -1027,17 +1044,21 @@ impl Widget for RoomScreen {
                             .unwrap_or(sender.to_string())
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
-                    tooltip_text.push_str(&format!("\nreacted with: {}", reaction_data.emoji));
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
+                            width: (tooltip_width)
                             rounded_view = {
                                 draw_bg: {
-                                    callout_y_offset: (callout_y_offset)
+                                    callout_offset: (callout_offset)
+                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
                                 }
-                                tooltip_label = {
-                                    width: (tooltip_width)
-                                }
+                                //tooltip_label = {
+                                // content = {
+                                //     width: (tooltip_width)
+                                //     //width: Fit
+                                // }
                             }
                         }
                     ));
@@ -2306,11 +2327,19 @@ pub enum RoomScreenTooltipActions {
     HoverInReactionButton {
         tooltip_pos: DVec2,
         tooltip_width: f64,
-        /// Calculated Y offset required such that the pointed arrow
-        /// is pointed towards the center of the hovered widget.
-        callout_y_offset: f64,
-        /// Includes the List of users who have reacted to the emoji
-        reaction_data: ReactionData
+        /// Pointed arrow position relative to the tooltip
+        /// 
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        /// Data that is bound together the widget
+        /// 
+        /// Includes the list of users who have reacted to the emoji
+        reaction_data: ReactionData,
+        /// Boolean indicating if the callout should be pointing up.
+        /// 
+        /// If false, it is pointing left
+        pointing_up: bool
     },
     /// Mouse out event and clear tooltip
     HoverOut,

@@ -282,6 +282,9 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if let Event::WindowGeomChange(window_geom_change_event) = event {
+            self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
+        }
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
@@ -306,6 +309,8 @@ impl App {
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
     pub logged_in: bool,
+    /// The current window geometry.
+    pub window_geom: Option<event::WindowGeom>,
 }
 
 #[derive(Default, Debug)]
