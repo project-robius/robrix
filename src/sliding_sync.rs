@@ -17,7 +17,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent, MembershipChange},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, MembershipChange},
     Timeline,
 };
 use robius_open::Uri;
@@ -379,6 +379,12 @@ pub enum MatrixRequest {
     /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
     CheckCanUserSendMessage {
         room_id: OwnedRoomId,
+    },
+    /// Toggles the given reaction to the given event in the given room.
+    ToggleReaction {
+        room_id: OwnedRoomId,
+        timeline_event_id: TimelineEventItemId,
+        reaction: String,
     }
 }
 
@@ -921,6 +927,27 @@ async fn async_worker(
 
                     if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
                         error!("Failed to send the result of if user can send message: {e}")
+                    }
+                });
+            },
+            MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for send toggle reaction {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+
+                let _toggle_reaction_task = Handle::current().spawn(async move {
+                    log!("Toggle Reaction to room {room_id}: ...");
+                    match timeline.toggle_reaction(&timeline_event_id, &reaction).await {
+                        Ok(_send_handle) => {
+                            SignalToUI::set_ui_signal();
+                            log!("Sent toggle reaction to room {room_id} {reaction}.")
+                        },
+                        Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
                     }
                 });
             }

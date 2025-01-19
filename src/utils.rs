@@ -310,7 +310,53 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-
+/// Converts a list of names into a human-readable string with a 5-name limit.
+///
+/// # Examples
+/// ```
+/// assert_eq!(human_readable_list(&vec!["Alice"]), String::from("Alice"));
+/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")]), String::from("Alice and Bob"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 other"));
+/// ```
+pub fn human_readable_list<S>(names: &[S]) -> String
+where
+    S: AsRef<str>
+{
+    const MAX_NAMES: usize = 5;
+    let mut result = String::new();
+    match names.len() {
+        0 => { }
+        1 => {
+            result.push_str(names[0].as_ref());
+        },
+        2 => {
+            result.push_str(names[0].as_ref());
+            result.push_str(" and ");
+            result.push_str(names[1].as_ref());
+        },
+        _ => {
+            let display_count = names.len().min(MAX_NAMES);
+            for (i, name) in names.iter().take(display_count - 1).enumerate() {
+                if i > 0 {
+                    result.push_str(", ");
+                }
+                result.push_str(name.as_ref());
+            }
+            if names.len() > MAX_NAMES {
+                let remaining = names.len() - MAX_NAMES;
+                result.push_str(", ");
+                result.push_str(names[display_count - 1].as_ref());
+                result.push_str(" and ");
+                result.push_str(&format!("{} others", remaining));
+            } else {
+                result.push_str(" and ");
+                result.push_str(names[display_count - 1].as_ref());
+            }
+        }
+    };
+    result
+}
 
 #[cfg(test)]
 mod tests_linkify {
