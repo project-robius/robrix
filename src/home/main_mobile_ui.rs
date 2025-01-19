@@ -54,11 +54,11 @@ impl Widget for MainMobileUI {
                 .room_screen(id!(room_screen))
                 .set_displayed_room(cx, room.room_id.clone(), displayed_room_name);
 
-            self.view.view(id!(welcome)).set_visible(false);
-            self.view.view(id!(rooms)).set_visible(true);
+            self.view.view(id!(welcome)).set_visible(cx, false);
+            self.view.view(id!(rooms)).set_visible(cx, true);
         } else {
-            self.view.view(id!(welcome)).set_visible(true);
-            self.view.view(id!(rooms)).set_visible(false);
+            self.view.view(id!(welcome)).set_visible(cx, true);
+            self.view.view(id!(rooms)).set_visible(cx, false);
             return self.view.draw_walk(cx, scope, walk);
         }
 

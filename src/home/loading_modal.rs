@@ -198,12 +198,12 @@ impl LoadingModal {
                     "Looking for event {target_event_id}\n\n\
                     Fetched {events_paginated} messages so far...",
                 ));
-                cancel_button.set_text_and_redraw(cx, "Cancel");
+                cancel_button.set_text(cx, "Cancel");
             }
             LoadingModalState::Error(error_message) => {
                 self.set_title(cx, "Error loading content");
                 self.set_status(cx, error_message);
-                cancel_button.set_text_and_redraw(cx, "Okay");
+                cancel_button.set_text(cx, "Okay");
             }
             LoadingModalState::None => { }
         }
@@ -213,11 +213,11 @@ impl LoadingModal {
     }
 
     pub fn set_status(&mut self, cx: &mut Cx, status: &str) {
-        self.label(id!(status)).set_text_and_redraw(cx, status);
+        self.label(id!(status)).set_text(cx, status);
     }
 
     pub fn set_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(id!(title)).set_text_and_redraw(cx, title);
+        self.label(id!(title)).set_text(cx, title);
     }
 }
 
