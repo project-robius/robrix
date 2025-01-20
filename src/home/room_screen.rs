@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
@@ -28,9 +28,10 @@ use crate::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
 };
+use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt};
+use super::{event_reaction_list::ReactionData, loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -56,6 +57,8 @@ live_design! {
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_modal::*;
     use crate::home::message_context_menu::*;
+    use crate::home::message_context_menu::*;
+    use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -365,7 +368,7 @@ live_design! {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
 
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
 
         }
@@ -398,7 +401,7 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -410,7 +413,7 @@ live_design! {
             content = {
                 padding: { left: 10.0 }
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -422,7 +425,7 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                reaction_list = <ReactionList> { }
             }
         }
     }
@@ -877,6 +880,84 @@ live_design! {
                     message_action_bar = <MessageActionBar> {}
                 }
             }
+            room_screen_tooltip = <Tooltip> {
+                content: <View> {
+                    flow: Overlay
+                    width: Fit
+                    height: Fit
+        
+                    rounded_view = <RoundedView> {
+                        width: Fill,
+                        height: Fit,
+                        
+                        padding: 10,
+        
+                        draw_bg: {
+                            color: #fff,
+                            border_width: 1.0,
+                            border_color: #D0D5DD,
+                            radius: 2.,
+                            instance background_color: (#3b444b),
+                            // Height of isoceles triangle
+                            instance callout_triangle_height: 7.5,
+                            instance callout_offset: 15.0,
+                            instance pointing_up: 0.0,
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let rect_size = self.rect_size;
+                                // Main rounded rectangle
+                                if self.pointing_up >= 0.5 {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        self.border_width,
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) ,
+                                        rect_size.y - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 0.0);
+                                     // Draw up-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(0.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(self.callout_triangle_height, 0.0);
+                                } else {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        0.0 + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        rect_size.y - (self.border_width * 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(0.5, self.callout_offset);
+                                    // Draw left-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height, 0.0);
+                                    sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                                    sdf.line_to(0.5, self.callout_triangle_height);
+                                }
+                                
+                                sdf.close_path();
+                                
+                                sdf.fill((self.background_color));
+                                return sdf.result;
+                            }
+                            
+                        }
+        
+                        tooltip_label = <Label> {
+                            width: Fill,
+                            height: Fit,
+                            draw_text: {
+                                text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                                text_wrap: Word,
+                                color: (COLOR_PRIMARY)
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         animator: {
@@ -942,6 +1023,45 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let tooltip = self.tooltip(id!(room_screen_tooltip));
+            for (_, wr) in portal_list.items_with_actions(actions) {
+                let reaction_list = wr.reaction_list(id!(reaction_list));
+                if let RoomScreenTooltipActions::HoverInReactionButton { 
+                    tooltip_pos, 
+                    tooltip_width, 
+                    callout_offset, 
+                    reaction_data,
+                    pointing_up
+                } = reaction_list.hover_in(actions) {
+                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
+                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                            .map(|user_profile| user_profile.displayable_name().to_string())
+                            .unwrap_or(sender.to_string())
+                    }).collect();
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            width: (tooltip_width)
+                            rounded_view = {
+                                draw_bg: {
+                                    callout_offset: (callout_offset)
+                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
+                                }
+                                //tooltip_label = {
+                                // content = {
+                                //     width: (tooltip_width)
+                                //     //width: Fit
+                                // }
+                            }
+                        }
+                    ));
+                }
+                if reaction_list.hover_out(actions) {
+                    tooltip.hide(cx);
+                }
+            }
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -1456,13 +1576,13 @@ impl RoomScreen {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
+        let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
         let mut num_updates = 0;
         let mut typing_users = Vec::new();
-
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1528,6 +1648,9 @@ impl RoomScreen {
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
+                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
+
                         }
                     }
                     //
@@ -2198,6 +2321,31 @@ impl RoomScreenRef {
     }
 }
 
+/// Actions for the room screen's tooltip.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenTooltipActions {
+    /// Mouse over event when the mouse is over the reaction button.
+    HoverInReactionButton {
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        /// Pointed arrow position relative to the tooltip
+        /// 
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        /// Data that is bound together the widget
+        /// 
+        /// Includes the list of users who have reacted to the emoji
+        reaction_data: ReactionData,
+        /// Boolean indicating if the callout should be pointing up.
+        /// 
+        /// If false, it is pointing left
+        pointing_up: bool
+    },
+    /// Mouse out event and clear tooltip
+    HoverOut,
+    None,
+}
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
@@ -2907,7 +3055,8 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        item.reaction_list(id!(content.reaction_list))
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3408,45 +3557,6 @@ fn populate_preview_of_timeline_item(
     widget_out.show_html(html);
 }
 
-/// Draws the reactions beneath the given `message_item`.
-fn draw_reactions(
-    _cx: &mut Cx2d,
-    message_item: &WidgetRef,
-    reactions: &ReactionsByKeyBySender,
-    id: usize,
-) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
-    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-        return;
-    }
-
-    // The message annotations view is invisible by default, so we must set it to visible
-    // now that we know there are reactions to show.
-    message_item
-        .view(id!(content.message_annotations))
-        .set_visible(true);
-
-    let mut label_text = String::new();
-    for (reaction_raw, reaction_senders) in reactions.iter() {
-        // Just take the first char of the emoji, which ignores any variant selectors.
-        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-        let text_to_display = emojis::get(reaction_str)
-            .and_then(|e| e.shortcode())
-            .unwrap_or(reaction_raw);
-        let count = reaction_senders.len();
-        // log!("Found reaction {:?} with count {}", text_to_display, count);
-        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
-    }
-
-    // Debugging: draw the item ID as a reaction
-    if DRAW_ITEM_ID_REACTION {
-        label_text = format!("{label_text}<i>ID: {}</i>", id);
-    }
-
-    let html_reaction_view = message_item.html(id!(message_annotations.html_content));
-    html_reaction_view.set_text(&label_text);
-}
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
