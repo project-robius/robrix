@@ -3,6 +3,10 @@ use std::{borrow::Cow, time::SystemTime};
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
+/// The maximum number of items to display in a list.
+/// 
+/// It is used in avatar row and the tooltip
+pub const MAX_VISIBLE_NUMBER_OF_ITEMS: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
@@ -310,19 +314,22 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-/// Converts a list of names into a human-readable string
+/// Converts a list of names into a human-readable string with a 5-name limit.
 ///
 /// # Examples
 /// ```
 /// assert_eq!(human_readable_list(&vec!["Alice"]), String::from("Alice"));
 /// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")]), String::from("Alice and Bob"));
 /// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 others"));
 /// ```
-pub fn human_readable_list<S>(names: &[S]) -> String where S: AsRef<str> {
+pub fn human_readable_list<S>(names: &[S]) -> String
+where
+    S: AsRef<str>
+{
     let mut result = String::new();
     match names.len() {
-        0 => {
-        },
+        0 => return result, // early return if no names provided
         1 => {
             result.push_str(names[0].as_ref());
         },
@@ -332,19 +339,70 @@ pub fn human_readable_list<S>(names: &[S]) -> String where S: AsRef<str> {
             result.push_str(names[1].as_ref());
         },
         _ => {
-            let last = names[names.len() - 1].as_ref();
-            let rest = &names[..names.len() - 1];
-            for name in rest.iter() {
+            let display_count = names.len().min(MAX_VISIBLE_NUMBER_OF_ITEMS);
+            for (i, name) in names.iter().take(display_count - 1).enumerate() {
+                if i > 0 {
+                    result.push_str(", ");
+                }
                 result.push_str(name.as_ref());
-                result.push_str(", ");
             }
-            result.push_str(" and ");
-            result.push_str(last);
+            if names.len() > MAX_VISIBLE_NUMBER_OF_ITEMS {
+                let remaining = names.len() - MAX_VISIBLE_NUMBER_OF_ITEMS;
+                result.push_str(", ");
+                result.push_str(names[display_count - 1].as_ref());
+                result.push_str(", and ");
+                if remaining == 1 {
+                    result.push_str("1 other");
+                } else {
+                    result.push_str(&format!("{} others", remaining));
+                }
+            } else {
+                result.push_str(" and ");
+                result.push_str(names[display_count - 1].as_ref());
+            }
         }
     };
     result
 }
 
+#[cfg(test)]
+mod tests_human_readable_list {
+    use super::*;
+    #[test]
+    fn test_human_readable_list_empty() {
+        let names: Vec<&str> = Vec::new();
+        let result = human_readable_list(&names);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_human_readable_list_single() {
+        let names: Vec<&str> = vec!["Alice"];
+        let result = human_readable_list(&names);
+        assert_eq!(result, "Alice");
+    }
+
+    #[test]
+    fn test_human_readable_list_two() {
+        let names: Vec<&str> = vec!["Alice", "Bob"];
+        let result = human_readable_list(&names);
+        assert_eq!(result, "Alice and Bob");
+    }
+
+    #[test]
+    fn test_human_readable_list_many() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "David", "Emily", "Frank"];
+        let result = human_readable_list(&names);
+        assert_eq!(result, "Alice, Bob, Charlie, David, Emily, and 1 other");
+    }
+
+    #[test]
+    fn test_human_readable_list_long() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
+        let result = human_readable_list(&names);
+        assert_eq!(result, "Alice, Bob, Charlie, Dennis, Eudora, and 21 others");
+    }
+}
 #[cfg(test)]
 mod tests_linkify {
     use super::*;

@@ -352,26 +352,30 @@ live_design! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
-
-                username = <Label> {
+                <View> {
+                    flow: Right,
                     width: Fill,
-                    margin: {bottom: 9.0, top: 11.0, right: 10.0,}
-                    draw_text: {
-                        text_style: <USERNAME_TEXT_STYLE> {},
-                        color: (USERNAME_TEXT_COLOR)
-                        wrap: Ellipsis,
+                    height: Fit,
+                    username = <Label> {
+                        width: Fill,
+                        margin: {bottom: 9.0, top: 11.0, right: 10.0,}
+                        draw_text: {
+                            text_style: <USERNAME_TEXT_STYLE> {},
+                            color: (USERNAME_TEXT_COLOR)
+                            wrap: Ellipsis,
+                        }
+                        text: "<Username not available>"
                     }
-                    text: "<Username not available>"
+                    avatar_row = <AvatarRow> {}
                 }
+                
                 message = <HtmlOrPlaintext> { }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
-
                 message_annotations = <MessageAnnotations> {}
             }
-            avatar_row = <AvatarRow> {}
             
         }
     }

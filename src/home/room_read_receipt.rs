@@ -1,13 +1,12 @@
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
-use crate::utils::human_readable_list;
+use crate::utils::{self, human_readable_list};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
-const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW: usize = 5; 
-const TOOLTIP_LENGTH: f64 = 100.0;
+const TOOLTIP_LENGTH: f64 = 150.0;
 
 live_design! {
     use link::theme::*;
@@ -59,8 +58,9 @@ pub struct AvatarRow {
     /// Label template for truncated number of people seen
     #[live]
     plus_template: Option<LivePtr>,
-    // A vector containing its avatarRef, its drawn status and username
-    // Storing the drawn status helps prevent unnecessary set avatar in the draw_walk function
+    /// A vector containing its avatarRef, its drawn status and username
+    ///
+    /// Storing the drawn status helps prevent unnecessary set avatar in the draw_walk function
     #[rust]
     buttons: Vec<(AvatarRef, bool, String)>,
     #[rust]
@@ -89,7 +89,7 @@ impl Widget for AvatarRow {
                 };
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
                     tooltip_pos,
-                    tooltip_text: format!("Seen by {:?}\n{}", self.total_num_seen, self.human_readable_usernames), 
+                    tooltip_text: format!("Seen by {:?} people\n{}", self.total_num_seen, self.human_readable_usernames), 
                     tooltip_width: TOOLTIP_LENGTH
                 });
             }
@@ -105,9 +105,9 @@ impl Widget for AvatarRow {
         for (avatar_ref, _, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
         }
-        if self.total_num_seen > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW {
+        if self.total_num_seen > utils::MAX_VISIBLE_NUMBER_OF_ITEMS {
             if let Some(label) = &mut self.label {
-                label.set_text(&format!(" + {:?}", self.total_num_seen - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW));
+                label.set_text(&format!(" + {:?}", self.total_num_seen - utils::MAX_VISIBLE_NUMBER_OF_ITEMS));
                 let _ = label.draw(cx, scope);
             }
         }
@@ -132,7 +132,7 @@ impl AvatarRow {
         receipts_map: &IndexMap<OwnedUserId, Receipt>) {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
-            for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW, receipts_map.len()) {
+            for _ in 0..cmp::min(utils::MAX_VISIBLE_NUMBER_OF_ITEMS, receipts_map.len()) {
                 self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false, String::new()));
             }
         }
@@ -145,7 +145,10 @@ impl AvatarRow {
                 *username_ref = username;
             }
         }
-        let username_arr: Vec<&String> = self.buttons.iter().map(|(_, _, username)| username).collect();
+        let mut username_arr: Vec<String> = self.buttons.iter().map(|(_, _, username)| username.clone()).collect();
+        for _ in username_arr.len()..receipts_map.len() {
+            username_arr.push(String::new());
+        }
         self.human_readable_usernames = human_readable_list(&username_arr);
     }
 }
