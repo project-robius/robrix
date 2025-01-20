@@ -10,6 +10,7 @@ pub mod search_bar;
 pub mod styles;
 pub mod text_or_image;
 pub mod typing_animation;
+pub mod popup_list;
 pub mod verification_badge;
 
 pub fn live_design(cx: &mut Cx) {
@@ -23,6 +24,7 @@ pub fn live_design(cx: &mut Cx) {
     html_or_plaintext::live_design(cx);
     typing_animation::live_design(cx);
     jump_to_bottom_button::live_design(cx);
+    popup_list::live_design(cx);
     verification_badge::live_design(cx);
     color_tooltip::live_design(cx);
 }
