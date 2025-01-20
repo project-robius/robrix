@@ -87,7 +87,7 @@ live_design! {
             draw_text: {
                 wrap: Word,
                 color: (MESSAGE_TEXT_COLOR),
-                text_style: <MESSAGE_TEXT_STYLE>{},
+                text_style: <TITLE_TEXT>{},
             }
             text: "Rooms"
         }
@@ -507,12 +507,16 @@ impl Widget for RoomsList {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
                             if should_display {
-                                // if the room is not direct while should display, we count it as a not_direct room.
+                                // We segmentation in advance:
+                                // Top indexes are non-direct room index while backward indexes are direct.
                                 if !is_direct {
+                                    // if the room is not direct while should display, we count it as a not_direct room.
                                     self.not_direct_rooms_count += 1;
+                                    // For non-direct rooms, we insert it at the front.
                                     self.displayed_rooms.insert(self.not_direct_rooms_count - 1, room_id);
 
                                 } else {
+                                    // For direct rooms, we push it at the back.
                                     self.displayed_rooms.push(room_id);
                                 }
                             }
@@ -668,7 +672,6 @@ impl Widget for RoomsList {
         self.widget_match_event(cx, event, scope);
     }
 
-
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Override the current active room index if the app state has a different selected room
@@ -685,6 +688,9 @@ impl Widget for RoomsList {
         let count = self.displayed_rooms.len();
 
         let status_label_id = count;
+
+        // We put non-direct rooms at the beginning of the list.
+        // If we put direct rooms at the beginning, `draw_header_status` here should be `HaveDrawnPeople`.
         let mut draw_header_status = DrawRoomListHeader::HaveNotDrawnRoom;
         // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
@@ -694,7 +700,6 @@ impl Widget for RoomsList {
 
             list.set_item_range(cx, 0, count + 1);
 
-
             while let Some(item_id) = list.next_visible_item(cx) {
 
                 let mut scope = Scope::empty();
@@ -703,6 +708,7 @@ impl Widget for RoomsList {
                 let room_to_draw = self.displayed_rooms
                     .get(item_id)
                     .and_then(|room_id| self.all_rooms.get_mut(room_id));
+                // We have already segmentate `self.displayed_rooms`
                 let item = if let Some(room_info) = room_to_draw {
                     let item = list.item(cx, item_id, live_id!(room_preview));
                     self.displayed_rooms_map.insert(item.widget_uid(), item_id);
@@ -720,6 +726,14 @@ impl Widget for RoomsList {
 
                     // Pass the room info down to the RoomPreview widget via Scope.
                     scope = Scope::with_props(&*room_info);
+
+
+                    // This match block is: we find a suitable place to draw headers.
+                    //
+                    // We first draw the header for non-direct rooms.
+                    // And following, all the non-direct rooms will be drawn.
+                    // We draw the header for direct rooms after all the non-direct rooms are drawn.
+                    // Finally, we draw the direct rooms.
                     match draw_header_status {
                         DrawRoomListHeader::HaveNotDrawnPeople => {
                             if room_info.is_direct {
@@ -735,9 +749,7 @@ impl Widget for RoomsList {
                                 draw_header_status = DrawRoomListHeader::HaveNotDrawnPeople
                             }
                         }
-                        DrawRoomListHeader::Done => {
-
-                        }
+                        DrawRoomListHeader::Done => { }
                     }
                     item
                 }
