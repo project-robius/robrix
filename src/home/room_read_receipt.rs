@@ -224,7 +224,7 @@ pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, e
 /// will contain the string "and N others".
 pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receipt>, room_id: &RoomId) -> String {
     let mut display_names: Vec<String> = read_receipts.iter().rev().take(5).map(|(user_id, _)| {
-        if let (Some(profile), _ ) = crate::profile::user_profile_cache::get_user_profile_and_room_member(cx, user_id.clone(), &room_id, true) {
+        if let (Some(profile), _ ) = crate::profile::user_profile_cache::get_user_profile_and_room_member(cx, user_id.clone(), room_id, true) {
             profile.displayable_name().to_owned()
         } else {
             user_id.to_string()
