@@ -21,12 +21,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, image_viewer_modal::ImageViewerAction, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, image_viewer::{ImageViewerRef, ImageViewerWidgetExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageClickAction, TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -48,7 +48,6 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
-    use crate::shared::image_viewer::ImageViewer;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
@@ -688,8 +687,6 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
-            image_viewer = <ImageViewer> {}
-
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -1077,12 +1074,6 @@ impl Widget for RoomScreen {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
 
-                if let Some(TextOrImageClickAction::SelfWidgetUid(text_or_image_uid)) = action.downcast_ref() {
-                    log!("RRRRR");
-                    let image_viewer = self.view.image_viewer(id!(image_viewer));
-                    image_viewer.show_and_fill_image(cx, text_or_image_uid, &mut tl.media_cache);
-                }
-
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -1316,8 +1307,6 @@ impl Widget for RoomScreen {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
 
-        let image_viewer = self.view.image_viewer(id!(image_viewer));
-
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1370,7 +1359,6 @@ impl Widget for RoomScreen {
                                     &mut tl_state.media_cache,
                                     item_drawn_status,
                                     room_screen_widget_uid,
-                                    Some(image_viewer.clone())
                                 )
                             }
                             TimelineItemContent::Sticker(sticker) => {
@@ -1386,7 +1374,6 @@ impl Widget for RoomScreen {
                                     &mut tl_state.media_cache,
                                     item_drawn_status,
                                     room_screen_widget_uid,
-                                    None,
                                 )
                             }
                             TimelineItemContent::RedactedMessage => populate_small_state_event(
@@ -1761,6 +1748,10 @@ impl RoomScreen {
             // log!("Applied {} timeline updates for room {}, redrawing with {} items...", num_updates, tl.room_id, tl.items.len());
             self.redraw(cx);
         }
+    }
+    fn get_media_cache(&self) -> Option<MediaCache> {
+        log!("Called");
+        self.tl_state.as_ref().map(|tl|{tl.media_cache.clone()})
     }
 
 
@@ -2201,6 +2192,13 @@ impl RoomScreen {
 }
 
 impl RoomScreenRef {
+    pub fn get_media_cache(&self) -> Option<MediaCache> {
+        if let Some(inner) = self.borrow() {
+            inner.get_media_cache()
+        } else {
+            None
+        }
+    }
     /// See [`RoomScreen::set_displayed_room()`].
     pub fn set_displayed_room(
         &self,
@@ -2616,7 +2614,6 @@ fn populate_message_view(
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
-    image_viewer: Option<ImageViewerRef>,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
 
@@ -2796,17 +2793,14 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let image_info = mtype.get_image_info();
-                if let Some(image_viewer) = image_viewer {
                     let is_image_fully_drawn = populate_image_message_content(
                         cx,
                         &item.text_or_image(id!(content.message)),
                         image_info,
                         message.body(),
                         media_cache,
-                        image_viewer,
                     );
                     new_drawn_status.content_drawn = is_image_fully_drawn;
-                }
                 (item, false)
             }
         }
@@ -3074,7 +3068,6 @@ fn populate_image_message_content(
     image_info_source: Option<(Option<ImageInfo>, MediaSource)>,
     body: &str,
     media_cache: &mut MediaCache,
-    image_viewer: ImageViewerRef,
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
@@ -3147,7 +3140,7 @@ fn populate_image_message_content(
     match image_info_source {
         Some((None, media_source)) => {
             if let MediaSource::Plain(mx_uri) = media_source.clone() {
-                image_viewer.insert_date(text_or_image_ref.widget_uid(), mx_uri);
+                Cx::post_action(ImageViewerAction::Insert(text_or_image_ref.widget_uid(), mx_uri.clone()));
             }
 
             // We fetch the original (full-size) media if it does not have a thumbnail.
@@ -3157,7 +3150,7 @@ fn populate_image_message_content(
         },
         Some((Some(image_info), media_source)) => {
             if let MediaSource::Plain(mx_uri) = media_source.clone() {
-                image_viewer.insert_date(text_or_image_ref.widget_uid(), mx_uri);
+                Cx::post_action(ImageViewerAction::Insert(text_or_image_ref.widget_uid(), mx_uri.clone()));
             }
 
             if let Some(thumbnail_source) =  image_info.thumbnail_source {

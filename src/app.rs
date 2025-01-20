@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::{MessageAction, RoomScreenWidgetRefExt}, rooms_list::RoomListAction}, image_viewer_modal::{ImageViewerAction, ImageViewerModalWidgetRefExt}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -14,9 +14,10 @@ live_design! {
     use crate::home::home_screen::HomeScreen;
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
+    use crate::image_viewer_modal::ImageViewerModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
-    
+
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
     ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
@@ -125,12 +126,17 @@ live_design! {
                             <PopupList> {}
                         }
                     }
+                    image_viewer_modal = <Modal> {
+                        content: {
+                            image_viewer_modal_inner = <ImageViewerModal> {}
+                        }
+                    }
                     verification_modal = <Modal> {
                         content: {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
-                    
+
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -165,6 +171,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::image_viewer_modal::live_design(cx);
     }
 }
 
@@ -188,7 +195,32 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        let image_viewer_modal = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
+
+        if image_viewer_modal.button(id!(close_button)).clicked(actions) {
+            image_viewer_modal.as_modal().close(cx);
+            log!("Closed");
+        }
+
         for action in actions {
+            if let Some(ImageViewerAction::Insert(text_or_image_uid, mx_uri)) = action.downcast_ref() {
+                let image_viewer_modal = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
+                image_viewer_modal.insert_data(text_or_image_uid, mx_uri.clone());
+            }
+
+            if let Some(ImageViewerAction::Show(text_or_image_uid)) = action.downcast_ref() {
+                log!("Beggin to show");
+                let image_viewer_modal = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
+
+                if let Some(mut media_cache) = self.ui.room_screen(id!(home_screen.main_desktop_ui.dock.room_screen)).get_media_cache() {
+                    log!("RoomScreen!!");
+                    image_viewer_modal.show_and_fill_image(cx, text_or_image_uid, &mut media_cache);
+                    log!("Showed");
+                } else {
+                    log!("NO media_cache");
+                }
+            }
+
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;

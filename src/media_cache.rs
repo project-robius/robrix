@@ -5,7 +5,7 @@ use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixReques
 
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 
-/// An entry in the media cache. 
+/// An entry in the media cache.
 #[derive(Debug, Clone)]
 pub enum MediaCacheEntry {
     /// A request has been issued and we're waiting for it to complete.
@@ -17,6 +17,7 @@ pub enum MediaCacheEntry {
 }
 
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
+#[derive(Debug, Clone)]
 pub struct MediaCache {
     /// The actual cached data.
     cache: BTreeMap<OwnedMxcUri, MediaCacheEntryRef>,
@@ -107,7 +108,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
-            
+
             // debugging: dump out the media image to disk
             if false {
                 if let MediaSource::Plain(mxc_uri) = _request.source {

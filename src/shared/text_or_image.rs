@@ -5,6 +5,8 @@
 
 use makepad_widgets::*;
 
+use crate::image_viewer_modal::ImageViewerAction;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -57,11 +59,6 @@ pub struct TextOrImage {
     // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
 }
-#[derive(Debug, Clone, DefaultNone)]
-pub enum TextOrImageClickAction {
-    SelfWidgetUid(WidgetUid),
-    None
-}
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -71,11 +68,10 @@ impl Widget for TextOrImage {
 
         match event.hits(cx, image_view_area) {
             Hit::FingerDown(_fe) => {
-                log!("Clicked");
                 cx.set_key_focus(image_view_area);
-                Cx::post_action(TextOrImageClickAction::SelfWidgetUid(self.widget_uid()));
+                Cx::post_action(ImageViewerAction::Show(self.widget_uid()));
             }
-            Hit::FingerUp(fe) => {
+            Hit::FingerUp(_fe) => {
 
                 // if fe.was_tap() {
                 // }
