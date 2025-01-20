@@ -1,3 +1,4 @@
+use crate::app::AppState;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::utils::{self, human_readable_list};
@@ -6,8 +7,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
-const TOOLTIP_LENGTH: f64 = 150.0;
-
+const TOOLTIP_WIDTH: f64 = 150.0;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -28,9 +28,9 @@ live_design! {
                 }
             }
         }
-        margin: {top: 12, right: 120, bottom: 3, left: 10},
+        margin: {top: 12, right: 50, bottom: 3, left: 10},
         width: Fit,
-        height: 30,
+        height: 15.0,
         plus_template: <Label> {
             draw_text: {
                 color: #x0,
@@ -72,26 +72,49 @@ pub struct AvatarRow {
     #[redraw] 
     #[rust] 
     area: Area,
-    /// The human readable usernames for tooltip
     #[rust]
-    human_readable_usernames: String, 
+    read_receipts: Option<indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>>
 }
 
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid = self.widget_uid();
         if self.total_num_seen == 0 { return; }
+        let uid: WidgetUid = self.widget_uid();
+        let app_state = scope.data.get_mut::<AppState>().unwrap();
+        let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
-            Hit::FingerHoverIn(finger_event) => {
-                let tooltip_pos = DVec2 {
-                    x: self.area.rect(cx).pos.x,
-                    y: finger_event.abs.y
+            Hit::FingerHoverIn(_) => {
+                let mut too_close_to_right = false;
+                if let Some(window_geom) = &app_state.window_geom {
+                    if (widget_rect.pos.x + widget_rect.size.x) + TOOLTIP_WIDTH > window_geom.inner_size.x {
+                        too_close_to_right = true;
+                    }
+                }
+                let tooltip_pos =  if too_close_to_right {
+                    DVec2 {
+                        x: widget_rect.pos.x + (widget_rect.size.x - TOOLTIP_WIDTH),
+                        y: widget_rect.pos.y + widget_rect.size.y + 5.0
+                    }
+                } else {
+                    DVec2 {
+                        x: widget_rect.pos.x + widget_rect.size.x,
+                        y: widget_rect.pos.y - widget_rect.size.y / 2.0
+                    }
                 };
-                cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
-                    tooltip_pos,
-                    tooltip_text: format!("Seen by {:?} people\n{}", self.total_num_seen, self.human_readable_usernames), 
-                    tooltip_width: TOOLTIP_LENGTH
-                });
+                let callout_offset = if too_close_to_right {
+                    TOOLTIP_WIDTH - (widget_rect.size.x - 5.0) / 2.0
+                } else {
+                    (widget_rect.size.y - 5.0) / 2.0 + 10.0
+                };
+                if let Some(read_receipts) = &self.read_receipts {
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
+                        tooltip_pos,
+                        callout_offset,
+                        read_receipts: read_receipts.clone(),
+                        tooltip_width: TOOLTIP_WIDTH,
+                        pointing_up: too_close_to_right,
+                    });
+                }
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
@@ -145,11 +168,7 @@ impl AvatarRow {
                 *username_ref = username;
             }
         }
-        let mut username_arr: Vec<String> = self.buttons.iter().map(|(_, _, username)| username.clone()).collect();
-        for _ in username_arr.len()..receipts_map.len() {
-            username_arr.push(String::new());
-        }
-        self.human_readable_usernames = human_readable_list(&username_arr);
+        self.read_receipts = Some(receipts_map.clone());
     }
 }
 impl AvatarRowRef {
@@ -193,4 +212,26 @@ impl AvatarRowRef {
 ///
 pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, event_tl_item: &EventTimelineItem) {
     item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+}
+
+/// Populate the tooltip text for a read receipts avatar row.
+/// 
+/// Given a Cx2d, an IndexMap of read receipts, and a room ID, this
+/// will populate the tooltip text for the read receipts avatar row.
+/// 
+/// The tooltip will contain up to the first 5 displayable names of the users
+/// who have seen this event. If there are more than 5 users, the tooltip
+/// will contain the string "and N others".
+pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receipt>, room_id: &RoomId) -> String {
+    let mut display_names: Vec<String> = read_receipts.iter().rev().take(5).map(|(user_id, _)| {
+        if let (Some(profile), _ ) = crate::profile::user_profile_cache::get_user_profile_and_room_member(cx, user_id.clone(), &room_id, true) {
+            profile.displayable_name().to_owned()
+        } else {
+            user_id.to_string()
+        }
+    }).collect();
+    for _ in display_names.len()..read_receipts.len() {
+        display_names.push(String::from(""));
+    }
+    format!("Seen by {:?} people\n{}", read_receipts.len(), human_readable_list(&display_names))     
 }

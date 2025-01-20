@@ -31,7 +31,7 @@ use crate::{
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt}, room_read_receipt::populate_read_receipts};
+use super::{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt, room_read_receipt::{self, populate_read_receipts}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -892,25 +892,74 @@ live_design! {
                     flow: Overlay
                     width: Fit
                     height: Fit
-
+        
                     rounded_view = <RoundedView> {
-                        width: Fit,
+                        width: Fill,
                         height: Fit,
-                        padding: {left:10, top: 20, right: 10, bottom: 10},
-
+                        
+                        padding: 10,
+        
                         draw_bg: {
                             color: #fff,
                             border_width: 1.0,
                             border_color: #D0D5DD,
-                            radius: 2.
+                            radius: 2.,
+                            instance background_color: (#3b444b),
+                            // Height of isoceles triangle
+                            instance callout_triangle_height: 5.0,
+                            instance callout_offset: 15.0,
+                            instance pointing_up: 0.0,
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let rect_size = self.rect_size;
+                                // Main rounded rectangle
+                                if self.pointing_up >= 0.5 {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        self.border_width,
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) ,
+                                        rect_size.y - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 0.0);
+                                     // Draw up-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(0.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(self.callout_triangle_height, 0.0);
+                                } else {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        0.0 + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        rect_size.y - (self.border_width * 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(0.0, self.callout_offset);
+                                    // Draw left-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height, 0.0);
+                                    sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                                    sdf.line_to(0.0, self.callout_triangle_height);
+                                }
+                                
+                                sdf.close_path();
+                                
+                                sdf.fill((self.background_color));
+                                return sdf.result;
+                            }
+                            
                         }
-
+        
                         tooltip_label = <Label> {
-                            width: Fit,
+                            width: Fill,
+                            height: Fit,
                             draw_text: {
                                 text_style: <THEME_FONT_REGULAR>{font_size: 9},
                                 text_wrap: Word,
-                                color: #000
+                                color: (COLOR_PRIMARY)
                             }
                         }
                     }
@@ -966,7 +1015,7 @@ impl Widget for RoomScreen {
         let widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
         let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
-
+        let Some(room_id) = self.room_id.clone() else { return};
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
@@ -984,13 +1033,22 @@ impl Widget for RoomScreen {
             let tooltip = self.tooltip(id!(room_screen_tooltip));
             portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
                 let seq = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { tooltip_pos, tooltip_text, tooltip_width } = seq.hover_in(actions) {
+                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                    tooltip_pos, 
+                    tooltip_width ,
+                    callout_offset,
+                    pointing_up,
+                    read_receipts
+                } = seq.hover_in(actions) {
+                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts.clone(), &room_id);
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
+                            width: (tooltip_width)
                             rounded_view = {
-                                tooltip_label = {
-                                    width: (tooltip_width)
+                                draw_bg: {
+                                    callout_offset: (callout_offset)
+                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
                                 }
                             }
                         }
@@ -2258,10 +2316,23 @@ impl RoomScreenRef {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
     /// The mouse is hovering over read receipt within this RoomScreen.
+    /// Mouse over event when the mouse is over the reaction button.
     HoverInReadReceipt {
         tooltip_pos: DVec2,
-        tooltip_text: String,
         tooltip_width: f64,
+        /// Pointed arrow position relative to the tooltip
+        /// 
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        /// Data that is bound together the widget
+        /// 
+        /// Includes the list of users who have seen this event
+        read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
+        /// Boolean indicating if the callout should be pointing up.
+        /// 
+        /// If false, it is pointing left
+        pointing_up: bool
     },
     /// Mouse out event and clear tooltip
     HoverOut,
