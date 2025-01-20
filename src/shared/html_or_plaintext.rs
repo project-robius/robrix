@@ -53,6 +53,8 @@ live_design! {
         span = <MatrixHtmlSpan> { }
 
         a = {
+            hover_color: #21b070
+            grab_key_focus: false,
             padding: {left: 1.0, right: 1.5},
         }
 

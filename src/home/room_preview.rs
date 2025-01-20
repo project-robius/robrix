@@ -155,7 +155,7 @@ live_design! {
                 avatar = <Avatar> {}
                 <View> {
                     flow: Right
-                    width: Fill, height: 60
+                    width: Fill, height: 56
                     align: { x: 0.5, y: 0.5 }
                     left = <View> {
                         width: Fill, height: Fill,
