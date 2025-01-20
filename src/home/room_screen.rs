@@ -901,7 +901,7 @@ live_design! {
                             radius: 2.,
                             instance background_color: (#3b444b),
                             // Height of isoceles triangle
-                            instance callout_triangle_height: 5.0,
+                            instance callout_triangle_height: 7.5,
                             instance callout_offset: 15.0,
                             instance pointing_up: 0.0,
                             fn pixel(self) -> vec4 {
@@ -933,11 +933,11 @@ live_design! {
                                         max(1.0, self.radius)
                                     )
                                     sdf.fill(self.background_color);
-                                    sdf.translate(0.0, self.callout_offset);
+                                    sdf.translate(0.5, self.callout_offset);
                                     // Draw left-pointed arrow triangle
                                     sdf.move_to(self.callout_triangle_height, 0.0);
                                     sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
-                                    sdf.line_to(0.0, self.callout_triangle_height);
+                                    sdf.line_to(0.5, self.callout_triangle_height);
                                 }
                                 
                                 sdf.close_path();
@@ -977,7 +977,6 @@ live_design! {
                 }
             }
         }
-        
     }
 }
 
@@ -994,7 +993,6 @@ pub struct RoomScreen {
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
 }
-
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -1024,7 +1022,6 @@ impl Widget for RoomScreen {
             //       and wrap it in a `if let Event::Signal` conditional.
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
-            cx.widget_action(widget_uid, &scope.path, RoomScreenTooltipActions::HoverOut);
         }
 
         if let Event::Actions(actions) = event {
@@ -1580,6 +1577,7 @@ impl RoomScreen {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
+        let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
         let mut done_loading = false;
@@ -1651,6 +1649,9 @@ impl RoomScreen {
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
+                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
+
                         }
                     }
                     //

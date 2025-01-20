@@ -32,8 +32,8 @@ live_design! {
         item: <Button> {
             width: Fit,
             height: Fit,
-            padding: 6,
-            margin: { top: 3, bottom: 3, left: 3, right: 3 },
+            padding: 6.0,
+            margin: 0.0,
             draw_bg: {
                 instance color: (COLOR_BUTTON_GREY)
                 instance color_hover: #fef65b
@@ -138,13 +138,13 @@ impl Widget for ReactionList {
                     } else {
                         DVec2 {
                             x: widget_rect.pos.x + widget_rect.size.x,
-                            y: widget_rect.pos.y - widget_rect.size.y / 2.0
+                            y: widget_rect.pos.y - 5.0
                         }
                     };
                     let callout_offset = if too_close_to_right {
                         TOOLTIP_WIDTH - (widget_rect.size.x - 5.0) / 2.0
                     } else {
-                        (widget_rect.size.y - 5.0) / 2.0 + 10.0
+                        10.0
                     };
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton {
                         tooltip_pos, 
