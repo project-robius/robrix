@@ -32,8 +32,10 @@ live_design! {
         item: <Button> {
             width: Fit,
             height: Fit,
-            padding: 6.0,
-            margin: 0.0,
+            padding: 6,
+            // Use a zero margin on the left because we want the first reaction
+            // to be flush with the left edge of the message text.
+            margin: { top: 3, bottom: 3, left: 0, right: 6 },
             draw_bg: {
                 instance color: (COLOR_BUTTON_GREY)
                 instance color_hover: #fef65b
@@ -63,7 +65,7 @@ live_design! {
                 }
             }
             draw_text: {
-                text_style: <REGULAR_TEXT>{font_size: 8},
+                text_style: <REGULAR_TEXT>{font_size: 9},
                 color: #000
                 fn get_color(self) -> vec4 {
                     return self.color;
@@ -75,15 +77,14 @@ live_design! {
 }
 #[derive(Clone, Debug)]
 pub struct ReactionData {
-    /// Refers to emoji string after conversion from reaction_raw
-    pub emoji: String,
-    /// Original reaction string from the backend before emoji conversion
+    /// Refers to an emoji "shortcode" string, which is a temporary hack
+    /// because Makepad does not yet support drawing actual emoji.
+    pub emoji_shortcode: String,
+    /// Original reaction string from the backend before emoji shortcode conversion.
     pub reaction_raw: String,
-    /// Total number of people reacted to the emoji
-    pub total_number_reacted: usize,
-    /// Boolean indicating if the current user is also a sender of the reaction
+    /// Boolean indicating if the current user is also a sender of this reaction.
     pub includes_user: bool,
-    /// List of users who have reacted to the emoji
+    /// List of all users who have reacted to the emoji.
     pub reaction_senders: IndexMap<OwnedUserId, ReactionInfo>,
     /// The ID of the room that the reaction is for
     pub room_id: OwnedRoomId
@@ -235,14 +236,10 @@ impl ReactionListRef {
             // Just take the first char of the emoji, which ignores any variant selectors.
             let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
             let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-            let total_number_reacted = reaction_senders.len();
             let mut includes_user: bool = false;
             let emoji_text = emojis::get(reaction_str)
                 .and_then(|e| e.shortcode())
-                .unwrap_or_else(|| {
-                    log!("Failed to parse emoji: {}", reaction_raw);
-                    reaction_raw
-                });
+                .unwrap_or(reaction_raw);
             for (sender, _) in reaction_senders.iter() {
                 if sender == &client_user_id {
                     includes_user = true;
@@ -258,14 +255,13 @@ impl ReactionListRef {
             }
             let reaction_data = ReactionData {
                 reaction_raw: reaction_raw.to_string(),
-                emoji: emoji_text.to_string(),
-                total_number_reacted,
+                emoji_shortcode: emoji_text.to_string(),
                 includes_user,
                 reaction_senders: reaction_senders.clone(),
                 room_id: room_id.clone(),
             };
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
-            button.set_text(&format!("{} {}", reaction_data.emoji, reaction_data.total_number_reacted));
+            button.set_text(&format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()));
             let (bg_color, border_color) = if reaction_data.includes_user {
                 (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
             } else {

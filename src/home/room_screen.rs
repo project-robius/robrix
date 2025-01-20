@@ -1041,7 +1041,7 @@ impl Widget for RoomScreen {
                             .unwrap_or(sender.to_string())
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
-                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji));
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
                         content: {
