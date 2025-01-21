@@ -4248,7 +4248,6 @@ impl MessageRef {
 /// - `DVec2`: The position of the tooltip.
 /// - `f64`: The offset for the callout, relative to the tooltip.
 /// - `bool`: A flag indicating if the tooltip is too close to the right side of the window.
-
 pub fn room_screen_tooltip_position_helper(widget_rect: Rect, window_geom: &event::WindowGeom, tooltip_width:f64) -> (DVec2, f64, bool) {
     let mut too_close_to_right = false;
     if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_geom.inner_size.x {

@@ -78,7 +78,7 @@ pub struct AvatarRow {
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let Some(read_receipts) = &self.read_receipts else { return };
-        if read_receipts.len() == 0 { return; }
+        if read_receipts.is_empty() { return; }
         let uid: WidgetUid = self.widget_uid();
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         let Some(window_geom) = &app_state.window_geom else { return };
@@ -105,7 +105,7 @@ impl Widget for AvatarRow {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let Some(read_receipts) = &self.read_receipts else { return DrawStep::done() };
-        if read_receipts.len() == 0 { return DrawStep::done() }
+        if read_receipts.is_empty() { return DrawStep::done() }
         cx.begin_turtle(walk, Layout::default());
         for (avatar_ref, _, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
