@@ -17,7 +17,8 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "hits_without_mark_as_handled" }
+# makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "hits_without_mark_as_handled" }
+makepad-widgets = { path = "../makepad/widgets" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"

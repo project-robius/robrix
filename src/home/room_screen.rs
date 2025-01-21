@@ -831,8 +831,9 @@ live_design! {
             // The user profile sliding pane should be displayed on top of other
             // "static" subviews in the room screen.
             user_profile_modal = <Modal> {
+                align: { x: 1.0 },
                 content: {
-                    width: Fill,
+                    width: 300,
                     height: Fill,
                     align: { x: 1.0 },
                     // flow: Right,

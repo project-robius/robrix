@@ -285,6 +285,7 @@ live_design! {
         // main_content = <FadeView> {
             width: 300,
             height: Fill,
+            align: {x: 1.0},
             flow: Overlay,
 
             user_profile_view = <UserProfileView> { }
@@ -413,6 +414,9 @@ impl Widget for UserProfileSlidingPane {
                 .iter()
                 .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
+            if modal_dismissed {
+                log!("User profile pane was dismissed by clicking outside of it");
+            }
             if close_button_clicked || modal_dismissed {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
