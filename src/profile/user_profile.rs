@@ -120,7 +120,7 @@ live_design! {
 
 
     UserProfileView = <ScrollXYView> {
-        width: Fill,
+        width: 300,
         height: Fill,
         align: {x: 0.5, y: 0},
         padding: {left: 15., right: 15., top: 15.}
@@ -275,27 +275,16 @@ live_design! {
     }
 
 
-    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
-        flow: Overlay,
-        width: Fill,
+    // pub UserProfileSlidingPane = {{UserProfileSlidingPane}}<FadeView> {        
+    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {        
+        width: 300,
         height: Fill,
         align: {x: 1.0, y: 0}
 
-        bg_view = <View> {
-            width: Fill
-            height: Fill
-            visible: false,
-            show_bg: true
-            draw_bg: {
-                fn pixel(self) -> vec4 {
-                    return vec4(0., 0., 0., 0.7)
-                }
-            }
-        }
-
-        main_content = <FadeView> {
+        main_content = <View> {
+        // main_content = <FadeView> {
             width: 300,
-            height: Fill
+            height: Fill,
             flow: Overlay,
 
             user_profile_view = <UserProfileView> { }
@@ -325,13 +314,13 @@ live_design! {
                     redraw: true,
                     from: {all: Forward {duration: 0.4}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 300, draw_bg: {opacity: 1.0} }}
+                    apply: { main_content = { width: 300 } }
                 }
                 hide = {
                     redraw: true,
                     from: {all: Forward {duration: 0.5}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: {main_content = { width: 0, draw_bg: {opacity: 0.0} }}
+                    apply: { main_content = { width: 0 } }
                 }
             }
         }
@@ -341,7 +330,10 @@ live_design! {
 
 #[derive(Clone, DefaultNone, Debug)]
 pub enum ShowUserProfileAction {
+    /// Show the user profile sliding pane with the given info.
     ShowUserProfile(UserProfileAndRoomId),
+    /// Close the user profile sliding pane modal.
+    Close,
     None,
 }
 
@@ -412,21 +404,26 @@ impl Widget for UserProfileSlidingPane {
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
         }
-        // if !self.visible { return; }
 
         // Close the pane if the close button is clicked, the back mouse button is clicked,
         // the escape key is pressed, or the back button is pressed.
-        let close_pane = match event {
-            Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
-            Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
-            Event::KeyUp(key) => key.key_code == KeyCode::Escape,
-            Event::BackPressed => true,
-            _ => false,
-        };
-        if close_pane {
-            self.animator_play(cx, id!(panel.hide));
-            self.view(id!(bg_view)).set_visible(false);
-            return;
+        if let Event::Actions(actions) = event {
+            let close_button_clicked = self.button(id!(close_button)).clicked(actions);
+            let modal_dismissed = actions
+                .iter()
+                .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
+
+            if close_button_clicked || modal_dismissed {
+                self.animator_play(cx, id!(panel.hide));
+                self.redraw(cx);
+                // If the modal was dismissed by clicking outside of it, we MUST NOT emit
+                // a `ShowUserProfileAction::Close` action, as that would cause
+                // an infinite action feedback loop.
+                if !modal_dismissed {
+                    cx.widget_action(self.widget_uid(), &scope.path, ShowUserProfileAction::Close);
+                }
+                return;
+            }
         }
 
         // A UI Signal indicates that this user profile's info may have been updated by a background task.
@@ -513,9 +510,7 @@ impl Widget for UserProfileSlidingPane {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.visible = true;
         let Some(info) = self.info.as_ref() else {
-            self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
 
@@ -566,12 +561,6 @@ impl Widget for UserProfileSlidingPane {
 
 
 impl UserProfileSlidingPane {
-    /// Returns `true` if the pane is both currently visible *and*
-    /// animator is in the `show` state.
-    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        self.visible && self.animator_in_state(cx, id!(panel.show))
-    }
-
     /// Sets the info to be displayed in this user profile sliding pane.
     ///
     /// If the `room_member` field is `None`, this function will attempt to
@@ -617,20 +606,12 @@ impl UserProfileSlidingPane {
     }
 
     pub fn show(&mut self, cx: &mut Cx) {
-        self.visible = true;
         self.animator_play(cx, id!(panel.show));
-        self.view(id!(bg_view)).set_visible(true);
         self.redraw(cx);
     }
 }
 
 impl UserProfileSlidingPaneRef {
-    /// See [`UserProfileSlidingPane::is_currently_shown()`]
-    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        let Some(inner) = self.borrow() else { return false };
-        inner.is_currently_shown(cx)
-    }
-
     /// See [`UserProfileSlidingPane::set_info()`]
     pub fn set_info(&self, _cx: &mut Cx, info: UserProfilePaneInfo) {
         let Some(mut inner) = self.borrow_mut() else { return };

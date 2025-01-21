@@ -22,7 +22,7 @@ use robius_location::Coordinates;
 
 use crate::{
     avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
-        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
+        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
@@ -56,7 +56,6 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_modal::*;
-    use crate::home::message_context_menu::*;
     use crate::home::message_context_menu::*;
     use crate::home::event_reaction_list::*;
 
@@ -829,19 +828,22 @@ live_design! {
             // The top space should be displayed on top of the timeline
             top_space = <TopSpace> { }
 
-            // The user profile sliding pane should be displayed on top of other "static" subviews
-            // (on top of all other views that are always visible).
-            <View> {
-                width: Fill,
-                height: Fill,
-                align: { x: 1.0 },
-                flow: Right,
+            // The user profile sliding pane should be displayed on top of other
+            // "static" subviews in the room screen.
+            user_profile_modal = <Modal> {
+                content: {
+                    width: Fill,
+                    height: Fill,
+                    align: { x: 1.0 },
+                    // flow: Right,
 
-                user_profile_sliding_pane = <UserProfileSlidingPane> { }
+                    user_profile_sliding_pane = <UserProfileSlidingPane> { }
+                }
             }
 
             // A pop-up modal that appears while the user must wait for something
             // in the room to finish loading, e.g., when loading an older replied-to message.
+            // This should be displayed on top of user profile modal.
             loading_modal = <Modal> {
                 content: {
                     loading_modal_inner = <LoadingModal> {}
@@ -866,20 +868,20 @@ live_design! {
                 }
             }
 
-            message_action_bar_popup = <PopupNotification> {
-                align: {x: 0.0, y: 0.0}
-                content: {
-                    height: Fit,
-                    width: Fit,
-                    show_bg: false,
-                    align: {
-                        x: 0.5,
-                        y: 0.5
-                    }
+            // message_action_bar_popup = <PopupNotification> {
+            //     align: {x: 0.0, y: 0.0}
+            //     content: {
+            //         height: Fit,
+            //         width: Fit,
+            //         show_bg: false,
+            //         align: {
+            //             x: 0.5,
+            //             y: 0.5
+            //         }
 
-                    message_action_bar = <MessageActionBar> {}
-                }
-            }
+            //         message_action_bar = <MessageActionBar> {}
+            //     }
+            // }
             room_screen_tooltip = <Tooltip> {
                 content: <View> {
                     flow: Overlay
@@ -1007,7 +1009,6 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
-        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -1212,7 +1213,6 @@ impl Widget for RoomScreen {
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
                         self.show_user_profile(
                             cx,
-                            &pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
                                 room_name: self.room_name.clone(),
@@ -1246,6 +1246,7 @@ impl Widget for RoomScreen {
                             message_context_menu_modal.open(cx);
                         }
                     }
+                    /*
                     MessageAction::ActionBarClose => {
                         let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
                         let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
@@ -1280,6 +1281,7 @@ impl Widget for RoomScreen {
                             message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
                         }
                     }
+                    */
                     _ => {}
                 }
             }
@@ -1389,38 +1391,34 @@ impl Widget for RoomScreen {
             self.redraw(cx);
         }
 
-        // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
-        // if the user profile sliding pane is not visible.
-        if event.requires_visibility() && pane.is_currently_shown(cx) {
-            // Forward the event to the user profile sliding pane,
-            // preventing the underlying timeline view from receiving it.
-            pane.handle_event(cx, event, scope);
-        }
-        else {
-            // Forward the event to the inner timeline view, but capture any actions it produces
-            // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
-            // ensuring they are not mistakenly handled by other RoomScreen widget instances.
-            let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
-                self.view.handle_event(cx, event, scope)
-            );
-            // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
-            // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
-            actions_generated_within_this_room_screen.retain(|action| {
-                if self.handle_link_clicked(cx, action, &pane) {
-                    return false;
-                }
+        // Capture any events that the inner view produces such that
+        // we can handle the ones relevant to only THIS RoomScreen widget right here and now,
+        // ensuring they are not mistakenly handled by other RoomScreen widget instances.
+        let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
+            self.view.handle_event(cx, event, scope)
+        );
+        // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
+        // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
+        actions_generated_within_this_room_screen.retain(|action| {
+            if self.handle_link_clicked(cx, action) {
+                return false;
+            }
 
-                if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.modal(id!(loading_modal)).close(cx);
-                    return false;
-                }
+            if let LoadingModalAction::Close = action.as_widget_action().cast() {
+                self.modal(id!(loading_modal)).close(cx);
+                return false;
+            }
 
-                // Keep all unhandled actions so we can add them back to the global action list below.
-                true
-            });
-            // Add back any unhandled actions to the global action list.
-            cx.extend_actions(actions_generated_within_this_room_screen);
-        }
+            if let ShowUserProfileAction::Close = action.as_widget_action().cast() {
+                self.modal(id!(user_profile_modal)).close(cx);
+                return false;
+            }
+
+            // Keep all unhandled actions so we can add them back to the global action list below.
+            true
+        });
+        // Add back any unhandled actions to the global action list.
+        cx.extend_actions(actions_generated_within_this_room_screen);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -1879,7 +1877,6 @@ impl RoomScreen {
         &mut self,
         cx: &mut Cx,
         action: &Action,
-        pane: &UserProfileSlidingPaneRef,
     ) -> bool {
         if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
             // A closure that handles both MatrixToUri and MatrixUri links.
@@ -1915,7 +1912,6 @@ impl RoomScreen {
                         // an async request to get the rest of the details.
                         self.show_user_profile(
                             cx,
-                            pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id: UserProfileAndRoomId {
                                     user_profile: UserProfile {
@@ -1968,11 +1964,12 @@ impl RoomScreen {
     fn show_user_profile(
         &mut self,
         cx: &mut Cx,
-        pane: &UserProfileSlidingPaneRef,
         info: UserProfilePaneInfo,
     ) {
+        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         pane.set_info(cx, info);
         pane.show(cx);
+        self.modal(id!(user_profile_modal)).open(cx);
         // Not sure if this redraw is necessary
         self.redraw(cx);
     }
