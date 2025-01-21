@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::{MessageAction, RoomScreenWidgetRefExt}, rooms_list::RoomListAction}, image_viewer_modal::{ImageViewerAction, ImageViewerModalWidgetRefExt}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, image_viewer_modal::{ImageViewerAction, ImageViewerModalWidgetRefExt}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -195,30 +195,34 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let image_viewer_modal = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
+        let mut image_viewer_modal_inner = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
 
-        if image_viewer_modal.button(id!(close_button)).clicked(actions) {
-            image_viewer_modal.as_modal().close(cx);
+        let image_viewer_modal = self.ui.modal(id!(image_viewer_modal));
+
+        if image_viewer_modal_inner.button(id!(close_button)).clicked(actions) {
+            image_viewer_modal.close(cx);
             log!("Closed");
+            self.ui.redraw(cx);
         }
 
         for action in actions {
+            if let Some(ImageViewerAction::SetMediaCache(media_cache)) = action.downcast_ref() {
+                image_viewer_modal_inner.set_media_cache(media_cache.clone());
+            }
+
             if let Some(ImageViewerAction::Insert(text_or_image_uid, mx_uri)) = action.downcast_ref() {
-                let image_viewer_modal = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
-                image_viewer_modal.insert_data(text_or_image_uid, mx_uri.clone());
+                image_viewer_modal_inner.insert_data(text_or_image_uid, mx_uri.clone());
             }
 
             if let Some(ImageViewerAction::Show(text_or_image_uid)) = action.downcast_ref() {
-                log!("Beggin to show");
-                let image_viewer_modal = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
 
-                if let Some(mut media_cache) = self.ui.room_screen(id!(home_screen.main_desktop_ui.dock.room_screen)).get_media_cache() {
-                    log!("RoomScreen!!");
-                    image_viewer_modal.show_and_fill_image(cx, text_or_image_uid, &mut media_cache);
-                    log!("Showed");
-                } else {
-                    log!("NO media_cache");
-                }
+                image_viewer_modal_inner.show_and_fill_image(cx, text_or_image_uid);
+                image_viewer_modal_inner.redraw(cx);
+                image_viewer_modal.open(cx);
+                image_viewer_modal.redraw(cx);
+
+                log!("Showed");
+                self.ui.redraw(cx);
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {

@@ -12,29 +12,36 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
 
     pub ImageViewerModal = {{ImageViewerModal}} {
-        width: Fill, height: Fill
+        width: 700, height: 700
         flow: Overlay
         show_bg: true
         draw_bg: {
             color: #00000075
         }
 
-        close_button = <RobrixIconButton> {
-            padding: {left: 15, right: 15}
-            draw_icon: {
-                svg_file: (ICON_CLOSE)
-                color: (COLOR_DANGER_RED),
-            }
-            icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+        <View> {
+            align: {x: 1.0, y: 0.0}
+            width: Fill, height: Fill
+            close_button = <RobrixIconButton> {
+                debug = true
+                padding: {left: 15, right: 15}
+                draw_icon: {
+                    svg_file: (ICON_CLOSE)
+                    color: (COLOR_DANGER_RED),
+                }
+                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
 
-            draw_bg: {
-                border_color: (COLOR_DANGER_RED),
-                color: #fff0f0 // light red
+                draw_bg: {
+                    border_color: (COLOR_DANGER_RED),
+                    color: #fff0f0 // light red
+                }
             }
         }
 
+
         image_view = <Image> {
-            fit: Stretch,
+            debug = true
+            fit: Smallest,
             width: Fill, height: Fill,
             // draw_bg: {
             //     fn pixel(self) -> vec4 {
@@ -53,12 +60,14 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct ImageViewerModal {
     #[deref] view: View,
-    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>
+    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
+    #[rust] media_cache: Option<MediaCache>,
 }
 
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
+    SetMediaCache(MediaCache),
     Insert(WidgetUid, OwnedMxcUri),
     Show(WidgetUid),
     None,
@@ -66,7 +75,7 @@ pub enum ImageViewerAction {
 
 impl Widget for ImageViewerModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.match_event(cx, event);
+        // self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
@@ -77,25 +86,24 @@ impl Widget for ImageViewerModal {
 
 
 impl ImageViewerModal {
+    fn set_media_cache(&mut self, media_cache: MediaCache) {
+        self.media_cache = Some(media_cache);
+        log!("Set media cache")
+    }
     fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mx_uri: OwnedMxcUri) {
         self.widgetref_image_uri_map.insert(*text_or_image_uid, mx_uri);
         log!("Inserted");
     }
-    fn show_and_fill_image(&mut self, cx: &mut Cx, text_or_image_uid: &WidgetUid, media_cache: &mut MediaCache) {
+    fn show_and_fill_image(&mut self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
         if let Some(mxc_uri) = self.widgetref_image_uri_map.get(text_or_image_uid) {
             log!("Some!");
-            match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+            match self.media_cache.as_mut().unwrap().try_get_media_or_fetch(mxc_uri.clone(), None) {
                 MediaCacheEntry::Loaded(data) => {
                     log!("Receive origin image");
-                    self.view.visible = true;
-                    self.view.redraw(cx);
-
                     let image_view = self.view.image(id!(image_view));
 
                     if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &data) {
                         log!("Error to load image: {e}");
-                    } else {
-                        log!("Success");
                     }
 
                     self.view.redraw(cx);
@@ -112,26 +120,31 @@ impl ImageViewerModal {
 }
 
 impl ImageViewerModalRef {
+    pub fn set_media_cache(&mut self, media_cache: MediaCache) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_media_cache(media_cache)
+        }
+    }
     pub fn insert_data(&self, text_or_image_uid: &WidgetUid, mx_uri: OwnedMxcUri) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.insert_data(text_or_image_uid, mx_uri);
         }
     }
-    pub fn show_and_fill_image(&self, cx: &mut Cx, text_or_image_uid: &WidgetUid, media_cache: &mut MediaCache) {
+    pub fn show_and_fill_image(&self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_and_fill_image(cx, text_or_image_uid, media_cache);
+            inner.show_and_fill_image(cx, text_or_image_uid);
         }
     }
 }
 
 
-
-impl MatchEvent for ImageViewerModal {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
-        for action in actions {
-            if let Some(ImageViewerAction::Insert(uid, mx_uri)) = action.downcast_ref() {
-                self.widgetref_image_uri_map.insert(*uid, mx_uri.clone());
-            }
-        }
-    }
-}
+// impl MatchEvent for ImageViewerModal {
+//     fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+//         for action in actions {
+//             if let Some(ImageViewerAction::SetMediaCache(media_cache)) = action.downcast_ref() {
+//                 log!("Set Media Cache");
+//                 self.media_cache = Some(media_cache.clone())
+//             }
+//         }
+//     }
+// }
