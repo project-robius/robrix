@@ -6,7 +6,7 @@ use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize
 /// The maximum number of items to display in a list.
 /// 
 /// It is used in avatar row and the tooltip
-pub const MAX_VISIBLE_NUMBER_OF_ITEMS: usize = 5;
+pub const MAX_VISIBLE_NUMBER_OF_ITEMS: usize = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
@@ -314,14 +314,14 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-/// Converts a list of names into a human-readable string with a 5-name limit.
+/// Converts a list of names into a human-readable string with a 3-name limit.
 ///
 /// # Examples
 /// ```
 /// assert_eq!(human_readable_list(&vec!["Alice"]), String::from("Alice"));
 /// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")]), String::from("Alice and Bob"));
 /// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
-/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 other"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, and 3 others"));
 /// ```
 pub fn human_readable_list<S>(names: &[S]) -> String
 where
@@ -391,16 +391,16 @@ mod tests_human_readable_list {
 
     #[test]
     fn test_human_readable_list_many() {
-        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "David", "Emily", "Frank"];
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "David"];
         let result = human_readable_list(&names);
-        assert_eq!(result, "Alice, Bob, Charlie, David, Emily, and 1 other");
+        assert_eq!(result, "Alice, Bob, Charlie, and 1 other");
     }
 
     #[test]
     fn test_human_readable_list_long() {
         let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
         let result = human_readable_list(&names);
-        assert_eq!(result, "Alice, Bob, Charlie, Dennis, Eudora, and 21 others");
+        assert_eq!(result, "Alice, Bob, Charlie, and 23 others");
     }
 }
 

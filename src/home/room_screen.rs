@@ -377,7 +377,6 @@ live_design! {
                 // }
                 reaction_list = <ReactionList> { }
             }
-            
         }
     }
 
@@ -1065,17 +1064,14 @@ impl Widget for RoomScreen {
                 if reaction_list.hover_out(actions) {
                     tooltip.hide(cx);
                 }
-            }
-            let tooltip = self.tooltip(id!(room_screen_tooltip));
-            portal_list.items_with_actions(actions).iter().for_each(| (_, wr) | {
-                let seq = wr.avatar_row(id!(avatar_row));
+                let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
                     tooltip_pos, 
                     tooltip_width ,
                     callout_offset,
                     pointing_up,
                     read_receipts
-                } = seq.hover_in(actions) {
+                } = avatar_row_ref.hover_in(actions) {
                     let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts.clone(), &room_id);
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
@@ -1090,10 +1086,10 @@ impl Widget for RoomScreen {
                         }
                     ));
                 }
-                if seq.hover_out(actions) {
+                if avatar_row_ref.hover_out(actions) {
                     tooltip.hide(cx);
                 }
-            });     
+            }   
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -2016,7 +2012,8 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)).set_avatar_and_get_username(
+        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar))
+        .set_avatar_and_get_username(
             cx,
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
@@ -2351,17 +2348,16 @@ impl RoomScreenRef {
     }
 }
 
-/// Actions for the room screen's tooltip 
+/// Actions for the room screen's tooltip.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
-    /// The mouse is hovering over read receipt within this RoomScreen.
-    /// Mouse over event when the mouse is over the reaction button.
+    /// Mouse over event when the mouse is over the read receipt.
     HoverInReadReceipt {
         tooltip_pos: DVec2,
         tooltip_width: f64,
-        /// Pointed arrow position relative to the tooltip
+        /// Pointed arrow position relative to the tooltip.
         /// 
-        /// It is calculated from the right corner of tooltip to position arrow
+        /// It is calculated from the right corner of tooltip to position arrow.
         /// to point towards the center of the hovered widget.
         callout_offset: f64,
         /// Data that is bound together the widget
@@ -2377,21 +2373,21 @@ pub enum RoomScreenTooltipActions {
     HoverInReactionButton {
         tooltip_pos: DVec2,
         tooltip_width: f64,
-        /// Pointed arrow position relative to the tooltip
+        /// Pointed arrow position relative to the tooltip.
         /// 
-        /// It is calculated from the right corner of tooltip to position arrow
+        /// It is calculated from the right corner of tooltip to position arrow.
         /// to point towards the center of the hovered widget.
         callout_offset: f64,
-        /// Data that is bound together the widget
+        /// Data that is bound together the widget.
         /// 
-        /// Includes the list of users who have reacted to the emoji
+        /// Includes the list of users who have reacted to the emoji.
         reaction_data: ReactionData,
         /// Boolean indicating if the callout should be pointing up.
         /// 
         /// If false, it is pointing left
         pointing_up: bool
     },
-    /// Mouse out event and clear tooltip
+    /// Mouse out event and clear tooltip.
     HoverOut,
     None,
 }

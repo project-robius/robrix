@@ -1,4 +1,5 @@
 use crate::app::AppState;
+use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::utils::{self, human_readable_list};
@@ -9,7 +10,7 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 
 use super::room_screen::room_screen_tooltip_position_helper;
-const TOOLTIP_WIDTH: f64 = 150.0;
+const TOOLTIP_WIDTH: f64 = 180.0;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -64,13 +65,16 @@ pub struct AvatarRow {
     ///
     /// Storing the drawn status helps prevent unnecessary set avatar in the draw_walk function
     #[rust]
-    buttons: Vec<(AvatarRef, bool, String)>,
+    buttons: Vec<(AvatarRef, bool)>,
     #[rust]
     label: Option<LabelRef>,
     /// The area of the widget
     #[redraw]
     #[rust]
     area: Area,
+    /// The read receipts for this row
+    /// 
+    /// Contains a map of user id required to render its tooltip
     #[rust]
     read_receipts: Option<indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>>
 }
@@ -85,7 +89,10 @@ impl Widget for AvatarRow {
         let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(_) => {
-                let (tooltip_pos, callout_offset, too_close_to_right) = room_screen_tooltip_position_helper(widget_rect, window_geom, TOOLTIP_WIDTH);
+                let (tooltip_pos, 
+                    callout_offset, 
+                    too_close_to_right, 
+                ) = room_screen_tooltip_position_helper(widget_rect, window_geom, TOOLTIP_WIDTH);
                 if let Some(read_receipts) = &self.read_receipts {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
                         tooltip_pos,
@@ -107,7 +114,7 @@ impl Widget for AvatarRow {
         let Some(read_receipts) = &self.read_receipts else { return DrawStep::done() };
         if read_receipts.is_empty() { return DrawStep::done() }
         cx.begin_turtle(walk, Layout::default());
-        for (avatar_ref, _, _) in self.buttons.iter_mut() {
+        for (avatar_ref, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
         }
         if read_receipts.len() > utils::MAX_VISIBLE_NUMBER_OF_ITEMS {
@@ -138,14 +145,13 @@ impl AvatarRow {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
             for _ in 0..cmp::min(utils::MAX_VISIBLE_NUMBER_OF_ITEMS, receipts_map.len()) {
-                self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false, String::new()));
+                self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false));
             }
             self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
-            for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
+            for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
                 if !*drawn {
-                    let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
+                    let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
                     *drawn = drawn_status;
-                    *username_ref = username;
                 }
             }
         }
@@ -197,7 +203,7 @@ pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, e
 /// will contain the string "and N others".
 pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receipt>, room_id: &RoomId) -> String {
     let mut display_names: Vec<String> = read_receipts.iter().rev().take(utils::MAX_VISIBLE_NUMBER_OF_ITEMS).map(|(user_id, _)| {
-        if let (Some(profile), _ ) = crate::profile::user_profile_cache::get_user_profile_and_room_member(cx, user_id.clone(), room_id, true) {
+        if let (Some(profile), _ ) = get_user_profile_and_room_member(cx, user_id.clone(), room_id, true) {
             profile.displayable_name().to_owned()
         } else {
             user_id.to_string()

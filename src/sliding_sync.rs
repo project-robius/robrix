@@ -795,7 +795,6 @@ async fn async_worker(
                     todo!("Send the resolved room alias back to the UI thread somehow.");
                 });
             }
-
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
