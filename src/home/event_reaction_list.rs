@@ -143,7 +143,7 @@ impl Widget for ReactionList {
                         }
                     };
                     let callout_offset = if too_close_to_right {
-                        TOOLTIP_WIDTH - (widget_rect.size.x - 5.0) / 2.0
+                        TOOLTIP_WIDTH - (widget_rect.size.x - 10.0) / 2.0
                     } else {
                         10.0
                     };

@@ -925,7 +925,7 @@ live_design! {
                                         max(1.0, self.radius)
                                     )
                                     sdf.fill(self.background_color);
-                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 0.0);
+                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 1.0);
                                      // Draw up-pointed arrow triangle
                                     sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
                                     sdf.line_to(0.0, self.callout_triangle_height * 1.0);
@@ -1058,11 +1058,6 @@ impl Widget for RoomScreen {
                                     callout_offset: (callout_offset)
                                     pointing_up: (if pointing_up { 1.0 } else { 0.0 })
                                 }
-                                //tooltip_label = {
-                                // content = {
-                                //     width: (tooltip_width)
-                                //     //width: Fit
-                                // }
                             }
                         }
                     ));

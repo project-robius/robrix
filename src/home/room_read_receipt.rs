@@ -20,15 +20,15 @@ live_design! {
         avatar_template: <Avatar> {
             width: 15.0,
             height: 15.0,
-            text_view = { 
-                text = { 
+            text_view = {
+                text = {
                     draw_text: {
                         text_style: { font_size: 6.0 }
                     }
                 }
             }
         }
-        margin: {top: 12, right: 50, bottom: 3, left: 10},
+        margin: {top: 12, right: 50},
         width: Fit,
         height: 15.0,
         plus_template: <Label> {
@@ -65,12 +65,9 @@ pub struct AvatarRow {
     buttons: Vec<(AvatarRef, bool, String)>,
     #[rust]
     label: Option<LabelRef>,
-    /// The total number of receipts seen
-    #[rust]
-    total_num_seen: usize,
     /// The area of the widget
-    #[redraw] 
-    #[rust] 
+    #[redraw]
+    #[rust]
     area: Area,
     #[rust]
     read_receipts: Option<indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>>
@@ -78,7 +75,8 @@ pub struct AvatarRow {
 
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.total_num_seen == 0 { return; }
+        let Some(read_receipts) = &self.read_receipts else { return };
+        if read_receipts.len() == 0 { return; }
         let uid: WidgetUid = self.widget_uid();
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         let widget_rect = self.area.rect(cx);
@@ -93,7 +91,7 @@ impl Widget for AvatarRow {
                 let tooltip_pos =  if too_close_to_right {
                     DVec2 {
                         x: widget_rect.pos.x + (widget_rect.size.x - TOOLTIP_WIDTH),
-                        y: widget_rect.pos.y + widget_rect.size.y + 5.0
+                        y: widget_rect.pos.y + widget_rect.size.y
                     }
                 } else {
                     DVec2 {
@@ -102,9 +100,9 @@ impl Widget for AvatarRow {
                     }
                 };
                 let callout_offset = if too_close_to_right {
-                    TOOLTIP_WIDTH - (widget_rect.size.x - 5.0) / 2.0
+                    TOOLTIP_WIDTH - (widget_rect.size.x - 10.0) / 2.0
                 } else {
-                    (widget_rect.size.y - 5.0) / 2.0 + 10.0
+                    (widget_rect.size.y - 10.0) / 2.0
                 };
                 if let Some(read_receipts) = &self.read_receipts {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
@@ -124,13 +122,15 @@ impl Widget for AvatarRow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let Some(read_receipts) = &self.read_receipts else { return DrawStep::done() };
+        if read_receipts.len() == 0 { return DrawStep::done() }
         cx.begin_turtle(walk, Layout::default());
         for (avatar_ref, _, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
         }
-        if self.total_num_seen > utils::MAX_VISIBLE_NUMBER_OF_ITEMS {
+        if read_receipts.len() > utils::MAX_VISIBLE_NUMBER_OF_ITEMS {
             if let Some(label) = &mut self.label {
-                label.set_text(&format!(" + {:?}", self.total_num_seen - utils::MAX_VISIBLE_NUMBER_OF_ITEMS));
+                label.set_text(&format!(" + {:?}", read_receipts.len() - utils::MAX_VISIBLE_NUMBER_OF_ITEMS));
                 let _ = label.draw(cx, scope);
             }
         }
@@ -159,7 +159,6 @@ impl AvatarRow {
                 self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false, String::new()));
             }
         }
-        self.total_num_seen = receipts_map.len();
         self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
         for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
             if !*drawn {
@@ -186,14 +185,6 @@ impl AvatarRowRef {
             matches!(item.cast(), RoomScreenTooltipActions::HoverOut)
         } else {
             false
-        }
-    }
-    /// Get the total number of people seen 
-    pub fn total_num_seen(&self) -> usize {
-        if let Some(ref mut inner) = self.borrow() {
-            inner.total_num_seen
-        } else {
-            0
         }
     }
     /// See [`AvatarRow::set_avatar_row()`].
