@@ -321,7 +321,7 @@ pub fn ends_with_href(text: &str) -> bool {
 /// assert_eq!(human_readable_list(&vec!["Alice"]), String::from("Alice"));
 /// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")]), String::from("Alice and Bob"));
 /// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
-/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 others"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 other"));
 /// ```
 pub fn human_readable_list<S>(names: &[S]) -> String
 where
@@ -403,6 +403,7 @@ mod tests_human_readable_list {
         assert_eq!(result, "Alice, Bob, Charlie, Dennis, Eudora, and 21 others");
     }
 }
+
 #[cfg(test)]
 mod tests_linkify {
     use super::*;
