@@ -212,50 +212,47 @@ impl ReactionListRef {
             inner.children.clear();
             return;
         }
-        if event_tl_item_reactions.len() != inner.children.len() {
-            inner.children.clear();
-            for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
-                // Just take the first char of the emoji, which ignores any variant selectors.
-                let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-                let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-                let mut includes_user: bool = false;
-                let emoji_text = emojis::get(reaction_str)
-                    .and_then(|e| e.shortcode())
-                    .unwrap_or(reaction_raw);
-                for (sender, _) in reaction_senders.iter() {
-                    if sender == &client_user_id {
-                        includes_user = true;
-                    }
-                    // Cache the reaction sender's user profile so that tooltip will show displayable name 
-                    let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
+        inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
+        for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
+            // Just take the first char of the emoji, which ignores any variant selectors.
+            let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
+            let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
+            let mut includes_user: bool = false;
+            let emoji_text = emojis::get(reaction_str)
+                .and_then(|e| e.shortcode())
+                .unwrap_or(reaction_raw);
+            for (sender, _) in reaction_senders.iter() {
+                if sender == &client_user_id {
+                    includes_user = true;
                 }
-                let mut emoji_text = emoji_text.to_string();
-
-                // Debugging: draw the item ID as a reaction
-                if DRAW_ITEM_ID_REACTION {
-                    emoji_text = format!("{emoji_text}\n ID: {}", id);
-                }
-                let reaction_data = ReactionData {
-                    reaction_raw: reaction_raw.to_string(),
-                    emoji_shortcode: emoji_text.to_string(),
-                    includes_user,
-                    reaction_senders: reaction_senders.clone(),
-                    room_id: room_id.clone(),
-                };
-                let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
-                button.set_text(&format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()));
-                let (bg_color, border_color) = if reaction_data.includes_user {
-                    (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
-                } else {
-                    (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
-                };
-                button.apply_over(cx, live! {
-                    draw_bg: { color: (bg_color) , border_color: (border_color) }
-                });
-                inner.children.push((button, reaction_data));
+                // Cache the reaction sender's user profile so that tooltip will show displayable name 
+                let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
             }
+            let mut emoji_text = emoji_text.to_string();
+
+            // Debugging: draw the item ID as a reaction
+            if DRAW_ITEM_ID_REACTION {
+                emoji_text = format!("{emoji_text}\n ID: {}", id);
+            }
+            let reaction_data = ReactionData {
+                reaction_raw: reaction_raw.to_string(),
+                emoji_shortcode: emoji_text.to_string(),
+                includes_user,
+                reaction_senders: reaction_senders.clone(),
+                room_id: room_id.clone(),
+            };
+            let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
+            button.set_text(&format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()));
+            let (bg_color, border_color) = if reaction_data.includes_user {
+                (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
+            } else {
+                (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+            };
+            button.apply_over(cx, live! {
+                draw_bg: { color: (bg_color) , border_color: (border_color) }
+            });
+            inner.children.push((button, reaction_data));
         }
-                
         inner.room_id = Some(room_id);
         inner.timeline_event_id = Some(timeline_event_item_id);
     }
