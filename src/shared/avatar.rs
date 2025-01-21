@@ -251,7 +251,7 @@ impl Avatar {
     /// 1. The displayable username that should be used to populate the username field.
     /// 2. A boolean indicating whether the user's profile info has been completely drawn
     ///    (for purposes of caching it to avoid future redraws).
-    fn set_avatar_and_get_username(
+    pub fn set_avatar_and_get_username(
         &mut self,
         cx: &mut Cx,
         room_id: &RoomId,

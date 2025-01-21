@@ -4227,3 +4227,48 @@ impl MessageRef {
         };
     }
 }
+
+/// Calculates the optimal position for a tooltip based on the widget's rectangle and
+/// window geometry.
+///
+/// This function determines where to position a tooltip such that it remains
+/// visible within the window bounds. It calculates the tooltip's position and
+/// callout offset, and checks if the tooltip is too close to the right edge of
+/// the window.
+///
+/// # Arguments
+///
+/// * `widget_rect` - The rectangle of the widget the tooltip is associated with.
+/// * `window_geom` - The geometry of the window, used to ensure the tooltip fits within.
+/// * `tooltip_width` - The width of the tooltip to be positioned.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `DVec2`: The position of the tooltip.
+/// - `f64`: The offset for the callout, relative to the tooltip.
+/// - `bool`: A flag indicating if the tooltip is too close to the right side of the window.
+
+pub fn room_screen_tooltip_position_helper(widget_rect: Rect, window_geom: &event::WindowGeom, tooltip_width:f64) -> (DVec2, f64, bool) {
+    let mut too_close_to_right = false;
+    if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_geom.inner_size.x {
+        too_close_to_right = true;
+    }
+    let tooltip_pos =  if too_close_to_right {
+        DVec2 {
+            x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
+            y: widget_rect.pos.y + widget_rect.size.y
+        }
+    } else {
+        DVec2 {
+            x: widget_rect.pos.x + widget_rect.size.x,
+            y: widget_rect.pos.y - 5.0
+        }
+    };
+    let callout_offset = if too_close_to_right {
+        tooltip_width - (widget_rect.size.x - 10.0) / 2.0
+    } else {
+        10.0
+    };
+    (tooltip_pos, callout_offset, too_close_to_right)
+}

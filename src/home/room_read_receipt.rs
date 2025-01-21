@@ -7,6 +7,8 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
+
+use super::room_screen::room_screen_tooltip_position_helper;
 const TOOLTIP_WIDTH: f64 = 150.0;
 live_design! {
     use link::theme::*;
@@ -79,31 +81,11 @@ impl Widget for AvatarRow {
         if read_receipts.len() == 0 { return; }
         let uid: WidgetUid = self.widget_uid();
         let app_state = scope.data.get_mut::<AppState>().unwrap();
+        let Some(window_geom) = &app_state.window_geom else { return };
         let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(_) => {
-                let mut too_close_to_right = false;
-                if let Some(window_geom) = &app_state.window_geom {
-                    if (widget_rect.pos.x + widget_rect.size.x) + TOOLTIP_WIDTH > window_geom.inner_size.x {
-                        too_close_to_right = true;
-                    }
-                }
-                let tooltip_pos =  if too_close_to_right {
-                    DVec2 {
-                        x: widget_rect.pos.x + (widget_rect.size.x - TOOLTIP_WIDTH),
-                        y: widget_rect.pos.y + widget_rect.size.y
-                    }
-                } else {
-                    DVec2 {
-                        x: widget_rect.pos.x + widget_rect.size.x,
-                        y: widget_rect.pos.y - widget_rect.size.y / 2.0
-                    }
-                };
-                let callout_offset = if too_close_to_right {
-                    TOOLTIP_WIDTH - (widget_rect.size.x - 10.0) / 2.0
-                } else {
-                    (widget_rect.size.y - 10.0) / 2.0
-                };
+                let (tooltip_pos, callout_offset, too_close_to_right) = room_screen_tooltip_position_helper(widget_rect, window_geom, TOOLTIP_WIDTH);
                 if let Some(read_receipts) = &self.read_receipts {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
                         tooltip_pos,
@@ -139,15 +121,15 @@ impl Widget for AvatarRow {
     }
 }
 impl AvatarRow {
-    
-    /// Set a row of Avatars based on receipt index map
+    /// Sets the avatar row with the given receipts map.
     ///
-    /// Given a sequence of receipts, this will set each of the first MAX_VISIBLE_AVATARS_IN_READ_RECEIPT_ROW
-    /// avatars in this row to the corresponding user's avatar, and
-    /// display the given number of total receipts as a label. The
-    /// index map is expected to yield tuples of (user_id, receipt),
-    /// where the receipt is ignored.
-    fn set_avatar_row(
+    /// If the length of the receipts map changes, the number of avatar buttons is updated.
+    /// Each avatar button is then updated with the correct username and drawn status by calling
+    /// `set_avatar_and_get_username` on it.
+    /// Finally, the `read_receipts` field is updated to contain a clone of the given receipts map.
+    ///
+    /// This function is called by the `RoomScreen` widget when it needs to update the read receipts list.
+    pub fn set_avatar_row(
         &mut self,
         cx: &mut Cx,
         room_id: &RoomId,
@@ -158,13 +140,13 @@ impl AvatarRow {
             for _ in 0..cmp::min(utils::MAX_VISIBLE_NUMBER_OF_ITEMS, receipts_map.len()) {
                 self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false, String::new()));
             }
-        }
-        self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
-        for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
-            if !*drawn {
-                let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
-                *drawn = drawn_status;
-                *username_ref = username;
+            self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
+            for ((avatar_ref, drawn, username_ref), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
+                if !*drawn {
+                    let (username, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
+                    *drawn = drawn_status;
+                    *username_ref = username;
+                }
             }
         }
         self.read_receipts = Some(receipts_map.clone());
@@ -210,11 +192,11 @@ pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, e
 /// Given a Cx2d, an IndexMap of read receipts, and a room ID, this
 /// will populate the tooltip text for the read receipts avatar row.
 /// 
-/// The tooltip will contain up to the first 5 displayable names of the users
-/// who have seen this event. If there are more than 5 users, the tooltip
+/// The tooltip will contain up to the first `MAX_VISIBLE_NUMBER_OF_ITEMS` displayable names of the users
+/// who have seen this event. If there are more than `MAX_VISIBLE_NUMBER_OF_ITEMS` users, the tooltip
 /// will contain the string "and N others".
 pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receipt>, room_id: &RoomId) -> String {
-    let mut display_names: Vec<String> = read_receipts.iter().rev().take(5).map(|(user_id, _)| {
+    let mut display_names: Vec<String> = read_receipts.iter().rev().take(utils::MAX_VISIBLE_NUMBER_OF_ITEMS).map(|(user_id, _)| {
         if let (Some(profile), _ ) = crate::profile::user_profile_cache::get_user_profile_and_room_member(cx, user_id.clone(), room_id, true) {
             profile.displayable_name().to_owned()
         } else {

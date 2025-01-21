@@ -6,6 +6,8 @@ use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::home::room_screen::RoomScreenTooltipActions;
 use indexmap::IndexMap;
 
+use super::room_screen::room_screen_tooltip_position_helper;
+
 const TOOLTIP_WIDTH: f64 = 200.0;
 const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
 const EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
@@ -120,33 +122,12 @@ impl Widget for ReactionList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid: WidgetUid = self.widget_uid();
         let app_state = scope.data.get::<crate::app::AppState>().unwrap();
-        
+        let Some(window_geom) = &app_state.window_geom else { return };
         for (widget_ref, reaction_data) in self.children.iter() {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
                     let widget_rect = widget_ref.area().rect(cx);
-                    let mut too_close_to_right = false;
-                    if let Some(window_geom) = &app_state.window_geom {
-                        if (widget_rect.pos.x + widget_rect.size.x) + TOOLTIP_WIDTH > window_geom.inner_size.x {
-                            too_close_to_right = true;
-                        }
-                    }
-                    let tooltip_pos =  if too_close_to_right {
-                        DVec2 {
-                            x: widget_rect.pos.x + (widget_rect.size.x - TOOLTIP_WIDTH),
-                            y: widget_rect.pos.y + widget_rect.size.y
-                        }
-                    } else {
-                        DVec2 {
-                            x: widget_rect.pos.x + widget_rect.size.x,
-                            y: widget_rect.pos.y - 5.0
-                        }
-                    };
-                    let callout_offset = if too_close_to_right {
-                        TOOLTIP_WIDTH - (widget_rect.size.x - 10.0) / 2.0
-                    } else {
-                        10.0
-                    };
+                    let (tooltip_pos, callout_offset, too_close_to_right) = room_screen_tooltip_position_helper(widget_rect, window_geom, TOOLTIP_WIDTH);
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton {
                         tooltip_pos, 
                         tooltip_width: TOOLTIP_WIDTH, 
@@ -231,47 +212,50 @@ impl ReactionListRef {
             inner.children.clear();
             return;
         }
-        inner.children.clear(); //Inefficient but we don't want to compare the event_tl_item_reactions
-        for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
-            // Just take the first char of the emoji, which ignores any variant selectors.
-            let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-            let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-            let mut includes_user: bool = false;
-            let emoji_text = emojis::get(reaction_str)
-                .and_then(|e| e.shortcode())
-                .unwrap_or(reaction_raw);
-            for (sender, _) in reaction_senders.iter() {
-                if sender == &client_user_id {
-                    includes_user = true;
+        if event_tl_item_reactions.len() != inner.children.len() {
+            inner.children.clear();
+            for (reaction_raw, reaction_senders) in event_tl_item_reactions.iter() {
+                // Just take the first char of the emoji, which ignores any variant selectors.
+                let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
+                let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
+                let mut includes_user: bool = false;
+                let emoji_text = emojis::get(reaction_str)
+                    .and_then(|e| e.shortcode())
+                    .unwrap_or(reaction_raw);
+                for (sender, _) in reaction_senders.iter() {
+                    if sender == &client_user_id {
+                        includes_user = true;
+                    }
+                    // Cache the reaction sender's user profile so that tooltip will show displayable name 
+                    let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
                 }
-                // Cache the reaction sender's user profile so that tooltip will show displayable name 
-                let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
-            }
-            let mut emoji_text = emoji_text.to_string();
+                let mut emoji_text = emoji_text.to_string();
 
-            // Debugging: draw the item ID as a reaction
-            if DRAW_ITEM_ID_REACTION {
-                emoji_text = format!("{emoji_text}\n ID: {}", id);
+                // Debugging: draw the item ID as a reaction
+                if DRAW_ITEM_ID_REACTION {
+                    emoji_text = format!("{emoji_text}\n ID: {}", id);
+                }
+                let reaction_data = ReactionData {
+                    reaction_raw: reaction_raw.to_string(),
+                    emoji_shortcode: emoji_text.to_string(),
+                    includes_user,
+                    reaction_senders: reaction_senders.clone(),
+                    room_id: room_id.clone(),
+                };
+                let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
+                button.set_text(&format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()));
+                let (bg_color, border_color) = if reaction_data.includes_user {
+                    (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
+                } else {
+                    (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+                };
+                button.apply_over(cx, live! {
+                    draw_bg: { color: (bg_color) , border_color: (border_color) }
+                });
+                inner.children.push((button, reaction_data));
             }
-            let reaction_data = ReactionData {
-                reaction_raw: reaction_raw.to_string(),
-                emoji_shortcode: emoji_text.to_string(),
-                includes_user,
-                reaction_senders: reaction_senders.clone(),
-                room_id: room_id.clone(),
-            };
-            let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
-            button.set_text(&format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()));
-            let (bg_color, border_color) = if reaction_data.includes_user {
-                (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
-            } else {
-                (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
-            };
-            button.apply_over(cx, live! {
-                draw_bg: { color: (bg_color) , border_color: (border_color) }
-            });
-            inner.children.push((button, reaction_data));
         }
+                
         inner.room_id = Some(room_id);
         inner.timeline_event_id = Some(timeline_event_item_id);
     }
