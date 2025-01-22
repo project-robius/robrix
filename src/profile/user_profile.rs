@@ -102,18 +102,6 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    // Copied from Moxin
-    FadeView = <CachedView> {
-        draw_bg: {
-            instance opacity: 1.0
-
-            fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
-                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
-            }
-        }
-    }
-
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
     ICON_COPY        = dep("crate://self/resources/icons/copy.svg")
     ICON_JUMP        = dep("crate://self/resources/icons/go_back.svg")
@@ -275,14 +263,12 @@ live_design! {
     }
 
 
-    // pub UserProfileSlidingPane = {{UserProfileSlidingPane}}<FadeView> {        
-    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {        
+    pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
         width: 300,
         height: Fill,
         align: {x: 1.0, y: 0}
 
         main_content = <View> {
-        // main_content = <FadeView> {
             width: 300,
             height: Fill,
             align: {x: 1.0},
@@ -414,9 +400,6 @@ impl Widget for UserProfileSlidingPane {
                 .iter()
                 .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
-            if modal_dismissed {
-                log!("User profile pane was dismissed by clicking outside of it");
-            }
             if close_button_clicked || modal_dismissed {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);

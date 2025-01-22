@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_modal::LoadingModalWidgetExt, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -4105,8 +4105,7 @@ impl Widget for Message {
                 false
             }
             // a right-click event
-            // TODO: this is macOS-specific mouse button numbering.
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|button| button == 1) => {
+            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 // Mark this hit as handled, such that a right-click event
                 // doesn't propagate to the child widget view.
                 true
@@ -4143,8 +4142,7 @@ impl Widget for Message {
                 }
             }
             // a right-click event
-            // TODO: this is macOS-specific mouse button numbering.
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|button| button == 1) => {
+            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
                     room_screen_widget_uid,
                     &scope.path,

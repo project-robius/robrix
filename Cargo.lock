@@ -482,9 +482,9 @@ checksum = "79296716171880943b8470b5f8d03aa55eb2e645a4874bdbb28adb49162e012c"
 
 [[package]]
 name = "bytemuck"
-version = "1.19.0"
+version = "1.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8334215b81e418a0a7bdb8ef0849474f40bb10c8b71f1c4ed315cff49f32494d"
+checksum = "ef657dfab802224e671f5818e9a4935f9b1957ed18e58292690cc39e7a4092a3"
 
 [[package]]
 name = "byteorder"
@@ -742,9 +742,9 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "0.2.8"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edb49164822f3ee45b17acd4a208cfc1251410cf0cad9a833234c9890774dd9f"
+checksum = "32a2785755761f3ddc1492979ce1e48d2c00d09311c39e4466429188f3dd6501"
 dependencies = [
  "quote",
  "syn",
@@ -1052,9 +1052,9 @@ checksum = "e8c02a5121d4ea3eb16a80748c74f5549a5665e4c21333c6098f283870fbdea6"
 
 [[package]]
 name = "fdeflate"
-version = "0.3.6"
+version = "0.3.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07c6f4c64c1d33a3111c4466f7365ebdcc37c5bd1ea0d62aae2e3d722aacbedb"
+checksum = "1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c"
 dependencies = [
  "simd-adler32",
 ]
@@ -1290,9 +1290,9 @@ checksum = "d231dfb89cfffdbc30e7fc41579ed6066ad03abda9e567ccafae602b97ec5024"
 
 [[package]]
 name = "hilog-sys"
-version = "0.1.2"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45b9886063966a0bf54a7cdb2d1b772025a2d37127669d94f9845ee4eff296fa"
+checksum = "2b570882b8450bb0c9edfc3e4bdd3bd298667d38cb15e5b5c67586a7fb78429a"
 
 [[package]]
 name = "hkdf"
@@ -1849,12 +1849,12 @@ checksum = "8e9489c2807c139ffd9c1794f4af0ebe86a828db53ecdc7fea2111d0fed085d1"
 
 [[package]]
 name = "libloading"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
+checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -1980,6 +1980,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-live"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -1988,6 +1989,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-wasm-bridge"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -1995,6 +1997,7 @@ dependencies = [
 [[package]]
 name = "makepad-derive-widget"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-proc-macro",
@@ -2003,6 +2006,7 @@ dependencies = [
 [[package]]
 name = "makepad-draw"
 version = "0.6.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "ab_glyph_rasterizer",
  "fxhash",
@@ -2019,14 +2023,17 @@ dependencies = [
 [[package]]
 name = "makepad-futures"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "makepad-futures-legacy"
 version = "0.7.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "makepad-html"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id",
 ]
@@ -2034,6 +2041,7 @@ dependencies = [
 [[package]]
 name = "makepad-http"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "makepad-jni-sys"
@@ -2044,6 +2052,7 @@ checksum = "9775cbec5fa0647500c3e5de7c850280a88335d1d2d770e5aa2332b801ba7064"
 [[package]]
 name = "makepad-live-compiler"
 version = "0.5.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-derive-live",
  "makepad-live-tokenizer",
@@ -2053,6 +2062,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id-macros",
 ]
@@ -2060,6 +2070,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-id-macros"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2067,6 +2078,7 @@ dependencies = [
 [[package]]
 name = "makepad-live-tokenizer"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id",
  "makepad-math",
@@ -2076,6 +2088,7 @@ dependencies = [
 [[package]]
 name = "makepad-markdown"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id",
 ]
@@ -2083,14 +2096,17 @@ dependencies = [
 [[package]]
 name = "makepad-math"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "makepad-micro-proc-macro"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "makepad-micro-serde"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-id",
  "makepad-micro-serde-derive",
@@ -2099,6 +2115,7 @@ dependencies = [
 [[package]]
 name = "makepad-micro-serde-derive"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-micro-proc-macro",
 ]
@@ -2106,11 +2123,14 @@ dependencies = [
 [[package]]
 name = "makepad-objc-sys"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "makepad-platform"
 version = "0.6.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
+ "bitflags 2.6.0",
  "hilog-sys",
  "makepad-android-state",
  "makepad-futures",
@@ -2132,6 +2152,7 @@ dependencies = [
 [[package]]
 name = "makepad-rustybuzz"
 version = "0.8.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "bitflags 1.3.2",
  "bytemuck",
@@ -2146,6 +2167,7 @@ dependencies = [
 [[package]]
 name = "makepad-shader-compiler"
 version = "0.5.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-live-compiler",
 ]
@@ -2153,6 +2175,7 @@ dependencies = [
 [[package]]
 name = "makepad-vector"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "resvg",
  "ttf-parser",
@@ -2161,6 +2184,7 @@ dependencies = [
 [[package]]
 name = "makepad-wasm-bridge"
 version = "0.4.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-derive-wasm-bridge",
  "makepad-live-id",
@@ -2169,6 +2193,7 @@ dependencies = [
 [[package]]
 name = "makepad-widgets"
 version = "0.6.0"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "makepad-derive-widget",
  "makepad-draw",
@@ -2182,6 +2207,7 @@ dependencies = [
 [[package]]
 name = "makepad-zune-png"
 version = "0.4.10"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 dependencies = [
  "zune-core",
  "zune-inflate",
@@ -2886,9 +2912,9 @@ checksum = "953ec861398dccce10c670dfeaf3ec4911ca479e9c02154b3a215178c5f566f2"
 
 [[package]]
 name = "png"
-version = "0.17.14"
+version = "0.17.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52f9d46a34a05a6a57566bc2bfae066ef07585a6e3fa30fbbdff5936380623f0"
+checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
 dependencies = [
  "bitflags 1.3.2",
  "crc32fast",
@@ -3796,9 +3822,9 @@ checksum = "d66dc143e6b11c1eddc06d5c423cfc97062865baf299914ab64caa38182078fe"
 
 [[package]]
 name = "simplecss"
-version = "0.2.1"
+version = "0.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a11be7c62927d9427e9f40f3444d5499d868648e2edbc4e2116de69e7ec0e89d"
+checksum = "7a9c6883ca9c3c7c90e888de77b7a5c849c779d25d74a1269b0218b14e8b136c"
 dependencies = [
  "log",
 ]
@@ -3911,9 +3937,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "svgtypes"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "794de53cc48eaabeed0ab6a3404a65f40b3e38c067e4435883a65d2aa4ca000e"
+checksum = "68c7541fff44b35860c1a7a47a7cadf3e4a304c457b58f9870d9706ece028afc"
 dependencies = [
  "kurbo",
  "siphasher 1.0.1",
@@ -4299,6 +4325,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 [[package]]
 name = "ttf-parser"
 version = "0.21.1"
+source = "git+https://github.com/kevinaboos/makepad?branch=new_hits_old_redraw#c3aa44d45c9c7131ed632ac080a5646a844e44fa"
 
 [[package]]
 name = "typenum"
@@ -4340,9 +4367,9 @@ checksum = "7e51b68083f157f853b6379db119d1c1be0e6e4dec98101079dec41f6f5cf6df"
 
 [[package]]
 name = "unicode-bidi"
-version = "0.3.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ab17db44d7388991a428b2ee655ce0c212e862eff1768a455c58f9aad6e7893"
+checksum = "5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5"
 
 [[package]]
 name = "unicode-bidi-mirroring"
