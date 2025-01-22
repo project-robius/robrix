@@ -1,7 +1,6 @@
 use std::ops::Not;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
 use url::Url;
 
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
@@ -293,8 +292,6 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 pub struct LoginScreen {
     #[deref] view: View,
     #[rust]
-    identity_providers: Vec<IdentityProvider>,
-    #[rust]
     sso_pending: bool,
     #[rust]
     prev_homeserver_url: Option<String>,
@@ -438,21 +435,6 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoSaveRedirectUrl(url)) => {
                     self.sso_redirect_url = Some(url.to_string());
                 }
-                Some(LoginAction::IdentityProvider(identity_providers)) => {
-                    for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
-                        for ip in identity_providers.iter() {
-                            if ip.id.contains(brand) {
-                                view_ref.set_visible(true);
-                                break;
-                            }
-                        }  
-                    }
-                    self.identity_providers = identity_providers.clone();
-                    sso_search_button.set_enabled(true);
-                    // Hide the status modal such that the user can see the newly-populated SSO buttons.
-                    login_status_modal.close(cx);
-                    self.redraw(cx);
-                }
                 _ => { }
             }
         }
@@ -488,17 +470,12 @@ impl MatchEvent for LoginScreen {
         
         // Handle any of the SSO login buttons being clicked
         for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
-            for ip in self.identity_providers.iter() {
-                if ip.id.contains(brand) {
-                    if view_ref.finger_up(actions).is_some() && !self.sso_pending {
-                        submit_async_request(MatrixRequest::SpawnSSOServer{
-                            identity_provider_id: ip.id.clone(),
-                            brand: brand.to_string(),
-                            homeserver_url: homeserver_input.text()
-                        });
-                    }
-                    break;
-                }
+            if view_ref.finger_up(actions).is_some() && !self.sso_pending {
+                submit_async_request(MatrixRequest::SpawnSSOServer{
+                    identity_provider_id: format!("oidc-{}",brand),
+                    brand: brand.to_string(),
+                    homeserver_url: homeserver_input.text()
+                });
             }
         }
     }
@@ -538,10 +515,5 @@ pub enum LoginAction {
     /// When the login using SSO is pendng, pressing the cancel button will send
     /// http request to SSO server to gracefully shutdown the SSO server.
     SsoSaveRedirectUrl(Url),
-    /// A list of SSO identity providers supported by the homeserver.
-    ///
-    /// This is sent from the backend async task to the login screen in order to
-    /// inform the login screen which SSO identity providers it should display to the user.
-    IdentityProvider(Vec<IdentityProvider>),
     None,
 }

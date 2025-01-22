@@ -7,7 +7,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
+        api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, MediaSource
             }, FullStateEventContent, MessageLikeEventType, TimelineEventType
@@ -141,7 +141,6 @@ async fn build_client(
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
-    login_types: &[LoginType],
 ) -> Result<(Client, Option<String>)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
@@ -151,12 +150,6 @@ async fn login(
                 cli
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
-            if !login_types
-                .iter()
-                .any(|flow| matches!(flow, LoginType::Password(_)))
-            {
-                bail!("Homeserver does not support username + password login flow.");
-            }
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
@@ -195,40 +188,6 @@ async fn login(
     }
 }
 
-async fn populate_login_types(
-    homeserver_url: &str,
-    login_types: &mut Vec<LoginType>,
-) -> Result<()> {
-    Cx::post_action(LoginAction::Status {
-        title: "Querying login types".into(),
-        status: "Fetching supported login types from the homeserver...".into(),
-    });
-    let homeserver_url = if homeserver_url.is_empty() {
-        DEFAULT_HOMESERVER
-    } else {
-        homeserver_url
-    };
-    let client = Client::builder()
-        .server_name_or_homeserver_url(homeserver_url)
-        .build()
-        .await?;
-    match client.matrix_auth().get_login_types().await {
-        Ok(login_types_res) => {
-            *login_types = login_types_res.flows;
-            let identity_providers = login_types.iter().fold(Vec::new(), |mut acc, login_type| {
-                if let LoginType::Sso(sso_type) = login_type {
-                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
-                }
-                acc
-            });
-            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-            Ok(())
-        }
-        Err(e) => {
-            Err(e.into())
-        }
-    }
-}
 
 /// Which direction to paginate in.
 ///
@@ -985,8 +944,10 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        
         // Build a Matrix Client in the background so that SSO Server starts earlier.
-        Handle::current().spawn(async move {
+        rt.spawn(async move {
+            Cx::post_action(LoginAction::SsoPending(true));
             let cli = Cli::default();
             let (client, client_session) = match build_client(&cli, app_data_dir()).await {
                 Ok(success) => success,
@@ -997,6 +958,7 @@ pub fn start_matrix_tokio() -> Result<()> {
                     return;
                 }
             };
+            Cx::post_action(LoginAction::SsoPending(false));
             let _ = DEFAULT_SSO_CLIENT.set((client, client_session));
         });
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
@@ -1228,15 +1190,7 @@ async fn async_main_loop(
                     user_id: cli.user_id.clone(),
                     homeserver: cli.homeserver.clone(),
                 });
-                let mut login_types: Vec<LoginType> = Vec::new();
-                let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-                if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                    error!("Populating Login types failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(
-                        format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                    ));
-                }
-                match login(cli, LoginRequest::LoginByCli, &login_types).await {
+                match login(cli, LoginRequest::LoginByCli).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
@@ -1260,29 +1214,11 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-            let mut login_types = Vec::new();
-            // Display the available Identity providers by fetching the login types
-            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                error!("Populating Login types failed for {homeserver_url}: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(
-                    format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                ));
-            }
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
-                        if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
-                            if let Err(e) = populate_login_types(&homeserver_url, &mut login_types).await {
-                                error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(
-                                    format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                                ));
-                            }
-                            continue
-                        }
-                        match login(&cli, login_request, &login_types).await {
+                        match login(&cli, login_request).await {
                             Ok((client, sync_token)) => {
                                 break (client, sync_token);
                             }
