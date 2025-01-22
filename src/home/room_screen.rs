@@ -367,7 +367,6 @@ live_design! {
                         }
                         text: "<Username not available>"
                     }
-                    avatar_row = <AvatarRow> {}
                 }
                 
                 message = <HtmlOrPlaintext> { }
@@ -375,7 +374,17 @@ live_design! {
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
-                reaction_list = <ReactionList> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    <View> {
+                        width: Fill,
+                        height: Fit
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
+                }
+                
             }
         }
     }
@@ -408,8 +417,14 @@ live_design! {
 
                 message = <HtmlOrPlaintext> { }
                 reaction_list = <ReactionList> { }
+                
             }
-            avatar_row = <AvatarRow> {}
+            <View> {
+                width: Fill,
+                height: Fit
+                reaction_list = <ReactionList> { }
+                avatar_row = <AvatarRow> {}
+            }
         }
     }
 
@@ -433,8 +448,9 @@ live_design! {
             content = {
                 message = <TextOrImage> { }
                 reaction_list = <ReactionList> { }
+                avatar_row = <AvatarRow> {}
             }
-            avatar_row = <AvatarRow> {}
+            
         }
     }
 
@@ -447,10 +463,9 @@ live_design! {
         margin: 0.0
         cursor: Default
         flow: Right,
-        padding: { top: 1.0, bottom: 1.0 }
+        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         margin: { left: 2.5, top: 4.0, bottom: 4.0}
-
         body = <View> {
             width: Fill,
             height: Fit
@@ -492,7 +507,12 @@ live_design! {
                 }
                 text: ""
             }
-            avatar_row = <AvatarRow> {}
+            <View> {
+                width: Fill,
+                height: Fit
+                reaction_list = <ReactionList> { }
+                avatar_row = <AvatarRow> {}
+            }
         }
     }
 
@@ -3750,7 +3770,7 @@ fn populate_small_state_event(
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
     let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-
+    populate_read_receipts(&item, cx, room_id, event_tl_item);
     if skip_redrawing_content {
         return (item, new_drawn_status);
     }
@@ -3781,7 +3801,6 @@ fn populate_small_state_event(
         username
     });
 
-    populate_read_receipts(&item, cx, room_id, event_tl_item);
     // Proceed to draw the actual event content.
     event_content.populate_item_content(
         cx,
