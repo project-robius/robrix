@@ -421,6 +421,7 @@ impl Widget for UserProfileSlidingPane {
             Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
             Event::KeyUp(key) => key.key_code == KeyCode::Escape,
             Event::BackPressed => true,
+            Event::MouseDown(e) => !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs), 
             _ => false,
         };
         if close_pane {
