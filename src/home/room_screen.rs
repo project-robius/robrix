@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -31,7 +31,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt};
+use super::{event_reaction_list::ReactionData, message_context_menu::MessageContextMenuWidgetRefExt};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -55,7 +55,7 @@ live_design! {
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
-    use crate::home::loading_modal::*;
+    use crate::home::loading_pane::*;
     use crate::home::message_context_menu::*;
     use crate::home::message_context_menu::*;
     use crate::home::event_reaction_list::*;
@@ -826,60 +826,14 @@ live_design! {
                 }
             }
 
-            // The top space should be displayed on top of the timeline
+            // Note: here, we're within a View that has an Overlay flow,
+            // so the order that we define the below views determines which one is on top.
+
+            // The top space should be displayed as an overlay at the top of the timeline.
             top_space = <TopSpace> { }
 
-            // The user profile sliding pane should be displayed on top of other "static" subviews
-            // (on top of all other views that are always visible).
-            <View> {
-                width: Fill,
-                height: Fill,
-                align: { x: 1.0 },
-                flow: Right,
-
-                user_profile_sliding_pane = <UserProfileSlidingPane> { }
-            }
-
-            // A pop-up modal that appears while the user must wait for something
-            // in the room to finish loading, e.g., when loading an older replied-to message.
-            loading_modal = <Modal> {
-                content: {
-                    loading_modal_inner = <LoadingModal> {}
-                }
-            }
-
-            message_context_menu_modal = <Modal> {
-                align: {x: 0.0, y: 0.0}
-                bg_view: {
-                    visible: false
-                }
-                content: {
-                    height: Fit,
-                    width: Fit,
-                    show_bg: false,
-                    align: {
-                        x: 0.5,
-                        y: 0.5
-                    }
-
-                    message_context_menu = <MessageContextMenu> {}
-                }
-            }
-
-            message_action_bar_popup = <PopupNotification> {
-                align: {x: 0.0, y: 0.0}
-                content: {
-                    height: Fit,
-                    width: Fit,
-                    show_bg: false,
-                    align: {
-                        x: 0.5,
-                        y: 0.5
-                    }
-
-                    message_action_bar = <MessageActionBar> {}
-                }
-            }
+            // A tooltip that appears when hovering over certain elements in the RoomScreen,
+            // such as reactions or read receipts.
             room_screen_tooltip = <Tooltip> {
                 content: <View> {
                     flow: Overlay
@@ -958,6 +912,52 @@ live_design! {
                     }
                 }
             }
+
+            message_context_menu_modal = <Modal> {
+                align: {x: 0.0, y: 0.0}
+                bg_view: {
+                    visible: false
+                }
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+
+                    message_context_menu = <MessageContextMenu> {}
+                }
+            }
+
+            // The user profile sliding pane should be displayed on top of other "static" subviews
+            // (on top of all other views that are always visible).
+            user_profile_sliding_pane = <UserProfileSlidingPane> { }
+
+            // The loading pane appears while the user is waiting for something in the room screen
+            // to finish loading, e.g., when loading an older replied-to message.
+            loading_pane = <LoadingPane> { }
+
+
+            /*
+             * This is broken currently, so I'm disabling it.
+             * 
+            message_action_bar_popup = <PopupNotification> {
+                align: {x: 0.0, y: 0.0}
+                content: {
+                    height: Fit,
+                    width: Fit,
+                    show_bg: false,
+                    align: {
+                        x: 0.5,
+                        y: 0.5
+                    }
+
+                    message_action_bar = <MessageActionBar> {}
+                }
+            }
+            */
         }
 
         animator: {
@@ -1007,7 +1007,8 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
-        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let user_profile_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let loading_pane = self.loading_pane(id!(loading_pane));
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -1108,8 +1109,7 @@ impl Widget for RoomScreen {
                         }
                     }
                     MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
-                        let loading_modal_inner = self.loading_modal(id!(loading_modal_inner));
-                        let loading_modal = self.modal(id!(loading_modal));
+                        let loading_pane = self.loading_pane(id!(loading_pane));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
@@ -1152,18 +1152,18 @@ impl Widget for RoomScreen {
                             };
                         } else {
                             // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
-                            // Here, we set the state of the loading modal and display it to the user.
+                            // Here, we set the state of the loading pane and display it to the user.
                             // The main logic will be handled in `process_timeline_updates()`, which is the only
                             // place where we can receive updates to the timeline from the background tasks.
-                            loading_modal_inner.set_state(
+                            loading_pane.set_state(
                                 cx,
-                                LoadingModalState::BackwardsPaginateUntilEvent {
+                                LoadingPaneState::BackwardsPaginateUntilEvent {
                                     target_event_id: replied_to_event.clone(),
                                     events_paginated: 0,
                                     request_sender: tl.request_sender.clone(),
                                 },
                             );
-                            loading_modal.open(cx);
+                            loading_pane.show(cx);
 
                             tl.request_sender.send_if_modified(|requests| {
                                 if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
@@ -1212,7 +1212,7 @@ impl Widget for RoomScreen {
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
                         self.show_user_profile(
                             cx,
-                            &pane,
+                            &user_profile_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
                                 room_name: self.room_name.clone(),
@@ -1389,12 +1389,19 @@ impl Widget for RoomScreen {
             self.redraw(cx);
         }
 
-        // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
-        // if the user profile sliding pane is not visible.
-        if event.requires_visibility() && pane.is_currently_shown(cx) {
-            // Forward the event to the user profile sliding pane,
-            // preventing the underlying timeline view from receiving it.
-            pane.handle_event(cx, event, scope);
+        // We only forward events to the inner timeline view if none of the various overlay views
+        // are visible, and if the event is one that requires visibility (touch/tap/scroll).
+        // We check which overlay views are visible in the order of those views' z-ordering,
+        // such that the top-most views are checked first and delivered 
+        // This is required in order to support multiple overlay views being simultaneously visible.
+        let requires_visibility = event.requires_visibility();
+        if requires_visibility && loading_pane.is_currently_shown(cx) {
+            log!("Delivering event to loading pane: {event:?}");
+            loading_pane.handle_event(cx, event, scope);
+        }
+        else if requires_visibility && user_profile_pane.is_currently_shown(cx) {
+            log!("Delivering event to loading pane: {event:?}");
+            user_profile_pane.handle_event(cx, event, scope);
         }
         else {
             // Forward the event to the inner timeline view, but capture any actions it produces
@@ -1406,12 +1413,7 @@ impl Widget for RoomScreen {
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
-                if self.handle_link_clicked(cx, action, &pane) {
-                    return false;
-                }
-
-                if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.modal(id!(loading_modal)).close(cx);
+                if self.handle_link_clicked(cx, action, &user_profile_pane) {
                     return false;
                 }
 
@@ -1674,15 +1676,15 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.clear();
                         tl.fully_paginated = false;
 
-                        // If this RoomScreen is showing the loading modal and has an ongoing backwards pagination request,
-                        // then we should update the status message in that loading modal
+                        // If this RoomScreen is showing the loading modPANEal and has an ongoing backwards pagination request,
+                        // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
                         // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
-                        let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
-                        let mut loading_modal_state = loading_modal_inner.take_state();
-                        if let LoadingModalState::BackwardsPaginateUntilEvent {
+                        let loading_pane = self.view.loading_pane(id!(loading_pane));
+                        let mut loading_pane_state = loading_pane.take_state();
+                        if let LoadingPaneState::BackwardsPaginateUntilEvent {
                             ref mut events_paginated, target_event_id, ..
-                        } = &mut loading_modal_state {
+                        } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
                             log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
@@ -1693,7 +1695,7 @@ impl RoomScreen {
                             // So either way, it's okay to set this to `true` here.
                             should_continue_backwards_pagination = true;
                         }
-                        loading_modal_inner.set_state(cx, loading_modal_state);
+                        loading_pane.set_state(cx, loading_pane_state);
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1719,15 +1721,14 @@ impl RoomScreen {
                         item.as_event()
                             .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
                     );
-                    let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+                    let loading_pane = self.view.loading_pane(id!(loading_pane));
 
                     // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
                     if is_valid {
-                        // We successfully found the target event, so we can close the loading modal,
-                        // reset the loading modal state to `None`, and stop issuing backwards pagination requests.
-                        loading_modal_inner.set_status(cx, "Successfully found replied-to message!");
-                        loading_modal_inner.set_state(cx, LoadingModalState::None);
-                        self.view.modal(id!(loading_modal)).close(cx);
+                        // We successfully found the target event, so we can close the loading pane,
+                        // reset the loading panestate to `None`, and stop issuing backwards pagination requests.
+                        loading_pane.set_status(cx, "Successfully found replied-to message!");
+                        loading_pane.set_state(cx, LoadingPaneState::None);
 
                         // NOTE: this code was copied from the `ReplyPreviewClicked` action handler;
                         //       we should deduplicate them at some point.
@@ -1747,8 +1748,8 @@ impl RoomScreen {
                         // or we found it previously but it is no longer in the timeline (or has moved),
                         // which means we encountered an error and are unable to jump to the target event.
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
-                        // Show this error in the loading modal, which should already be open.
-                        loading_modal_inner.set_state(cx, LoadingModalState::Error(
+                        // Show this error in the loading pane, which should already be open.
+                        loading_pane.set_state(cx, LoadingPaneState::Error(
                             String::from("Unable to find replied-to message; it may have been deleted.")
                         ));
                     }
@@ -2202,11 +2203,8 @@ impl RoomScreen {
         }
 
         self.hide_timeline();
-        let loading_modal = self.modal(id!(loading_modal));
-        if loading_modal.is_open() {
-            // this will also reset the state of the inner loading modal
-            loading_modal.close(cx);
-        }
+        // Reset the the state of the inner loading pane.
+        self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
         self.room_id = Some(room_id);
         self.show_timeline(cx);
@@ -4107,8 +4105,7 @@ impl Widget for Message {
                 false
             }
             // a right-click event
-            // TODO: this is macOS-specific mouse button numbering.
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|button| button == 1) => {
+            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 // Mark this hit as handled, such that a right-click event
                 // doesn't propagate to the child widget view.
                 true
@@ -4146,7 +4143,7 @@ impl Widget for Message {
             }
             // a right-click event
             // TODO: this is macOS-specific mouse button numbering.
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|button| button == 1) => {
+            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
                     room_screen_widget_uid,
                     &scope.path,

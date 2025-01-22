@@ -276,6 +276,7 @@ live_design! {
 
 
     pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
+        visible: false,
         flow: Overlay,
         width: Fill,
         height: Fill,
@@ -408,6 +409,7 @@ pub struct UserProfileSlidingPane {
 
 impl Widget for UserProfileSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        log!("UserProfileSlidingPane: got event: {:?}", event);
         self.view.handle_event(cx, event, scope);
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
@@ -418,13 +420,18 @@ impl Widget for UserProfileSlidingPane {
         // the escape key is pressed, or the back button is pressed.
         let close_pane = match event {
             Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
-            Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
+            Event::MouseUp(mouse) => mouse.button.is_back(),
             Event::KeyUp(key) => key.key_code == KeyCode::Escape,
             Event::BackPressed => true,
-            Event::MouseDown(e) => !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs), 
+            Event::MouseDown(e) => {
+                // TODO FIX THIS TO BE MORE SPECIFIC: the background area must contain the e.abs,
+                // AND the main_content area must NOT contain the e.abs.
+                !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs) 
+            }
             _ => false,
         };
         if close_pane {
+            log!("UserProfileSlidingPane: close requested");
             self.animator_play(cx, id!(panel.hide));
             self.view(id!(bg_view)).set_visible(false);
             return;
