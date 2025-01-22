@@ -966,6 +966,7 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
 
+static DEFAULT_SSO_CLIENT: OnceLock<(Client, ClientSessionPersisted)> = OnceLock::new();
 
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
@@ -983,7 +984,20 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-
+        // Build a Matrix Client in the background so that SSO Server starts earlier.
+        Handle::current().spawn(async move {
+            let cli = Cli::default();
+            let (client, client_session) = match build_client(&cli, app_data_dir()).await {
+                Ok(success) => success,
+                Err(e) => {
+                    Cx::post_action(LoginAction::LoginFailure(
+                        format!("Could not create client object.\n\nError: {e}")
+                    ));
+                    return;
+                }
+            };
+            let _ = DEFAULT_SSO_CLIENT.set((client, client_session));
+        });
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
@@ -2202,25 +2216,34 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
-    Cx::post_action(LoginAction::Status {
-        title: "Opening your browser...".into(),
-        status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
-    });
-    let cli = Cli {
-        homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
-        ..Default::default()
-    };
-    Handle::current().spawn(async move {
-        let (client, client_session) = match build_client(&cli, app_data_dir()).await {
-            Ok(success) => success,
-            Err(e) => {
-                Cx::post_action(LoginAction::LoginFailure(
-                    format!("Could not create client object.\n\nError: {e}")
-                ));
-                return;
+    Handle::current().spawn(async move {        
+        // If the homeserver_url is not empty, builds a new Matrix Client.
+        // If the homeserver_url is empty, use the DEFAULT_SSO_CLIENT which started earlier
+        let (client, client_session) = if !homeserver_url.is_empty() {
+            match build_client(&Cli {
+                homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
+                ..Default::default()
+            }, app_data_dir()).await {
+                Ok(success) => success,
+                Err(e) => {
+                    Cx::post_action(LoginAction::LoginFailure(
+                        format!("Could not create client object.\n\nError: {e}")
+                    ));
+                    return;
+                }
             }
+        } else {
+            let Some((client, client_session)) = DEFAULT_SSO_CLIENT.get() else { 
+                Cx::post_action(LoginAction::SsoPending(false)); 
+                return 
+            };
+            (client.clone(), client_session.clone())
         };
         let mut is_logged_in = false;
+        Cx::post_action(LoginAction::Status {
+            title: "Opening your browser...".into(),
+            status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+        });
         match client
             .matrix_auth()
             .login_sso(|sso_url: String| async move {

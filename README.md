@@ -206,3 +206,7 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
+# Credits
+X-logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
+
+https://matrix-client.matrix.org/_matrix/client/v3/login/sso/redirect/oidc-google?redirectUrl=element%3A%2F%2Fvector%2Fwebapp%2F%3Felement-desktop-ssoid%3Du9E0ZjkYArE8Yhxi9rpki0DOu2d8MWNS

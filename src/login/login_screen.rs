@@ -26,7 +26,6 @@ live_design! {
         cursor: Hand,
         visible: true,
         padding: 10,
-        // margin: 10,
         margin: { left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg: {
             border_width: 0.5,
@@ -212,9 +211,9 @@ live_design! {
                                 source: dep("crate://self/resources/img/github.png")
                             }
                         }
-                        github_button = <SsoButton> {
+                        twitter_button = <SsoButton> {
                             image = <SsoImage> {
-                                source: dep("crate://self/resources/img/github.png")
+                                source: dep("crate://self/resources/img/x.png")
                             }
                         }
                         gitlab_button = <SsoButton> {
@@ -360,8 +359,8 @@ impl MatchEvent for LoginScreen {
             self.redraw(cx);
         }
         
-        let provider_brands = ["apple", "facebook", "github", "gitlab", "google"];
-        let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
+        let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
+        let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button, twitter_button);
         for action in actions {
             if let LoginStatusModalAction::Close = action.as_widget_action().cast() {
                 login_status_modal.close(cx);
