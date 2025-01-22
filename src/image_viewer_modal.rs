@@ -12,11 +12,11 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
 
     pub ImageViewerModal = {{ImageViewerModal}} {
-        width: 700, height: 700
+        width: 1600, height: 900
         flow: Overlay
         show_bg: true
         draw_bg: {
-            color: #00000075
+            color: #1F1F1F80
         }
 
         <View> {
@@ -38,21 +38,9 @@ live_design! {
             }
         }
 
-
         image_view = <Image> {
-            debug = true
-            fit: Smallest,
             width: Fill, height: Fill,
-            // draw_bg: {
-            //     fn pixel(self) -> vec4 {
-            //         let maxed = max(self.rect_size.x, self.rect_size.y);
-            //         let sdf = Sdf2d::viewport(self.pos * vec2(maxed, maxed));
-            //         let r = maxed * 0.5;
-            //         sdf.circle(r, r, r);
-            //         sdf.fill_keep(self.get_color());
-            //         return sdf.result
-            //     }
-            // }
+            fit: Smallest,
         }
     }
 }
@@ -75,7 +63,6 @@ pub enum ImageViewerAction {
 
 impl Widget for ImageViewerModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
@@ -86,20 +73,22 @@ impl Widget for ImageViewerModal {
 
 
 impl ImageViewerModal {
+    // We clone the media cache here, is unnecessary, but I can't find a way get its mut reference.
     fn set_media_cache(&mut self, media_cache: MediaCache) {
         self.media_cache = Some(media_cache);
         log!("Set media cache")
     }
+    /// We restore image message uid and the image inside the message's mx_uri into HashMap
+    /// when the message is being populated.
     fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mx_uri: OwnedMxcUri) {
         self.widgetref_image_uri_map.insert(*text_or_image_uid, mx_uri);
         log!("Inserted");
     }
+    /// We find mx_uid via the given `text_or_image_uid`.
     fn show_and_fill_image(&mut self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
         if let Some(mxc_uri) = self.widgetref_image_uri_map.get(text_or_image_uid) {
-            log!("Some!");
             match self.media_cache.as_mut().unwrap().try_get_media_or_fetch(mxc_uri.clone(), None) {
                 MediaCacheEntry::Loaded(data) => {
-                    log!("Receive origin image");
                     let image_view = self.view.image(id!(image_view));
 
                     if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &data) {
@@ -116,6 +105,9 @@ impl ImageViewerModal {
                 }
             };
         }
+    }
+    pub fn clear_image(&mut self, cx: &mut Cx) {
+        self.view.image(id!(image_view)).set_texture(cx, None);
     }
 }
 
@@ -135,16 +127,9 @@ impl ImageViewerModalRef {
             inner.show_and_fill_image(cx, text_or_image_uid);
         }
     }
+    pub fn clear_image(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.clear_image(cx);
+        }
+    }
 }
-
-
-// impl MatchEvent for ImageViewerModal {
-//     fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
-//         for action in actions {
-//             if let Some(ImageViewerAction::SetMediaCache(media_cache)) = action.downcast_ref() {
-//                 log!("Set Media Cache");
-//                 self.media_cache = Some(media_cache.clone())
-//             }
-//         }
-//     }
-// }

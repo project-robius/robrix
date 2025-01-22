@@ -3069,7 +3069,7 @@ fn populate_image_message_content(
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
-    Cx::post_action(ImageViewerAction::SetMediaCache(media_cache.clone()));
+
 
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
@@ -3166,6 +3166,9 @@ fn populate_image_message_content(
             fully_drawn = true;
         }
     }
+
+    //TO BE FIXED:  We clone the `media_cache`, but it's unnecessary. we only want its mut reference.
+    Cx::post_action(ImageViewerAction::SetMediaCache(media_cache.clone()));
 
     fully_drawn
 }

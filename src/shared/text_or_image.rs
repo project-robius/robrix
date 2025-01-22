@@ -62,6 +62,7 @@ pub struct TextOrImage {
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // We only handle events if the status is `Image`.
         if TextOrImageStatus::Image != self.status() { return };
 
         let image_view_area = self.view.view(id!(image_view)).area();
@@ -72,6 +73,7 @@ impl Widget for TextOrImage {
             }
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
+                    // Once Clicked, We post an action.
                     Cx::post_action(ImageViewerAction::Show(self.widget_uid()));
                 }
             }
