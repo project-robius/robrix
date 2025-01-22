@@ -26,6 +26,7 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
+use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
 use std::io;
 use crate::{
@@ -2218,7 +2219,8 @@ async fn spawn_sso_server(
     Cx::post_action(LoginAction::SsoPending(true));
     Handle::current().spawn(async move {        
         // If the homeserver_url is not empty, builds a new Matrix Client.
-        // If the homeserver_url is empty, use the DEFAULT_SSO_CLIENT which started earlier
+        // If the homeserver_url is empty, use the DEFAULT_SSO_CLIENT which started during initialisation
+        // to speed up opening the browser.
         let (client, client_session) = if !homeserver_url.is_empty() {
             match build_client(&Cli {
                 homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
@@ -2247,6 +2249,14 @@ async fn spawn_sso_server(
         match client
             .matrix_auth()
             .login_sso(|sso_url: String| async move {
+                let url = Url::parse(&sso_url)?;
+                for (key, value) in url.query_pairs() {
+                    if key == "redirectUrl" {
+                        let redirect_url = Url::parse(&value)?;
+                        Cx::post_action(LoginAction::SsoSaveRedirectUrl(redirect_url));
+                        break
+                    }
+                }
                 Uri::new(&sso_url).open().map_err(|err| {
                     Error::UnknownError(
                         Box::new(io::Error::new(

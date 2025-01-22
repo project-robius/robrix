@@ -2,6 +2,7 @@ use std::ops::Not;
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
+use url::Url;
 
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
@@ -297,6 +298,8 @@ pub struct LoginScreen {
     sso_pending: bool,
     #[rust]
     prev_homeserver_url: Option<String>,
+    #[rust]
+    sso_redirect_url: Option<String>,
 }
 
 
@@ -386,7 +389,7 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_inner.set_status(status);
                     let login_status_modal_button = login_status_modal_inner.button_ref();
                     login_status_modal_button.set_text("Cancel");
-                    login_status_modal_button.set_enabled(false); // Login cancel not yet supported
+                    login_status_modal_button.set_enabled(true);
                     login_status_modal.open(cx);
 
                     sso_search_button.set_enabled(true);
@@ -432,6 +435,9 @@ impl MatchEvent for LoginScreen {
                     self.sso_pending = *pending;
                     self.redraw(cx);
                 }
+                Some(LoginAction::SsoSaveRedirectUrl(url)) => {
+                    self.sso_redirect_url = Some(url.to_string());
+                }
                 Some(LoginAction::IdentityProvider(identity_providers)) => {
                     for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
                         for ip in identity_providers.iter() {
@@ -469,6 +475,17 @@ impl MatchEvent for LoginScreen {
             self.redraw(cx);
         }
 
+        // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
+        if let Some(sso_redirect_url) = &self.sso_redirect_url {
+            let login_status_modal_button = login_status_modal_inner.button_ref();
+            if login_status_modal_button.clicked(actions) {
+                let request_id = live_id!(SSO_CANCEL_BUTTON);
+                let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
+                cx.http_request(request_id, request);
+                self.sso_redirect_url = None;
+            }
+        }
+        
         // Handle any of the SSO login buttons being clicked
         for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
             for ip in self.identity_providers.iter() {
@@ -516,6 +533,11 @@ pub enum LoginAction {
     /// The login screen can use this to prevent the user from submitting
     /// additional SSO login requests while a previous request is in flight. 
     SsoPending(bool),
+    /// Save SSO's redirect url into LoginScreen.
+    /// 
+    /// When the login using SSO is pendng, pressing the cancel button will send
+    /// http request to SSO server to gracefully shutdown the SSO server.
+    SsoSaveRedirectUrl(Url),
     /// A list of SSO identity providers supported by the homeserver.
     ///
     /// This is sent from the backend async task to the login screen in order to
