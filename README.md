@@ -16,6 +16,7 @@ Check out our most recent talks and presentations for more info:
     * Slides:
       [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
       [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
+  * [An interview on Matrix Live!](https://www.youtube.com/watch?v=O_bChwDHE3U)
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g), [BiliBili link](https://www.bilibili.com/video/BV1oS411N7k6/)
     * Slides:
