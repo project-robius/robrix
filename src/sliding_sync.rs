@@ -533,9 +533,9 @@ async fn async_worker(
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending get user profile request: user: {user_id}, \
-                        room: {room_id:?}, local_only: {local_only}...",
-                    );
+                    // log!("Sending get user profile request: user: {user_id}, \
+                    //     room: {room_id:?}, local_only: {local_only}...",
+                    // );
 
                     let mut update = None;
 
@@ -590,7 +590,7 @@ async fn async_worker(
                     }
 
                     if let Some(upd) = update {
-                        log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
+                        // log!("Successfully completed get user profile request: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");
                         enqueue_user_profile_update(upd);
                     } else {
                         log!("Failed to get user profile: user: {user_id}, room: {room_id:?}, local_only: {local_only}.");

@@ -31,6 +31,7 @@ live_design! {
                 }
             }
         }
+        margin: {top: 0, right: 0},
         width: Fit,
         height: 15.0,
         plus_template: <Label> {
@@ -140,21 +141,22 @@ impl AvatarRow {
         cx: &mut Cx,
         room_id: &RoomId,
         event_id: Option<&EventId>,
-        receipts_map: &IndexMap<OwnedUserId, Receipt>) {
-            if receipts_map.len() != self.buttons.len() {
-                self.buttons.clear();
-                for _ in 0..cmp::min(utils::MAX_VISIBLE_NUMBER_OF_ITEMS, receipts_map.len()) {
-                    self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false));
-                }
-                self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
-                self.read_receipts = Some(receipts_map.clone());
+        receipts_map: &IndexMap<OwnedUserId, Receipt>,
+    ) {
+        if receipts_map.len() != self.buttons.len() {
+            self.buttons.clear();
+            for _ in 0..cmp::min(utils::MAX_VISIBLE_NUMBER_OF_ITEMS, receipts_map.len()) {
+                self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false));
             }
-            for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
-                if !*drawn {
-                    let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
-                    *drawn = drawn_status;
-                }
+            self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
+            self.read_receipts = Some(receipts_map.clone());
+        }
+        for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
+            if !*drawn {
+                let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
+                *drawn = drawn_status;
             }
+        }
     }
 }
 impl AvatarRowRef {
@@ -211,5 +213,5 @@ pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receip
     for _ in display_names.len()..read_receipts.len() {
         display_names.push(String::from(""));
     }
-    format!("Seen by {:?} people\n{}", read_receipts.len(), human_readable_list(&display_names, MAX_VISIBLE_NUMBER_OF_ITEMS))     
+    format!("Seen by {}:\n{}", read_receipts.len(), human_readable_list(&display_names))
 }
