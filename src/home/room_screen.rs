@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -26,7 +26,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
@@ -839,13 +839,13 @@ live_design! {
                     flow: Overlay
                     width: Fit
                     height: Fit
-        
+
                     rounded_view = <RoundedView> {
                         width: Fill,
                         height: Fit,
-                        
+
                         padding: 10,
-        
+
                         draw_bg: {
                             color: #fff,
                             border_width: 1.0,
@@ -891,15 +891,15 @@ live_design! {
                                     sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
                                     sdf.line_to(0.5, self.callout_triangle_height);
                                 }
-                                
+
                                 sdf.close_path();
-                                
+
                                 sdf.fill((self.background_color));
                                 return sdf.result;
                             }
-                            
+
                         }
-        
+
                         tooltip_label = <Label> {
                             width: Fill,
                             height: Fit,
@@ -1034,10 +1034,10 @@ impl Widget for RoomScreen {
             let tooltip = self.tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
-                if let RoomScreenTooltipActions::HoverInReactionButton { 
-                    tooltip_pos, 
-                    tooltip_width, 
-                    callout_offset, 
+                if let RoomScreenTooltipActions::HoverInReactionButton {
+                    tooltip_pos,
+                    tooltip_width,
+                    callout_offset,
                     reaction_data,
                     pointing_up
                 } = reaction_list.hover_in(actions) {
@@ -1046,7 +1046,7 @@ impl Widget for RoomScreen {
                             .map(|user_profile| user_profile.displayable_name().to_string())
                             .unwrap_or(sender.to_string())
                     }).collect();
-                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
@@ -2348,16 +2348,16 @@ pub enum RoomScreenTooltipActions {
         tooltip_pos: DVec2,
         tooltip_width: f64,
         /// Pointed arrow position relative to the tooltip
-        /// 
+        ///
         /// It is calculated from the right corner of tooltip to position arrow
         /// to point towards the center of the hovered widget.
         callout_offset: f64,
         /// Data that is bound together the widget
-        /// 
+        ///
         /// Includes the list of users who have reacted to the emoji
         reaction_data: ReactionData,
         /// Boolean indicating if the callout should be pointing up.
-        /// 
+        ///
         /// If false, it is pointing left
         pointing_up: bool
     },
@@ -3247,8 +3247,8 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri|
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri, media_format: Option<MediaFormat>|
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), media_format) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(|img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -3277,7 +3277,9 @@ fn populate_image_message_content(
             }
         };
 
-    let mut fetch_and_show_media_source = |media_source: MediaSource| {
+    let mut media_format =  Some(MEDIA_THUMBNAIL_FORMAT.into());
+
+    let mut fetch_and_show_media_source = |media_source: MediaSource, media_format: Option<MediaFormat>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3287,21 +3289,23 @@ fn populate_image_message_content(
                 ));
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(mxc_uri)
+                fetch_and_show_image_uri(mxc_uri, media_format)
             }
         }
     };
 
+
     match image_info_source {
         Some((None, media_source)) => {
+            media_format = None;
             // We fetch the original (full-size) media if it does not have a thumbnail.
-            fetch_and_show_media_source(media_source);
+            fetch_and_show_media_source(media_source, media_format);
         },
         Some((Some(image_info), media_source)) => {
             if let Some(thumbnail_source) =  image_info.thumbnail_source {
-                fetch_and_show_media_source(thumbnail_source);
+                fetch_and_show_media_source(thumbnail_source, media_format);
             } else {
-                fetch_and_show_media_source(media_source);
+                fetch_and_show_media_source(media_source, media_format);
             }
         },
         None => {
@@ -4059,7 +4063,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
-    
+
     /// A timer used to detect long presses on the message body.
     #[rust] long_press_timer: Timer,
     /// The current status of the long-press gesture on the message body.
