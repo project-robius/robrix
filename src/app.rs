@@ -181,6 +181,7 @@ impl LiveHook for App {
     }
 }
 
+
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
         // Initialize the project directory here from the main UI thread
@@ -222,6 +223,7 @@ impl MatchEvent for App {
             // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
             if let Some(ImageViewerAction::Show(text_or_image_uid)) = action.downcast_ref() {
                 image_viewer_modal.open(cx);
+                Cx::post_action(ImageViewerAction::NeedToDrawAll);
                 image_viewer_modal_inner.show_and_fill_image(cx, text_or_image_uid);
                 self.ui.redraw(cx);
             }

@@ -13,7 +13,9 @@ live_design! {
 
     pub ImageViewerModal = {{ImageViewerModal}} {
         width: 1600, height: 900
-        flow: Overlay
+        align: {x: 0.5}
+        spacing: 15
+        flow: Down
         show_bg: true
         draw_bg: {
             color: #1F1F1F80
@@ -21,19 +23,18 @@ live_design! {
 
         <View> {
             align: {x: 1.0, y: 0.0}
-            width: Fill, height: Fill
+            width: Fill, height: Fit
             close_button = <RobrixIconButton> {
-                debug = true
                 padding: {left: 15, right: 15}
                 draw_icon: {
                     svg_file: (ICON_CLOSE)
-                    color: (COLOR_DANGER_RED),
+                    color: (COLOR_CLOSE),
                 }
-                icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                icon_walk: {width: 20, height: 20, margin: {left: -1, right: -1} }
 
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
+                    border_color: (COLOR_CLOSE_BG),
+                    color: (COLOR_CLOSE_BG) // light red
                 }
             }
         }
@@ -50,11 +51,13 @@ pub struct ImageViewerModal {
     #[deref] view: View,
     #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
     #[rust] media_cache: Option<MediaCache>,
+    #[rust(false)] need_to_draw_all: bool
 }
 
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
+    NeedToDrawAll,
     SetMediaCache(MediaCache),
     Insert(WidgetUid, OwnedMxcUri),
     Show(WidgetUid),
@@ -63,13 +66,33 @@ pub enum ImageViewerAction {
 
 impl Widget for ImageViewerModal {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if self.need_to_draw_all {
+            self.view.draw_all(cx, scope);
+            self.need_to_draw_all = false
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
+impl MatchEvent for ImageViewerModal {
+    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+        for action in actions {
+            if let Some(ImageViewerAction::NeedToDrawAll) = action.downcast_ref() {
+                log!("Need to draw all");
+                self.need_to_draw_all = true
+            }
+            if let ImageViewerAction::NeedToDrawAll = action.as_widget_action().cast() {
+                log!("Need to draw all");
+                self.need_to_draw_all = true
+            }
+        }
+    }
+}
+
 
 
 impl ImageViewerModal {
