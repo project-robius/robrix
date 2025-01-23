@@ -1697,7 +1697,7 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.clear();
                         tl.fully_paginated = false;
 
-                        // If this RoomScreen is showing the loading modPANEal and has an ongoing backwards pagination request,
+                        // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
                         // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
                         // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
