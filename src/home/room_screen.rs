@@ -377,12 +377,8 @@ live_design! {
                 <View> {
                     width: Fill,
                     height: Fit
-                    <View> {
-                        width: Fill,
-                        height: Fit
-                        reaction_list = <ReactionList> { }
-                        avatar_row = <AvatarRow> {}
-                    }
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
                 }
                 
             }
@@ -431,15 +427,19 @@ live_design! {
     ImageMessage = <Message> {
         body = {
             content = {
-                padding: { left: 10.0 }
-                message = <TextOrImage> { }
-            }
-            <View> {
                 width: Fill,
                 height: Fit
-                reaction_list = <ReactionList> { }
-                avatar_row = <AvatarRow> {}
+                padding: { left: 10.0 }
+                message = <TextOrImage> { }
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
+            
         }
     }
 
@@ -450,13 +450,14 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
-            <View> {
-                width: Fill,
-                height: Fit
-                reaction_list = <ReactionList> { }
-                avatar_row = <AvatarRow> {}
-            }
+            
         }
     }
 
@@ -513,12 +514,7 @@ live_design! {
                 }
                 text: ""
             }
-            <View> {
-                width: Fill,
-                height: Fit
-                reaction_list = <ReactionList> { }
-                avatar_row = <AvatarRow> {}
-            }
+            avatar_row = <AvatarRow> {}
         }
     }
 
