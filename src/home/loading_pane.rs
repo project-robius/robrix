@@ -3,19 +3,48 @@ use matrix_sdk::ruma::OwnedEventId;
 
 use crate::sliding_sync::TimelineRequestSender;
 
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
 
+    use crate::shared::helpers::*;
     use crate::shared::styles::*;
-    use crate::shared::icon_button::RobrixIconButton;
+    use crate::shared::avatar::*;
+    use crate::shared::icon_button::*;
 
-    pub LoadingModal = {{LoadingModal}} {
-        width: Fit
-        height: Fit
+    // Copied from Moxin
+    FadeView = <CachedView> {
+        draw_bg: {
+            instance opacity: 1.0
 
-        <RoundedView> {
+            fn pixel(self) -> vec4 {
+                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
+                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
+            }
+        }
+    }
+
+    pub LoadingPane = {{LoadingPane}} {
+        visible: false,
+        flow: Overlay,
+        width: Fill,
+        height: Fill,
+        align: {x: 0.5, y: 0.5}
+
+        bg_view = <View> {
+            width: Fill
+            height: Fill
+            show_bg: true
+            draw_bg: {
+                fn pixel(self) -> vec4 {
+                    return vec4(0., 0., 0., 0.7)
+                }
+            }
+        }
+
+        main_content = <RoundedView> {
             flow: Down
             width: 600
             height: Fit
@@ -46,12 +75,13 @@ live_design! {
 
             body = <View> {
                 width: Fill,
-                height: Fit,
+                height: Fit, // TODO: ideally this would be a range, maybe like 300-500 px
                 flow: Down,
                 spacing: 40,
 
                 status = <Label> {
-                    width: Fill
+                    width: Fill,
+                    height: Fit,
                     draw_text: {
                         text_style: <REGULAR_TEXT>{
                             font_size: 11.5,
@@ -91,15 +121,37 @@ live_design! {
     }
 }
 
-#[derive(Live, LiveHook, Widget)]
-pub struct LoadingModal {
-    #[deref] view: View,
-    #[rust] state: LoadingModalState,
+
+
+/// The state of a LoadingPane: the possible tasks that it may be performing.
+#[derive(Clone, DefaultNone)]
+pub enum LoadingPaneState {
+    /// The room is being backwards paginated until the target event is reached.
+    BackwardsPaginateUntilEvent {
+        target_event_id: OwnedEventId,
+        /// The number of events paginated so far, which is only used to display progress.
+        events_paginated: usize,
+        /// The sender for timeline requests for the room that is showing this modal.
+        /// This is used to inform the `timeline_subscriber_handler` that the user has
+        /// cancelled the request, so that it can stop looking for the target event.
+        request_sender: TimelineRequestSender,
+    },
+    /// The loading pane is displaying an error message until the user closes it.
+    Error(String),
+    /// The LoadingPane is not doing anything and can be hidden.
+    None,
 }
-impl Drop for LoadingModal {
+
+
+#[derive(Live, LiveHook, Widget)]
+pub struct LoadingPane {
+    #[deref] view: View,
+    #[rust] state: LoadingPaneState,
+}
+impl Drop for LoadingPane {
     fn drop(&mut self) {
-        if let LoadingModalState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
-            warning!("Dropping LoadingModal with target_event_id: {}", target_event_id);
+        if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
+            warning!("Dropping LoadingPane with target_event_id: {}", target_event_id);
             request_sender.send_if_modified(|requests| {
                 let initial_len = requests.len();
                 requests.retain(|r| &r.target_event_id != target_event_id);
@@ -111,56 +163,39 @@ impl Drop for LoadingModal {
     }
 }
 
-/// An action sent from this LoadingModal widget to its parent widget,
-/// which is currently required in order for the parent to close this modal.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum LoadingModalAction {
-    Close,
-    None,
-}
 
-/// The state of a LoadingModal: the possible tasks that it may be performing.
-#[derive(Clone, DefaultNone)]
-pub enum LoadingModalState {
-    /// The room is being backwards paginated until the target event is reached.
-    BackwardsPaginateUntilEvent {
-        target_event_id: OwnedEventId,
-        /// The number of events paginated so far, which is only used to display progress.
-        events_paginated: usize,
-        /// The sender for timeline requests for the room that is showing this modal.
-        /// This is used to inform the `timeline_subscriber_handler` that the user has
-        /// cancelled the request, so that it can stop looking for the target event.
-        request_sender: TimelineRequestSender,
-    },
-    /// The loading modal is displaying an error message until the user closes it.
-    Error(String),
-    /// The LoadingModal is not doing anything and can be hidden.
-    None,
-}
-
-impl Widget for LoadingModal {
-    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-        self.widget_match_event(cx, event, scope);
-    }
-
+impl Widget for LoadingPane {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.visible = true;
+        if matches!(self.state, LoadingPaneState::None) {
+            self.visible = false;
+            return self.view.draw_walk(cx, scope, walk);
+        }
+
         self.view.draw_walk(cx, scope, walk)
     }
-}
 
-impl WidgetMatchEvent for LoadingModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
-        let cancel_button = self.button(id!(cancel_button));
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible { return; }
+        self.view.handle_event(cx, event, scope);
 
-        let modal_dismissed = actions
-            .iter()
-            .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
-
-        if cancel_button.clicked(actions) || modal_dismissed {
-            // log!("LoadingModal: close requested: {}", if modal_dismissed { "by modal dismiss" } else { "by cancel button" });
-            if let LoadingModalState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
+        // Close the pane if the cancel button is clicked, the back mouse button is clicked,
+        // the escape key is pressed, the back button is pressed,
+        // or the user clicks outside the pane's content.
+        let close_pane = match event {
+            Event::Actions(actions) => self.button(id!(cancel_button)).clicked(actions),
+            Event::MouseUp(mouse) => mouse.button.is_back(),
+            Event::KeyUp(key) => key.key_code == KeyCode::Escape,
+            Event::BackPressed => true,
+            Event::MouseDown(e) => {
+                // TODO FIX THIS TO BE MORE SPECIFIC: the background area must contain the e.abs,
+                // AND the main_content area must NOT contain the e.abs.
+                !self.view(id!(main_content)).area().rect(cx).contains(e.abs)
+            }
+            _ => false,
+        };
+        if close_pane {
+            if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
                 let _did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();
                     requests.retain(|r| &r.target_event_id != target_event_id);
@@ -168,27 +203,33 @@ impl WidgetMatchEvent for LoadingModal {
                     // such that they can stop looking for the target event.
                     requests.len() != initial_len
                 });
-                log!("LoadingModal: {} cancel request for target_event_id: {target_event_id}",
+                log!("LoadingPane: {} cancel request for target_event_id: {target_event_id}",
                     if _did_send { "Sent" } else { "Did not send" },
                 );
             }
-            self.set_state(cx, LoadingModalState::None);
+            self.set_state(cx, LoadingPaneState::None);
 
-            // If the modal was dismissed by clicking outside of it, we MUST NOT emit
-            // a `LoadingModalAction::Close` action, as that would cause
-            // an infinite action feedback loop.
-            if !modal_dismissed {
-                cx.widget_action(widget_uid, &scope.path, LoadingModalAction::Close);
-            }
+            self.visible = false;
         }
     }
 }
 
-impl LoadingModal {
-    pub fn set_state(&mut self, cx: &mut Cx, state: LoadingModalState) {
+
+impl LoadingPane {
+    /// Returns `true` if the pane is currently visible.
+    pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
+        self.visible
+    }
+
+    pub fn show(&mut self, cx: &mut Cx) {
+        self.visible = true;
+        self.redraw(cx);
+    }
+
+    pub fn set_state(&mut self, cx: &mut Cx, state: LoadingPaneState) {
         let cancel_button = self.button(id!(cancel_button));
         match &state {
-            LoadingModalState::BackwardsPaginateUntilEvent {
+            LoadingPaneState::BackwardsPaginateUntilEvent {
                 target_event_id,
                 events_paginated,
                 ..
@@ -200,12 +241,12 @@ impl LoadingModal {
                 ));
                 cancel_button.set_text(cx, "Cancel");
             }
-            LoadingModalState::Error(error_message) => {
+            LoadingPaneState::Error(error_message) => {
                 self.set_title(cx, "Error loading content");
                 self.set_status(cx, error_message);
                 cancel_button.set_text(cx, "Okay");
             }
-            LoadingModalState::None => { }
+            LoadingPaneState::None => { }
         }
 
         self.state = state;
@@ -221,14 +262,26 @@ impl LoadingModal {
     }
 }
 
-impl LoadingModalRef {
-    pub fn take_state(&self) -> LoadingModalState {
-        self.borrow_mut()
-            .map(|mut inner| std::mem::take(&mut inner.state))
-            .unwrap_or(LoadingModalState::None)
+impl LoadingPaneRef {
+    /// See [`LoadingPane::is_currently_shown()`]
+    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_currently_shown(cx)
     }
 
-    pub fn set_state(&self, cx: &mut Cx, state: LoadingModalState) {
+    /// See [`LoadingPane::show()`]
+    pub fn show(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.show(cx);
+    }
+
+    pub fn take_state(&self) -> LoadingPaneState {
+        self.borrow_mut()
+            .map(|mut inner| std::mem::take(&mut inner.state))
+            .unwrap_or(LoadingPaneState::None)
+    }
+
+    pub fn set_state(&self, cx: &mut Cx, state: LoadingPaneState) {
         let Some(mut inner) = self.borrow_mut() else { return }; 
         inner.set_state(cx, state);
     }

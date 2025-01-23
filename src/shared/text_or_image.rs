@@ -9,7 +9,7 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-    
+
     use crate::shared::styles::*;
 
     pub TextOrImage = {{TextOrImage}} {
@@ -37,8 +37,8 @@ live_design! {
             cursor: NotAllowed, // we don't yet support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
-                width: Fill, height: Fit,
-                fit: Smallest,
+                width: Fill, height: Fill,
+                fit: Size,
             }
         }
     }

@@ -114,12 +114,13 @@ These are generally sorted in order of priority. If you're interested in helping
 
 
 
-### Auxiliary/admin features: login, registration, settings
+### Auxiliary features, login, registration, settings
 - [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
+- [x] Display read receipts besides messages: https://github.com/project-robius/robrix/pull/162
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] User settings screen
 - [ ] Dedicated view of spaces

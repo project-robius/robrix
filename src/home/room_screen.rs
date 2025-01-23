@@ -7,30 +7,32 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
+        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
+use crate::home::event_reaction_list::ReactionListWidgetRefExt;
+use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{loading_modal::{LoadingModalAction, LoadingModalState}, message_context_menu::MessageContextMenuWidgetRefExt};
+use super::{event_reaction_list::ReactionData, message_context_menu::MessageContextMenuWidgetRefExt, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -50,12 +52,15 @@ live_design! {
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
+    use crate::home::room_read_receipt::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
-    use crate::home::loading_modal::*;
+    use crate::home::loading_pane::*;
     use crate::home::message_context_menu::*;
+    use crate::home::message_context_menu::*;
+    use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
     ICO_FAV = dep("crate://self/resources/icon_favorite.svg")
@@ -348,26 +353,35 @@ live_design! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
-
-                username = <Label> {
+                <View> {
+                    flow: Right,
                     width: Fill,
-                    margin: {bottom: 9.0, top: 11.0, right: 10.0,}
-                    draw_text: {
-                        text_style: <USERNAME_TEXT_STYLE> {},
-                        color: (USERNAME_TEXT_COLOR)
-                        wrap: Ellipsis,
+                    height: Fit,
+                    username = <Label> {
+                        width: Fill,
+                        margin: {bottom: 9.0, top: 11.0, right: 10.0,}
+                        draw_text: {
+                            text_style: <USERNAME_TEXT_STYLE> {},
+                            color: (USERNAME_TEXT_COLOR)
+                            wrap: Ellipsis,
+                        }
+                        text: "<Username not available>"
                     }
-                    text: "<Username not available>"
                 }
+                
                 message = <HtmlOrPlaintext> { }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
-
-                message_annotations = <MessageAnnotations> {}
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+                
             }
-
         }
     }
 
@@ -398,7 +412,12 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                message_annotations = <MessageAnnotations> {}
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
         }
     }
@@ -408,10 +427,19 @@ live_design! {
     ImageMessage = <Message> {
         body = {
             content = {
+                width: Fill,
+                height: Fit
                 padding: { left: 10.0 }
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
+            
         }
     }
 
@@ -422,8 +450,14 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
-                message_annotations = <MessageAnnotations> {}
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
+            
         }
     }
 
@@ -436,10 +470,9 @@ live_design! {
         margin: 0.0
         cursor: Default
         flow: Right,
-        padding: { top: 1.0, bottom: 1.0 }
+        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         margin: { left: 2.5, top: 4.0, bottom: 4.0}
-
         body = <View> {
             width: Fill,
             height: Fit
@@ -481,6 +514,8 @@ live_design! {
                 }
                 text: ""
             }
+            // Center the Avatar vertically with respect to the SmallStateEvent content.
+            avatar_row = <AvatarRow> { margin: {top: -1.0} }
         }
     }
 
@@ -678,7 +713,6 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -823,32 +857,104 @@ live_design! {
                 }
             }
 
-            // The top space should be displayed on top of the timeline
+            // Note: here, we're within a View that has an Overlay flow,
+            // so the order that we define the below views determines which one is on top.
+
+            // The top space should be displayed as an overlay at the top of the timeline.
             top_space = <TopSpace> { }
 
-            // The user profile sliding pane should be displayed on top of other "static" subviews
-            // (on top of all other views that are always visible).
-            <View> {
-                width: Fill,
-                height: Fill,
-                align: { x: 1.0 },
-                flow: Right,
+            // A tooltip that appears when hovering over certain elements in the RoomScreen,
+            // such as reactions or read receipts.
+            room_screen_tooltip = <Tooltip> {
+                content: <View> {
+                    flow: Overlay
+                    width: Fit
+                    height: Fit
 
-                user_profile_sliding_pane = <UserProfileSlidingPane> { }
-            }
+                    rounded_view = <RoundedView> {
+                        width: Fill,
+                        height: Fit,
 
-            // A pop-up modal that appears while the user must wait for something
-            // in the room to finish loading, e.g., when loading an older replied-to message.
-            loading_modal = <Modal> {
-                content: {
-                    loading_modal_inner = <LoadingModal> {}
+                        padding: 10,
+
+                        draw_bg: {
+                            color: #fff,
+                            border_width: 1.0,
+                            border_color: #D0D5DD,
+                            radius: 2.,
+                            instance background_color: (#3b444b),
+                            // Height of isoceles triangle
+                            instance callout_triangle_height: 7.5,
+                            instance callout_offset: 15.0,
+                            instance pointing_up: 0.0,
+                            fn pixel(self) -> vec4 {
+                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                                let rect_size = self.rect_size;
+                                // Main rounded rectangle
+                                if self.pointing_up >= 0.5 {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        self.border_width,
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) ,
+                                        rect_size.y - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 1.0);
+                                     // Draw up-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(0.0, self.callout_triangle_height * 1.0);
+                                    sdf.line_to(self.callout_triangle_height, 0.0);
+                                } else {
+                                    sdf.box(
+                                        // Minus 2.0 to overlap the triangle and rectangle
+                                        (self.callout_triangle_height - 2.0) + self.border_width,
+                                        0.0 + self.border_width,
+                                        rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
+                                        rect_size.y - (self.border_width * 2.0),
+                                        max(1.0, self.radius)
+                                    )
+                                    sdf.fill(self.background_color);
+                                    sdf.translate(0.5, self.callout_offset);
+                                    // Draw left-pointed arrow triangle
+                                    sdf.move_to(self.callout_triangle_height, 0.0);
+                                    sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
+                                    sdf.line_to(0.5, self.callout_triangle_height);
+                                }
+
+                                sdf.close_path();
+
+                                sdf.fill((self.background_color));
+                                return sdf.result;
+                            }
+
+                        }
+
+                        tooltip_label = <Label> {
+                            width: Fill,
+                            height: Fit,
+                            draw_text: {
+                                text_style: <THEME_FONT_REGULAR>{font_size: 9},
+                                text_wrap: Word,
+                                color: (COLOR_PRIMARY)
+                            }
+                        }
+                    }
                 }
             }
 
             message_context_menu_modal = <Modal> {
                 align: {x: 0.0, y: 0.0}
                 bg_view: {
-                    visible: false
+                    // make the bg_view visible but fully transparent
+                    // such that it still receives hits/events.
+                    visible: true
+                    draw_bg: {
+                        fn pixel(self) -> vec4 {
+                            return vec4(0., 0., 0., 0.)
+                        }
+                    }
                 }
                 content: {
                     height: Fit,
@@ -863,6 +969,18 @@ live_design! {
                 }
             }
 
+            // The user profile sliding pane should be displayed on top of other "static" subviews
+            // (on top of all other views that are always visible).
+            user_profile_sliding_pane = <UserProfileSlidingPane> { }
+
+            // The loading pane appears while the user is waiting for something in the room screen
+            // to finish loading, e.g., when loading an older replied-to message.
+            loading_pane = <LoadingPane> { }
+
+
+            /*
+             * This is broken currently, so I'm disabling it.
+             * 
             message_action_bar_popup = <PopupNotification> {
                 align: {x: 0.0, y: 0.0}
                 content: {
@@ -877,6 +995,7 @@ live_design! {
                     message_action_bar = <MessageActionBar> {}
                 }
             }
+            */
         }
 
         animator: {
@@ -926,7 +1045,8 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
-        let pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let user_profile_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let loading_pane = self.loading_pane(id!(loading_pane));
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -942,6 +1062,66 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
+            let tooltip = self.tooltip(id!(room_screen_tooltip));
+            for (_, wr) in portal_list.items_with_actions(actions) {
+                let reaction_list = wr.reaction_list(id!(reaction_list));
+                if let RoomScreenTooltipActions::HoverInReactionButton {
+                    tooltip_pos,
+                    tooltip_width,
+                    callout_offset,
+                    reaction_data,
+                    pointing_up
+                } = reaction_list.hover_in(actions) {
+                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
+                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                            .map(|user_profile| user_profile.displayable_name().to_string())
+                            .unwrap_or(sender.to_string())
+                    }).collect();
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            width: (tooltip_width)
+                            rounded_view = {
+                                draw_bg: {
+                                    callout_offset: (callout_offset)
+                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
+                                }
+                            }
+                        }
+                    ));
+                }
+                if reaction_list.hover_out(actions) {
+                    tooltip.hide(cx);
+                }
+                let avatar_row_ref = wr.avatar_row(id!(avatar_row));
+                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                    tooltip_pos, 
+                    tooltip_width ,
+                    callout_offset,
+                    pointing_up,
+                    read_receipts
+                } = avatar_row_ref.hover_in(actions) {
+                    let Some(room_id) = &self.room_id else { return; };
+                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts.clone(), room_id);
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            width: (tooltip_width)
+                            rounded_view = {
+                                draw_bg: {
+                                    callout_offset: (callout_offset)
+                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
+                                }
+                            }
+                        }
+                    ));
+                }
+                if avatar_row_ref.hover_out(actions) {
+                    tooltip.hide(cx);
+                }
+            }   
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -988,8 +1168,7 @@ impl Widget for RoomScreen {
                         }
                     }
                     MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
-                        let loading_modal_inner = self.loading_modal(id!(loading_modal_inner));
-                        let loading_modal = self.modal(id!(loading_modal));
+                        let loading_pane = self.loading_pane(id!(loading_pane));
                         let Some(tl) = self.tl_state.as_mut() else {
                             continue;
                         };
@@ -1032,18 +1211,18 @@ impl Widget for RoomScreen {
                             };
                         } else {
                             // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
-                            // Here, we set the state of the loading modal and display it to the user.
+                            // Here, we set the state of the loading pane and display it to the user.
                             // The main logic will be handled in `process_timeline_updates()`, which is the only
                             // place where we can receive updates to the timeline from the background tasks.
-                            loading_modal_inner.set_state(
+                            loading_pane.set_state(
                                 cx,
-                                LoadingModalState::BackwardsPaginateUntilEvent {
+                                LoadingPaneState::BackwardsPaginateUntilEvent {
                                     target_event_id: replied_to_event.clone(),
                                     events_paginated: 0,
                                     request_sender: tl.request_sender.clone(),
                                 },
                             );
-                            loading_modal.open(cx);
+                            loading_pane.show(cx);
 
                             tl.request_sender.send_if_modified(|requests| {
                                 if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
@@ -1092,7 +1271,7 @@ impl Widget for RoomScreen {
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
                         self.show_user_profile(
                             cx,
-                            &pane,
+                            &user_profile_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
                                 room_name: self.room_name.clone(),
@@ -1126,6 +1305,7 @@ impl Widget for RoomScreen {
                             message_context_menu_modal.open(cx);
                         }
                     }
+                    /*
                     MessageAction::ActionBarClose => {
                         let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
                         let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
@@ -1160,15 +1340,18 @@ impl Widget for RoomScreen {
                             message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
                         }
                     }
+                    */
                     _ => {}
                 }
             }
 
+            /*
             // close message action bar if scrolled.
             if portal_list.scrolled(actions) {
                 let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
                 message_action_bar_popup.close(cx);
             }
+            */
 
             // Set visibility of loading message banner based of pagination logic
             self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
@@ -1269,14 +1452,31 @@ impl Widget for RoomScreen {
             self.redraw(cx);
         }
 
-        // Only forward visibility-related events (touch/tap/scroll) to the inner timeline view
-        // if the user profile sliding pane is not visible.
-        if event.requires_visibility() && pane.is_currently_shown(cx) {
-            // Forward the event to the user profile sliding pane,
-            // preventing the underlying timeline view from receiving it.
-            pane.handle_event(cx, event, scope);
+        // We only forward "interactive hit" events to the inner timeline view
+        // if none of the various overlay views are visible.
+        // We always forward "non-interactive hit" events to the inner timeline view.
+        // We check which overlay views are visible in the order of those views' z-ordering,
+        // such that the top-most views get a chance to handle the event first.
+        //
+        let is_interactive_hit = utils::is_interactive_hit_event(event);
+        let is_pane_shown: bool;
+        if loading_pane.is_currently_shown(cx) {
+            is_pane_shown = true;
+            loading_pane.handle_event(cx, event, scope);
+        }
+        else if user_profile_pane.is_currently_shown(cx) {
+            is_pane_shown = true;
+            user_profile_pane.handle_event(cx, event, scope);
         }
         else {
+            is_pane_shown = false;
+        }
+
+        // TODO: once we use the `hits()` API, we can remove the above conditionals, because
+        //       Makepad already delivers most events to all views regardless of visibility,
+        //       so the only thing we'd need here is the conditional below.
+
+        if !is_pane_shown || !is_interactive_hit {
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
@@ -1286,12 +1486,7 @@ impl Widget for RoomScreen {
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
-                if self.handle_link_clicked(cx, action, &pane) {
-                    return false;
-                }
-
-                if let LoadingModalAction::Close = action.as_widget_action().cast() {
-                    self.modal(id!(loading_modal)).close(cx);
+                if self.handle_link_clicked(cx, action, &user_profile_pane) {
                     return false;
                 }
 
@@ -1341,7 +1536,6 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
@@ -1456,13 +1650,13 @@ impl RoomScreen {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
+        let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
         let mut num_updates = 0;
         let mut typing_users = Vec::new();
-
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
@@ -1528,6 +1722,9 @@ impl RoomScreen {
                             tl.prev_first_index = Some(new_item_idx);
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
+                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
+
                         }
                     }
                     //
@@ -1551,15 +1748,15 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.clear();
                         tl.fully_paginated = false;
 
-                        // If this RoomScreen is showing the loading modal and has an ongoing backwards pagination request,
-                        // then we should update the status message in that loading modal
+                        // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
+                        // then we should update the status message in that loading pane
                         // and then continue paginating backwards until we find the target event.
                         // Note that we do this here because `clear_cache` will always be true if backwards pagination occurred.
-                        let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
-                        let mut loading_modal_state = loading_modal_inner.take_state();
-                        if let LoadingModalState::BackwardsPaginateUntilEvent {
+                        let loading_pane = self.view.loading_pane(id!(loading_pane));
+                        let mut loading_pane_state = loading_pane.take_state();
+                        if let LoadingPaneState::BackwardsPaginateUntilEvent {
                             ref mut events_paginated, target_event_id, ..
-                        } = &mut loading_modal_state {
+                        } = &mut loading_pane_state {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
                             log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
@@ -1570,7 +1767,7 @@ impl RoomScreen {
                             // So either way, it's okay to set this to `true` here.
                             should_continue_backwards_pagination = true;
                         }
-                        loading_modal_inner.set_state(cx, loading_modal_state);
+                        loading_pane.set_state(cx, loading_pane_state);
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
@@ -1596,15 +1793,14 @@ impl RoomScreen {
                         item.as_event()
                             .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
                     );
-                    let loading_modal_inner = self.view.loading_modal(id!(loading_modal_inner));
+                    let loading_pane = self.view.loading_pane(id!(loading_pane));
 
                     // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
                     if is_valid {
-                        // We successfully found the target event, so we can close the loading modal,
-                        // reset the loading modal state to `None`, and stop issuing backwards pagination requests.
-                        loading_modal_inner.set_status(cx, "Successfully found replied-to message!");
-                        loading_modal_inner.set_state(cx, LoadingModalState::None);
-                        self.view.modal(id!(loading_modal)).close(cx);
+                        // We successfully found the target event, so we can close the loading pane,
+                        // reset the loading panestate to `None`, and stop issuing backwards pagination requests.
+                        loading_pane.set_status(cx, "Successfully found replied-to message!");
+                        loading_pane.set_state(cx, LoadingPaneState::None);
 
                         // NOTE: this code was copied from the `ReplyPreviewClicked` action handler;
                         //       we should deduplicate them at some point.
@@ -1624,8 +1820,8 @@ impl RoomScreen {
                         // or we found it previously but it is no longer in the timeline (or has moved),
                         // which means we encountered an error and are unable to jump to the target event.
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
-                        // Show this error in the loading modal, which should already be open.
-                        loading_modal_inner.set_state(cx, LoadingModalState::Error(
+                        // Show this error in the loading pane, which should already be open.
+                        loading_pane.set_state(cx, LoadingPaneState::Error(
                             String::from("Unable to find replied-to message; it may have been deleted.")
                         ));
                     }
@@ -1862,12 +2058,12 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let (replying_preview_username, _) = set_avatar_and_get_username(
+        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar))
+        .set_avatar_and_get_username(
             cx,
-            replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
-            replying_to.0.sender_profile(),
+            Some(replying_to.0.sender_profile()),
             replying_to.0.event_id(),
         );
 
@@ -2080,11 +2276,8 @@ impl RoomScreen {
         }
 
         self.hide_timeline();
-        let loading_modal = self.modal(id!(loading_modal));
-        if loading_modal.is_open() {
-            // this will also reset the state of the inner loading modal
-            loading_modal.close(cx);
-        }
+        // Reset the the state of the inner loading pane.
+        self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
         self.room_id = Some(room_id);
         self.show_timeline(cx);
@@ -2197,6 +2390,50 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+}
+
+/// Actions for the room screen's tooltip.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenTooltipActions {
+    /// Mouse over event when the mouse is over the read receipt.
+    HoverInReadReceipt {
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        /// Pointed arrow position relative to the tooltip.
+        /// 
+        /// It is calculated from the right corner of tooltip to position arrow.
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        /// Data that is bound together the widget
+        /// 
+        /// Includes the list of users who have seen this event
+        read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
+        /// Boolean indicating if the callout should be pointing up.
+        /// 
+        /// If false, it is pointing left
+        pointing_up: bool
+    },
+    /// Mouse over event when the mouse is over the reaction button.
+    HoverInReactionButton {
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        /// Pointed arrow position relative to the tooltip
+        ///
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        /// Data that is bound together the widget
+        ///
+        /// Includes the list of users who have reacted to the emoji
+        reaction_data: ReactionData,
+        /// Boolean indicating if the callout should be pointing up.
+        ///
+        /// If false, it is pointing left
+        pointing_up: bool
+    },
+    /// Mouse out event and clear tooltip.
+    HoverOut,
+    None,
 }
 
 /// A message that is sent from a background async task to a room's timeline view
@@ -2604,7 +2841,6 @@ fn populate_message_view(
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-
     let ts_millis = event_tl_item.timestamp();
 
     let mut is_notice = false; // whether this message is a Notice
@@ -2629,7 +2865,6 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
-
     let (item, used_cached_item) = match message.get_type() {
         MessageOrStickerType::Text(TextMessageEventContent { body, formatted, .. }) => {
             let template = if use_compact_view {
@@ -2689,6 +2924,7 @@ fn populate_message_view(
         MessageOrStickerType::ServerNotice(sn) => {
             is_server_notice = true;
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2741,12 +2977,11 @@ fn populate_message_view(
                 (item, true)
             } else {
                 // Draw the profile up front here because we need the username for the emote body.
-                let (username, profile_drawn) = set_avatar_and_get_username(
+                let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 );
 
@@ -2781,6 +3016,7 @@ fn populate_message_view(
                 live_id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2919,7 +3155,9 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        draw_reactions(cx, &item, event_tl_item.reactions(), item_id);
+        item.reaction_list(id!(content.reaction_list))
+            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
+        populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -2945,12 +3183,11 @@ fn populate_message_view(
 
         if !is_server_notice { // the normal case
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                set_avatar_and_get_username(
+                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 )
             );
@@ -3094,8 +3331,8 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx, mxc_uri: OwnedMxcUri|
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, media_format: Option<MediaFormat>|
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), media_format) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -3124,7 +3361,8 @@ fn populate_image_message_content(
             }
         };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx, media_source: MediaSource| {
+    let mut media_format =  Some(MEDIA_THUMBNAIL_FORMAT.into());
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, media_format: Option<MediaFormat>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3134,21 +3372,23 @@ fn populate_image_message_content(
                 );
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri)
+                fetch_and_show_image_uri(cx, mxc_uri, media_format)
             }
         }
     };
 
+
     match image_info_source {
         Some((None, media_source)) => {
+            media_format = None;
             // We fetch the original (full-size) media if it does not have a thumbnail.
-            fetch_and_show_media_source(cx, media_source);
+            fetch_and_show_media_source(cx, media_source, media_format);
         },
         Some((Some(image_info), media_source)) => {
             if let Some(thumbnail_source) =  image_info.thumbnail_source {
-                fetch_and_show_media_source(cx, thumbnail_source);
+                fetch_and_show_media_source(cx, thumbnail_source, media_format);
             } else {
-                fetch_and_show_media_source(cx, media_source);
+                fetch_and_show_media_source(cx, media_source, media_format);
             }
         },
         None => {
@@ -3343,15 +3583,16 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
-                    cx,
+                let (in_reply_to_username, is_avatar_fully_drawn) = 
                     replied_to_message_view
-                        .avatar(id!(replied_to_message_content.reply_preview_avatar)),
-                    room_id,
-                    replied_to_event.sender(),
-                    replied_to_event.sender_profile(),
-                    Some(in_reply_to_details.event_id.as_ref()),
-                );
+                        .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                        .set_avatar_and_get_username(
+                            cx,
+                            room_id,
+                            replied_to_event.sender(),
+                            Some(replied_to_event.sender_profile()),
+                            Some(in_reply_to_details.event_id.as_ref()),
+                        );
 
                 fully_drawn = is_avatar_fully_drawn;
 
@@ -3433,45 +3674,6 @@ fn populate_preview_of_timeline_item(
     widget_out.show_html(cx, html);
 }
 
-/// Draws the reactions beneath the given `message_item`.
-fn draw_reactions(
-    cx: &mut Cx2d,
-    message_item: &WidgetRef,
-    reactions: &ReactionsByKeyBySender,
-    id: usize,
-) {
-    const DRAW_ITEM_ID_REACTION: bool = false;
-    if reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
-        return;
-    }
-
-    // The message annotations view is invisible by default, so we must set it to visible
-    // now that we know there are reactions to show.
-    message_item
-        .view(id!(content.message_annotations))
-        .set_visible(cx, true);
-
-    let mut label_text = String::new();
-    for (reaction_raw, reaction_senders) in reactions.iter() {
-        // Just take the first char of the emoji, which ignores any variant selectors.
-        let reaction_first_char = reaction_raw.chars().next().map(|c| c.to_string());
-        let reaction_str = reaction_first_char.as_deref().unwrap_or(reaction_raw);
-        let text_to_display = emojis::get(reaction_str)
-            .and_then(|e| e.shortcode())
-            .unwrap_or(reaction_raw);
-        let count = reaction_senders.len();
-        // log!("Found reaction {:?} with count {}", text_to_display, count);
-        label_text = format!("{label_text}<i>:{}:</i> <b>{}</b> ", text_to_display, count);
-    }
-
-    // Debugging: draw the item ID as a reaction
-    if DRAW_ITEM_ID_REACTION {
-        label_text = format!("{label_text}<i>ID: {}</i>", id);
-    }
-
-    let html_reaction_view = message_item.html(id!(message_annotations.html_content));
-    html_reaction_view.set_text(cx, &label_text);
-}
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
@@ -3618,12 +3820,11 @@ fn populate_small_state_event(
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
-
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
     let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-
+    populate_read_receipts(&item, cx, room_id, event_tl_item);
     if skip_redrawing_content {
         return (item, new_drawn_status);
     }
@@ -3636,12 +3837,12 @@ fn populate_small_state_event(
 
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
-        let (username, profile_drawn) = set_avatar_and_get_username(
+        let avatar_ref = item.avatar(id!(avatar));
+        let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
-            item.avatar(id!(avatar)),
             room_id,
             event_tl_item.sender(),
-            event_tl_item.sender_profile(),
+            Some(event_tl_item.sender_profile()),
             event_tl_item.event_id(),
         );
         // Draw the timestamp as part of the profile.
@@ -3684,111 +3885,6 @@ fn set_timestamp(
         item.label(live_id_path)
             .set_text(cx, &format!("{}", timestamp.get()));
     }
-}
-
-/// Sets the given avatar and returns a displayable username based on the
-/// given profile and user ID of the sender of the event with the given event ID.
-///
-/// If the sender profile is not ready, this function will submit an async request
-/// to fetch the sender profile from the server, but only if the event ID is `Some`.
-///
-/// This function will always choose a nice, displayable username and avatar.
-///
-/// The specific behavior is as follows:
-/// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
-///   will be the user's display name and avatar image, if available.
-///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
-/// * If no avatar image is available, then the `avatar` will be set to the first character
-///   of the user's display name, if available.
-/// * If the user's display name is not available or has not been set, the user ID
-///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
-///   our user profile cache , then the `username` and `avatar`  will be the user ID
-///   and the first character of that user ID, respectively.
-///
-/// ## Return
-/// Returns a tuple of:
-/// 1. The displayable username that should be used to populate the username field.
-/// 2. A boolean indicating whether the user's profile info has been completely drawn
-///    (for purposes of caching it to avoid future redraws).
-fn set_avatar_and_get_username(
-    cx: &mut Cx,
-    avatar: AvatarRef,
-    room_id: &OwnedRoomId,
-    sender_user_id: &UserId,
-    sender_profile: &TimelineDetails<Profile>,
-    event_id: Option<&EventId>,
-) -> (String, bool) {
-    // Get the display name and avatar URL from the sender's profile, if available,
-    // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let (username_opt, avatar_state) = match sender_profile {
-        TimelineDetails::Ready(profile) => {
-            (
-                profile.display_name.clone(),
-                AvatarState::Known(profile.avatar_url.clone()),
-            )
-        }
-        not_ready => {
-            if matches!(not_ready, TimelineDetails::Unavailable) {
-                if let Some(event_id) = event_id {
-                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        event_id: event_id.to_owned(),
-                    });
-                }
-            }
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, sender_user_id.to_owned(), true, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        (
-                            profile.username.clone(),
-                            profile.avatar_state.clone(),
-                        )
-                    })
-            })
-            .unwrap_or((None, AvatarState::Unknown))
-        }
-    };
-
-    let (avatar_img_data_opt, profile_drawn) = match avatar_state {
-        AvatarState::Loaded(data) => (Some(data), true),
-        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-            AvatarCacheEntry::Loaded(data) => (Some(data), true),
-            AvatarCacheEntry::Failed => (None, true),
-            AvatarCacheEntry::Requested => (None, false),
-        },
-        AvatarState::Known(None) | AvatarState::Failed => (None, true),
-        AvatarState::Unknown => (None, false),
-    };
-
-    // Set sender to the display name if available, otherwise the user id.
-    let username = username_opt
-        .clone()
-        .unwrap_or_else(|| sender_user_id.to_string());
-
-    // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt.and_then(|data|
-        avatar.show_image(
-            cx,
-            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone()).into()),
-            |cx, img| utils::load_png_or_jpg(&img, cx, &data)
-        )
-        .ok()
-    )
-    .unwrap_or_else(|| avatar.show_text(
-        cx,
-        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
-        &username,
-    ));
-    (username, profile_drawn)
 }
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
@@ -3966,7 +4062,7 @@ pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
     #[rust(false)] hovered: bool,
-    
+
     /// A timer used to detect long presses on the message body.
     #[rust] long_press_timer: Timer,
     /// The current status of the long-press gesture on the message body.
@@ -4154,7 +4250,6 @@ impl Widget for Message {
                 self.animator_play(cx, hover_animator);
             }
         }
-
         self.view.handle_event(cx, event, scope);
     }
 
@@ -4204,4 +4299,48 @@ impl MessageRef {
             inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
+}
+
+/// Calculates the optimal position for a tooltip based on the widget's rectangle and
+/// window geometry.
+///
+/// This function determines where to position a tooltip such that it remains
+/// visible within the window bounds. It calculates the tooltip's position and
+/// callout offset, and checks if the tooltip is too close to the right edge of
+/// the window.
+///
+/// # Arguments
+///
+/// * `widget_rect` - The rectangle of the widget the tooltip is associated with.
+/// * `window_geom` - The geometry of the window, used to ensure the tooltip fits within.
+/// * `tooltip_width` - The width of the tooltip to be positioned.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `DVec2`: The position of the tooltip.
+/// - `f64`: The offset for the callout, relative to the tooltip.
+/// - `bool`: A flag indicating if the tooltip is too close to the right side of the window.
+pub fn room_screen_tooltip_position_helper(widget_rect: Rect, window_geom: &event::WindowGeom, tooltip_width:f64) -> (DVec2, f64, bool) {
+    let mut too_close_to_right = false;
+    if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_geom.inner_size.x {
+        too_close_to_right = true;
+    }
+    let tooltip_pos =  if too_close_to_right {
+        DVec2 {
+            x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
+            y: widget_rect.pos.y + widget_rect.size.y
+        }
+    } else {
+        DVec2 {
+            x: widget_rect.pos.x + widget_rect.size.x,
+            y: widget_rect.pos.y - 5.0
+        }
+    };
+    let callout_offset = if too_close_to_right {
+        tooltip_width - (widget_rect.size.x - 10.0) / 2.0
+    } else {
+        10.0
+    };
+    (tooltip_pos, callout_offset, too_close_to_right)
 }
