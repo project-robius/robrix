@@ -2,7 +2,7 @@ use crate::app::AppState;
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
-use crate::utils::{self, human_readable_list};
+use crate::utils::{self, human_readable_list, MAX_VISIBLE_NUMBER_OF_ITEMS};
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
@@ -31,7 +31,6 @@ live_design! {
                 }
             }
         }
-        margin: {top: 12, right: 0},
         width: Fit,
         height: 15.0,
         plus_template: <Label> {
@@ -212,5 +211,5 @@ pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receip
     for _ in display_names.len()..read_receipts.len() {
         display_names.push(String::from(""));
     }
-    format!("Seen by {:?} people\n{}", read_receipts.len(), human_readable_list(&display_names))     
+    format!("Seen by {:?} people\n{}", read_receipts.len(), human_readable_list(&display_names, MAX_VISIBLE_NUMBER_OF_ITEMS))     
 }

@@ -26,7 +26,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst},
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MAX_VISIBLE_NUMBER_OF_ITEMS},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -416,14 +416,12 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                reaction_list = <ReactionList> { }
-                
-            }
-            <View> {
-                width: Fill,
-                height: Fit
-                reaction_list = <ReactionList> { }
-                avatar_row = <AvatarRow> {}
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
         }
     }
@@ -435,7 +433,12 @@ live_design! {
             content = {
                 padding: { left: 10.0 }
                 message = <TextOrImage> { }
+            }
+            <View> {
+                width: Fill,
+                height: Fit
                 reaction_list = <ReactionList> { }
+                avatar_row = <AvatarRow> {}
             }
         }
     }
@@ -447,10 +450,13 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
+            }
+            <View> {
+                width: Fill,
+                height: Fit
                 reaction_list = <ReactionList> { }
                 avatar_row = <AvatarRow> {}
             }
-            
         }
     }
 
@@ -1066,7 +1072,7 @@ impl Widget for RoomScreen {
                             .map(|user_profile| user_profile.displayable_name().to_string())
                             .unwrap_or(sender.to_string())
                     }).collect();
-                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_NUMBER_OF_ITEMS);                
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
