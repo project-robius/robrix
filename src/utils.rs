@@ -4,6 +4,7 @@ use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
 
+
 /// Returns true if the given event is an interactive hit-related event
 /// that should require a view/widget to be visible in order to handle/receive it.
 pub fn is_interactive_hit_event(event: &Event) -> bool {
@@ -329,23 +330,22 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
-/// Converts a list of names into a human-readable string with a 5-name limit.
+/// Converts a list of names into a human-readable string with a limit parameter.
 ///
 /// # Examples
 /// ```
-/// assert_eq!(human_readable_list(&vec!["Alice"]), String::from("Alice"));
-/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")]), String::from("Alice and Bob"));
-/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"]), String::from("Alice, Bob and Charlie"));
-/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"]), String::from("Alice, Bob, Charlie, Dennis, Eudora and 1 other"));
+/// assert_eq!(human_readable_list(&vec!["Alice"], 3), String::from("Alice"));
+/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")], 3), String::from("Alice and Bob"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"], 3), String::from("Alice, Bob and Charlie"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"], 3), String::from("Alice, Bob, Charlie, and 3 others"));
 /// ```
-pub fn human_readable_list<S>(names: &[S]) -> String
+pub fn human_readable_list<S>(names: &[S], limit: usize) -> String
 where
     S: AsRef<str>
 {
-    const MAX_NAMES: usize = 5;
     let mut result = String::new();
     match names.len() {
-        0 => { }
+        0 => return result, // early return if no names provided
         1 => {
             result.push_str(names[0].as_ref());
         },
@@ -355,19 +355,23 @@ where
             result.push_str(names[1].as_ref());
         },
         _ => {
-            let display_count = names.len().min(MAX_NAMES);
+            let display_count = names.len().min(limit);
             for (i, name) in names.iter().take(display_count - 1).enumerate() {
                 if i > 0 {
                     result.push_str(", ");
                 }
                 result.push_str(name.as_ref());
             }
-            if names.len() > MAX_NAMES {
-                let remaining = names.len() - MAX_NAMES;
+            if names.len() > limit {
+                let remaining = names.len() - limit;
                 result.push_str(", ");
                 result.push_str(names[display_count - 1].as_ref());
-                result.push_str(" and ");
-                result.push_str(&format!("{} others", remaining));
+                result.push_str(", and ");
+                if remaining == 1 {
+                    result.push_str("1 other");
+                } else {
+                    result.push_str(&format!("{} others", remaining));
+                }
             } else {
                 result.push_str(" and ");
                 result.push_str(names[display_count - 1].as_ref());
@@ -375,6 +379,45 @@ where
         }
     };
     result
+}
+
+#[cfg(test)]
+mod tests_human_readable_list {
+    use super::*;
+    #[test]
+    fn test_human_readable_list_empty() {
+        let names: Vec<&str> = Vec::new();
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_human_readable_list_single() {
+        let names: Vec<&str> = vec!["Alice"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice");
+    }
+
+    #[test]
+    fn test_human_readable_list_two() {
+        let names: Vec<&str> = vec!["Alice", "Bob"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice and Bob");
+    }
+
+    #[test]
+    fn test_human_readable_list_many() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "David"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice, Bob, Charlie, and 1 other");
+    }
+
+    #[test]
+    fn test_human_readable_list_long() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice, Bob, Charlie, and 23 others");
+    }
 }
 
 #[cfg(test)]

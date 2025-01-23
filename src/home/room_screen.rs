@@ -12,26 +12,27 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, UserId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, Profile, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
+use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, message_context_menu::MessageContextMenuWidgetRefExt};
+use super::{event_reaction_list::ReactionData, message_context_menu::MessageContextMenuWidgetRefExt, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -51,6 +52,7 @@ live_design! {
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
+    use crate::home::room_read_receipt::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
@@ -351,26 +353,35 @@ live_design! {
                 height: Fit
                 flow: Down,
                 padding: 0.0
-
-                username = <Label> {
+                <View> {
+                    flow: Right,
                     width: Fill,
-                    margin: {bottom: 9.0, top: 11.0, right: 10.0,}
-                    draw_text: {
-                        text_style: <USERNAME_TEXT_STYLE> {},
-                        color: (USERNAME_TEXT_COLOR)
-                        wrap: Ellipsis,
+                    height: Fit,
+                    username = <Label> {
+                        width: Fill,
+                        margin: {bottom: 9.0, top: 11.0, right: 10.0,}
+                        draw_text: {
+                            text_style: <USERNAME_TEXT_STYLE> {},
+                            color: (USERNAME_TEXT_COLOR)
+                            wrap: Ellipsis,
+                        }
+                        text: "<Username not available>"
                     }
-                    text: "<Username not available>"
                 }
+                
                 message = <HtmlOrPlaintext> { }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
                 // }
-
-                reaction_list = <ReactionList> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+                
             }
-
         }
     }
 
@@ -401,7 +412,12 @@ live_design! {
                 padding: { left: 10.0 }
 
                 message = <HtmlOrPlaintext> { }
-                reaction_list = <ReactionList> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
         }
     }
@@ -411,10 +427,19 @@ live_design! {
     ImageMessage = <Message> {
         body = {
             content = {
+                width: Fill,
+                height: Fit
                 padding: { left: 10.0 }
                 message = <TextOrImage> { }
-                reaction_list = <ReactionList> { }
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
+            
         }
     }
 
@@ -425,8 +450,14 @@ live_design! {
         body = {
             content = {
                 message = <TextOrImage> { }
-                reaction_list = <ReactionList> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
             }
+            
         }
     }
 
@@ -439,10 +470,9 @@ live_design! {
         margin: 0.0
         cursor: Default
         flow: Right,
-        padding: { top: 1.0, bottom: 1.0 }
+        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
         spacing: 0.0
         margin: { left: 2.5, top: 4.0, bottom: 4.0}
-
         body = <View> {
             width: Fill,
             height: Fit
@@ -484,6 +514,8 @@ live_design! {
                 }
                 text: ""
             }
+            // Center the Avatar vertically with respect to the SmallStateEvent content.
+            avatar_row = <AvatarRow> { margin: {top: -1.0} }
         }
     }
 
@@ -681,7 +713,6 @@ live_design! {
             color: (COLOR_SECONDARY)
         }
         flow: Down, spacing: 0.0
-
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -870,7 +901,7 @@ live_design! {
                                         max(1.0, self.radius)
                                     )
                                     sdf.fill(self.background_color);
-                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 0.0);
+                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 1.0);
                                      // Draw up-pointed arrow triangle
                                     sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
                                     sdf.line_to(0.0, self.callout_triangle_height * 1.0);
@@ -1046,7 +1077,7 @@ impl Widget for RoomScreen {
                             .map(|user_profile| user_profile.displayable_name().to_string())
                             .unwrap_or(sender.to_string())
                     }).collect();
-                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
@@ -1057,11 +1088,6 @@ impl Widget for RoomScreen {
                                     callout_offset: (callout_offset)
                                     pointing_up: (if pointing_up { 1.0 } else { 0.0 })
                                 }
-                                //tooltip_label = {
-                                // content = {
-                                //     width: (tooltip_width)
-                                //     //width: Fit
-                                // }
                             }
                         }
                     ));
@@ -1069,7 +1095,33 @@ impl Widget for RoomScreen {
                 if reaction_list.hover_out(actions) {
                     tooltip.hide(cx);
                 }
-            }
+                let avatar_row_ref = wr.avatar_row(id!(avatar_row));
+                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                    tooltip_pos, 
+                    tooltip_width ,
+                    callout_offset,
+                    pointing_up,
+                    read_receipts
+                } = avatar_row_ref.hover_in(actions) {
+                    let Some(room_id) = &self.room_id else { return; };
+                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts.clone(), room_id);
+                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
+                    tooltip.apply_over(cx, live!(
+                        content: {
+                            width: (tooltip_width)
+                            rounded_view = {
+                                draw_bg: {
+                                    callout_offset: (callout_offset)
+                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
+                                }
+                            }
+                        }
+                    ));
+                }
+                if avatar_row_ref.hover_out(actions) {
+                    tooltip.hide(cx);
+                }
+            }   
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -1484,7 +1536,6 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
@@ -2007,12 +2058,12 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let (replying_preview_username, _) = set_avatar_and_get_username(
+        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar))
+        .set_avatar_and_get_username(
             cx,
-            replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar)),
             self.room_id.as_ref().unwrap(),
             replying_to.0.sender(),
-            replying_to.0.sender_profile(),
+            Some(replying_to.0.sender_profile()),
             replying_to.0.event_id(),
         );
 
@@ -2343,6 +2394,24 @@ impl RoomScreenRef {
 /// Actions for the room screen's tooltip.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum RoomScreenTooltipActions {
+    /// Mouse over event when the mouse is over the read receipt.
+    HoverInReadReceipt {
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        /// Pointed arrow position relative to the tooltip.
+        /// 
+        /// It is calculated from the right corner of tooltip to position arrow.
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        /// Data that is bound together the widget
+        /// 
+        /// Includes the list of users who have seen this event
+        read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
+        /// Boolean indicating if the callout should be pointing up.
+        /// 
+        /// If false, it is pointing left
+        pointing_up: bool
+    },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
         tooltip_pos: DVec2,
@@ -2361,10 +2430,11 @@ pub enum RoomScreenTooltipActions {
         /// If false, it is pointing left
         pointing_up: bool
     },
-    /// Mouse out event and clear tooltip
+    /// Mouse out event and clear tooltip.
     HoverOut,
     None,
 }
+
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
@@ -2770,7 +2840,6 @@ fn populate_message_view(
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
-
     let ts_millis = event_tl_item.timestamp();
 
     let mut is_notice = false; // whether this message is a Notice
@@ -2795,7 +2864,6 @@ fn populate_message_view(
     // Sometimes we need to call this up-front, so we save the result in this variable
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
-
     let (item, used_cached_item) = match message.get_type() {
         MessageOrStickerType::Text(TextMessageEventContent { body, formatted, .. }) => {
             let template = if use_compact_view {
@@ -2853,6 +2921,7 @@ fn populate_message_view(
         MessageOrStickerType::ServerNotice(sn) => {
             is_server_notice = true;
             let (item, existed) = list.item_with_existed(cx, item_id, live_id!(Message));
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -2904,12 +2973,11 @@ fn populate_message_view(
                 (item, true)
             } else {
                 // Draw the profile up front here because we need the username for the emote body.
-                let (username, profile_drawn) = set_avatar_and_get_username(
+                let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 );
 
@@ -2943,6 +3011,7 @@ fn populate_message_view(
                 live_id!(ImageMessage)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
@@ -3076,6 +3145,7 @@ fn populate_message_view(
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list))
             .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
+        populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3101,12 +3171,11 @@ fn populate_message_view(
 
         if !is_server_notice { // the normal case
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                set_avatar_and_get_username(
+                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    item.avatar(id!(profile.avatar)),
                     room_id,
                     event_tl_item.sender(),
-                    event_tl_item.sender_profile(),
+                    Some(event_tl_item.sender_profile()),
                     event_tl_item.event_id(),
                 )
             );
@@ -3492,15 +3561,16 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let (in_reply_to_username, is_avatar_fully_drawn) = set_avatar_and_get_username(
-                    cx,
+                let (in_reply_to_username, is_avatar_fully_drawn) = 
                     replied_to_message_view
-                        .avatar(id!(replied_to_message_content.reply_preview_avatar)),
-                    room_id,
-                    replied_to_event.sender(),
-                    replied_to_event.sender_profile(),
-                    Some(in_reply_to_details.event_id.as_ref()),
-                );
+                        .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                        .set_avatar_and_get_username(
+                            cx,
+                            room_id,
+                            replied_to_event.sender(),
+                            Some(replied_to_event.sender_profile()),
+                            Some(in_reply_to_details.event_id.as_ref()),
+                        );
 
                 fully_drawn = is_avatar_fully_drawn;
 
@@ -3723,12 +3793,11 @@ fn populate_small_state_event(
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
     let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
-
     // The content of a small state event view may depend on the profile info,
     // so we can only mark the content as drawn after the profile has been fully drawn and cached.
     let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
     let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
-
+    populate_read_receipts(&item, cx, room_id, event_tl_item);
     if skip_redrawing_content {
         return (item, new_drawn_status);
     }
@@ -3741,12 +3810,12 @@ fn populate_small_state_event(
 
     let username = username_opt.unwrap_or_else(|| {
         // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
-        let (username, profile_drawn) = set_avatar_and_get_username(
+        let avatar_ref = item.avatar(id!(avatar));
+        let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
             cx,
-            item.avatar(id!(avatar)),
             room_id,
             event_tl_item.sender(),
-            event_tl_item.sender_profile(),
+            Some(event_tl_item.sender_profile()),
             event_tl_item.event_id(),
         );
         // Draw the timestamp as part of the profile.
@@ -3783,109 +3852,6 @@ fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSeco
         item.label(live_id_path)
             .set_text(&format!("{}", timestamp.get()));
     }
-}
-
-/// Sets the given avatar and returns a displayable username based on the
-/// given profile and user ID of the sender of the event with the given event ID.
-///
-/// If the sender profile is not ready, this function will submit an async request
-/// to fetch the sender profile from the server, but only if the event ID is `Some`.
-///
-/// This function will always choose a nice, displayable username and avatar.
-///
-/// The specific behavior is as follows:
-/// * If the timeline event's sender profile *is* ready, then the `username` and `avatar`
-///   will be the user's display name and avatar image, if available.
-///   * If it's not ready, we attempt to fetch the user info from the user profile cache.
-/// * If no avatar image is available, then the `avatar` will be set to the first character
-///   of the user's display name, if available.
-/// * If the user's display name is not available or has not been set, the user ID
-///   will be used for the `username`, and the first character of the user ID for the `avatar`.
-/// * If the timeline event's sender profile isn't ready and the user ID isn't found in
-///   our user profile cache , then the `username` and `avatar`  will be the user ID
-///   and the first character of that user ID, respectively.
-///
-/// ## Return
-/// Returns a tuple of:
-/// 1. The displayable username that should be used to populate the username field.
-/// 2. A boolean indicating whether the user's profile info has been completely drawn
-///    (for purposes of caching it to avoid future redraws).
-fn set_avatar_and_get_username(
-    cx: &mut Cx,
-    avatar: AvatarRef,
-    room_id: &OwnedRoomId,
-    sender_user_id: &UserId,
-    sender_profile: &TimelineDetails<Profile>,
-    event_id: Option<&EventId>,
-) -> (String, bool) {
-    // Get the display name and avatar URL from the sender's profile, if available,
-    // or if the profile isn't ready, fall back to qeurying our user profile cache.
-    let (username_opt, avatar_state) = match sender_profile {
-        TimelineDetails::Ready(profile) => {
-            (
-                profile.display_name.clone(),
-                AvatarState::Known(profile.avatar_url.clone()),
-            )
-        }
-        not_ready => {
-            if matches!(not_ready, TimelineDetails::Unavailable) {
-                if let Some(event_id) = event_id {
-                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                        room_id: room_id.to_owned(),
-                        event_id: event_id.to_owned(),
-                    });
-                }
-            }
-            // log!("populate_message_view(): sender profile not ready yet for event {not_ready:?}");
-            user_profile_cache::with_user_profile(cx, sender_user_id.to_owned(), true, |profile, room_members| {
-                room_members
-                    .get(room_id)
-                    .map(|rm| {
-                        (
-                            rm.display_name().map(|n| n.to_owned()),
-                            AvatarState::Known(rm.avatar_url().map(|u| u.to_owned())),
-                        )
-                    })
-                    .unwrap_or_else(|| {
-                        (
-                            profile.username.clone(),
-                            profile.avatar_state.clone(),
-                        )
-                    })
-            })
-            .unwrap_or((None, AvatarState::Unknown))
-        }
-    };
-
-    let (avatar_img_data_opt, profile_drawn) = match avatar_state {
-        AvatarState::Loaded(data) => (Some(data), true),
-        AvatarState::Known(Some(uri)) => match avatar_cache::get_or_fetch_avatar(cx, uri) {
-            AvatarCacheEntry::Loaded(data) => (Some(data), true),
-            AvatarCacheEntry::Failed => (None, true),
-            AvatarCacheEntry::Requested => (None, false),
-        },
-        AvatarState::Known(None) | AvatarState::Failed => (None, true),
-        AvatarState::Unknown => (None, false),
-    };
-
-    // Set sender to the display name if available, otherwise the user id.
-    let username = username_opt
-        .clone()
-        .unwrap_or_else(|| sender_user_id.to_string());
-
-    // Set the sender's avatar image, or use the username if no image is available.
-    avatar_img_data_opt.and_then(|data|
-        avatar.show_image(
-            Some((sender_user_id.to_owned(), username_opt.clone(), room_id.to_owned(), data.clone()).into()),
-            |img| utils::load_png_or_jpg(&img, cx, &data)
-        )
-        .ok()
-    )
-    .unwrap_or_else(|| avatar.show_text(
-        Some((sender_user_id.to_owned(), username_opt, room_id.to_owned()).into()),
-        &username,
-    ));
-    (username, profile_drawn)
 }
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
@@ -4252,7 +4218,6 @@ impl Widget for Message {
                 self.animator_play(cx, hover_animator);
             }
         }
-
         self.view.handle_event(cx, event, scope);
     }
 
@@ -4302,4 +4267,48 @@ impl MessageRef {
             inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
+}
+
+/// Calculates the optimal position for a tooltip based on the widget's rectangle and
+/// window geometry.
+///
+/// This function determines where to position a tooltip such that it remains
+/// visible within the window bounds. It calculates the tooltip's position and
+/// callout offset, and checks if the tooltip is too close to the right edge of
+/// the window.
+///
+/// # Arguments
+///
+/// * `widget_rect` - The rectangle of the widget the tooltip is associated with.
+/// * `window_geom` - The geometry of the window, used to ensure the tooltip fits within.
+/// * `tooltip_width` - The width of the tooltip to be positioned.
+///
+/// # Returns
+///
+/// A tuple containing:
+/// - `DVec2`: The position of the tooltip.
+/// - `f64`: The offset for the callout, relative to the tooltip.
+/// - `bool`: A flag indicating if the tooltip is too close to the right side of the window.
+pub fn room_screen_tooltip_position_helper(widget_rect: Rect, window_geom: &event::WindowGeom, tooltip_width:f64) -> (DVec2, f64, bool) {
+    let mut too_close_to_right = false;
+    if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_geom.inner_size.x {
+        too_close_to_right = true;
+    }
+    let tooltip_pos =  if too_close_to_right {
+        DVec2 {
+            x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
+            y: widget_rect.pos.y + widget_rect.size.y
+        }
+    } else {
+        DVec2 {
+            x: widget_rect.pos.x + widget_rect.size.x,
+            y: widget_rect.pos.y - 5.0
+        }
+    };
+    let callout_offset = if too_close_to_right {
+        tooltip_width - (widget_rect.size.x - 10.0) / 2.0
+    } else {
+        10.0
+    };
+    (tooltip_pos, callout_offset, too_close_to_right)
 }
