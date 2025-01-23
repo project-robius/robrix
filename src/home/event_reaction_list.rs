@@ -245,7 +245,10 @@ impl ReactionListRef {
                 room_id: room_id.clone(),
             };
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
-            button.set_text(&format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()));
+            button.set_text(
+                cx,
+                &format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()),
+            );
             let (bg_color, border_color) = if reaction_data.includes_user {
                 (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
             } else {

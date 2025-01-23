@@ -1360,7 +1360,7 @@ impl Widget for RoomScreen {
 
             // Handle the cancel reply button being clicked.
             if self.button(id!(cancel_reply_button)).clicked(actions) {
-                self.clear_replying_to();
+                self.clear_replying_to(cx);
                 self.redraw(cx);
             }
 
@@ -1393,7 +1393,7 @@ impl Widget for RoomScreen {
                         // TODO: support attaching mentions, etc.
                     });
 
-                    self.clear_replying_to();
+                    self.clear_replying_to(cx);
                     location_preview.clear();
                     location_preview.redraw(cx);
                 }
@@ -1427,8 +1427,8 @@ impl Widget for RoomScreen {
                         // TODO: support attaching mentions, etc.
                     });
 
-                    self.clear_replying_to();
-                    message_input.set_text_and_redraw(cx, "");
+                    self.clear_replying_to(cx);
+                    message_input.set_text(cx, "");
                 }
             }
 
@@ -1606,7 +1606,7 @@ impl Widget for RoomScreen {
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, live_id!(SmallStateEvent));
-                                item.label(id!(content)).set_text(&format!("[Unsupported] {:?}", unhandled));
+                                item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
@@ -1616,7 +1616,7 @@ impl Widget for RoomScreen {
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(id!(date)).set_text(&text);
+                            item.label(id!(date)).set_text(cx, &text);
                             (item, ItemDrawnStatus::both_drawn())
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker) => {
@@ -1667,7 +1667,7 @@ impl RoomScreen {
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
-                    jump_to_bottom.update_visibility(true);
+                    jump_to_bottom.update_visibility(cx, true);
 
                     tl.items = initial_items;
                     done_loading = true;
@@ -1711,7 +1711,7 @@ impl RoomScreen {
                         log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
-                        jump_to_bottom.update_visibility(true);
+                        jump_to_bottom.update_visibility(cx, true);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
                         find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
@@ -1833,7 +1833,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::PaginationRunning(direction) => {
                     if direction == PaginationDirection::Backwards {
-                        top_space.set_visible(true);
+                        top_space.set_visible(cx, true);
                         done_loading = false;
                     } else {
                         error!("Unexpected PaginationRunning update in the Forwards direction");
@@ -1886,8 +1886,8 @@ impl RoomScreen {
                     let input_bar = self.view.view(id!(input_bar));
                     let can_not_send_message_notice = self.view.view(id!(can_not_send_message_notice));
 
-                    input_bar.set_visible(can_user_send_message);
-                    can_not_send_message_notice.set_visible(!can_user_send_message);
+                    input_bar.set_visible(cx, can_user_send_message);
+                    can_not_send_message_notice.set_visible(cx, !can_user_send_message);
                 }
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
@@ -1904,7 +1904,7 @@ impl RoomScreen {
         }
 
         if done_loading {
-            top_space.set_visible(false);
+            top_space.set_visible(cx, false);
         }
 
         if !typing_users.is_empty() {
@@ -1924,8 +1924,8 @@ impl RoomScreen {
                 }
             };
             // Set the typing notice text and make its view visible.
-            self.view.label(id!(typing_label)).set_text(&typing_notice_text);
-            self.view.view(id!(typing_notice)).set_visible(true);
+            self.view.label(id!(typing_label)).set_text(cx, &typing_notice_text);
+            self.view.view(id!(typing_notice)).set_visible(cx, true);
             // Animate in the typing notice view (sliding it up from the bottom).
             self.animator_play(cx, id!(typing_notice_animator.show));
             // Start the typing notice text animation of bouncing dots.
@@ -2069,15 +2069,16 @@ impl RoomScreen {
 
         replying_preview_view
             .label(id!(reply_preview_content.reply_preview_username))
-            .set_text(replying_preview_username.as_str());
+            .set_text(cx, replying_preview_username.as_str());
 
         populate_preview_of_timeline_item(
+            cx,
             &replying_preview_view.html_or_plaintext(id!(reply_preview_content.reply_preview_body)),
             replying_to.0.content(),
             &replying_preview_username,
         );
 
-        self.view(id!(replying_preview)).set_visible(true);
+        self.view(id!(replying_preview)).set_visible(cx, true);
         if let Some(tl) = self.tl_state.as_mut() {
             tl.replying_to = Some(replying_to);
         }
@@ -2093,8 +2094,8 @@ impl RoomScreen {
 
     /// Clears (and makes invisible) the preview of the message
     /// that the user is currently replying to.
-    fn clear_replying_to(&mut self) {
-        self.view(id!(replying_preview)).set_visible(false);
+    fn clear_replying_to(&mut self, cx: &mut Cx) {
+        self.view(id!(replying_preview)).set_visible(cx, false);
         if let Some(tl) = self.tl_state.as_mut() {
             tl.replying_to = None;
         }
@@ -2146,7 +2147,7 @@ impl RoomScreen {
         };
 
         // Subscribe to typing notices, but hide the typing notice view initially.
-        self.view(id!(typing_notice)).set_visible(false);
+        self.view(id!(typing_notice)).set_visible(cx, false);
         submit_async_request(
             MatrixRequest::SubscribeToTypingNotices {
                 room_id: room_id.clone(),
@@ -2256,7 +2257,7 @@ impl RoomScreen {
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
         } else {
-            self.clear_replying_to();
+            self.clear_replying_to(cx);
         }
     }
 
@@ -2876,6 +2877,7 @@ fn populate_message_view(
                 (item, true)
             } else {
                 populate_text_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     body,
                     formatted.as_ref(),
@@ -2910,6 +2912,7 @@ fn populate_message_view(
                     }
                 ));
                 populate_text_message_content(
+                    cx,
                     &html_or_plaintext_ref,
                     body,
                     formatted.as_ref(),
@@ -2949,6 +2952,7 @@ fn populate_message_view(
                         .unwrap_or_default(),
                 );
                 populate_text_message_content(
+                    cx,
                     &html_or_plaintext_ref,
                     &sn.body,
                     Some(&FormattedBody {
@@ -2994,6 +2998,7 @@ fn populate_message_view(
                     (Cow::from(format!("* {} {}", &username, body)), None)
                 };
                 populate_text_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     &body,
                     formatted.as_ref(),
@@ -3038,6 +3043,7 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let is_location_fully_drawn = populate_location_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     location,
                 );
@@ -3056,6 +3062,7 @@ fn populate_message_view(
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_file_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     file_content,
                 );
@@ -3073,6 +3080,7 @@ fn populate_message_view(
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     audio,
                 );
@@ -3090,6 +3098,7 @@ fn populate_message_view(
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_video_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     video,
                 );
@@ -3117,6 +3126,7 @@ fn populate_message_view(
                 };
 
                 populate_text_message_content(
+                    cx,
                     &item.html_or_plaintext(id!(content.message)),
                     &verification.body,
                     Some(&formatted),
@@ -3131,8 +3141,10 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let kind = other.as_str();
-                item.label(id!(content.message))
-                    .set_text(&format!("[Unsupported ({kind})] {}", message.body()));
+                item.label(id!(content.message)).set_text(
+                    cx,
+                    &format!("[Unsupported ({kind})] {}", message.body()),
+                );
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -3186,19 +3198,19 @@ fn populate_message_view(
                     }
                 ));
             }
-            username_label.set_text(&username);
+            username_label.set_text(cx, &username);
             new_drawn_status.profile_drawn = profile_drawn;
         }
         else {
             // Server notices are drawn with a red color avatar background and username.
             let avatar = item.avatar(id!(profile.avatar));
-            avatar.show_text(None, "⚠");
+            avatar.show_text(cx, None, "⚠");
             avatar.apply_over(cx, live!(
                 text_view = {
                     draw_bg: { background_color: (COLOR_DANGER_RED), }
                 }
             ));
-            username_label.set_text("Server notice");
+            username_label.set_text(cx, "Server notice");
             username_label.apply_over(cx, live!(
                 draw_text: {
                     color: (COLOR_DANGER_RED),
@@ -3229,14 +3241,14 @@ fn populate_message_view(
     if let Some(dt) = unix_time_millis_to_datetime(&ts_millis) {
         // format as AM/PM 12-hour time
         item.label(id!(profile.timestamp))
-            .set_text(&format!("{}", dt.time().format("%l:%M %P")));
+            .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
         if !use_compact_view {
             item.label(id!(profile.datestamp))
-                .set_text(&format!("{}", dt.date_naive()));
+                .set_text(cx, &format!("{}", dt.date_naive()));
         }
     } else {
         item.label(id!(profile.timestamp))
-            .set_text(&format!("{}", ts_millis.get()));
+            .set_text(cx, &format!("{}", ts_millis.get()));
     }
 
     (item, new_drawn_status)
@@ -3259,6 +3271,7 @@ fn does_message_mention_current_user(
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
 fn populate_text_message_content(
+    cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
@@ -3268,6 +3281,7 @@ fn populate_text_message_content(
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
         message_content_widget.show_html(
+            cx,
             utils::linkify(
                 utils::trim_start_html_whitespace(&fb.body),
                 true,
@@ -3277,8 +3291,8 @@ fn populate_text_message_content(
     // The message was non-HTML plaintext.
     else {
         match utils::linkify(body, false) {
-            Cow::Owned(linkified_html) => message_content_widget.show_html(&linkified_html),
-            Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(plaintext),
+            Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
+            Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
         }
     }
 }
@@ -3305,9 +3319,10 @@ fn populate_image_message_content(
     // then show a message about it being unsupported (e.g., for animated gifs).
     if let Some(mime) = mimetype.as_ref() {
         if ImageFormat::from_mimetype(mime).is_none() {
-            text_or_image_ref.show_text(format!(
-                "{body}\n\nImages/Stickers of type {mime:?} are not yet supported.",
-            ));
+            text_or_image_ref.show_text(
+                cx,
+                format!("{body}\n\nImages/Stickers of type {mime:?} are not yet supported."),
+            );
             return true; // consider this as fully drawn
         }
     }
@@ -3316,30 +3331,30 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri, media_format: Option<MediaFormat>|
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, media_format: Option<MediaFormat>|
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), media_format) {
             MediaCacheEntry::Loaded(data) => {
-                let show_image_result = text_or_image_ref.show_image(|img| {
+                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
                     let err_str = format!("{body}\n\nFailed to display image: {e:?}");
                     error!("{err_str}");
-                    text_or_image_ref.show_text(&err_str);
+                    text_or_image_ref.show_text(cx, &err_str);
                 }
 
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
             }
             MediaCacheEntry::Requested => {
-                text_or_image_ref.show_text(format!("{body}\n\nFetching image from {:?}", mxc_uri));
+                text_or_image_ref.show_text(cx, format!("{body}\n\nFetching image from {:?}", mxc_uri));
                 // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
                 fully_drawn = false;
             }
             MediaCacheEntry::Failed => {
                 text_or_image_ref
-                    .show_text(format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;
@@ -3347,18 +3362,17 @@ fn populate_image_message_content(
         };
 
     let mut media_format =  Some(MEDIA_THUMBNAIL_FORMAT.into());
-
-    let mut fetch_and_show_media_source = |media_source: MediaSource, media_format: Option<MediaFormat>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, media_format: Option<MediaFormat>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
-                text_or_image_ref.show_text(format!(
-                    "{body}\n\n[TODO] fetch encrypted image at {:?}",
-                    encrypted.url
-                ));
+                text_or_image_ref.show_text(
+                    cx,
+                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
+                );
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(mxc_uri, media_format)
+                fetch_and_show_image_uri(cx, mxc_uri, media_format)
             }
         }
     };
@@ -3368,17 +3382,17 @@ fn populate_image_message_content(
         Some((None, media_source)) => {
             media_format = None;
             // We fetch the original (full-size) media if it does not have a thumbnail.
-            fetch_and_show_media_source(media_source, media_format);
+            fetch_and_show_media_source(cx, media_source, media_format);
         },
         Some((Some(image_info), media_source)) => {
             if let Some(thumbnail_source) =  image_info.thumbnail_source {
-                fetch_and_show_media_source(thumbnail_source, media_format);
+                fetch_and_show_media_source(cx, thumbnail_source, media_format);
             } else {
-                fetch_and_show_media_source(media_source, media_format);
+                fetch_and_show_media_source(cx, media_source, media_format);
             }
         },
         None => {
-            text_or_image_ref.show_text("{body}\n\nImage message had no source URL.");
+            text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
             fully_drawn = true;
         }
     }
@@ -3391,6 +3405,7 @@ fn populate_image_message_content(
 ///
 /// Returns whether the file message content was fully drawn.
 fn populate_file_message_content(
+    cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     file_content: &FileMessageEventContent,
 ) -> bool {
@@ -3409,9 +3424,10 @@ fn populate_file_message_content(
 
     // TODO: add a button to download the file
 
-    message_content_widget.show_html(format!(
-        "<b>{filename}</b>{size}{caption}<br> → <i>File download not yet supported.</i>"
-    ));
+    message_content_widget.show_html(
+        cx, 
+        format!("<b>{filename}</b>{size}{caption}<br> → <i>File download not yet supported.</i>"),
+    );
     true
 }
 
@@ -3419,6 +3435,7 @@ fn populate_file_message_content(
 ///
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
+    cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     audio: &AudioMessageEventContent,
 ) -> bool {
@@ -3447,9 +3464,10 @@ fn populate_audio_message_content(
 
     // TODO: add an audio to play the audio file
 
-    message_content_widget.show_html(format!(
-        "Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"
-    ));
+    message_content_widget.show_html(
+        cx,
+        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"),
+    );
     true
 }
 
@@ -3458,6 +3476,7 @@ fn populate_audio_message_content(
 ///
 /// Returns whether the video message content was fully drawn.
 fn populate_video_message_content(
+    cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     video: &VideoMessageEventContent,
 ) -> bool {
@@ -3489,9 +3508,10 @@ fn populate_video_message_content(
 
     // TODO: add an video to play the video file
 
-    message_content_widget.show_html(format!(
-        "Video: <b>{filename}</b>{mime}{duration}{size}{dimensions}{caption}<br> → <i>Video playback not yet supported.</i>"
-    ));
+    message_content_widget.show_html(
+        cx,
+        format!("Video: <b>{filename}</b>{mime}{duration}{size}{dimensions}{caption}<br> → <i>Video playback not yet supported.</i>"),
+    );
     true
 }
 
@@ -3501,6 +3521,7 @@ fn populate_video_message_content(
 ///
 /// Returns whether the location message content was fully drawn.
 fn populate_location_message_content(
+    cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     location: &LocationMessageEventContent,
 ) -> bool {
@@ -3524,9 +3545,10 @@ fn populate_location_message_content(
             <p><a href=\"https://maps.apple.com/?ll={lat},{long}&amp;q={lat},{long}\">Open in Apple Maps</a></p>",
             location.geo_uri,
         );
-        message_content_widget.show_html(html_body);
+        message_content_widget.show_html(cx, html_body);
     } else {
         message_content_widget.show_html(
+            cx,
             format!("<i>[Location invalid]</i> {}", location.body)
         );
     }
@@ -3576,9 +3598,10 @@ fn draw_replied_to_message(
 
                 replied_to_message_view
                     .label(id!(replied_to_message_content.reply_preview_username))
-                    .set_text(in_reply_to_username.as_str());
+                    .set_text(cx, in_reply_to_username.as_str());
                 let msg_body = replied_to_message_view.html_or_plaintext(id!(reply_preview_body));
                 populate_preview_of_timeline_item(
+                    cx,
                     &msg_body,
                     replied_to_event.content(),
                     &in_reply_to_username,
@@ -3588,26 +3611,26 @@ fn draw_replied_to_message(
                 fully_drawn = true;
                 replied_to_message_view
                     .label(id!(replied_to_message_content.reply_preview_username))
-                    .set_text("[Error fetching username]");
+                    .set_text(cx, "[Error fetching username]");
                 replied_to_message_view
                     .avatar(id!(replied_to_message_content.reply_preview_avatar))
-                    .show_text(None, "?");
+                    .show_text(cx, None, "?");
                 replied_to_message_view
                     .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
-                    .show_plaintext("[Error fetching replied-to event]");
+                    .show_plaintext(cx, "[Error fetching replied-to event]");
             }
             status @ TimelineDetails::Pending | status @ TimelineDetails::Unavailable => {
                 // We don't have the replied-to message yet, so we can't fully draw the preview.
                 fully_drawn = false;
                 replied_to_message_view
                     .label(id!(replied_to_message_content.reply_preview_username))
-                    .set_text("[Loading username...]");
+                    .set_text(cx, "[Loading username...]");
                 replied_to_message_view
                     .avatar(id!(replied_to_message_content.reply_preview_avatar))
-                    .show_text(None, "?");
+                    .show_text(cx, None, "?");
                 replied_to_message_view
                     .html_or_plaintext(id!(replied_to_message_content.reply_preview_body))
-                    .show_plaintext("[Loading replied-to message...]");
+                    .show_plaintext(cx, "[Loading replied-to message...]");
 
                 // Confusingly, we need to fetch the details of the `message` (the event that is the reply),
                 // not the details of the original event that this `message` is replying to.
@@ -3627,11 +3650,12 @@ fn draw_replied_to_message(
         fully_drawn = true;
     }
 
-    replied_to_message_view.set_visible(show_reply);
+    replied_to_message_view.set_visible(cx, show_reply);
     (fully_drawn, replied_to_event_id)
 }
 
 fn populate_preview_of_timeline_item(
+    cx: &mut Cx,
     widget_out: &HtmlOrPlaintextRef,
     timeline_item_content: &TimelineItemContent,
     sender_username: &str,
@@ -3640,14 +3664,14 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(widget_out, body, formatted.as_ref());
+                return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
             }
             _ => { } // fall through to the general case for all timeline items below.
         }
     }
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
         .format_with(sender_username);
-    widget_out.show_html(html);
+    widget_out.show_html(cx, html);
 }
 
 
@@ -3687,7 +3711,7 @@ struct RedactedMessageEventMarker;
 impl SmallStateEventContent for RedactedMessageEventMarker {
     fn populate_item_content(
         &self,
-        _cx: &mut Cx,
+        cx: &mut Cx,
         _list: &mut PortalList,
         _item_id: usize,
         item: WidgetRef,
@@ -3697,6 +3721,7 @@ impl SmallStateEventContent for RedactedMessageEventMarker {
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         item.label(id!(content)).set_text(
+            cx,
             &text_preview_of_redacted_message(event_tl_item, original_sender)
                 .format_with(original_sender),
         );
@@ -3719,7 +3744,7 @@ impl SmallStateEventContent for timeline::OtherState {
     ) -> (WidgetRef, ItemDrawnStatus) {
         let item = if let Some(text_preview) = text_preview_of_other_state(self) {
             item.label(id!(content))
-                .set_text(&text_preview.format_with(username));
+                .set_text(cx, &text_preview.format_with(username));
             new_drawn_status.content_drawn = true;
             item
         } else {
@@ -3734,7 +3759,7 @@ impl SmallStateEventContent for timeline::OtherState {
 impl SmallStateEventContent for MemberProfileChange {
     fn populate_item_content(
         &self,
-        _cx: &mut Cx,
+        cx: &mut Cx,
         _list: &mut PortalList,
         _item_id: usize,
         item: WidgetRef,
@@ -3743,8 +3768,10 @@ impl SmallStateEventContent for MemberProfileChange {
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
-        item.label(id!(content))
-            .set_text(&text_preview_of_member_profile_change(self, username).format_with(username));
+        item.label(id!(content)).set_text(
+            cx,
+            &text_preview_of_member_profile_change(self, username).format_with(username),
+        );
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
@@ -3771,7 +3798,7 @@ impl SmallStateEventContent for RoomMembershipChange {
         };
 
         item.label(id!(content))
-            .set_text(&preview.format_with(username));
+            .set_text(cx, &preview.format_with(username));
         new_drawn_status.content_drawn = true;
         (item, new_drawn_status)
     }
@@ -3820,6 +3847,7 @@ fn populate_small_state_event(
         );
         // Draw the timestamp as part of the profile.
         set_timestamp(
+            cx,
             &item,
             id!(left_container.timestamp),
             event_tl_item.timestamp(),
@@ -3843,14 +3871,19 @@ fn populate_small_state_event(
 
 /// Sets the text of the `Label` at the given `item`'s live ID path
 /// to a typical 12-hour AM/PM timestamp format.
-fn set_timestamp(item: &WidgetRef, live_id_path: &[LiveId], timestamp: MilliSecondsSinceUnixEpoch) {
+fn set_timestamp(
+    cx: &mut Cx,
+    item: &WidgetRef,
+    live_id_path: &[LiveId],
+    timestamp: MilliSecondsSinceUnixEpoch,
+) {
     if let Some(dt) = unix_time_millis_to_datetime(&timestamp) {
         // format as AM/PM 12-hour time
         item.label(live_id_path)
-            .set_text(&format!("{}", dt.time().format("%l:%M %P")));
+            .set_text(cx, &format!("{}", dt.time().format("%l:%M %P")));
     } else {
         item.label(live_id_path)
-            .set_text(&format!("{}", timestamp.get()));
+            .set_text(cx, &format!("{}", timestamp.get()));
     }
 }
 
@@ -3879,13 +3912,13 @@ impl Widget for LocationPreview {
                     Some(LocationAction::Update(LocationUpdate { coordinates, time })) => {
                         self.coords = Some(Ok(*coordinates));
                         self.timestamp = *time;
-                        self.button(id!(send_location_button)).set_enabled(true);
+                        self.button(id!(send_location_button)).set_enabled(cx, true);
                         needs_redraw = true;
                     }
                     Some(LocationAction::Error(e)) => {
                         self.coords = Some(Err(*e));
                         self.timestamp = None;
-                        self.button(id!(send_location_button)).set_enabled(false);
+                        self.button(id!(send_location_button)).set_enabled(cx, false);
                         needs_redraw = true;
                     }
                     _ => { }
@@ -3921,7 +3954,7 @@ impl Widget for LocationPreview {
             Some(Err(e)) => format!("Error getting location: {e:?}"),
             None => String::from("Current location is not yet available."),
         };
-        self.label(id!(location_label)).set_text(&text);
+        self.label(id!(location_label)).set_text(cx, &text);
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -4133,7 +4166,6 @@ impl Widget for Message {
                 }
             }
             // a right-click event
-            // TODO: this is macOS-specific mouse button numbering.
             Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 cx.widget_action(
                     room_screen_widget_uid,

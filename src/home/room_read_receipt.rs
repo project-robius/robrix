@@ -126,7 +126,10 @@ impl Widget for AvatarRow {
         }
         if read_receipts.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
             if let Some(label) = &mut self.label {
-                label.set_text(&format!(" + {:?}", read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT));
+                label.set_text(
+                    cx, 
+                    &format!(" + {:?}", read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT),
+                );
                 let _ = label.draw(cx, scope);
             }
         }

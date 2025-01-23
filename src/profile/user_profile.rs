@@ -424,7 +424,7 @@ impl Widget for UserProfileSlidingPane {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
-                    self.view(id!(bg_view)).set_visible(false);
+                    self.view(id!(bg_view)).set_visible(cx, false);
                     self.redraw(cx);
                     return;
                 }
@@ -543,20 +543,20 @@ impl Widget for UserProfileSlidingPane {
         };
 
         // Set the user name, using the user ID as a fallback.
-        self.label(id!(user_name)).set_text(info.displayable_name());
-        self.label(id!(user_id)).set_text(info.user_id.as_str());
+        self.label(id!(user_name)).set_text(cx, info.displayable_name());
+        self.label(id!(user_id)).set_text(cx, info.user_id.as_str());
 
         // Set the avatar image, using the user name as a fallback.
         let avatar_ref = self.avatar(id!(avatar));
         info.avatar_state
             .data()
-            .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, data)).ok())
-            .unwrap_or_else(|| avatar_ref.show_text(None, info.displayable_name()));
+            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
+            .unwrap_or_else(|| avatar_ref.show_text(cx, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
-        self.label(id!(membership_title_label)).set_text(&info.membership_title());
-        self.label(id!(membership_status_label)).set_text(info.membership_status());
-        self.label(id!(role_info_label)).set_text(info.role_in_room().as_ref());
+        self.label(id!(membership_title_label)).set_text(cx, &info.membership_title());
+        self.label(id!(membership_status_label)).set_text(cx, info.membership_status());
+        self.label(id!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
 
         // Draw and enable/disable the buttons according to user and room membership info:
         // * `direct_message_button` is disabled if the user is the same as the account user,
@@ -574,12 +574,13 @@ impl Widget for UserProfileSlidingPane {
         // self.button(id!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
 
         let ignore_user_button = self.button(id!(ignore_user_button));
-        ignore_user_button.set_enabled(!is_pane_showing_current_account && info.room_member.is_some());
+        ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the `ignored` state of a user, so we have to maintain it separately.
         let is_ignored = info.room_member.as_ref()
             .is_some_and(|rm| is_user_ignored(rm.user_id()));
         ignore_user_button.set_text(
+            cx,
             if is_ignored { "Unignore (Unblock) User" } else { "Ignore (Block) User" }
         );
 
@@ -642,7 +643,7 @@ impl UserProfileSlidingPane {
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
         self.animator_play(cx, id!(panel.show));
-        self.view(id!(bg_view)).set_visible(true);
+        self.view(id!(bg_view)).set_visible(cx, true);
         self.redraw(cx);
     }
 }
