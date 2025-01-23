@@ -920,7 +920,9 @@ live_design! {
                     // such that it still receives hits/events.
                     visible: true
                     draw_bg: {
-                        color: #00000000
+                        fn pixel(self) -> vec4 {
+                            return vec4(0., 0., 0., 0.)
+                        }
                     }
                 }
                 content: {
