@@ -213,5 +213,5 @@ pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receip
     for _ in display_names.len()..read_receipts.len() {
         display_names.push(String::from(""));
     }
-    format!("Seen by {}:\n{}", read_receipts.len(), human_readable_list(&display_names))
+    format!("Seen by {}:\n{}", read_receipts.len(), human_readable_list(&display_names, MAX_VISIBLE_NUMBER_OF_ITEMS))
 }
