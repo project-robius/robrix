@@ -111,61 +111,44 @@ live_design! {
                         draw_text: { text_style: { is_secret: true } }
                     }
 
-                    <View> {
-                        width: 250, height: Fit,
-                        align: {x: 0.5}
-                        flow: Right,
-                        <View> {
-                            width: 215, height: Fit,
-                            flow: Down,
-
-                            homeserver_input = <RobrixTextInput> {
-                                width: 215, height: 30,
-                                empty_message: "matrix.org"
-                                draw_text: {
-                                    text_style: <TITLE_TEXT>{font_size: 10.0}
-                                }
-                            }
-
-                            <View> {
-                                width: 215,
-                                height: Fit,
-                                flow: Right,
-                                padding: {top: 3, left: 2, right: 2}
-                                spacing: 0.0,
-                                align: {x: 0.5, y: 0.5} // center horizontally and vertically
-
-                                left_line = <LineH> {
-                                    draw_bg: { color: #C8C8C8 }
-                                }
-
-                                <Label> {
-                                    width: Fit, height: Fit
-                                    draw_text: {
-                                        color: #8C8C8C
-                                        text_style: <REGULAR_TEXT>{font_size: 9}
-                                    }
-                                    text: "Homeserver URL (optional)"
-                                }
-
-                                right_line = <LineH> {
-                                    draw_bg: { color: #C8C8C8 }
-                                }
-                            }
-
+                    homeserver_input = <RobrixTextInput> {
+                        width: 250, height: 30,
+                        empty_message: "matrix.org"
+                        draw_text: {
+                            text_style: <TITLE_TEXT>{font_size: 10.0}
                         }
-                        sso_search_button = <RobrixIconButton> {
-                            width: 28, height: 28,
-                            margin: { left: 5, top: 1}
-                            draw_icon: {
-                                svg_file: (ICON_SEARCH)
+                    }
+
+                    <View> {
+                        width: 250,
+                        height: Fit,
+                        flow: Right,
+                        padding: {top: 3, left: 4, right: 4}
+                        spacing: 0.0,
+                        margin: {top: -15}
+                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+                        left_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
+                        }
+
+                        <Label> {
+                            width: Fit, height: Fit
+                            draw_text: {
+                                color: #8C8C8C
+                                text_style: <REGULAR_TEXT>{font_size: 9}
                             }
-                            icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+                            text: "Homeserver URL (optional)"
+                        }
+
+                        right_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
                         }
                     }
 
                     login_button = <RobrixIconButton> {
-                        width: 250, height: 40
+                        width: 250,
+                        height: 40
                         padding: 10
                         margin: {top: 5, bottom: 10}
                         draw_bg: {
@@ -196,6 +179,21 @@ live_design! {
                         width: 250, height: Fit,
                         margin: {left: 5, right: 5} // make the inner view 240 pixels wide
                         flow: RightWrap,
+                        google_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/google.png")
+                            }
+                        }
+                        github_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/github.png")
+                            }
+                        }
+                        gitlab_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/gitlab.png")
+                            }
+                        }
                         apple_button = <SsoButton> {
                             image = <SsoImage> {
                                 source: dep("crate://self/resources/img/apple.png")
@@ -206,24 +204,9 @@ live_design! {
                                 source: dep("crate://self/resources/img/facebook.png")
                             }
                         }
-                        github_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/github.png")
-                            }
-                        }
                         twitter_button = <SsoButton> {
                             image = <SsoImage> {
                                 source: dep("crate://self/resources/img/x.png")
-                            }
-                        }
-                        gitlab_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/gitlab.png")
-                            }
-                        }
-                        google_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/google.png")
                             }
                         }
                     }
@@ -291,12 +274,8 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
-    #[rust]
-    sso_pending: bool,
-    #[rust]
-    prev_homeserver_url: Option<String>,
-    #[rust]
-    sso_redirect_url: Option<String>,
+    #[rust] sso_pending: bool,
+    #[rust] sso_redirect_url: Option<String>,
 }
 
 
@@ -318,7 +297,6 @@ impl MatchEvent for LoginScreen {
         let user_id_input = self.view.text_input(id!(user_id_input));
         let password_input = self.view.text_input(id!(password_input));
         let homeserver_input = self.view.text_input(id!(homeserver_input));
-        let sso_search_button = self.view.button(id!(sso_search_button));
 
         let login_status_modal = self.view.modal(id!(login_status_modal));
         let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
@@ -355,7 +333,6 @@ impl MatchEvent for LoginScreen {
                 })));
             }
             login_status_modal.open(cx);
-            sso_search_button.set_enabled(self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
         
@@ -389,7 +366,6 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_button.set_enabled(true);
                     login_status_modal.open(cx);
 
-                    sso_search_button.set_enabled(true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginSuccess) => {
@@ -417,7 +393,7 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoPending(ref pending)) => {
                     for view_ref in self.view_set(button_set).iter() {
                         let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
-                        if *pending {    
+                        if *pending {
                             view_mut.apply_over(cx, live! {
                                 cursor: NotAllowed,
                                 image = { draw_bg: { mask: 1.0 } }
@@ -432,29 +408,11 @@ impl MatchEvent for LoginScreen {
                     self.sso_pending = *pending;
                     self.redraw(cx);
                 }
-                Some(LoginAction::SsoSaveRedirectUrl(url)) => {
+                Some(LoginAction::SsoSetRedirectUrl(url)) => {
                     self.sso_redirect_url = Some(url.to_string());
                 }
                 _ => { }
             }
-        }
-
-        // If the homeserver "search" button was clicked, fetch supported login types.
-        if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
-            login_status_modal_inner.set_title("Querying login types");
-            login_status_modal_inner.set_status("Fetching supported login types from the homeserver...");
-            let login_status_modal_button = login_status_modal_inner.button_ref();
-            login_status_modal_button.set_text("Cancel");
-            login_status_modal_button.set_enabled(false); // Login cancel not yet supported
-            login_status_modal.open(cx);
-            
-            self.prev_homeserver_url = Some(homeserver_input.text());
-            submit_async_request(MatrixRequest::Login(LoginRequest::HomeserverLoginTypesQuery(homeserver_input.text())));
-            sso_search_button.set_enabled(false);
-            for view_ref in self.view_set(button_set).iter() {
-                view_ref.set_visible(false);
-            }
-            self.redraw(cx);
         }
 
         // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
@@ -510,10 +468,10 @@ pub enum LoginAction {
     /// The login screen can use this to prevent the user from submitting
     /// additional SSO login requests while a previous request is in flight. 
     SsoPending(bool),
-    /// Save SSO's redirect url into LoginScreen.
+    /// Set the SSO redirect URL in the LoginScreen.
     /// 
-    /// When the login using SSO is pendng, pressing the cancel button will send
-    /// http request to SSO server to gracefully shutdown the SSO server.
-    SsoSaveRedirectUrl(Url),
+    /// When an SSO-based login is pendng, pressing the cancel button will send
+    /// an HTTP request to this SSO server URL to gracefully shut it down.
+    SsoSetRedirectUrl(Url),
     None,
 }
