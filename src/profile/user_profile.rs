@@ -410,9 +410,9 @@ pub struct UserProfileSlidingPane {
 
 impl Widget for UserProfileSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible { return; }
-
         self.view.handle_event(cx, event, scope);
+
+        if !self.visible { return; }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
@@ -435,22 +435,31 @@ impl Widget for UserProfileSlidingPane {
             }
         }
 
-        // Close the pane if the close button is clicked, the back mouse button is clicked,
-        // the escape key is pressed, or the back button is pressed.
+        // Close the pane if:
+        // 1. The close button is clicked,
+        // 2. The back navigational gesture/action occurs (e.g., Back on Android),
+        // 3. The escape key is pressed,
+        // 4. The back mouse button is clicked within this view,
+        // 5. The user clicks/touches outside the main_content view area.
         let close_pane = match event {
-            Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
-            Event::MouseUp(mouse) => mouse.button.is_back(),
-            Event::KeyUp(key) => key.key_code == KeyCode::Escape,
-            Event::BackPressed => true,
-            Event::MouseDown(e) => {
-                // TODO: FIX THIS TO BE MORE SPECIFIC: use the `hits()` API to ensure that the background area
-                //       contains the e.abs, AND the main_content area does NOT contain the e.abs.
-                !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs) 
+            Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),  // 1
+            Event::BackPressed => true,                                                  // 2
+            Event::KeyUp(key) => key.key_code == KeyCode::Escape,                        // 3
+            _ => false,
+        } || match event.hits_with_capture_overload(cx, self.view.area(), true) {
+            // Note: ideally we should handle `Hit::KeyUp` here, but that doesn't work as expected.
+            Hit::FingerUp(fue) => {
+                log!("UserProfileSlidingPane area: {:?}, got FingerUp: {:?}", self.view.area().rect(cx), fue);
+
+                fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
+                || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
             }
             _ => false,
         };
+        log!("UserProfileSlidingPane: close_pane? {}", close_pane);
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
+            self.redraw(cx);
             return;
         }
 
