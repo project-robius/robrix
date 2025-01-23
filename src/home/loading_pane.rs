@@ -210,7 +210,6 @@ impl Widget for LoadingPane {
             self.set_state(cx, LoadingPaneState::None);
 
             self.visible = false;
-            return;
         }
     }
 }

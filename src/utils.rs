@@ -7,7 +7,8 @@ use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize
 /// Returns true if the given event is an interactive hit-related event
 /// that should require a view/widget to be visible in order to handle/receive it.
 pub fn is_interactive_hit_event(event: &Event) -> bool {
-    match event {
+    matches!(
+        event,
         Event::MouseDown(..)
         | Event::MouseUp(..)
         | Event::MouseMove(..)
@@ -18,10 +19,8 @@ pub fn is_interactive_hit_event(event: &Event) -> bool {
         | Event::KeyUp(..)
         | Event::TextInput(..)
         | Event::TextCopy(..)
-        | Event::TextCut(..) => true,
-
-        _ => false,
-    }
+        | Event::TextCut(..)
+    )
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
