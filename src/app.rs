@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -206,7 +206,7 @@ impl MatchEvent for App {
             }
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomListAction::Selected {
+                RoomsListAction::Selected {
                     room_id,
                     room_index: _,
                     room_name,
@@ -229,7 +229,7 @@ impl MatchEvent for App {
                         .set_text(cx, &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
-                RoomListAction::None => { }
+                RoomsListAction::None => { }
             }
 
             match action.as_widget_action().cast() {

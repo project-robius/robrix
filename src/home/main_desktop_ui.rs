@@ -239,23 +239,19 @@ impl MatchEvent for MainDesktopUI {
                 _ => (),
             }
 
-            // Handle RoomList actions
-            match action.cast() {
-                // A room has been selected from the rooms list
-                super::rooms_list::RoomListAction::Selected {
-                    room_id,
-                    room_index: _,
-                    room_name,
-                } => {
-                    // Note that this cannot be performed within draw_walk() as the draw flow prevents from
-                    // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
-                    // a redraw to be happening in order to draw the tab content.
-                    self.focus_or_create_tab(cx, SelectedRoom {
-                        room_id: room_id.clone(),
-                        room_name: room_name.clone(),
-                    });
-                }
-                _ => (),
+            // Handle RoomsList actions
+            if let super::rooms_list::RoomsListAction::Selected {
+                room_id,
+                room_index: _,
+                room_name,
+            } = action.cast() {
+                // Note that this cannot be performed within draw_walk() as the draw flow prevents from
+                // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
+                // a redraw to be happening in order to draw the tab content.
+                self.focus_or_create_tab(cx, SelectedRoom {
+                    room_id: room_id.clone(),
+                    room_name: room_name.clone(),
+                });
             }
         }
     }
