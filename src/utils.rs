@@ -1,8 +1,27 @@
 use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
+use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
+
+/// Returns true if the given event is an interactive hit-related event
+/// that should require a view/widget to be visible in order to handle/receive it.
+pub fn is_interactive_hit_event(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::MouseDown(..)
+        | Event::MouseUp(..)
+        | Event::MouseMove(..)
+        | Event::MouseLeave(..)
+        | Event::TouchUpdate(..)
+        | Event::Scroll(..)
+        | Event::KeyDown(..)
+        | Event::KeyUp(..)
+        | Event::TextInput(..)
+        | Event::TextCopy(..)
+        | Event::TextCut(..)
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {

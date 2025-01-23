@@ -276,6 +276,7 @@ live_design! {
 
 
     pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
+        visible: false,
         flow: Overlay,
         width: Fill,
         height: Fill,
@@ -404,29 +405,52 @@ pub struct UserProfileSlidingPane {
     #[animator] animator: Animator,
 
     #[rust] info: Option<UserProfilePaneInfo>,
+    #[rust] is_animating_out: bool,
 }
 
 impl Widget for UserProfileSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if !self.visible { return; }
+
         self.view.handle_event(cx, event, scope);
-        if self.animator_handle_event(cx, event).must_redraw() {
+
+        let animator_action = self.animator_handle_event(cx, event);
+        if animator_action.must_redraw() {
             self.redraw(cx);
         }
-        // if !self.visible { return; }
+        // If the animator is in the `hide` state and has finished animating out,
+        // that means it has fully animated off-screen and can be set to invisible.
+        if self.animator_in_state(cx, id!(panel.hide)) {
+            match (self.is_animating_out, animator_action.is_animating()) {
+                (true, false) => {
+                    self.visible = false;
+                    self.view(id!(bg_view)).set_visible(false);
+                    self.redraw(cx);
+                    return;
+                }
+                (false, true) => {
+                    self.is_animating_out = true;
+                }
+                _ => { }
+            }
+        }
 
         // Close the pane if the close button is clicked, the back mouse button is clicked,
         // the escape key is pressed, or the back button is pressed.
         let close_pane = match event {
             Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
-            Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
+            Event::MouseUp(mouse) => mouse.button.is_back(),
             Event::KeyUp(key) => key.key_code == KeyCode::Escape,
             Event::BackPressed => true,
-            Event::MouseDown(e) => !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs), 
+            Event::MouseDown(e) => {
+                // TODO: FIX THIS TO BE MORE SPECIFIC: use the `hits()` API to ensure that the background area
+                //       contains the e.abs, AND the main_content area does NOT contain the e.abs.
+                !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs) 
+            }
             _ => false,
         };
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
-            self.view(id!(bg_view)).set_visible(false);
             return;
         }
 
@@ -473,7 +497,6 @@ impl Widget for UserProfileSlidingPane {
                 }
             }
             if redraw_this_pane {
-                // log!("Redrawing user profile pane due to user profile update");
                 self.redraw(cx);
             }
         }
@@ -514,7 +537,6 @@ impl Widget for UserProfileSlidingPane {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.visible = true;
         let Some(info) = self.info.as_ref() else {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
@@ -568,7 +590,7 @@ impl Widget for UserProfileSlidingPane {
 
 impl UserProfileSlidingPane {
     /// Returns `true` if the pane is both currently visible *and*
-    /// animator is in the `show` state.
+    /// animator is in the `show` state (meaning it's not animating out).
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
         self.visible && self.animator_in_state(cx, id!(panel.show))
     }
