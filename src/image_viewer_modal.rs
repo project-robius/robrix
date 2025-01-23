@@ -73,21 +73,23 @@ impl Widget for ImageViewerModal {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.need_to_draw_all {
             self.view.draw_all(cx, scope);
-            self.need_to_draw_all = false
+            self.need_to_draw_all = false;
+            log!("Drawn")
         }
         self.view.draw_walk(cx, scope, walk)
     }
 }
 impl MatchEvent for ImageViewerModal {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
             if let Some(ImageViewerAction::NeedToDrawAll) = action.downcast_ref() {
-                log!("Need to draw all");
                 self.need_to_draw_all = true
             }
-            if let ImageViewerAction::NeedToDrawAll = action.as_widget_action().cast() {
-                log!("Need to draw all");
-                self.need_to_draw_all = true
+
+            // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
+            if let Some(ImageViewerAction::Show(text_or_image_uid)) = action.downcast_ref() {
+                self.show_and_fill_image(cx, text_or_image_uid);
+                self.view.redraw(cx);
             }
         }
     }
