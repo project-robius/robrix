@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -916,7 +916,12 @@ live_design! {
             message_context_menu_modal = <Modal> {
                 align: {x: 0.0, y: 0.0}
                 bg_view: {
-                    visible: false
+                    // make the bg_view visible but fully transparent
+                    // such that it still receives hits/events.
+                    visible: true
+                    draw_bg: {
+                        color: #00000000
+                    }
                 }
                 content: {
                     height: Fit,
@@ -1246,6 +1251,7 @@ impl Widget for RoomScreen {
                             message_context_menu_modal.open(cx);
                         }
                     }
+                    /*
                     MessageAction::ActionBarClose => {
                         let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
                         let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
@@ -1280,15 +1286,18 @@ impl Widget for RoomScreen {
                             message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
                         }
                     }
+                    */
                     _ => {}
                 }
             }
 
+            /*
             // close message action bar if scrolled.
             if portal_list.scrolled(actions) {
                 let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
                 message_action_bar_popup.close(cx);
             }
+            */
 
             // Set visibility of loading message banner based of pagination logic
             self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
@@ -1389,21 +1398,31 @@ impl Widget for RoomScreen {
             self.redraw(cx);
         }
 
-        // We only forward events to the inner timeline view if none of the various overlay views
-        // are visible, and if the event is one that requires visibility (touch/tap/scroll).
+        // We only forward "interactive hit" events to the inner timeline view
+        // if none of the various overlay views are visible.
+        // We always forward "non-interactive hit" events to the inner timeline view.
         // We check which overlay views are visible in the order of those views' z-ordering,
-        // such that the top-most views are checked first and delivered 
-        // This is required in order to support multiple overlay views being simultaneously visible.
-        let requires_visibility = event.requires_visibility();
-        if requires_visibility && loading_pane.is_currently_shown(cx) {
-            log!("Delivering event to loading pane: {event:?}");
+        // such that the top-most views get a chance to handle the event first.
+        //
+        let is_interactive_hit = utils::is_interactive_hit_event(event);
+        let is_pane_shown: bool;
+        if loading_pane.is_currently_shown(cx) {
+            is_pane_shown = true;
             loading_pane.handle_event(cx, event, scope);
         }
-        else if requires_visibility && user_profile_pane.is_currently_shown(cx) {
-            log!("Delivering event to loading pane: {event:?}");
+        else if user_profile_pane.is_currently_shown(cx) {
+            is_pane_shown = true;
             user_profile_pane.handle_event(cx, event, scope);
         }
         else {
+            is_pane_shown = false;
+        }
+
+        // TODO: once we use the `hits()` API, we can remove the above conditionals, because
+        //       Makepad already delivers most events to all views regardless of visibility,
+        //       so the only thing we'd need here is the conditional below.
+
+        if !is_pane_shown || !is_interactive_hit {
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.

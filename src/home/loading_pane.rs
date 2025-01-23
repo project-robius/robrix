@@ -36,7 +36,6 @@ live_design! {
         bg_view = <View> {
             width: Fill
             height: Fill
-            visible: false,
             show_bg: true
             draw_bg: {
                 fn pixel(self) -> vec4 {
@@ -177,7 +176,7 @@ impl Widget for LoadingPane {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        log!("LoadingPane: got event: {:?}", event);
+        if !self.visible { return; }
         self.view.handle_event(cx, event, scope);
 
         // Close the pane if the cancel button is clicked, the back mouse button is clicked,
@@ -211,7 +210,6 @@ impl Widget for LoadingPane {
             }
             self.set_state(cx, LoadingPaneState::None);
 
-            self.view(id!(bg_view)).set_visible(false);
             self.visible = false;
             return;
         }
@@ -227,7 +225,6 @@ impl LoadingPane {
 
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
-        self.view(id!(bg_view)).set_visible(true);
         self.redraw(cx);
     }
 
