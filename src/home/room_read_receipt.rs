@@ -2,15 +2,22 @@ use crate::app::AppState;
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
-use crate::utils::{self, human_readable_list, MAX_VISIBLE_NUMBER_OF_ITEMS};
+use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
-
 use super::room_screen::room_screen_tooltip_position_helper;
+
+/// The default width of the room screen tooltip for read receipts.
 const TOOLTIP_WIDTH: f64 = 180.0;
+
+/// The maximum number of items to display in the read receipts AvatarRow
+/// and its accompanying tooltip.
+pub const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT: usize = 3;
+
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -31,7 +38,7 @@ live_design! {
                 }
             }
         }
-        margin: {top: 0, right: 0},
+        margin: {top: 5, right: 0},
         width: Fit,
         height: 15.0,
         plus_template: <Label> {
@@ -117,9 +124,9 @@ impl Widget for AvatarRow {
         for (avatar_ref, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
         }
-        if read_receipts.len() > utils::MAX_VISIBLE_NUMBER_OF_ITEMS {
+        if read_receipts.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
             if let Some(label) = &mut self.label {
-                label.set_text(&format!(" + {:?}", read_receipts.len() - utils::MAX_VISIBLE_NUMBER_OF_ITEMS));
+                label.set_text(&format!(" + {:?}", read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT));
                 let _ = label.draw(cx, scope);
             }
         }
@@ -145,7 +152,7 @@ impl AvatarRow {
     ) {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
-            for _ in 0..cmp::min(utils::MAX_VISIBLE_NUMBER_OF_ITEMS, receipts_map.len()) {
+            for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT, receipts_map.len()) {
                 self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false));
             }
             self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
@@ -199,11 +206,11 @@ pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, e
 /// Given a Cx2d, an IndexMap of read receipts, and a room ID, this
 /// will populate the tooltip text for the read receipts avatar row.
 /// 
-/// The tooltip will contain up to the first `MAX_VISIBLE_NUMBER_OF_ITEMS` displayable names of the users
-/// who have seen this event. If there are more than `MAX_VISIBLE_NUMBER_OF_ITEMS` users, the tooltip
+/// The tooltip will contain up to the first `MAX_VISIBLE_AVATARS_IN_READ_RECEIPT` displayable names of the users
+/// who have seen this event. If there are more than `MAX_VISIBLE_AVATARS_IN_READ_RECEIPT` users, the tooltip
 /// will contain the string "and N others".
 pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receipt>, room_id: &RoomId) -> String {
-    let mut display_names: Vec<String> = read_receipts.iter().rev().take(utils::MAX_VISIBLE_NUMBER_OF_ITEMS).map(|(user_id, _)| {
+    let mut display_names: Vec<String> = read_receipts.iter().rev().take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT).map(|(user_id, _)| {
         if let (Some(profile), _ ) = get_user_profile_and_room_member(cx, user_id.clone(), room_id, true) {
             profile.displayable_name().to_owned()
         } else {
@@ -213,5 +220,5 @@ pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receip
     for _ in display_names.len()..read_receipts.len() {
         display_names.push(String::from(""));
     }
-    format!("Seen by {}:\n{}", read_receipts.len(), human_readable_list(&display_names, MAX_VISIBLE_NUMBER_OF_ITEMS))
+    format!("Seen by {}:\n{}", read_receipts.len(), human_readable_list(&display_names, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT))
 }

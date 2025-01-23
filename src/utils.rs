@@ -3,10 +3,7 @@ use std::{borrow::Cow, time::SystemTime};
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
-/// The maximum number of items to display in a list.
-/// 
-/// It is used in avatar row and the tooltip
-pub const MAX_VISIBLE_NUMBER_OF_ITEMS: usize = 3;
+
 
 /// Returns true if the given event is an interactive hit-related event
 /// that should require a view/widget to be visible in order to handle/receive it.

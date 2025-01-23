@@ -26,13 +26,13 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT, MAX_VISIBLE_NUMBER_OF_ITEMS},
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, message_context_menu::MessageContextMenuWidgetRefExt, room_read_receipt::{self, populate_read_receipts}};
+use super::{event_reaction_list::ReactionData, message_context_menu::MessageContextMenuWidgetRefExt, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -514,7 +514,8 @@ live_design! {
                 }
                 text: ""
             }
-            avatar_row = <AvatarRow> {}
+            // Center the Avatar vertically with respect to the SmallStateEvent content.
+            avatar_row = <AvatarRow> { margin: {top: -1.0} }
         }
     }
 
@@ -1076,7 +1077,7 @@ impl Widget for RoomScreen {
                             .map(|user_profile| user_profile.displayable_name().to_string())
                             .unwrap_or(sender.to_string())
                     }).collect();
-                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_NUMBER_OF_ITEMS);                
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
