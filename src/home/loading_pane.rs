@@ -195,7 +195,6 @@ impl Widget for LoadingPane {
             _ => false,
         };
         if close_pane {
-            log!("LoadingPane: close requested.");
             if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
                 let _did_send = request_sender.send_if_modified(|requests| {
                     let initial_len = requests.len();
