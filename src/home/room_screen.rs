@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -21,12 +21,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, image_viewer_modal::ImageViewerAction, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache::{self, AvatarCacheEntry}, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_modal::LoadingModalWidgetExt, message_context_menu::MessageActionBarWidgetRefExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
         avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use rangemap::RangeSet;
@@ -885,13 +885,13 @@ live_design! {
                     flow: Overlay
                     width: Fit
                     height: Fit
-        
+
                     rounded_view = <RoundedView> {
                         width: Fill,
                         height: Fit,
-                        
+
                         padding: 10,
-        
+
                         draw_bg: {
                             color: #fff,
                             border_width: 1.0,
@@ -937,15 +937,15 @@ live_design! {
                                     sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
                                     sdf.line_to(0.5, self.callout_triangle_height);
                                 }
-                                
+
                                 sdf.close_path();
-                                
+
                                 sdf.fill((self.background_color));
                                 return sdf.result;
                             }
-                            
+
                         }
-        
+
                         tooltip_label = <Label> {
                             width: Fill,
                             height: Fit,
@@ -1026,10 +1026,10 @@ impl Widget for RoomScreen {
             let tooltip = self.tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
-                if let RoomScreenTooltipActions::HoverInReactionButton { 
-                    tooltip_pos, 
-                    tooltip_width, 
-                    callout_offset, 
+                if let RoomScreenTooltipActions::HoverInReactionButton {
+                    tooltip_pos,
+                    tooltip_width,
+                    callout_offset,
                     reaction_data,
                     pointing_up
                 } = reaction_list.hover_in(actions) {
@@ -1038,7 +1038,7 @@ impl Widget for RoomScreen {
                             .map(|user_profile| user_profile.displayable_name().to_string())
                             .unwrap_or(sender.to_string())
                     }).collect();
-                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);                
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
                     tooltip.apply_over(cx, live!(
@@ -1193,7 +1193,6 @@ impl Widget for RoomScreen {
 
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
-
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -1426,7 +1425,6 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
-
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1872,10 +1870,6 @@ impl RoomScreen {
             self.redraw(cx);
         }
     }
-    fn get_media_cache(&self) -> Option<MediaCache> {
-        log!("Called");
-        self.tl_state.as_ref().map(|tl|{tl.media_cache.clone()})
-    }
 
 
     /// Handles a link being clicked in any child widgets of this RoomScreen.
@@ -2315,13 +2309,6 @@ impl RoomScreen {
 }
 
 impl RoomScreenRef {
-    pub fn get_media_cache(&self) -> Option<MediaCache> {
-        if let Some(inner) = self.borrow() {
-            inner.get_media_cache()
-        } else {
-            None
-        }
-    }
     /// See [`RoomScreen::set_displayed_room()`].
     pub fn set_displayed_room(
         &self,
@@ -2342,16 +2329,16 @@ pub enum RoomScreenTooltipActions {
         tooltip_pos: DVec2,
         tooltip_width: f64,
         /// Pointed arrow position relative to the tooltip
-        /// 
+        ///
         /// It is calculated from the right corner of tooltip to position arrow
         /// to point towards the center of the hovered widget.
         callout_offset: f64,
         /// Data that is bound together the widget
-        /// 
+        ///
         /// Includes the list of users who have reacted to the emoji
         reaction_data: ReactionData,
         /// Boolean indicating if the callout should be pointing up.
-        /// 
+        ///
         /// If false, it is pointing left
         pointing_up: bool
     },
@@ -2761,7 +2748,7 @@ fn populate_message_view(
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     item_drawn_status: ItemDrawnStatus,
-    room_screen_widget_uid: WidgetUid,
+    room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
 
@@ -2941,14 +2928,14 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let image_info = mtype.get_image_info();
-                    let is_image_fully_drawn = populate_image_message_content(
-                        cx,
-                        &item.text_or_image(id!(content.message)),
-                        image_info,
-                        message.body(),
-                        media_cache,
-                    );
-                    new_drawn_status.content_drawn = is_image_fully_drawn;
+                let is_image_fully_drawn = populate_image_message_content(
+                    cx,
+                    &item.text_or_image(id!(content.message)),
+                    image_info,
+                    message.body(),
+                    media_cache,
+                );
+                new_drawn_status.content_drawn = is_image_fully_drawn;
                 (item, false)
             }
         }
@@ -3218,8 +3205,6 @@ fn populate_image_message_content(
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
-
-
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
     let (mimetype, _width, _height) = image_info_source.as_ref()
@@ -3243,8 +3228,8 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri|
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), None) {
+    let mut fetch_and_show_image_uri = |mxc_uri: OwnedMxcUri, media_format: Option<MediaFormat>|
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), media_format) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(|img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -3273,7 +3258,9 @@ fn populate_image_message_content(
             }
         };
 
-    let mut fetch_and_show_media_source = |media_source: MediaSource| {
+    let mut media_format =  Some(MEDIA_THUMBNAIL_FORMAT.into());
+
+    let mut fetch_and_show_media_source = |media_source: MediaSource, media_format: Option<MediaFormat>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3283,31 +3270,23 @@ fn populate_image_message_content(
                 ));
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(mxc_uri)
+                fetch_and_show_image_uri(mxc_uri, media_format)
             }
         }
     };
 
+
     match image_info_source {
         Some((None, media_source)) => {
-            if let MediaSource::Plain(mx_uri) = media_source.clone() {
-                Cx::post_action(ImageViewerAction::Insert(text_or_image_ref.widget_uid(), mx_uri.clone()));
-            }
-
+            media_format = None;
             // We fetch the original (full-size) media if it does not have a thumbnail.
-            fetch_and_show_media_source(media_source);
-
-
+            fetch_and_show_media_source(media_source, media_format);
         },
         Some((Some(image_info), media_source)) => {
-            if let MediaSource::Plain(mx_uri) = media_source.clone() {
-                Cx::post_action(ImageViewerAction::Insert(text_or_image_ref.widget_uid(), mx_uri.clone()));
-            }
-
             if let Some(thumbnail_source) =  image_info.thumbnail_source {
-                fetch_and_show_media_source(thumbnail_source);
+                fetch_and_show_media_source(thumbnail_source, media_format);
             } else {
-                fetch_and_show_media_source(media_source);
+                fetch_and_show_media_source(media_source, media_format);
             }
         },
         None => {
@@ -3315,9 +3294,6 @@ fn populate_image_message_content(
             fully_drawn = true;
         }
     }
-
-    //TO BE FIXED:  We clone the `media_cache`, but it's unnecessary. we only want its mut reference.
-    Cx::post_action(ImageViewerAction::SetMediaCache(media_cache.clone()));
 
     fully_drawn
 }
