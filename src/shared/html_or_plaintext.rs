@@ -306,8 +306,9 @@ impl Widget for MatrixHtmlSpan {
         self.text.as_ref().to_string()
     }
 
-    fn set_text(&mut self, v: &str) {
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
         self.text.as_mut_empty().push_str(v);
+        self.redraw(cx);
     }
 }
 
@@ -329,32 +330,32 @@ impl Widget for HtmlOrPlaintext {
 
 impl HtmlOrPlaintext {
     /// Sets the plaintext content and makes it visible, hiding the rich HTML content.
-    pub fn show_plaintext<T: AsRef<str>>(&mut self, text: T) {
-        self.view(id!(html_view)).set_visible(false);
-        self.view(id!(plaintext_view)).set_visible(true);
-        self.label(id!(plaintext_view.pt_label)).set_text(text.as_ref());
+    pub fn show_plaintext<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
+        self.view(id!(html_view)).set_visible(cx, false);
+        self.view(id!(plaintext_view)).set_visible(cx, true);
+        self.label(id!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
     }
 
     /// Sets the HTML content, making the HTML visible and the plaintext invisible.
-    pub fn show_html<T: AsRef<str>>(&mut self, html_body: T) {
-        self.html(id!(html_view.html)).set_text(html_body.as_ref());
-        self.view(id!(html_view)).set_visible(true);
-        self.view(id!(plaintext_view)).set_visible(false);
+    pub fn show_html<T: AsRef<str>>(&mut self, cx: &mut Cx, html_body: T) {
+        self.html(id!(html_view.html)).set_text(cx, html_body.as_ref());
+        self.view(id!(html_view)).set_visible(cx, true);
+        self.view(id!(plaintext_view)).set_visible(cx, false);
     }
 }
 
 impl HtmlOrPlaintextRef {
     /// See [`HtmlOrPlaintext::show_plaintext()`].
-    pub fn show_plaintext<T: AsRef<str>>(&self, text: T) {
+    pub fn show_plaintext<T: AsRef<str>>(&self, cx: &mut Cx, text: T) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_plaintext(text);
+            inner.show_plaintext(cx, text);
         }
     }
 
     /// See [`HtmlOrPlaintext::show_html()`].
-    pub fn show_html<T: AsRef<str>>(&self, html_body: T) {
+    pub fn show_html<T: AsRef<str>>(&self, cx: &mut Cx, html_body: T) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_html(html_body);
+            inner.show_html(cx, html_body);
         }
     }
 }

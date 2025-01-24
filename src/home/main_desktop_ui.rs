@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use std::collections::HashMap;
 
-use crate::app::{AppState, SelectedRoom};
+use crate::app::SelectedRoom;
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
@@ -80,70 +80,13 @@ impl Widget for MainDesktopUI {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let dock = self.view.dock(id!(dock));
-        let app_state = scope.data.get_mut::<AppState>().unwrap();
-
-        // In case a room is closed, this will be the newly selected room if there is one
-        let mut new_selected_room: Option<SelectedRoom> = None;
-        let mut focus_reset = false;
-
-        if let Some(tab_id) = self.tab_to_close {
-            if let Some(room_being_closed) = self.open_rooms.get(&tab_id) {
-                self.room_order.retain(|sr| sr != room_being_closed);
-
-                if self.open_rooms.len() > 1 {
-                    // if the closing tab is the active one, then focus the next room
-                    let active_room = app_state.rooms_panel.selected_room.as_ref();
-                    if let Some(active_room) = active_room {
-                        if active_room == room_being_closed {
-                            if let Some(new_focused_room) = self.room_order.last() {
-                                // notify the app state about the new focused room
-                                cx.widget_action(
-                                    self.widget_uid(),  
-                                    &scope.path,
-                                    RoomsPanelAction::RoomFocused(new_focused_room.clone()),
-                                );
-
-                                // set the new selected room to be used in the current draw
-                                new_selected_room = Some(new_focused_room.clone());
-                            }
-                        }
-                    }
-                } else {
-                    // if there is no room to focus, reset the selected room in the app state
-                    // app_state.rooms_panel.selected_room = None;
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        RoomsPanelAction::FocusNone,
-                    );
-
-                    focus_reset = true;
-                    dock.select_tab(cx, live_id!(home_tab));
-                } 
-            } 
-            dock.close_tab(cx, tab_id);
-            self.tab_to_close = None;
-            self.open_rooms.remove(&tab_id);
-        }
-
-        // if the focus was not reset, then focus the new selected room or the previously selected one
-        if !focus_reset {
-            // In this draw event, we determined that a new room should be selected,
-            // So we focus it or create a new tab for it.
-            if let Some(room) = new_selected_room {
-                self.focus_or_create_tab(cx, room);
-            } else if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
-                self.focus_or_create_tab(cx, room.clone());
-            }
-        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
 
 impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room
-    fn focus_or_create_tab(&mut self, cx: &mut Cx2d, room: SelectedRoom) {
+    fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         let dock = self.view.dock(id!(dock));
 
         // Do nothing if the room to select is already created and focused.
@@ -193,6 +136,47 @@ impl MainDesktopUI {
         
         self.most_recently_selected_room = Some(room);
     }
+
+    /// Closes a tab in the dock and focuses in the latest open room
+    fn close_tab(&mut self, cx: &mut Cx, tab_id: LiveId) {
+        let dock = self.view.dock(id!(dock));
+        if let Some(room_being_closed) = self.open_rooms.get(&tab_id) {
+            self.room_order.retain(|sr| sr != room_being_closed);
+
+            if self.open_rooms.len() > 1 {
+                // If the closing tab is the active one, then focus the next room
+                let active_room = self.most_recently_selected_room.as_ref();
+                if let Some(active_room) = active_room {
+                    if active_room == room_being_closed {
+                        if let Some(new_focused_room) = self.room_order.last() {
+                            // notify the app state about the new focused room
+                            cx.widget_action(
+                                self.widget_uid(),  
+                                &HeapLiveIdPath::default(),
+                                RoomsPanelAction::RoomFocused(new_focused_room.clone()),
+                            );
+
+                            // Set the new selected room to be used in the current draw
+                            self.most_recently_selected_room = Some(new_focused_room.clone());
+                        }
+                    }
+                }
+            } else {
+                // If there is no room to focus, notify app to reset the selected room in the app state
+                cx.widget_action(
+                    self.widget_uid(),
+                    &HeapLiveIdPath::default(),
+                    RoomsPanelAction::FocusNone,
+                );
+
+                dock.select_tab(cx, live_id!(home_tab));
+            } 
+        }
+
+        dock.close_tab(cx, tab_id);
+        self.tab_to_close = None;
+        self.open_rooms.remove(&tab_id);
+    }
 }
 
 impl MatchEvent for MainDesktopUI {
@@ -200,6 +184,7 @@ impl MatchEvent for MainDesktopUI {
         let dock = self.view.dock(id!(dock));
 
         if let Some(action) = action.as_widget_action() {
+            // Handle Dock actions
             match action.cast() {
                 // Whenever a tab (except for the home_tab) is pressed, notify the app state.
                 DockAction::TabWasPressed(tab_id) => {
@@ -209,18 +194,19 @@ impl MatchEvent for MainDesktopUI {
                             &HeapLiveIdPath::default(),
                             RoomsPanelAction::FocusNone,
                         );
+                        self.most_recently_selected_room = None;
                     } else if let Some(selected_room) = self.open_rooms.get(&tab_id) {
                         cx.widget_action(
                             self.widget_uid(),
                             &HeapLiveIdPath::default(),
                             RoomsPanelAction::RoomFocused(selected_room.clone()),
                         );
+                        self.most_recently_selected_room = Some(selected_room.clone());
                     }   
                 }
-                // Whenever a tab is closed, defer the close to the next event loop to prevent closing the tab while the app state
-                // still has the room as selected
                 DockAction::TabCloseWasPressed(tab_id) => {
                     self.tab_to_close = Some(tab_id);
+                    self.close_tab(cx, tab_id);
                     self.redraw(cx);
                 }
                 // When dragging a tab, allow it to be dragged
@@ -251,6 +237,21 @@ impl MatchEvent for MainDesktopUI {
                     }
                 }
                 _ => (),
+            }
+
+            // Handle RoomsList actions
+            if let super::rooms_list::RoomsListAction::Selected {
+                room_id,
+                room_index: _,
+                room_name,
+            } = action.cast() {
+                // Note that this cannot be performed within draw_walk() as the draw flow prevents from
+                // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
+                // a redraw to be happening in order to draw the tab content.
+                self.focus_or_create_tab(cx, SelectedRoom {
+                    room_id: room_id.clone(),
+                    room_name: room_name.clone(),
+                });
             }
         }
     }

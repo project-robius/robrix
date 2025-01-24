@@ -250,7 +250,7 @@ impl MatchEvent for Profile {
             {
                 if badge.verification_state != *state {
                     badge.verification_state = *state;
-                    badge.update_icon_visibility();
+                    badge.update_icon_visibility(cx);
                     badge.redraw(cx);
                 }
             }
@@ -268,7 +268,7 @@ impl LiveHook for Profile {
             {
                 if badge.verification_state != current_verification_state {
                     badge.verification_state = current_verification_state;
-                    badge.update_icon_visibility();
+                    badge.update_icon_visibility(cx);
                     badge.redraw(cx);
                 }
             }

@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -206,7 +206,7 @@ impl MatchEvent for App {
             }
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomListAction::Selected {
+                RoomsListAction::Selected {
                     room_id,
                     room_index: _,
                     room_name,
@@ -226,10 +226,10 @@ impl MatchEvent for App {
                     );
                     // Update the Stack Navigation header with the room name
                     self.ui.label(id!(main_content_view.header.content.title_container.title))
-                        .set_text(&room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
+                        .set_text(cx, &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
-                RoomListAction::None => { }
+                RoomsListAction::None => { }
             }
 
             match action.as_widget_action().cast() {
@@ -248,7 +248,7 @@ impl MatchEvent for App {
             // Note: other verification actions are handled by the verification modal itself.
             if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
                 self.ui.verification_modal(id!(verification_modal_inner))
-                    .initialize_with_data(state.clone());
+                    .initialize_with_data(cx, state.clone());
                 self.ui.modal(id!(verification_modal)).open(cx);
             }
 
@@ -297,6 +297,9 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if let Event::WindowGeomChange(window_geom_change_event) = event {
+            self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
+        }
         // Forward events to the MatchEvent trait impl, and then to the App's UI element.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
@@ -307,8 +310,8 @@ impl AppMain for App {
 impl App {
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
-        self.ui.view(id!(login_screen_view)).set_visible(show_login);
-        self.ui.view(id!(home_screen_view)).set_visible(!show_login);
+        self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
         if !show_login {
             self.ui
                 .modal(id!(login_screen_view.login_screen.login_status_modal))
@@ -321,6 +324,8 @@ impl App {
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
     pub logged_in: bool,
+    /// The current window geometry.
+    pub window_geom: Option<event::WindowGeom>,
 }
 
 #[derive(Default, Debug)]

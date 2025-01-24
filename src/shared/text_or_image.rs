@@ -9,7 +9,7 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-    
+
     use crate::shared::styles::*;
 
     pub TextOrImage = {{TextOrImage}} {
@@ -37,8 +37,8 @@ live_design! {
             cursor: NotAllowed, // we don't yet support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
-                width: Fill, height: Fit,
-                fit: Smallest,
+                width: Fill, height: Fill,
+                fit: Size,
             }
         }
     }
@@ -73,10 +73,10 @@ impl TextOrImage {
     /// ## Arguments
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
-    pub fn show_text<T: AsRef<str>>(&mut self, text: T) {
-        self.view(id!(image_view)).set_visible(false);
-        self.view(id!(text_view)).set_visible(true);
-        self.view.label(id!(text_view.label)).set_text(text.as_ref());
+    pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
+        self.view(id!(image_view)).set_visible(cx, false);
+        self.view(id!(text_view)).set_visible(cx, true);
+        self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
         self.status = TextOrImageStatus::Text;
     }
 
@@ -89,20 +89,20 @@ impl TextOrImage {
     ///    * If successful, the `image_set_function` should return the size of the image
     ///      in pixels as a tuple, `(width, height)`.
     ///    * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn show_image<F, E>(&mut self, image_set_function: F) -> Result<(), E>
-        where F: FnOnce(ImageRef) -> Result<(usize, usize), E>
+    pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+        where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
-        match image_set_function(image_ref) {
+        match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.view(id!(image_view)).set_visible(true);
-                self.view(id!(text_view)).set_visible(false);
+                self.view(id!(image_view)).set_visible(cx, true);
+                self.view(id!(text_view)).set_visible(cx, false);
                 Ok(())
             }
             Err(e) => {
-                self.show_text("Failed to display image.");
+                self.show_text(cx, "Failed to display image.");
                 Err(e)
             }
         }
@@ -116,18 +116,18 @@ impl TextOrImage {
 
 impl TextOrImageRef {
     /// See [TextOrImage::show_text()].
-    pub fn show_text<T: AsRef<str>>(&self, text: T) {
+    pub fn show_text<T: AsRef<str>>(&self, cx: &mut Cx, text: T) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_text(text);
+            inner.show_text(cx, text);
         }
     }
 
     /// See [TextOrImage::show_image()].
-    pub fn show_image<F, E>(&self, image_set_function: F) -> Result<(), E>
-        where F: FnOnce(ImageRef) -> Result<(usize, usize), E>
+    pub fn show_image<F, E>(&self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+        where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_image(image_set_function)
+            inner.show_image(cx, image_set_function)
         } else {
             Ok(())
         }

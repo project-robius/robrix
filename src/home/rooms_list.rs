@@ -158,7 +158,7 @@ pub type RoomIndex = usize;
 
 
 #[derive(Debug, Clone, DefaultNone)]
-pub enum RoomListAction {
+pub enum RoomsListAction {
     Selected {
         /// The index (into the `all_rooms` vector) of the selected `RoomPreviewEntry`.
         room_index: RoomIndex,
@@ -660,7 +660,7 @@ impl Widget for RoomsList {
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
-                    RoomListAction::Selected {
+                    RoomsListAction::Selected {
                         room_index: displayed_room_index,
                         room_id: room_details.room_id.to_owned(),
                         room_name: room_details.room_name.clone(),
