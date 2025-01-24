@@ -216,7 +216,7 @@ impl Widget for LoadingPane {
 
 
 impl LoadingPane {
-    /// Returns `true` if the pane is currently visible.
+    /// Returns `true` if this pane is currently being shown.
     pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
         self.visible
     }

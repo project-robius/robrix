@@ -456,7 +456,6 @@ impl Widget for UserProfileSlidingPane {
             }
             _ => false,
         };
-        log!("UserProfileSlidingPane: close_pane? {}", close_pane);
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
             self.redraw(cx);
@@ -599,10 +598,9 @@ impl Widget for UserProfileSlidingPane {
 
 
 impl UserProfileSlidingPane {
-    /// Returns `true` if the pane is both currently visible *and*
-    /// animator is in the `show` state (meaning it's not animating out).
-    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        self.visible && self.animator_in_state(cx, id!(panel.show))
+    /// Returns `true` if this pane is currently being shown.
+    pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
+        self.visible
     }
 
     /// Sets the info to be displayed in this user profile sliding pane.
