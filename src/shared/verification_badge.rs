@@ -120,7 +120,6 @@ impl Widget for VerificationBadge {
                     if self.verification_state != *state {
                         self.verification_state = *state;
                         self.update_icon_visibility(cx);
-                        self.redraw(cx);
                     }
                 }
             }
