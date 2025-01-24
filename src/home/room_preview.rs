@@ -9,7 +9,6 @@ use crate::{
 };
 
 use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -19,6 +18,8 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
+    pub UNREAD_DEFAULT_COLOR = #d8d8d8;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -105,12 +106,14 @@ live_design! {
         show_bg: true
         align: { x: 0.5, y: 0.5 }
         draw_bg: {
-            instance background_color: (COLOR_TEXT_IDLE)
+            instance highlight: 0.0,
+            instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
+            instance default_color: (UNREAD_DEFAULT_COLOR),
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let c = self.rect_size * 0.5;
                 sdf.circle(c.x, c.x, c.x)
-                sdf.fill_keep(self.background_color);
+                sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
                 return sdf.result
             }
         }
@@ -278,9 +281,14 @@ impl Widget for RoomPreviewContent {
                 }
             }
 
-            let unread_badge = self.view(id!(unread_badge));
+            let unread_badge = self.view(id!(unread_badge)); 
 
             if room_info.num_unread_messages > 0 {
+                if room_info.num_unread_metions > 0{
+                    unread_badge.apply_over(cx, live!{draw_bg: {highlight: 1.0}});
+                }else{
+                    unread_badge.apply_over(cx, live!{draw_bg: {highlight: 0.0}});
+                }
                 if room_info.num_unread_messages > 99 {
                     // We don't need to show unread messages over 99, so we show 99+ instead.
                     unread_badge.label(id!(unread_message_count)).set_text(cx, "99+");
@@ -290,6 +298,7 @@ impl Widget for RoomPreviewContent {
                         .set_text(cx, &room_info.num_unread_messages.to_string());
                 }
                 unread_badge.set_visible(cx, true);
+               
             } else {
                 unread_badge.set_visible(cx, false);
             }

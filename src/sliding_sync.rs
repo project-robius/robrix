@@ -616,7 +616,8 @@ async fn async_worker(
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                        unread_mentions:timeline.room().num_unread_mentions(),
                     });
                 });
             }
@@ -871,7 +872,8 @@ async fn async_worker(
                     // Also update the number of unread messages in the room.
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                        unread_mentions: timeline.room().num_unread_mentions()
                     });
                 });
             },
@@ -895,7 +897,8 @@ async fn async_worker(
                     // Also update the number of unread messages in the room.
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                        unread_mentions: timeline.room().num_unread_mentions()
                     });
                 });
             },
@@ -1485,6 +1488,7 @@ async fn update_room(
         enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
             room_id: new_room_id.clone(),
             count: UnreadMessageCount::Known(new_room.num_unread_messages()),
+            unread_mentions: new_room.num_unread_mentions()
         });
 
         Ok(())
@@ -1578,6 +1582,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         latest,
         tags: room.tags().await.ok().flatten(),
         num_unread_messages: room.num_unread_messages(),
+        num_unread_metions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
