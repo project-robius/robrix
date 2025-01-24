@@ -57,9 +57,8 @@ pub struct ImageViewerModal {
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    NeedToDrawAll,
-    SetMediaCache(MediaCache),
     Insert(WidgetUid, OwnedMxcUri),
+    SetMediaCache(MediaCache),
     Show(WidgetUid),
     None,
 }
@@ -74,28 +73,17 @@ impl Widget for ImageViewerModal {
         if self.need_to_draw_all {
             self.view.draw_all(cx, scope);
             self.need_to_draw_all = false;
-            log!("Drawn")
         }
         self.view.draw_walk(cx, scope, walk)
     }
 }
 impl MatchEvent for ImageViewerModal {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        for action in actions {
-            if let Some(ImageViewerAction::NeedToDrawAll) = action.downcast_ref() {
-                self.need_to_draw_all = true
-            }
+    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+        for _action in actions {
 
-            // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
-            if let Some(ImageViewerAction::Show(text_or_image_uid)) = action.downcast_ref() {
-                self.show_and_fill_image(cx, text_or_image_uid);
-                self.view.redraw(cx);
-            }
         }
     }
 }
-
-
 
 impl ImageViewerModal {
     // We clone the media cache here, is unnecessary, but I can't find a way get its mut reference.
@@ -119,6 +107,8 @@ impl ImageViewerModal {
                     if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &data) {
                         log!("Error to load image: {e}");
                     }
+
+                    self.need_to_draw_all = true;
 
                     self.view.redraw(cx);
                 }

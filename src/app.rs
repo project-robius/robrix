@@ -197,32 +197,32 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let mut image_viewer_modal_inner = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
-
         let image_viewer_modal = self.ui.modal(id!(image_viewer_modal));
 
         if image_viewer_modal_inner.button(id!(close_button)).clicked(actions) {
             // Clear the image cache once the modal is closed.
             image_viewer_modal_inner.clear_image(cx);
-
             image_viewer_modal.close(cx);
-
             self.ui.redraw(cx);
         }
 
         for action in actions {
-            //TODO: the media cache is cloned here, we only need a mutable reference.
-            if let Some(ImageViewerAction::SetMediaCache(media_cache)) = action.downcast_ref() {
-                image_viewer_modal_inner.set_media_cache(media_cache.clone());
-            }
-
-            if let Some(ImageViewerAction::Insert(text_or_image_uid, mx_uri)) = action.downcast_ref() {
+            match action.downcast_ref() {
+                //TODO: the media cache is cloned here, we only need a mutable reference.
+                Some(ImageViewerAction::SetMediaCache(media_cache)) => {
+                    image_viewer_modal_inner.set_media_cache(media_cache.clone());
+                }
+                Some(ImageViewerAction::Insert(text_or_image_uid, mx_uri)) => {
                 //We restore image message id and the image inside the message's mx_uri into HashMap.
-                image_viewer_modal_inner.insert_data(text_or_image_uid, mx_uri.clone());
-            }
-
-            // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
-            if let Some(ImageViewerAction::Show(_)) = action.downcast_ref() {
-                image_viewer_modal.open(cx);
+                    image_viewer_modal_inner.insert_data(text_or_image_uid, mx_uri.clone());
+                }
+                // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
+                Some(ImageViewerAction::Show(text_or_image_uid)) => {
+                    image_viewer_modal.open(cx);
+                    image_viewer_modal_inner.show_and_fill_image(cx, text_or_image_uid);
+                    self.ui.redraw(cx);
+                }
+                _ => { }
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
