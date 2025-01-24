@@ -66,7 +66,7 @@ impl From<LoginByPassword> for Cli {
         Self {
             user_id: login.user_id,
             password: login.password,
-            homeserver: None,
+            homeserver: login.homeserver,
             proxy: None,
             login_screen: false,
             verbose: false,
@@ -2191,7 +2191,7 @@ async fn spawn_sso_server(
                 for (key, value) in url.query_pairs() {
                     if key == "redirectUrl" {
                         let redirect_url = Url::parse(&value)?;
-                        Cx::post_action(LoginAction::SsoSaveRedirectUrl(redirect_url));
+                        Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
                         break
                     }
                 }

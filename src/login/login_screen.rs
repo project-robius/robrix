@@ -127,38 +127,36 @@ live_design! {
                                 }
                             }
 
-                            <View> {
-                                width: 215,
-                                height: Fit,
-                                flow: Right,
-                                padding: {top: 3, left: 2, right: 2}
-                                spacing: 0.0,
-                                align: {x: 0.5, y: 0.5} // center horizontally and vertically
+                    <View> {
+                        width: 250,
+                        height: Fit,
+                        flow: Right,
+                        padding: {top: 3, left: 4, right: 4}
+                        spacing: 0.0,
+                        margin: {top: -15}
+                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
 
-                                left_line = <LineH> {
-                                    draw_bg: { color: #C8C8C8 }
-                                }
-
-                                <Label> {
-                                    width: Fit, height: Fit
-                                    draw_text: {
-                                        color: #8C8C8C
-                                        text_style: <REGULAR_TEXT>{font_size: 9}
-                                    }
-                                    text: "Homeserver URL (optional)"
-                                }
-
-                                right_line = <LineH> {
-                                    draw_bg: { color: #C8C8C8 }
-                                }
-                            }
-
+                        left_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
                         }
 
+                        <Label> {
+                            width: Fit, height: Fit
+                            draw_text: {
+                                color: #8C8C8C
+                                text_style: <REGULAR_TEXT>{font_size: 9}
+                            }
+                            text: "Homeserver URL (optional)"
+                        }
+
+                        right_line = <LineH> {
+                            draw_bg: { color: #C8C8C8 }
+                        }
                     }
 
                     login_button = <RobrixIconButton> {
-                        width: 250, height: 40
+                        width: 250,
+                        height: 40
                         padding: 10
                         margin: {top: 5, bottom: 10}
                         draw_bg: {
@@ -189,6 +187,21 @@ live_design! {
                         width: 250, height: Fit,
                         margin: {left: 5, right: 5} // make the inner view 240 pixels wide
                         flow: RightWrap,
+                        google_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/google.png")
+                            }
+                        }
+                        github_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/github.png")
+                            }
+                        }
+                        gitlab_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/gitlab.png")
+                            }
+                        }
                         apple_button = <SsoButton> {
                             image = <SsoImage> {
                                 source: dep("crate://self/resources/img/apple.png")
@@ -199,24 +212,9 @@ live_design! {
                                 source: dep("crate://self/resources/img/facebook.png")
                             }
                         }
-                        github_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/github.png")
-                            }
-                        }
                         twitter_button = <SsoButton> {
                             image = <SsoImage> {
                                 source: dep("crate://self/resources/img/x.png")
-                            }
-                        }
-                        gitlab_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/gitlab.png")
-                            }
-                        }
-                        google_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/google.png")
                             }
                         }
                     }
@@ -284,12 +282,8 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
-    #[rust]
-    sso_pending: bool,
-    #[rust]
-    prev_homeserver_url: Option<String>,
-    #[rust]
-    sso_redirect_url: Option<String>,
+    #[rust] sso_pending: bool,
+    #[rust] sso_redirect_url: Option<String>,
 }
 
 
@@ -408,7 +402,7 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoPending(ref pending)) => {
                     for view_ref in self.view_set(button_set).iter() {
                         let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
-                        if *pending {    
+                        if *pending {
                             view_mut.apply_over(cx, live! {
                                 cursor: NotAllowed,
                                 image = { draw_bg: { mask: 1.0 } }
@@ -423,13 +417,12 @@ impl MatchEvent for LoginScreen {
                     self.sso_pending = *pending;
                     self.redraw(cx);
                 }
-                Some(LoginAction::SsoSaveRedirectUrl(url)) => {
+                Some(LoginAction::SsoSetRedirectUrl(url)) => {
                     self.sso_redirect_url = Some(url.to_string());
                 }
                 _ => { }
             }
         }
-
 
         // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
         if let Some(sso_redirect_url) = &self.sso_redirect_url {
@@ -484,10 +477,10 @@ pub enum LoginAction {
     /// The login screen can use this to prevent the user from submitting
     /// additional SSO login requests while a previous request is in flight. 
     SsoPending(bool),
-    /// Save SSO's redirect url into LoginScreen.
+    /// Set the SSO redirect URL in the LoginScreen.
     /// 
-    /// When the login using SSO is pendng, pressing the cancel button will send
-    /// http request to SSO server to gracefully shutdown the SSO server.
-    SsoSaveRedirectUrl(Url),
+    /// When an SSO-based login is pendng, pressing the cancel button will send
+    /// an HTTP request to this SSO server URL to gracefully shut it down.
+    SsoSetRedirectUrl(Url),
     None,
 }
