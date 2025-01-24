@@ -145,7 +145,7 @@ impl Widget for ReactionList {
                 Hit::FingerHoverOut(_) => {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                     widget_ref.apply_over(cx, live!(draw_bg: {hover: 0.0}));
-                    cx.set_cursor(MouseCursor::Arrow);
+                    cx.set_cursor(MouseCursor::Default);
                     break;
                 }
                 Hit::FingerDown(_) => {
@@ -178,7 +178,7 @@ impl Widget for ReactionList {
                 }
                 Hit::FingerScroll(_) => {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
-                    cx.set_cursor(MouseCursor::Hand);
+                    cx.set_cursor(MouseCursor::Default);
                 }
                 _ => { }
             }
