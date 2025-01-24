@@ -943,7 +943,6 @@ pub fn start_matrix_tokio() -> Result<()> {
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
-            Cx::post_action(LoginAction::SsoPending(true));
             let cli = Cli::default();
             let (client, client_session) = match build_client(&cli, app_data_dir()).await {
                 Ok(success) => success,
@@ -2152,6 +2151,13 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
+    let Some((client, client_session)) = DEFAULT_SSO_CLIENT.get() else {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let future = Box::pin(spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender));
+        let _ = future.await;
+        Cx::post_action(LoginAction::SsoPending(false));
+        return 
+    };
     Handle::current().spawn(async move {        
         // If the homeserver_url is not empty, builds a new Matrix Client.
         // If the homeserver_url is empty, use the DEFAULT_SSO_CLIENT which started during initialisation
@@ -2166,14 +2172,11 @@ async fn spawn_sso_server(
                     Cx::post_action(LoginAction::LoginFailure(
                         format!("Could not create client object.\n\nError: {e}")
                     ));
+                    Cx::post_action(LoginAction::SsoPending(false));
                     return;
                 }
             }
         } else {
-            let Some((client, client_session)) = DEFAULT_SSO_CLIENT.get() else { 
-                Cx::post_action(LoginAction::SsoPending(false)); 
-                return 
-            };
             (client.clone(), client_session.clone())
         };
         let mut is_logged_in = false;

@@ -116,11 +116,11 @@ live_design! {
                         align: {x: 0.5}
                         flow: Right,
                         <View> {
-                            width: 215, height: Fit,
+                            width: 250, height: Fit,
                             flow: Down,
 
                             homeserver_input = <RobrixTextInput> {
-                                width: 215, height: 30,
+                                width: Fill, height: 30
                                 empty_message: "matrix.org"
                                 draw_text: {
                                     text_style: <TITLE_TEXT>{font_size: 10.0}
@@ -154,14 +154,7 @@ live_design! {
                             }
 
                         }
-                        sso_search_button = <RobrixIconButton> {
-                            width: 28, height: 28,
-                            margin: { left: 5, top: 1}
-                            draw_icon: {
-                                svg_file: (ICON_SEARCH)
-                            }
-                            icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
-                        }
+
                     }
 
                     login_button = <RobrixIconButton> {
@@ -318,7 +311,6 @@ impl MatchEvent for LoginScreen {
         let user_id_input = self.view.text_input(id!(user_id_input));
         let password_input = self.view.text_input(id!(password_input));
         let homeserver_input = self.view.text_input(id!(homeserver_input));
-        let sso_search_button = self.view.button(id!(sso_search_button));
 
         let login_status_modal = self.view.modal(id!(login_status_modal));
         let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
@@ -355,7 +347,6 @@ impl MatchEvent for LoginScreen {
                 })));
             }
             login_status_modal.open(cx);
-            sso_search_button.set_enabled(cx, self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
         
@@ -390,7 +381,6 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
 
-                    sso_search_button.set_enabled(cx, true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginSuccess) => {
@@ -440,23 +430,6 @@ impl MatchEvent for LoginScreen {
             }
         }
 
-        // If the homeserver "search" button was clicked, fetch supported login types.
-        if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
-            login_status_modal_inner.set_title(cx, "Querying login types");
-            login_status_modal_inner.set_status(cx, "Fetching supported login types from the homeserver...");
-            let login_status_modal_button = login_status_modal_inner.button_ref();
-            login_status_modal_button.set_text(cx, "Cancel");
-            login_status_modal_button.set_enabled(cx, true);
-            login_status_modal.open(cx);
-            
-            self.prev_homeserver_url = Some(homeserver_input.text());
-            submit_async_request(MatrixRequest::Login(LoginRequest::HomeserverLoginTypesQuery(homeserver_input.text())));
-            sso_search_button.set_enabled(cx, false);
-            for view_ref in self.view_set(button_set).iter() {
-                view_ref.set_visible(cx, false);
-            }
-            self.redraw(cx);
-        }
 
         // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
         if let Some(sso_redirect_url) = &self.sso_redirect_url {
