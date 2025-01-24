@@ -12,7 +12,7 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 
 Check out our most recent talks and presentations for more info:
   * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
-    * Videos: [YouTube link](https://www.youtube.com/watch?v=DO5C7aITVyU)
+    * Videos: [YouTube link](https://www.youtube.com/watch?v=DO5C7aITVyU), [BiliBili link](https://www.bilibili.com/video/BV1BxUUYcEy5/)
     * Slides:
       [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
       [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
