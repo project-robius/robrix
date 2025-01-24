@@ -187,7 +187,7 @@ impl Widget for LoadingPane {
             Event::Actions(actions) => self.button(id!(cancel_button)).clicked(actions), // 1
             Event::BackPressed => true,                                                  // 2
             _ => false,
-        } || match event.hits_with_capture_overload(cx, self.view.area(), true) {
+        } || match event.hits_with_capture_overload(cx, area, true) {
             Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                          // 3
             Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
