@@ -2151,6 +2151,7 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
+    // Wait for the DEFAULT_SSO_CLIENT to be set.
     let Some((client, client_session)) = DEFAULT_SSO_CLIENT.get() else {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         let future = Box::pin(spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender));
