@@ -3,7 +3,7 @@
 //! The cache is only accessible from the main UI thread.
 
 use crossbeam_queue::SegQueue;
-use makepad_widgets::{log, warning, Cx, SignalToUI};
+use makepad_widgets::{warning, Cx, SignalToUI};
 use matrix_sdk::{room::RoomMember, ruma::{OwnedRoomId, OwnedUserId, RoomId, UserId}};
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 
@@ -205,7 +205,7 @@ where
             }
             Entry::Vacant(entry) => {
                 if fetch_if_missing {
-                    log!("Did not find User {} in cache, fetching from server.", entry.key());
+                    // log!("Did not find User {} in cache, fetching from server.", entry.key());
                     // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
                     submit_async_request(MatrixRequest::GetUserProfile {
                         user_id: entry.key().clone(),
@@ -251,7 +251,7 @@ pub fn get_user_profile_and_room_member(
             }
             Entry::Vacant(entry) => {
                 if fetch_if_missing {
-                    log!("Did not find User {} Room ID {room_id} room member info in cache, fetching from server.", entry.key());
+                    // log!("Did not find User {} Room ID {room_id} room member info in cache, fetching from server.", entry.key());
                     // TODO: use the extra `via` parameters from `matrix_to_uri.via()`.
                     submit_async_request(MatrixRequest::GetUserProfile {
                         user_id: entry.key().clone(),

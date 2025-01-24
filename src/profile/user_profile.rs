@@ -276,6 +276,7 @@ live_design! {
 
 
     pub UserProfileSlidingPane = {{UserProfileSlidingPane}} {
+        visible: false,
         flow: Overlay,
         width: Fill,
         height: Fill,
@@ -404,29 +405,58 @@ pub struct UserProfileSlidingPane {
     #[animator] animator: Animator,
 
     #[rust] info: Option<UserProfilePaneInfo>,
+    #[rust] is_animating_out: bool,
 }
 
 impl Widget for UserProfileSlidingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-        if self.animator_handle_event(cx, event).must_redraw() {
+
+        if !self.visible { return; }
+
+        let animator_action = self.animator_handle_event(cx, event);
+        if animator_action.must_redraw() {
             self.redraw(cx);
         }
-        // if !self.visible { return; }
+        // If the animator is in the `hide` state and has finished animating out,
+        // that means it has fully animated off-screen and can be set to invisible.
+        if self.animator_in_state(cx, id!(panel.hide)) {
+            match (self.is_animating_out, animator_action.is_animating()) {
+                (true, false) => {
+                    self.visible = false;
+                    self.view(id!(bg_view)).set_visible(cx, false);
+                    self.redraw(cx);
+                    return;
+                }
+                (false, true) => {
+                    self.is_animating_out = true;
+                }
+                _ => { }
+            }
+        }
 
-        // Close the pane if the close button is clicked, the back mouse button is clicked,
-        // the escape key is pressed, or the back button is pressed.
+        // Close the pane if:
+        // 1. The close button is clicked,
+        // 2. The back navigational gesture/action occurs (e.g., Back on Android),
+        // 3. The escape key is pressed,
+        // 4. The back mouse button is clicked within this view,
+        // 5. The user clicks/touches outside the main_content view area.
         let close_pane = match event {
-            Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),
-            Event::MouseUp(mouse) => mouse.button == 3, // the "back" button on the mouse
-            Event::KeyUp(key) => key.key_code == KeyCode::Escape,
-            Event::BackPressed => true,
-            Event::MouseDown(e) => !self.view(id!(user_profile_view)).area().rect(cx).contains(e.abs), 
+            Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),  // 1
+            Event::BackPressed => true,                                                  // 2
+            Event::KeyUp(key) => key.key_code == KeyCode::Escape,                        // 3
+            _ => false,
+        } || match event.hits_with_capture_overload(cx, self.view.area(), true) {
+            // Note: ideally we should handle `Hit::KeyUp` here, but that doesn't work as expected.
+            Hit::FingerUp(fue) => {
+                fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
+                || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
+            }
             _ => false,
         };
         if close_pane {
             self.animator_play(cx, id!(panel.hide));
-            self.view(id!(bg_view)).set_visible(false);
+            self.redraw(cx);
             return;
         }
 
@@ -473,7 +503,6 @@ impl Widget for UserProfileSlidingPane {
                 }
             }
             if redraw_this_pane {
-                // log!("Redrawing user profile pane due to user profile update");
                 self.redraw(cx);
             }
         }
@@ -514,27 +543,26 @@ impl Widget for UserProfileSlidingPane {
 
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.visible = true;
         let Some(info) = self.info.as_ref() else {
             self.visible = false;
             return self.view.draw_walk(cx, scope, walk);
         };
 
         // Set the user name, using the user ID as a fallback.
-        self.label(id!(user_name)).set_text(info.displayable_name());
-        self.label(id!(user_id)).set_text(info.user_id.as_str());
+        self.label(id!(user_name)).set_text(cx, info.displayable_name());
+        self.label(id!(user_id)).set_text(cx, info.user_id.as_str());
 
         // Set the avatar image, using the user name as a fallback.
         let avatar_ref = self.avatar(id!(avatar));
         info.avatar_state
             .data()
-            .and_then(|data| avatar_ref.show_image(None, |img| utils::load_png_or_jpg(&img, cx, data)).ok())
-            .unwrap_or_else(|| avatar_ref.show_text(None, info.displayable_name()));
+            .and_then(|data| avatar_ref.show_image(cx, None, |cx, img| utils::load_png_or_jpg(&img, cx, data)).ok())
+            .unwrap_or_else(|| avatar_ref.show_text(cx, None, info.displayable_name()));
 
         // Set the membership status and role in the room.
-        self.label(id!(membership_title_label)).set_text(&info.membership_title());
-        self.label(id!(membership_status_label)).set_text(info.membership_status());
-        self.label(id!(role_info_label)).set_text(info.role_in_room().as_ref());
+        self.label(id!(membership_title_label)).set_text(cx, &info.membership_title());
+        self.label(id!(membership_status_label)).set_text(cx, info.membership_status());
+        self.label(id!(role_info_label)).set_text(cx, info.role_in_room().as_ref());
 
         // Draw and enable/disable the buttons according to user and room membership info:
         // * `direct_message_button` is disabled if the user is the same as the account user,
@@ -552,12 +580,13 @@ impl Widget for UserProfileSlidingPane {
         // self.button(id!(direct_message_button)).set_enabled(!is_pane_showing_current_account);
 
         let ignore_user_button = self.button(id!(ignore_user_button));
-        ignore_user_button.set_enabled(!is_pane_showing_current_account && info.room_member.is_some());
+        ignore_user_button.set_enabled(cx, !is_pane_showing_current_account && info.room_member.is_some());
         // Unfortunately the Matrix SDK's RoomMember type does not properly track
         // the `ignored` state of a user, so we have to maintain it separately.
         let is_ignored = info.room_member.as_ref()
             .is_some_and(|rm| is_user_ignored(rm.user_id()));
         ignore_user_button.set_text(
+            cx,
             if is_ignored { "Unignore (Unblock) User" } else { "Ignore (Block) User" }
         );
 
@@ -567,10 +596,9 @@ impl Widget for UserProfileSlidingPane {
 
 
 impl UserProfileSlidingPane {
-    /// Returns `true` if the pane is both currently visible *and*
-    /// animator is in the `show` state.
-    pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        self.visible && self.animator_in_state(cx, id!(panel.show))
+    /// Returns `true` if this pane is currently being shown.
+    pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
+        self.visible
     }
 
     /// Sets the info to be displayed in this user profile sliding pane.
@@ -620,7 +648,7 @@ impl UserProfileSlidingPane {
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
         self.animator_play(cx, id!(panel.show));
-        self.view(id!(bg_view)).set_visible(true);
+        self.view(id!(bg_view)).set_visible(cx, true);
         self.redraw(cx);
     }
 }
