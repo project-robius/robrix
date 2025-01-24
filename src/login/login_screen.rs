@@ -113,46 +113,44 @@ live_design! {
 
                     <View> {
                         width: 250, height: Fit,
-                        align: {x: 0.5}
-                        flow: Right,
-                        <View> {
-                            width: 250, height: Fit,
-                            flow: Down,
+                        flow: Down,
 
-                            homeserver_input = <RobrixTextInput> {
-                                width: Fill, height: 30
-                                empty_message: "matrix.org"
-                                draw_text: {
-                                    text_style: <TITLE_TEXT>{font_size: 10.0}
-                                }
-                            }
-
-                    <View> {
-                        width: 250,
-                        height: Fit,
-                        flow: Right,
-                        padding: {top: 3, left: 4, right: 4}
-                        spacing: 0.0,
-                        margin: {top: -15}
-                        align: {x: 0.5, y: 0.5} // center horizontally and vertically
-
-                        left_line = <LineH> {
-                            draw_bg: { color: #C8C8C8 }
-                        }
-
-                        <Label> {
-                            width: Fit, height: Fit
+                        homeserver_input = <RobrixTextInput> {
+                            width: Fill, height: 30,
+                            empty_message: "matrix.org"
                             draw_text: {
-                                color: #8C8C8C
-                                text_style: <REGULAR_TEXT>{font_size: 9}
+                                text_style: <TITLE_TEXT>{font_size: 10.0}
                             }
-                            text: "Homeserver URL (optional)"
                         }
 
-                        right_line = <LineH> {
-                            draw_bg: { color: #C8C8C8 }
+                        <View> {
+                            width: 215,
+                            height: Fit,
+                            flow: Right,
+                            padding: {top: 3, left: 2, right: 2}
+                            spacing: 0.0,
+                            align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+                            left_line = <LineH> {
+                                draw_bg: { color: #C8C8C8 }
+                            }
+
+                            <Label> {
+                                width: Fit, height: Fit
+                                draw_text: {
+                                    color: #8C8C8C
+                                    text_style: <REGULAR_TEXT>{font_size: 9}
+                                }
+                                text: "Homeserver URL (optional)"
+                            }
+
+                            right_line = <LineH> {
+                                draw_bg: { color: #C8C8C8 }
+                            }
                         }
+
                     }
+                    
 
                     login_button = <RobrixIconButton> {
                         width: 250,
