@@ -175,20 +175,25 @@ impl Widget for LoadingPane {
         if !self.visible { return; }
         self.view.handle_event(cx, event, scope);
 
+        let area = self.view.area();
+
         // Close the pane if:
         // 1. The cancel button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
-        // 3. The escape key is pressed
+        // 3. The escape key is pressed if this pane has key focus,
         // 4. The back mouse button is clicked within this view,
         // 5. The user clicks/touches outside the main_content view area.
         let close_pane = match event {
             Event::Actions(actions) => self.button(id!(cancel_button)).clicked(actions), // 1
             Event::BackPressed => true,                                                  // 2
-            Event::KeyUp(key) => key.key_code == KeyCode::Escape,                        // 3
             _ => false,
         } || match event.hits_with_capture_overload(cx, self.view.area(), true) {
-            // Note: ideally we should handle `Hit::KeyUp` here, but that doesn't work as expected.
-            Hit::FingerUp(fue) => {
+            Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                          // 3
+            Hit::FingerDown(_fde) => {
+                cx.set_key_focus(area);
+                false
+            }
+            Hit::FingerUp(fue) if fue.is_over => {
                 fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
                 || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
             }
@@ -208,7 +213,7 @@ impl Widget for LoadingPane {
                 );
             }
             self.set_state(cx, LoadingPaneState::None);
-
+            cx.revert_key_focus();
             self.visible = false;
         }
     }
@@ -223,6 +228,7 @@ impl LoadingPane {
 
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
+        cx.set_key_focus(self.view.area());
         self.redraw(cx);
     }
 
