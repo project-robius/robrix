@@ -1,11 +1,6 @@
 use makepad_widgets::*;
 
 use crate::shared::color_tooltip::*;
-use crate::shared::verification_badge::{VerificationBadge, VerificationText};
-use crate::verification::VerificationStateAction;
-use crate::sliding_sync::get_client;
-use matrix_sdk::encryption::VerificationState;
-
 
 live_design! {
     use link::theme::*;
@@ -172,106 +167,44 @@ live_design! {
     }
 }
 
-#[derive(Live, Widget)]
+/// An action emitted to show or hide the `profile_tooltip`.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum ProfileTooltipAction {
+    Show {
+        pos: DVec2,
+        text: &'static str,
+        color: Vec4,
+    },
+    Hide,
+    None,
+}
+
+#[derive(Live, LiveHook, Widget)]
 pub struct Profile {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let mut color: Vec4 = vec4(0.2, 0.2, 0.2, 1.0); // Default Grey Color
-        let profile_rect = {
-            let view = self.view(id!(text_view));
-            view.area().rect(cx)
-        }; // view borrow end
+        self.view.handle_event(cx, event, scope);
 
-        if let Event::MouseMove(e) = event {
-            let (is_mouse_over_icons, verification_text, tooltip_pos) = {
-                if let Some(badge) = self
-                    .widget(id!(verification_badge))
-                    .borrow_mut::<VerificationBadge>()
-                {
-                    let icons_rect = badge.get_icons_rect(cx);
-                    let is_over = icons_rect.contains(e.abs);
-                    let text =
-                        VerificationText::from_state(badge.verification_state).get_text();
-                    color = match badge.verification_state {
-                        VerificationState::Verified => vec4(0.0, 0.75, 0.0, 1.0), // Green
-                        VerificationState::Unverified => vec4(0.75, 0.0, 0.0, 1.0), // Red
-                        VerificationState::Unknown => vec4(0.2, 0.2, 0.2, 1.0),   // Grey
-                    };
-
-                    let tooltip_pos = if cx.display_context.is_desktop() {
-                        DVec2 {
-                            x: icons_rect.pos.x + icons_rect.size.x + 1.,
-                            y: icons_rect.pos.y - 10.,
-                        }
-                    } else {
-                        DVec2 {
-                            x: profile_rect.pos.x,
-                            y: profile_rect.pos.y - 10.,
-                        }
-                    };
-                    (is_over, text.to_string(), tooltip_pos)
-                } else {
-                    let tooltip_pos = DVec2 { x: 0., y: 0. };
-                    (false, String::new(), tooltip_pos)
-                }
-            }; // badge borrow end
-
-            if let Some(mut tooltip) = self
-                .widget(id!(profile_tooltip))
-                .borrow_mut::<ColorTooltip>()
-            {
-                if is_mouse_over_icons {
-                    tooltip.show_with_options(cx, tooltip_pos, &verification_text, color);
-                } else {
-                    tooltip.hide(cx);
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.as_widget_action().cast() {
+                    ProfileTooltipAction::Show { pos, text, color } => {
+                        self.view.color_tooltip(id!(profile_tooltip))
+                            .show_with_options(cx, pos, text, color);
+                    }
+                    ProfileTooltipAction::Hide => {
+                        self.view.color_tooltip(id!(profile_tooltip)).hide(cx);
+                    }
+                    _ => { }
                 }
             }
         }
-
-        self.match_event(cx, event);
-        self.view.handle_event(cx, event, scope)
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl MatchEvent for Profile {
-    fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
-        if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
-            if let Some(mut badge) = self
-                .widget(id!(verification_badge))
-                .borrow_mut::<VerificationBadge>()
-            {
-                if badge.verification_state != *state {
-                    badge.verification_state = *state;
-                    badge.update_icon_visibility(cx);
-                    badge.redraw(cx);
-                }
-            }
-        }
-    }
-}
-
-impl LiveHook for Profile {
-    fn after_new_from_doc(&mut self, cx:&mut Cx) {
-        if let Some(client) = get_client() {
-            let current_verification_state = client.encryption().verification_state().get();
-            if let Some(mut badge) = self
-                .widget(id!(verification_badge))
-                .borrow_mut::<VerificationBadge>()
-            {
-                if badge.verification_state != current_verification_state {
-                    badge.verification_state = current_verification_state;
-                    badge.update_icon_visibility(cx);
-                    badge.redraw(cx);
-                }
-            }
-        }
     }
 }

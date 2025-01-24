@@ -176,12 +176,12 @@ impl Widget for ReactionList {
                     cx.set_cursor(MouseCursor::Hand);
                     break;
                 }
+                Hit::FingerScroll(_) => {
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                    cx.set_cursor(MouseCursor::Hand);
+                }
                 _ => { }
             }
-        }
-        if let Event::Scroll(_) = event {
-            cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
-            cx.set_cursor(MouseCursor::Hand);
         }
     }    
 }

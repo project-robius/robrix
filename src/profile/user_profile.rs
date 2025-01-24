@@ -449,8 +449,6 @@ impl Widget for UserProfileSlidingPane {
         } || match event.hits_with_capture_overload(cx, self.view.area(), true) {
             // Note: ideally we should handle `Hit::KeyUp` here, but that doesn't work as expected.
             Hit::FingerUp(fue) => {
-                log!("UserProfileSlidingPane area: {:?}, got FingerUp: {:?}", self.view.area().rect(cx), fue);
-
                 fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
                 || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
             }
