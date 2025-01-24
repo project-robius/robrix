@@ -96,7 +96,7 @@ impl WidgetMatchEvent for SearchBar {
 
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
-            clear_button.set_visible(!keywords.is_empty());
+            clear_button.set_visible(cx, !keywords.is_empty());
             let widget_uid = self.widget_uid(); 
             if keywords.is_empty() {
                 cx.widget_action(
@@ -115,8 +115,8 @@ impl WidgetMatchEvent for SearchBar {
 
         // Handle user clicked the clear button
         if clear_button.clicked(actions) {
-            input.set_text_and_redraw(cx, "");
-            clear_button.set_visible(false);
+            input.set_text(cx, "");
+            clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
 
             cx.widget_action(
