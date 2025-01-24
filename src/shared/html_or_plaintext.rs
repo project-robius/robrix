@@ -1,6 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedUserId}, OwnedServerName};
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -11,11 +12,47 @@ live_design! {
     use link::widgets::*;
     
     use crate::shared::styles::*;
+    use crate::shared::avatar::Avatar;
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
     // For some reason, they're not the same. That's TBD.
     // HTML_LINE_SPACING = 6.0
     // HTML_TEXT_HEIGHT_FACTOR = 1.1
+
+    pub BaseLinkPill = <RoundedView> {
+        width: Fit, height: Fit,
+        align: {x: 0.5, y: 0.5},
+        padding: {left: 4.0, right: 4.0, top: 2.0, bottom: 2.0},
+        spacing: 5.0,
+        avatar = <Avatar> {
+            height: 20.0, width: 20.0,
+            text_view = { text = { draw_text: {
+                text_style: <TITLE_TEXT>{ font_size: 10.0 }
+            }}}
+        }
+        show_bg: true,
+        draw_bg: {
+            color: #000,
+            radius: 6.
+        }
+        title = <Label> {
+            draw_text: {
+                wrap: Word,
+                color: #f,
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 12.0 },
+            }
+        }
+    }
+
+    pub MatrixLinkPill = {{MatrixLinkPill}}<BaseLinkPill> { }
+
+    pub RobrixHtmlLink = {{RobrixHtmlLink}} {
+        width: Fit, height: Fit,
+        align: {x: 0., y: 0.}
+
+        // link = <HtmlLink> { }
+        matrix_link = <MatrixLinkPill> {}
+    }
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
@@ -52,10 +89,8 @@ live_design! {
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
 
-        a = {
-            hover_color: #21b070
-            grab_key_focus: false,
-            padding: {left: 1.0, right: 1.5},
+        a = <RobrixHtmlLink> {
+            link = <HtmlLink> { }
         }
 
         body: "[<i> HTML message placeholder</i>]",
@@ -97,6 +132,143 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum RobrixHtmlLinkAction{
+    Clicked {
+        url: String,
+        key_modifiers: KeyModifiers
+    },
+    ClickedMatrixLink {
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>,
+        key_modifiers: KeyModifiers
+    },
+    None,
+}
+
+/// A widget used to display a single HTML `<a>` tag.
+#[derive(Live, Widget)]
+struct RobrixHtmlLink {
+    #[deref] view: View,
+
+    #[live] pub text: ArcStringMut,
+    #[live] pub url: String,
+}
+
+impl LiveHook for RobrixHtmlLink {
+    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
+        match apply.from {
+            ApplyFrom::NewFromDoc { .. } => {
+                let scope = apply.scope.as_ref().unwrap();
+                let doc = scope.props.get::<HtmlDoc>().unwrap();
+                let mut walker = doc.new_walker_with_index(scope.index + 1);
+                if let Some((lc, attr)) = walker.while_attr_lc() {
+                    match lc {
+                        live_id!(href) => self.url = attr.into(),
+                        _ => ()
+                    }
+                }
+            }
+            _ => ()
+        }
+    }
+}
+
+impl Widget for RobrixHtmlLink {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let widget_uid = self.widget_uid();
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.as_widget_action().cast() {
+                    HtmlLinkAction::Clicked { url, key_modifiers } => {
+                        cx.widget_action(
+                            widget_uid,
+                            &scope.path,
+                            RobrixHtmlLinkAction::Clicked {
+                                url,
+                                key_modifiers
+                            }
+                        );
+                    }
+                    _ => ()
+                }
+            }
+        }
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn text(&self) -> String {
+        self.text.as_ref().to_string()
+    }
+
+    fn set_text(&mut self, cx:&mut Cx, v: &str) {
+        self.text.as_mut_empty().push_str(v);
+        self.redraw(cx);
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+struct MatrixLinkPill {
+    #[deref] view: View,
+
+    #[rust] matrix_id: Option<MatrixId>,
+    #[rust] via: Vec<OwnedServerName>,
+}
+
+impl Widget for MatrixLinkPill {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let uid = self.widget_uid();
+        if self.visible {
+            match event.hits(cx, self.area()) {
+                Hit::FingerUp(fe) => {
+                    if fe.is_over {
+                        if let Some(matrix_id) = self.matrix_id.take() {
+                            cx.widget_action(
+                                uid,
+                                &scope.path,
+                                RobrixHtmlLinkAction::ClickedMatrixLink {
+                                    matrix_id: matrix_id.clone(),
+                                    via: self.via.clone(),
+                                    key_modifiers: fe.modifiers
+                                }
+                            );
+                        }
+                    }
+                }
+                _ => (),
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible {
+            return DrawStep::done();
+        }
+
+        log!("Drawing MatrixLinkPill");
+
+        DrawStep::done()
+    }
+}
+
+impl MatrixLinkPill {
+    pub fn set_matrix_link_info(&mut self, matrix_id: MatrixId, via: Vec<OwnedServerName>) {
+        self.matrix_id = Some(matrix_id);
+        self.via = via;
+    }
+}
+
+impl MatrixLinkPillRef {
+    pub fn set_matrix_link_info(&self, matrix_id: MatrixId, via: Vec<OwnedServerName>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_matrix_link_info(matrix_id, via);
+        }
+    }
+}
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Live, Widget)]

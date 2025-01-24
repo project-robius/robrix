@@ -1954,87 +1954,88 @@ impl RoomScreen {
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
-        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            // A closure that handles both MatrixToUri and MatrixUri links.
-            let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-                match id {
-                    MatrixId::Room(room_id) => {
-                        if self.room_id.as_ref() == Some(room_id) {
-                            return true;
-                        }
-                        if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                            log!("TODO: jump to known room {}", room_id);
-                        } else {
-                            log!("TODO: fetch and display room preview for room {}", room_id);
-                        }
-                        true
-                    }
-                    MatrixId::RoomAlias(room_alias) => {
-                        log!("TODO: open room alias {}", room_alias);
-                        // TODO: open a room loading screen that shows a spinner
-                        //       while our background async task calls Client::resolve_room_alias()
-                        //       and then either jumps to the room if known, or fetches and displays
-                        //       a room preview for that room.
-                        true
-                    }
-                    MatrixId::User(user_id) => {
-                        log!("Opening matrix.to user link for {}", user_id);
+        // if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+        //     // A closure that handles both MatrixToUri and MatrixUri links.
+        //     let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+        //         match id {
+        //             MatrixId::Room(room_id) => {
+        //                 if self.room_id.as_ref() == Some(room_id) {
+        //                     return true;
+        //                 }
+        //                 if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+        //                     log!("TODO: jump to known room {}", room_id);
+        //                 } else {
+        //                     log!("TODO: fetch and display room preview for room {}", room_id);
+        //                 }
+        //                 true
+        //             }
+        //             MatrixId::RoomAlias(room_alias) => {
+        //                 log!("TODO: open room alias {}", room_alias);
+        //                 // TODO: open a room loading screen that shows a spinner
+        //                 //       while our background async task calls Client::resolve_room_alias()
+        //                 //       and then either jumps to the room if known, or fetches and displays
+        //                 //       a room preview for that room.
+        //                 true
+        //             }
+        //             MatrixId::User(user_id) => {
+        //                 log!("Opening matrix.to user link for {}", user_id);
 
-                        // There is no synchronous way to get the user's full profile info
-                        // including the details of their room membership,
-                        // so we fill in with the details we *do* know currently,
-                        // show the UserProfileSlidingPane, and then after that,
-                        // the UserProfileSlidingPane itself will fire off
-                        // an async request to get the rest of the details.
-                        self.show_user_profile(
-                            cx,
-                            pane,
-                            UserProfilePaneInfo {
-                                profile_and_room_id: UserProfileAndRoomId {
-                                    user_profile: UserProfile {
-                                        user_id: user_id.to_owned(),
-                                        username: None,
-                                        avatar_state: AvatarState::Unknown,
-                                    },
-                                    room_id: self.room_id.clone().unwrap(),
-                                },
-                                room_name: self.room_name.clone(),
-                                // TODO: use the extra `via` parameters
-                                room_member: None,
-                            },
-                        );
-                        true
-                    }
-                    MatrixId::Event(room_id, event_id) => {
-                        log!("TODO: open event {} in room {}", event_id, room_id);
-                        // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                        //       but then we need to call Room::event_with_context() to get the event
-                        //       and its context (surrounding events ?).
-                        true
-                    }
-                    _ => false,
-                }
-            };
+        //                 // There is no synchronous way to get the user's full profile info
+        //                 // including the details of their room membership,
+        //                 // so we fill in with the details we *do* know currently,
+        //                 // show the UserProfileSlidingPane, and then after that,
+        //                 // the UserProfileSlidingPane itself will fire off
+        //                 // an async request to get the rest of the details.
+        //                 self.show_user_profile(
+        //                     cx,
+        //                     pane,
+        //                     UserProfilePaneInfo {
+        //                         profile_and_room_id: UserProfileAndRoomId {
+        //                             user_profile: UserProfile {
+        //                                 user_id: user_id.to_owned(),
+        //                                 username: None,
+        //                                 avatar_state: AvatarState::Unknown,
+        //                             },
+        //                             room_id: self.room_id.clone().unwrap(),
+        //                         },
+        //                         room_name: self.room_name.clone(),
+        //                         // TODO: use the extra `via` parameters
+        //                         room_member: None,
+        //                     },
+        //                 );
+        //                 true
+        //             }
+        //             MatrixId::Event(room_id, event_id) => {
+        //                 log!("TODO: open event {} in room {}", event_id, room_id);
+        //                 // TODO: this requires the same first step as the `MatrixId::Room` case above,
+        //                 //       but then we need to call Room::event_with_context() to get the event
+        //                 //       and its context (surrounding events ?).
+        //                 true
+        //             }
+        //             _ => false,
+        //         }
+        //     };
 
-            let mut link_was_handled = false;
-            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
-            }
-            if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
-            }
+        //     let mut link_was_handled = false;
+        //     if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+        //         link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+        //     }
+        //     if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+        //         link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+        //     }
 
-            if !link_was_handled {
-                log!("Opening URL \"{}\"", url);
-                if let Err(e) = robius_open::Uri::new(&url).open() {
-                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification("Could not open URL: {url}".to_string());
-                }
-            }
-            true
-        } else {
-            false
-        }
+        //     if !link_was_handled {
+        //         log!("Opening URL \"{}\"", url);
+        //         if let Err(e) = robius_open::Uri::new(&url).open() {
+        //             error!("Failed to open URL {:?}. Error: {:?}", url, e);
+        //             enqueue_popup_notification("Could not open URL: {url}".to_string());
+        //         }
+        //     }
+        //     true
+        // } else {
+        //     false
+        // }
+        false
     }
 
     /// Shows the user profile sliding pane with the given avatar info.
