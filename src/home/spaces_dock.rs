@@ -1,7 +1,5 @@
 use makepad_widgets::*;
 
-use crate::shared::color_tooltip::*;
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -170,17 +168,15 @@ live_design! {
 /// An action emitted to show or hide the `profile_tooltip`.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ProfileTooltipAction {
-    Show {
-        pos: DVec2,
-        text: &'static str,
-        color: Vec4,
-    },
-    ShowCallout {
-        apply: Vec<Vec<LiveNode>>,
+    HoverIn {
+        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
+        callout_live_nodes: Vec<Vec<LiveNode>>,
+        /// Color of the background
         color: Option<Vec4>,
+        /// Tooltip text
         text: String,
     },
-    Hide,
+    HoverOut,
     None,
 }
 

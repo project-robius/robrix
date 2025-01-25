@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction, spaces_dock::ProfileTooltipAction}, login::login_screen::LoginAction, shared::{color_tooltip::ColorTooltipWidgetRefExt, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction, spaces_dock::ProfileTooltipAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -270,10 +270,10 @@ impl MatchEvent for App {
             }
 
             match action.as_widget_action().cast() {
-                ProfileTooltipAction::ShowCallout { apply, text , color} => {
+                ProfileTooltipAction::HoverIn { callout_live_nodes, text , color} => {
                     let mut tooltip = self.ui.tooltip(id!(profile_tooltip));
-                    for apply in apply.iter() {
-                        tooltip.apply_over(cx, &apply);
+                    for nodes in callout_live_nodes {
+                        tooltip.apply_over(cx, &nodes);
                     }
                     if let Some(color) = color {
                         tooltip.apply_over(cx, live!(
@@ -289,7 +289,7 @@ impl MatchEvent for App {
                     tooltip.set_text(cx, &text);
                     tooltip.show(cx);
                 }
-                ProfileTooltipAction::Hide => {
+                ProfileTooltipAction::HoverOut => {
                     let tooltip = self.ui.tooltip(id!(profile_tooltip));
                     tooltip.hide(cx);
                 }

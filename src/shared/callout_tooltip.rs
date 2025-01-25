@@ -96,7 +96,8 @@ live_design! {
                     height: Fit,
                     draw_text: {
                         text_style: <THEME_FONT_REGULAR>{font_size: 9},
-                        text_wrap: Word,
+                        //text_wrap: Word,
+                        text_wrap: Line,
                         color: (COLOR_PRIMARY)
                     }
                 }
@@ -124,16 +125,15 @@ live_design! {
 ///
 /// A vector of `LiveNode` vectors representing the tooltip's position, size, and 
 /// styling attributes to be applied.
-
-pub fn callout_tooltip_position_helper(widget_rect: Rect, window_size: DVec2, tooltip_width: f64) -> Vec<Vec<LiveNode>> {    
+pub fn position_helper(widget_rect: Rect, window_size: DVec2, tooltip_width: f64) -> Vec<Vec<LiveNode>> {    
     let mut too_close_to_right = false;
-    let mut too_close_to_down = false;
-    const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 100.0;
+    let mut too_close_to_bottom = false;
+    const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
     if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_size.x {
         too_close_to_right = true;
     }
     if (widget_rect.pos.y + widget_rect.size.y) + TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM > window_size.y {
-        too_close_to_down = true;
+        too_close_to_bottom = true;
     }
     let mut pos =  if too_close_to_right {
         DVec2 {
@@ -146,7 +146,7 @@ pub fn callout_tooltip_position_helper(widget_rect: Rect, window_size: DVec2, to
             y: widget_rect.pos.y - 5.0
         }
     };
-    if too_close_to_down && !too_close_to_right {
+    if too_close_to_bottom && !too_close_to_right {
         pos.x = widget_rect.pos.x + (widget_rect.size.x - 10.0) / 2.0;
         pos.y = widget_rect.pos.y - TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM + 10.0;
     }
@@ -155,7 +155,7 @@ pub fn callout_tooltip_position_helper(widget_rect: Rect, window_size: DVec2, to
     } else {
         10.0
     };
-    let callout_angle = match (too_close_to_right, too_close_to_down) {
+    let callout_angle = match (too_close_to_right, too_close_to_bottom) {
         (true, true) => 0.0, //point up
         (true, false) => 90.0, // it is still pointing left, as point right is not supported
         (false, true) => 180.0, //point down
@@ -167,6 +167,7 @@ pub fn callout_tooltip_position_helper(widget_rect: Rect, window_size: DVec2, to
             width: (tooltip_width),
             height: Fit,
             rounded_view = {
+                height: Fit,
                 draw_bg: {
                     callout_offset: (callout_offset)
                     // callout angle in clockwise direction
@@ -175,29 +176,18 @@ pub fn callout_tooltip_position_helper(widget_rect: Rect, window_size: DVec2, to
             }
         }
     ).to_vec()];
-    if too_close_to_down {
+    if too_close_to_bottom {
         to_apply.push(live!(
             content: {
                 height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM),
+                //width: (tooltip_width + 50.0), // Make too close to bottom tooltip wider
+                //width: Fit
+                width: Fill
+                rounded_view = {
+                    height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM - 10.0),
+                }
             }
         ).to_vec());
     }
     to_apply
-}
-
-/// An action emitted to show or hide the `profile_tooltip`.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum ProfileTooltipAction2 {
-    Show {
-        pos: DVec2,
-        text: &'static str,
-        color: Vec4,
-    },
-    ShowCallout {
-        apply: Vec<Vec<LiveNode>>,
-        color: Option<Vec4>,
-        text: String,
-    },
-    Hide,
-    None,
 }

@@ -57,6 +57,7 @@ live_design! {
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
+    use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::home::loading_pane::*;
     use crate::home::message_context_menu::*;
     use crate::home::message_context_menu::*;
@@ -865,84 +866,7 @@ live_design! {
 
             // A tooltip that appears when hovering over certain elements in the RoomScreen,
             // such as reactions or read receipts.
-            room_screen_tooltip = <Tooltip> {
-                content: <View> {
-                    flow: Overlay
-                    width: Fit
-                    height: Fit
-
-                    rounded_view = <RoundedView> {
-                        width: Fill,
-                        height: Fit,
-
-                        padding: 10,
-
-                        draw_bg: {
-                            color: #fff,
-                            border_width: 1.0,
-                            border_color: #D0D5DD,
-                            radius: 2.,
-                            instance background_color: (#3b444b),
-                            // Height of isoceles triangle
-                            instance callout_triangle_height: 7.5,
-                            instance callout_offset: 15.0,
-                            instance pointing_up: 0.0,
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                let rect_size = self.rect_size;
-                                // Main rounded rectangle
-                                if self.pointing_up >= 0.5 {
-                                    sdf.box(
-                                        // Minus 2.0 to overlap the triangle and rectangle
-                                        self.border_width,
-                                        (self.callout_triangle_height - 2.0) + self.border_width,
-                                        rect_size.x - (self.border_width * 2.0) ,
-                                        rect_size.y - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
-                                        max(1.0, self.radius)
-                                    )
-                                    sdf.fill(self.background_color);
-                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 1.0);
-                                     // Draw up-pointed arrow triangle
-                                    sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
-                                    sdf.line_to(0.0, self.callout_triangle_height * 1.0);
-                                    sdf.line_to(self.callout_triangle_height, 0.0);
-                                } else {
-                                    sdf.box(
-                                        // Minus 2.0 to overlap the triangle and rectangle
-                                        (self.callout_triangle_height - 2.0) + self.border_width,
-                                        0.0 + self.border_width,
-                                        rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
-                                        rect_size.y - (self.border_width * 2.0),
-                                        max(1.0, self.radius)
-                                    )
-                                    sdf.fill(self.background_color);
-                                    sdf.translate(0.5, self.callout_offset);
-                                    // Draw left-pointed arrow triangle
-                                    sdf.move_to(self.callout_triangle_height, 0.0);
-                                    sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
-                                    sdf.line_to(0.5, self.callout_triangle_height);
-                                }
-
-                                sdf.close_path();
-
-                                sdf.fill((self.background_color));
-                                return sdf.result;
-                            }
-
-                        }
-
-                        tooltip_label = <Label> {
-                            width: Fill,
-                            height: Fit,
-                            draw_text: {
-                                text_style: <THEME_FONT_REGULAR>{font_size: 9},
-                                text_wrap: Word,
-                                color: (COLOR_PRIMARY)
-                            }
-                        }
-                    }
-                }
-            }
+            room_screen_tooltip = <CalloutTooltip> {}
 
             message_context_menu_modal = <Modal> {
                 align: {x: 0.0, y: 0.0}
@@ -1062,15 +986,13 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let tooltip = self.tooltip(id!(room_screen_tooltip));
+            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
-                    tooltip_pos,
-                    tooltip_width,
-                    callout_offset,
+                    callout_live_nodes,
+                    color,
                     reaction_data,
-                    pointing_up
                 } = reaction_list.hover_in(actions) {
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
@@ -1079,44 +1001,50 @@ impl Widget for RoomScreen {
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
-                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
-                    tooltip.apply_over(cx, live!(
-                        content: {
-                            width: (tooltip_width)
-                            rounded_view = {
-                                draw_bg: {
-                                    callout_offset: (callout_offset)
-                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
+                    for nodes in callout_live_nodes {
+                        tooltip.apply_over(cx, &nodes);
+                    }
+                    if let Some(color) = color {
+                        tooltip.apply_over(cx, live!(
+                            content: {
+                                rounded_view = {
+                                    draw_bg: {
+                                        background_color: (color)
+                                    }
                                 }
                             }
-                        }
-                    ));
+                        ));
+                    }
+                    tooltip.set_text(cx, &tooltip_text);
+                    tooltip.show(cx);
                 }
                 if reaction_list.hover_out(actions) {
                     tooltip.hide(cx);
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
-                    tooltip_pos, 
-                    tooltip_width ,
-                    callout_offset,
-                    pointing_up,
+                    callout_live_nodes,
+                    color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
-                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts.clone(), room_id);
-                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
-                    tooltip.apply_over(cx, live!(
-                        content: {
-                            width: (tooltip_width)
-                            rounded_view = {
-                                draw_bg: {
-                                    callout_offset: (callout_offset)
-                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
+                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
+                    for nodes in callout_live_nodes {
+                        tooltip.apply_over(cx, &nodes);
+                    }
+                    if let Some(color) = color {
+                        tooltip.apply_over(cx, live!(
+                            content: {
+                                rounded_view = {
+                                    draw_bg: {
+                                        background_color: (color)
+                                    }
                                 }
                             }
-                        }
-                    ));
+                        ));
+                    }
+                    tooltip.set_text(cx, &tooltip_text);
+                    tooltip.show(cx);
                 }
                 if avatar_row_ref.hover_out(actions) {
                     tooltip.hide(cx);
@@ -2397,39 +2325,21 @@ impl RoomScreenRef {
 pub enum RoomScreenTooltipActions {
     /// Mouse over event when the mouse is over the read receipt.
     HoverInReadReceipt {
-        tooltip_pos: DVec2,
-        tooltip_width: f64,
-        /// Pointed arrow position relative to the tooltip.
-        /// 
-        /// It is calculated from the right corner of tooltip to position arrow.
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        /// Data that is bound together the widget
-        /// 
+        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
+        callout_live_nodes: Vec<Vec<LiveNode>>,
+        /// Color of the background, default is black
+        color: Option<Vec4>,
         /// Includes the list of users who have seen this event
         read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
-        /// Boolean indicating if the callout should be pointing up.
-        /// 
-        /// If false, it is pointing left
-        pointing_up: bool
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
-        tooltip_pos: DVec2,
-        tooltip_width: f64,
-        /// Pointed arrow position relative to the tooltip
-        ///
-        /// It is calculated from the right corner of tooltip to position arrow
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        /// Data that is bound together the widget
-        ///
+        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
+        callout_live_nodes: Vec<Vec<LiveNode>>,
+        /// Color of the background, default is black
+        color: Option<Vec4>,
         /// Includes the list of users who have reacted to the emoji
         reaction_data: ReactionData,
-        /// Boolean indicating if the callout should be pointing up.
-        ///
-        /// If false, it is pointing left
-        pointing_up: bool
     },
     /// Mouse out event and clear tooltip.
     HoverOut,

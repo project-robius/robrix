@@ -3,8 +3,6 @@ use matrix_sdk::encryption::VerificationState;
 
 use crate::{home::spaces_dock::ProfileTooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
 
-use super::callout_tooltip::callout_tooltip_position_helper;
-
 // First, define the verification icons component layout
 live_design! {
     use link::theme::*;
@@ -136,32 +134,11 @@ impl Widget for VerificationBadge {
             | Hit::FingerHoverIn(_)
             | Hit::FingerHoverOver(_) => {
                 let badge_rect = badge_area.rect(cx);
-                let tooltip_pos = if cx.display_context.is_desktop() {
-                    DVec2 {
-                        x: badge_rect.pos.x + badge_rect.size.x + 1.,
-                        y: badge_rect.pos.y - 10.,
-                    }
-                } else {
-                    DVec2 {
-                        x: badge_rect.pos.x,
-                        y: badge_rect.pos.y - 10.,
-                    }
-                };
-    
-                // cx.widget_action(
-                //     self.widget_uid(),
-                //     &scope.path,
-                //     ProfileTooltipAction::Show {
-                //         pos: tooltip_pos,
-                //         text: verification_state_str(self.verification_state),
-                //         color: verification_state_color(self.verification_state),
-                //     },
-                // );
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    crate::shared::callout_tooltip::ProfileTooltipAction2::ShowCallout {
-                        apply: callout_tooltip_position_helper(badge_rect, window_geom.inner_size, 200.0),
+                    ProfileTooltipAction::HoverIn {
+                        callout_live_nodes: super::callout_tooltip::position_helper(badge_rect, window_geom.inner_size, 200.0),
                         text: verification_state_str(self.verification_state).to_string(),
                         color: Some(verification_state_color(self.verification_state))
                     }
@@ -171,7 +148,7 @@ impl Widget for VerificationBadge {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    crate::shared::callout_tooltip::ProfileTooltipAction2::Hide,
+                    ProfileTooltipAction::HoverOut,
                 );
             }
             _ => { }
