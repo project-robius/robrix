@@ -282,27 +282,32 @@ impl Widget for RoomPreviewContent {
             }
 
             let unread_badge = self.view(id!(unread_badge)); 
-
-            if room_info.num_unread_messages > 0 {
-                if room_info.num_unread_mentions > 0 {
-                    unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 1.0 }});
+            // Helper function to format the unread count, display "99+" if greater than 99
+            fn format_unread_count(count: u64) -> String {
+                if count > 99 {
+                    "99+".to_string()
                 } else {
-                    unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 0.0 }});
+                    count.to_string()
                 }
-                if room_info.num_unread_messages > 99 {
-                    // We don't need to show unread messages over 99, so we show 99+ instead.
-                    unread_badge.label(id!(unread_message_count)).set_text(cx, "99+");
-                } else {
-                    unread_badge
-                        .label(id!(unread_message_count))
-                        .set_text(cx, &room_info.num_unread_messages.to_string());
-                }
+            }
+            if room_info.num_unread_mentions > 0 {
+                // If there are unread mentions, show red badge and the number of unread mentions
+                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 1.0 }});
+                unread_badge
+                    .label(id!(unread_message_count))
+                    .set_text(cx, &format_unread_count(room_info.num_unread_mentions));
                 unread_badge.set_visible(cx, true);
-               
+            } else if room_info.num_unread_messages > 0 {
+                // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
+                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 0.0 }});
+                unread_badge
+                    .label(id!(unread_message_count))
+                    .set_text(cx, &format_unread_count(room_info.num_unread_messages));
+                unread_badge.set_visible(cx, true);
             } else {
+                // If there are no unread mentions and no unread messages, hide the badge
                 unread_badge.set_visible(cx, false);
             }
-
             if cx.display_context.is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
             } else if room_info.is_selected {
