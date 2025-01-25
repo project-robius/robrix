@@ -151,7 +151,7 @@ pub struct RoomsListEntry {
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
     /// The number of unread mentions in this room.
-    pub num_unread_metions: u64,
+    pub num_unread_mentions: u64,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -489,7 +489,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            (room.num_unread_messages, room.num_unread_metions) = match count {
+                            (room.num_unread_messages, room.num_unread_mentions) = match count {
                                 UnreadMessageCount::Unknown => (0, 0),
                                 UnreadMessageCount::Known(count) => (count, unread_mentions),
                             };

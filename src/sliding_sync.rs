@@ -1582,7 +1582,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         latest,
         tags: room.tags().await.ok().flatten(),
         num_unread_messages: room.num_unread_messages(),
-        num_unread_metions: room.num_unread_mentions(),
+        num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,

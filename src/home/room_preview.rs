@@ -284,10 +284,10 @@ impl Widget for RoomPreviewContent {
             let unread_badge = self.view(id!(unread_badge)); 
 
             if room_info.num_unread_messages > 0 {
-                if room_info.num_unread_metions > 0{
-                    unread_badge.apply_over(cx, live!{draw_bg: {highlight: 1.0}});
-                }else{
-                    unread_badge.apply_over(cx, live!{draw_bg: {highlight: 0.0}});
+                if room_info.num_unread_mentions > 0 {
+                    unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 1.0 }});
+                } else {
+                    unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 0.0 }});
                 }
                 if room_info.num_unread_messages > 99 {
                     // We don't need to show unread messages over 99, so we show 99+ instead.
