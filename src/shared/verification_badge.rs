@@ -3,6 +3,8 @@ use matrix_sdk::encryption::VerificationState;
 
 use crate::{home::spaces_dock::ProfileTooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
 
+use super::callout_tooltip::callout_tooltip_position_helper;
+
 // First, define the verification icons component layout
 live_design! {
     use link::theme::*;
@@ -113,7 +115,8 @@ impl LiveHook for VerificationBadge {
 impl Widget for VerificationBadge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
+        let Some(app_state) = scope.data.get::<crate::app::AppState>() else { return };
+        let Some(window_geom) = &app_state.window_geom else { return };
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
@@ -145,21 +148,30 @@ impl Widget for VerificationBadge {
                     }
                 };
     
+                // cx.widget_action(
+                //     self.widget_uid(),
+                //     &scope.path,
+                //     ProfileTooltipAction::Show {
+                //         pos: tooltip_pos,
+                //         text: verification_state_str(self.verification_state),
+                //         color: verification_state_color(self.verification_state),
+                //     },
+                // );
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::Show {
-                        pos: tooltip_pos,
-                        text: verification_state_str(self.verification_state),
-                        color: verification_state_color(self.verification_state),
-                    },
+                    crate::shared::callout_tooltip::ProfileTooltipAction2::ShowCallout {
+                        apply: callout_tooltip_position_helper(badge_rect, window_geom.inner_size, 200.0),
+                        text: verification_state_str(self.verification_state).to_string(),
+                        color: Some(verification_state_color(self.verification_state))
+                    }
                 );
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::Hide,
+                    crate::shared::callout_tooltip::ProfileTooltipAction2::Hide,
                 );
             }
             _ => { }

@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction, spaces_dock::ProfileTooltipAction}, login::login_screen::LoginAction, shared::{color_tooltip::ColorTooltipWidgetRefExt, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -16,7 +16,9 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
-    
+    use crate::shared::color_tooltip::ColorTooltip;
+    use crate::shared::callout_tooltip::CalloutTooltip;
+
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
     ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
     ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
@@ -110,7 +112,6 @@ live_design! {
                 <View> {
                     width: Fill, height: Fill,
                     flow: Overlay,
-
                     home_screen_view = <View> {
                         visible: false
                         home_screen = <HomeScreen> {}
@@ -130,7 +131,7 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
-                    
+                    profile_tooltip = <CalloutTooltip> {}
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -267,6 +268,33 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+
+            match action.as_widget_action().cast() {
+                ProfileTooltipAction::ShowCallout { apply, text , color} => {
+                    let mut tooltip = self.ui.tooltip(id!(profile_tooltip));
+                    for apply in apply.iter() {
+                        tooltip.apply_over(cx, &apply);
+                    }
+                    if let Some(color) = color {
+                        tooltip.apply_over(cx, live!(
+                            content: {
+                                rounded_view = {
+                                    draw_bg: {
+                                        background_color: (color)
+                                    }
+                                }
+                            }
+                        ));
+                    }
+                    tooltip.set_text(cx, &text);
+                    tooltip.show(cx);
+                }
+                ProfileTooltipAction::Hide => {
+                    let tooltip = self.ui.tooltip(id!(profile_tooltip));
+                    tooltip.hide(cx);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -304,6 +332,7 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+        
     }
 }
 
@@ -347,3 +376,4 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
+

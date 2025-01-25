@@ -60,7 +60,7 @@ live_design! {
             verification_badge = <VerificationBadge> {}
         }
 
-        profile_tooltip = <ColorTooltip> {}
+        
 
     }
 
@@ -175,6 +175,11 @@ pub enum ProfileTooltipAction {
         text: &'static str,
         color: Vec4,
     },
+    ShowCallout {
+        apply: Vec<Vec<LiveNode>>,
+        color: Option<Vec4>,
+        text: String,
+    },
     Hide,
     None,
 }
@@ -187,21 +192,6 @@ pub struct Profile {
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                match action.as_widget_action().cast() {
-                    ProfileTooltipAction::Show { pos, text, color } => {
-                        self.view.color_tooltip(id!(profile_tooltip))
-                            .show_with_options(cx, pos, text, color);
-                    }
-                    ProfileTooltipAction::Hide => {
-                        self.view.color_tooltip(id!(profile_tooltip)).hide(cx);
-                    }
-                    _ => { }
-                }
-            }
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
