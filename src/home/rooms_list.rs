@@ -93,7 +93,8 @@ pub enum RoomsListUpdate {
     /// Update the number of unread messages for the given room.
     UpdateNumUnreadMessages {
         room_id: OwnedRoomId,
-        count: UnreadMessageCount
+        count: UnreadMessageCount,
+        unread_mentions: u64,
     },
     /// Update the displayable name for the given room.
     UpdateRoomName {
@@ -149,6 +150,8 @@ pub struct RoomsListEntry {
     pub room_name: Option<String>,
     /// The number of unread messages in this room.
     pub num_unread_messages: u64,
+    /// The number of unread mentions in this room.
+    pub num_unread_mentions: u64,
     /// The canonical alias for this room, if any.
     pub canonical_alias: Option<OwnedRoomAliasId>,
     /// The alternative aliases for this room, if any.
@@ -484,11 +487,11 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
-                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, count } => {
+                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
-                            room.num_unread_messages = match count {
-                                UnreadMessageCount::Unknown => 0,
-                                UnreadMessageCount::Known(count) => count,
+                            (room.num_unread_messages, room.num_unread_mentions) = match count {
+                                UnreadMessageCount::Unknown => (0, 0),
+                                UnreadMessageCount::Known(count) => (count, unread_mentions),
                             };
                         } else {
                             error!("Error: couldn't find room {} to update unread messages count", room_id);
