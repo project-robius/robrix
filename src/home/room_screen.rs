@@ -368,7 +368,7 @@ live_design! {
                         text: "<Username not available>"
                     }
                 }
-                
+
                 message = <HtmlOrPlaintext> { }
 
                 // <LineH> {
@@ -380,7 +380,7 @@ live_design! {
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-                
+
             }
         }
     }
@@ -439,7 +439,7 @@ live_design! {
                     avatar_row = <AvatarRow> {}
                 }
             }
-            
+
         }
     }
 
@@ -457,7 +457,7 @@ live_design! {
                     avatar_row = <AvatarRow> {}
                 }
             }
-            
+
         }
     }
 
@@ -980,7 +980,7 @@ live_design! {
 
             /*
              * This is broken currently, so I'm disabling it.
-             * 
+             *
             message_action_bar_popup = <PopupNotification> {
                 align: {x: 0.0, y: 0.0}
                 content: {
@@ -1096,8 +1096,8 @@ impl Widget for RoomScreen {
                     tooltip.hide(cx);
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { 
-                    tooltip_pos, 
+                if let RoomScreenTooltipActions::HoverInReadReceipt {
+                    tooltip_pos,
                     tooltip_width ,
                     callout_offset,
                     pointing_up,
@@ -1121,7 +1121,7 @@ impl Widget for RoomScreen {
                 if avatar_row_ref.hover_out(actions) {
                     tooltip.hide(cx);
                 }
-            }   
+            }
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
                 match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
@@ -2400,16 +2400,16 @@ pub enum RoomScreenTooltipActions {
         tooltip_pos: DVec2,
         tooltip_width: f64,
         /// Pointed arrow position relative to the tooltip.
-        /// 
+        ///
         /// It is calculated from the right corner of tooltip to position arrow.
         /// to point towards the center of the hovered widget.
         callout_offset: f64,
         /// Data that is bound together the widget
-        /// 
+        ///
         /// Includes the list of users who have seen this event
         read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
         /// Boolean indicating if the callout should be pointing up.
-        /// 
+        ///
         /// If false, it is pointing left
         pointing_up: bool
     },
@@ -3361,7 +3361,6 @@ fn populate_image_message_content(
             }
         };
 
-    let mut media_format =  Some(MEDIA_THUMBNAIL_FORMAT.into());
     let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, media_format: Option<MediaFormat>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
@@ -3377,20 +3376,23 @@ fn populate_image_message_content(
         }
     };
 
-
     match image_info_source {
-        Some((None, media_source)) => {
-            media_format = None;
-            // We fetch the original (full-size) media if it does not have a thumbnail.
+        Some((image_info, media_source)) => {
+            let thumbnail_source = image_info.and_then(|image_info|{image_info.thumbnail_source});
+
+            // Only image doesnot have a thumbnail source, we fetch its origin source and apply the format `MEDIA_THUMBNAIL_FORMAT`.
+            // We don't apply any format if it has a thumbnail source.
+            // When an inmage's size is smaller than about 500KB, it won't have a thumbnail source, by my test.
+            let (media_source, media_format) =
+                if let Some(thumbnail_source) = thumbnail_source {
+                    (thumbnail_source, None)
+                }
+                else {
+                    (media_source, Some(MEDIA_THUMBNAIL_FORMAT.into()))
+                };
+
             fetch_and_show_media_source(cx, media_source, media_format);
-        },
-        Some((Some(image_info), media_source)) => {
-            if let Some(thumbnail_source) =  image_info.thumbnail_source {
-                fetch_and_show_media_source(cx, thumbnail_source, media_format);
-            } else {
-                fetch_and_show_media_source(cx, media_source, media_format);
-            }
-        },
+        }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
             fully_drawn = true;
@@ -3425,7 +3427,7 @@ fn populate_file_message_content(
     // TODO: add a button to download the file
 
     message_content_widget.show_html(
-        cx, 
+        cx,
         format!("<b>{filename}</b>{size}{caption}<br> → <i>File download not yet supported.</i>"),
     );
     true
@@ -3583,7 +3585,7 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let (in_reply_to_username, is_avatar_fully_drawn) = 
+                let (in_reply_to_username, is_avatar_fully_drawn) =
                     replied_to_message_view
                         .avatar(id!(replied_to_message_content.reply_preview_avatar))
                         .set_avatar_and_get_username(
