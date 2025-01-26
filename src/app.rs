@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -256,17 +256,17 @@ impl MatchEvent for App {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
-            // message source modal handling.
-            match action.as_widget_action().cast() {
-                MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
-                   // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
-                   // self.ui.modal(id!(message_source_modal)).open(cx);
-                }
-                MessageAction::MessageSourceModalClose => {
-                    self.ui.modal(id!(message_source_modal)).close(cx);
-                }
-                _ => {}
-            }
+            // // message source modal handling.
+            // match action.as_widget_action().cast() {
+            //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
+            //        // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
+            //        // self.ui.modal(id!(message_source_modal)).open(cx);
+            //     }
+            //     MessageAction::MessageSourceModalClose => {
+            //         self.ui.modal(id!(message_source_modal)).close(cx);
+            //     }
+            //     _ => {}
+            // }
         }
     }
 
