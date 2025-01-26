@@ -3377,13 +3377,11 @@ fn populate_image_message_content(
     };
 
     match image_info_source {
-        Some((image_info, origin_source)) => {
-            // When an inmage's size is smaller than about 500KB, it won't have a thumbnail source, by my test.
-            // We must apply a format anyhow the image possess a thumbnail source.
+        Some((image_info, original_source)) => {
+            // Use the provided thumbnail URI if it exists; otherwise use the original URI.
             let media_source = image_info
-                .and_then(|image_info|{image_info.thumbnail_source})
-                .unwrap_or(origin_source);
-
+                .and_then(|image_info| image_info.thumbnail_source)
+                .unwrap_or(original_source);
             fetch_and_show_media_source(cx, media_source);
         }
         None => {
