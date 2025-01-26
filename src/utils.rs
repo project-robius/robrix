@@ -197,13 +197,25 @@ impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
     }
 }
 
-/// The default media format to use for thumbnail requests.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+/// The avatar format to use for thumbnail requests.
+pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         size: MediaThumbnailSizeConst {
             method: Method::Scale,
             width: 40,
             height: 40,
+        },
+        animated: false,
+    }
+);
+
+/// The timeline image format to use for thumbnail requests.
+pub const TIMELINE_IMAGE_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst {
+        size: MediaThumbnailSizeConst {
+            method: Method::Scale,
+            width: 400,
+            height: 400,
         },
         animated: false,
     }
