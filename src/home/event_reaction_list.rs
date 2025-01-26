@@ -1,3 +1,4 @@
+use crate::shared;
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -6,7 +7,6 @@ use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::home::room_screen::RoomScreenTooltipActions;
 use indexmap::IndexMap;
 
-use super::room_screen::room_screen_tooltip_position_helper;
 
 const TOOLTIP_WIDTH: f64 = 200.0;
 const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
@@ -127,16 +127,11 @@ impl Widget for ReactionList {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
                     let widget_rect = widget_ref.area().rect(cx);
-                    let (tooltip_pos, 
-                        callout_offset, 
-                        too_close_to_right, 
-                    ) = room_screen_tooltip_position_helper(widget_rect, window_geom, TOOLTIP_WIDTH);
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton {
-                        tooltip_pos, 
-                        tooltip_width: TOOLTIP_WIDTH, 
-                        callout_offset,
-                        reaction_data: reaction_data.clone(),
-                        pointing_up: too_close_to_right,
+                    let callout_live_nodes = shared::callout_tooltip::position_helper(widget_rect, window_geom.inner_size, TOOLTIP_WIDTH);
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton { 
+                        callout_live_nodes, 
+                        color: None, 
+                        reaction_data: reaction_data.clone() 
                     });
                     cx.set_cursor(MouseCursor::Hand);
                     widget_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));

@@ -1,5 +1,6 @@
 use crate::app::AppState;
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
+use crate::shared;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::utils::human_readable_list;
@@ -8,7 +9,6 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
-use super::room_screen::room_screen_tooltip_position_helper;
 
 /// The default width of the room screen tooltip for read receipts.
 const TOOLTIP_WIDTH: f64 = 180.0;
@@ -96,17 +96,12 @@ impl Widget for AvatarRow {
         let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(_) => {
-                let (tooltip_pos, 
-                    callout_offset, 
-                    too_close_to_right, 
-                ) = room_screen_tooltip_position_helper(widget_rect, window_geom, TOOLTIP_WIDTH);
                 if let Some(read_receipts) = &self.read_receipts {
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt{
-                        tooltip_pos,
-                        callout_offset,
-                        read_receipts: read_receipts.clone(),
-                        tooltip_width: TOOLTIP_WIDTH,
-                        pointing_up: too_close_to_right,
+                    let callout_live_nodes = shared::callout_tooltip::position_helper(widget_rect, window_geom.inner_size, TOOLTIP_WIDTH);
+                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt { 
+                        callout_live_nodes, 
+                        color: None, 
+                        read_receipts: read_receipts.clone()
                     });
                 }
             }

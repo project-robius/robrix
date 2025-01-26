@@ -113,7 +113,8 @@ impl LiveHook for VerificationBadge {
 impl Widget for VerificationBadge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
+        let Some(app_state) = scope.data.get::<crate::app::AppState>() else { return };
+        let Some(window_geom) = &app_state.window_geom else { return };
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
@@ -133,33 +134,21 @@ impl Widget for VerificationBadge {
             | Hit::FingerHoverIn(_)
             | Hit::FingerHoverOver(_) => {
                 let badge_rect = badge_area.rect(cx);
-                let tooltip_pos = if cx.display_context.is_desktop() {
-                    DVec2 {
-                        x: badge_rect.pos.x + badge_rect.size.x + 1.,
-                        y: badge_rect.pos.y - 10.,
-                    }
-                } else {
-                    DVec2 {
-                        x: badge_rect.pos.x,
-                        y: badge_rect.pos.y - 10.,
-                    }
-                };
-    
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::Show {
-                        pos: tooltip_pos,
-                        text: verification_state_str(self.verification_state),
-                        color: verification_state_color(self.verification_state),
-                    },
+                    ProfileTooltipAction::HoverIn {
+                        callout_live_nodes: super::callout_tooltip::position_helper(badge_rect, window_geom.inner_size, 200.0),
+                        text: verification_state_str(self.verification_state).to_string(),
+                        color: Some(verification_state_color(self.verification_state))
+                    }
                 );
             }
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::Hide,
+                    ProfileTooltipAction::HoverOut,
                 );
             }
             _ => { }

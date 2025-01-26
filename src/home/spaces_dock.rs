@@ -1,7 +1,5 @@
 use makepad_widgets::*;
 
-use crate::shared::color_tooltip::*;
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -60,7 +58,7 @@ live_design! {
             verification_badge = <VerificationBadge> {}
         }
 
-        profile_tooltip = <ColorTooltip> {}
+        
 
     }
 
@@ -170,12 +168,15 @@ live_design! {
 /// An action emitted to show or hide the `profile_tooltip`.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ProfileTooltipAction {
-    Show {
-        pos: DVec2,
-        text: &'static str,
-        color: Vec4,
+    HoverIn {
+        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
+        callout_live_nodes: Vec<Vec<LiveNode>>,
+        /// Color of the background
+        color: Option<Vec4>,
+        /// Tooltip text
+        text: String,
     },
-    Hide,
+    HoverOut,
     None,
 }
 
@@ -187,21 +188,6 @@ pub struct Profile {
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                match action.as_widget_action().cast() {
-                    ProfileTooltipAction::Show { pos, text, color } => {
-                        self.view.color_tooltip(id!(profile_tooltip))
-                            .show_with_options(cx, pos, text, color);
-                    }
-                    ProfileTooltipAction::Hide => {
-                        self.view.color_tooltip(id!(profile_tooltip)).hide(cx);
-                    }
-                    _ => { }
-                }
-            }
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
