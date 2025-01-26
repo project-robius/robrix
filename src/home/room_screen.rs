@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
-    media::MediaFormat, ruma::{
+    ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -26,7 +26,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, TIMELINE_IMAGE_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -3331,8 +3331,8 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, media_format: Option<MediaFormat>|
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), media_format) {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri|
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(TIMELINE_IMAGE_THUMBNAIL_FORMAT.into())) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -3361,7 +3361,7 @@ fn populate_image_message_content(
             }
         };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, media_format: Option<MediaFormat>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3371,27 +3371,21 @@ fn populate_image_message_content(
                 );
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri, media_format)
+                fetch_and_show_image_uri(cx, mxc_uri)
             }
         }
     };
 
     match image_info_source {
-        Some((image_info, media_source)) => {
+        Some((image_info, origin_source)) => {
             let thumbnail_source = image_info.and_then(|image_info|{image_info.thumbnail_source});
 
-            // Only image doesnot have a thumbnail source, we fetch its origin source and apply the format `MEDIA_THUMBNAIL_FORMAT`.
-            // We don't apply any format if it has a thumbnail source.
             // When an inmage's size is smaller than about 500KB, it won't have a thumbnail source, by my test.
-            let (media_source, media_format) =
-                if let Some(thumbnail_source) = thumbnail_source {
-                    (thumbnail_source, None)
-                }
-                else {
-                    (media_source, Some(MEDIA_THUMBNAIL_FORMAT.into()))
-                };
+            // We must apply a format anyhow the image possess a thumbnail source.
+            let media_source =
+                if let Some(thumbnail_source) = thumbnail_source { thumbnail_source } else { origin_source };
 
-            fetch_and_show_media_source(cx, media_source, media_format);
+            fetch_and_show_media_source(cx, media_source);
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
