@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, new_message_context_menu::{MessageAbilities, MessageDetails, NewMessageContextMenuWidgetExt}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -58,7 +58,6 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_pane::*;
-    use crate::home::new_message_context_menu::*;
     use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -939,8 +938,6 @@ live_design! {
                 }
             }
 
-            new_message_context_menu = <NewMessageContextMenu> { }
-
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
             user_profile_sliding_pane = <UserProfileSlidingPane> { }
@@ -1017,7 +1014,6 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
-        let new_message_context_menu = self.new_message_context_menu(id!(new_message_context_menu));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
@@ -1378,10 +1374,6 @@ impl Widget for RoomScreen {
             is_pane_shown = true;
             user_profile_sliding_pane.handle_event(cx, event, scope);
         }
-        else if new_message_context_menu.is_currently_shown(cx) {
-            is_pane_shown = true;
-            new_message_context_menu.handle_event(cx, event, scope);
-        }
         else {
             is_pane_shown = false;
         }
@@ -1404,25 +1396,8 @@ impl Widget for RoomScreen {
                     return false;
                 }
 
+                /*
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
-                    MessageAction::OpenMessageContextMenu { details, abs_pos: coords } => {
-                        let new_message_context_menu = self.new_message_context_menu(id!(new_message_context_menu));
-                        let dimensions = new_message_context_menu.show(cx, details);
-
-                        // The context menu's (0, 0) point is relative to the Message widget,
-                        // not this RoomScreen, so we compensate for that here.
-                        let new_coords = coords - self.view.area().rect(cx).pos;
-                        // log!("Opening message context menu: dimensions: {:?}\n   old coords: {:?}\n   new coords: {:?}", dimensions, coords, new_coords);
-                        new_message_context_menu.apply_over(
-                            cx,
-                            live! {
-                                main_content = { margin: { left: (new_coords.x), top: (new_coords.y) } }
-                            },
-                        );
-                        self.redraw(cx);
-                        return false; // mark this action as handled
-                    }
-                    /*
                     MessageAction::ActionBarClose => {
                         let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
                         let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
@@ -1457,9 +1432,9 @@ impl Widget for RoomScreen {
                             message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
                         }
                     }
-                    */
                     _ => {}
                 }
+                */
 
                 // Keep all unhandled actions so we can add them back to the global action list below.
                 true

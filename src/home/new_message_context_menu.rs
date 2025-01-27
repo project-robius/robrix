@@ -43,7 +43,7 @@ live_design! {
         show_bg: true
         draw_bg: {
             fn pixel(self) -> vec4 {
-                return vec4(0., 0., 0., 0.2)
+                return vec4(0., 0., 0., 0.3)
             }
         }
 

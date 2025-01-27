@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -16,13 +16,8 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
+    use crate::home::new_message_context_menu::*;
     
-    ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
-    ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
-    ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
-    ICON_ME = dep("crate://self/resources/icons/me.svg")
-
-
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
     APP_TAB_COLOR_SELECTED = #091
@@ -125,6 +120,10 @@ live_design! {
                             <PopupList> {}
                         }
                     }
+                    // Context menus should be shown above other UI elements,
+                    // but beneath the verification modal.
+                    new_message_context_menu = <NewMessageContextMenu> { }
+
                     verification_modal = <Modal> {
                         content: {
                             verification_modal_inner = <VerificationModal> {}
@@ -195,6 +194,24 @@ impl MatchEvent for App {
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
             }
+
+            // Handle an action requesting to open the new message context menu.
+            match action.as_widget_action().cast() {
+                MessageAction::OpenMessageContextMenu { details, abs_pos } => {
+                    let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
+                    let dimensions = new_message_context_menu.show(cx, details);
+
+                    // TODO: use dimensions to ensure the context menu is fully visible
+                    //       and doesn't overflow the window bounds.
+
+                    new_message_context_menu.apply_over(cx, live! {
+                        main_content = { margin: { left: (abs_pos.x), top: (abs_pos.y) } }
+                    });
+                    self.ui.redraw(cx);
+                }
+                _ => {}
+            }
+
             match action.downcast_ref() {
                 Some(PopupNotificationAction::Open) => {
                     self.ui.popup_notification(id!(popup)).open(cx);
@@ -204,6 +221,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomsListAction::Selected {
@@ -251,7 +269,6 @@ impl MatchEvent for App {
                     .initialize_with_data(cx, state.clone());
                 self.ui.modal(id!(verification_modal)).open(cx);
             }
-
             if let VerificationModalAction::Close = action.as_widget_action().cast() {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
