@@ -494,12 +494,23 @@ impl NewMessageContextMenu {
 
     /// Sets up all of the buttons based this context menu's inner details.
     ///
-    /// Returns the total height of all visible items;
+    /// Returns the total height of all visible items.
     fn set_button_visibility(&mut self, cx: &mut Cx) -> f64 {
         let Some(details) = self.details.as_ref() else { return 0.0 };
 
         // Note that some buttons are always enabled:
         // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
+
+        let react_button = self.view.button(id!(react_button));
+        let reply_button = self.view.button(id!(reply_button));
+        let edit_button = self.view.button(id!(edit_message_button));
+        let pin_button = self.view.button(id!(pin_button));
+        let copy_html_button = self.view.button(id!(copy_html_button));
+        let jump_to_related_button = self.view.button(id!(jump_to_related_button));
+        // let report_button = self.view.button(id!(report_button));
+        let delete_button = self.view.button(id!(delete_button));
+
+        // Determine which buttons should be shown.
         let show_react = details.abilities.contains(MessageAbilities::CanReact);
         let show_reply_to = details.abilities.contains(MessageAbilities::CanReplyTo);
         let show_divider_after_react_reply = show_react || show_reply_to;
@@ -514,11 +525,11 @@ impl NewMessageContextMenu {
         let show_delete = details.abilities.contains(MessageAbilities::CanDelete);
         let show_divider_before_report_delete = show_delete; // || show_report;
 
-        self.view.button(id!(react_button)).set_visible(cx, show_react);
-        self.view.button(id!(reply_button)).set_visible(cx, show_reply_to);
+        // Actually set the buttons' visibility.
+        react_button.set_visible(cx, show_react);
+        reply_button.set_visible(cx, show_reply_to);
         self.view.view(id!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
-        self.view.button(id!(edit_message_button)).set_visible(cx, show_edit);
-        let pin_button = self.view.button(id!(pin_button));
+        edit_button.set_visible(cx, show_edit);
         if details.abilities.contains(MessageAbilities::CanPin) {
             pin_button.set_text(cx, "Pin Message");
             show_pin = true;
@@ -529,11 +540,22 @@ impl NewMessageContextMenu {
             show_pin = false;
         }
         pin_button.set_visible(cx, show_pin);
-        self.view.button(id!(copy_html_button)).set_visible(cx, show_copy_html);
-        self.view.button(id!(jump_to_related_button)).set_visible(cx, show_jump_to_related);
+        copy_html_button.set_visible(cx, show_copy_html);
+        jump_to_related_button.set_visible(cx, show_jump_to_related);
         self.view.view(id!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
-        // self.view.button(id!(report_button)).set_visible(cx, show_report);
-        self.view.button(id!(delete_button)).set_visible(cx, show_delete);
+        // report_button.set_visible(cx, show_report);
+        delete_button.set_visible(cx, show_delete);
+
+        // Reset the hover state of each button.
+        react_button.reset_hover(cx);
+        reply_button.reset_hover(cx);
+        edit_button.reset_hover(cx);
+        pin_button.reset_hover(cx);
+        copy_html_button.reset_hover(cx);
+        jump_to_related_button.reset_hover(cx);
+        // report_button.reset_hover(cx);
+        delete_button.reset_hover(cx);
+
         self.redraw(cx);
 
         let num_visible_buttons = 
