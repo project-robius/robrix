@@ -199,13 +199,13 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 MessageAction::OpenMessageContextMenu { details, abs_pos } => {
                     let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
-                    let dimensions = new_message_context_menu.show(cx, details);
-
-                    // TODO: use dimensions to ensure the context menu is fully visible
-                    //       and doesn't overflow the window bounds.
-
+                    let expected_dimensions = new_message_context_menu.show(cx, details);
+                    // Ensure the context menu does not spill over the window's bounds.
+                    let rect = self.ui.area().rect(cx);
+                    let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
+                    let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
                     new_message_context_menu.apply_over(cx, live! {
-                        main_content = { margin: { left: (abs_pos.x), top: (abs_pos.y) } }
+                        main_content = { margin: { left: (pos_x), top: (pos_y) } }
                     });
                     self.ui.redraw(cx);
                 }
