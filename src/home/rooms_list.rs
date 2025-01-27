@@ -452,7 +452,7 @@ impl RoomsList {
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it.
-        {
+        if matches!(event, Event::Signal) {
             let mut num_updates: usize = 0;
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;
@@ -686,12 +686,13 @@ impl WidgetMatchEvent for RoomsList {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
         for action in actions {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
-
+                let portal_list = self.view.portal_list(id!(list));
                 if keywords.is_empty() {
                     // Reset the displayed rooms list to show all rooms.
                     self.display_filter = RoomDisplayFilter::default();
                     self.displayed_rooms = self.all_rooms.keys().cloned().collect();
                     self.update_status_rooms_count();
+                    portal_list.set_first_id_and_scroll(0, 0.0);
                     self.redraw(cx);
                     return;
                 }
@@ -702,7 +703,7 @@ impl WidgetMatchEvent for RoomsList {
                     .build();
                 self.display_filter = filter;
 
-                let displayed_rooms = if let Some(sort_fn) = sort_fn {
+                let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
                     let mut filtered_rooms: Vec<_> = self.all_rooms
                         .iter()
                         .filter(|(_, room)| (self.display_filter)(room))
@@ -722,10 +723,10 @@ impl WidgetMatchEvent for RoomsList {
                         .collect()
                 };
 
-                // Update the displayed rooms list.
-                self.displayed_rooms = displayed_rooms;
+                // Update the displayed rooms list and redraw it.
+                self.displayed_rooms = new_displayed_rooms;
                 self.update_status_matching_rooms();
-                // Redraw the rooms list.
+                portal_list.set_first_id_and_scroll(0, 0.0);
                 self.redraw(cx);
             }
         }
