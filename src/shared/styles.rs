@@ -5,16 +5,16 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
 
-    pub ICON_ADD_REACTION = dep("crate://self/resources/icons/add-reaction.svg")
+    pub ICON_ADD_REACTION = dep("crate://self/resources/icons/add_reaction.svg")
     pub ICON_BLOCK_USER   = dep("crate://self/resources/icons/forbidden.svg")
     pub ICON_CHECKMARK    = dep("crate://self/resources/icons/checkmark.svg")
     pub ICON_CLOSE        = dep("crate://self/resources/icons/close.svg")
     pub ICON_COPY         = dep("crate://self/resources/icons/copy.svg")
-    pub ICON_EDIT         = dep("crate://self/resources/icons/edit1.svg")
+    pub ICON_EDIT         = dep("crate://self/resources/icons/edit.svg")
     pub ICON_HTML_FILE    = dep("crate://self/resources/icons/html_file.svg")
     pub ICON_JUMP         = dep("crate://self/resources/icons/go_back.svg")
     pub ICON_LINK         = dep("crate://self/resources/icons/link.svg")
-    pub ICON_PIN          = dep("crate://self/resources/icons/pin1.svg")
+    pub ICON_PIN          = dep("crate://self/resources/icons/pin.svg")
     pub ICON_REPLY        = dep("crate://self/resources/icons/reply.svg")
     pub ICON_TRASH        = dep("crate://self/resources/icons/trash.svg")
     pub ICON_VIEW_SOURCE  = dep("crate://self/resources/icons/view_source.svg")

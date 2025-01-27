@@ -58,7 +58,7 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_pane::*;
-    use crate::home::message_context_menu::*;
+    use crate::home::new_message_context_menu::*;
     use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -700,11 +700,14 @@ live_design! {
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
+        flow: Down,
+        spacing: 0.0
+
         show_bg: true,
         draw_bg: {
             color: (COLOR_SECONDARY)
         }
-        flow: Down, spacing: 0.0
+
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -1012,9 +1015,10 @@ impl Drop for RoomScreen {
 impl Widget for RoomScreen {
     // Handle events and actions for the RoomScreen widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let widget_uid = self.widget_uid();
+        let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
-        let user_profile_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let new_message_context_menu = self.new_message_context_menu(id!(new_message_context_menu));
+        let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
         // Currently, a Signal event is only used to tell this widget
@@ -1093,7 +1097,7 @@ impl Widget for RoomScreen {
             }   
             for action in actions {
                 // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
-                match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
+                match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                     // MessageAction::ViewSourceButtonClicked(item_id) => {
                     //     let Some(tl) = self.tl_state.as_mut() else {
                     //         continue;
@@ -1224,7 +1228,7 @@ impl Widget for RoomScreen {
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
-                            widget_uid,
+                            room_screen_widget_uid,
                             &scope.path,
                             MessageAction::MessageHighlight(item_id),
                         );
@@ -1240,7 +1244,7 @@ impl Widget for RoomScreen {
                     if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
                         self.show_user_profile(
                             cx,
-                            &user_profile_pane,
+                            &user_profile_sliding_pane,
                             UserProfilePaneInfo {
                                 profile_and_room_id,
                                 room_name: self.room_name.clone(),
@@ -1248,60 +1252,6 @@ impl Widget for RoomScreen {
                             },
                         );
                     }
-                }
-
-                match action.as_widget_action().cast() {
-                    MessageAction::OpenMessageContextMenu { details, coords } => {
-                        let new_message_context_menu = self.new_message_context_menu(id!(new_message_context_menu));
-                        new_message_context_menu.show(cx, details);
-                        
-                        // the modal's (0, 0) point is this view, not the screen, so we need to compensate for that.
-                        let coords = coords - self.view.area().rect(cx).pos;
-                        
-                        new_message_context_menu.apply_over(
-                            cx,
-                            live! {
-                                content: { margin: { left: (coords.x), top: (coords.y) } }
-                            },
-                        );
-                    }
-                    /*
-                    MessageAction::ActionBarClose => {
-                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
-                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
-
-                        // close only if the active message is requesting it to avoid double closes.
-                        if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
-                            if action.as_widget_action().widget_uid_eq(message_widget_uid).is_some() {
-                                message_action_bar_popup.close(cx);
-                            }
-                        }
-                    }
-                    MessageAction::ActionBarOpen { item_id, message_rect } => {
-                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
-                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
-
-                        let margin_x = 50.;
-
-                        let coords = dvec2(
-                            (message_rect.pos.x + message_rect.size.x) - margin_x,
-                            message_rect.pos.y,
-                        );
-
-                        message_action_bar_popup.apply_over(
-                            cx,
-                            live! {
-                                content: { margin: { left: (coords.x), top: (coords.y) } }
-                            },
-                        );
-
-                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
-                            message_action_bar_popup.open(cx);
-                            message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
-                        }
-                    }
-                    */
-                    _ => {}
                 }
             }
 
@@ -1424,9 +1374,13 @@ impl Widget for RoomScreen {
             is_pane_shown = true;
             loading_pane.handle_event(cx, event, scope);
         }
-        else if user_profile_pane.is_currently_shown(cx) {
+        else if user_profile_sliding_pane.is_currently_shown(cx) {
             is_pane_shown = true;
-            user_profile_pane.handle_event(cx, event, scope);
+            user_profile_sliding_pane.handle_event(cx, event, scope);
+        }
+        else if new_message_context_menu.is_currently_shown(cx) {
+            is_pane_shown = true;
+            new_message_context_menu.handle_event(cx, event, scope);
         }
         else {
             is_pane_shown = false;
@@ -1446,8 +1400,65 @@ impl Widget for RoomScreen {
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
-                if self.handle_link_clicked(cx, action, &user_profile_pane) {
+                if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
                     return false;
+                }
+
+                match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
+                    MessageAction::OpenMessageContextMenu { details, abs_pos: coords } => {
+                        let new_message_context_menu = self.new_message_context_menu(id!(new_message_context_menu));
+                        let dimensions = new_message_context_menu.show(cx, details);
+
+                        // The context menu's (0, 0) point is relative to the Message widget,
+                        // not this RoomScreen, so we compensate for that here.
+                        let new_coords = coords - self.view.area().rect(cx).pos;
+                        // log!("Opening message context menu: dimensions: {:?}\n   old coords: {:?}\n   new coords: {:?}", dimensions, coords, new_coords);
+                        new_message_context_menu.apply_over(
+                            cx,
+                            live! {
+                                main_content = { margin: { left: (new_coords.x), top: (new_coords.y) } }
+                            },
+                        );
+                        self.redraw(cx);
+                        return false; // mark this action as handled
+                    }
+                    /*
+                    MessageAction::ActionBarClose => {
+                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+
+                        // close only if the active message is requesting it to avoid double closes.
+                        if let Some(message_widget_uid) = message_action_bar.message_widget_uid() {
+                            if action.as_widget_action().widget_uid_eq(message_widget_uid).is_some() {
+                                message_action_bar_popup.close(cx);
+                            }
+                        }
+                    }
+                    MessageAction::ActionBarOpen { item_id, message_rect } => {
+                        let message_action_bar_popup = self.popup_notification(id!(message_action_bar_popup));
+                        let message_action_bar = message_action_bar_popup.message_action_bar(id!(message_action_bar));
+
+                        let margin_x = 50.;
+
+                        let coords = dvec2(
+                            (message_rect.pos.x + message_rect.size.x) - margin_x,
+                            message_rect.pos.y,
+                        );
+
+                        message_action_bar_popup.apply_over(
+                            cx,
+                            live! {
+                                content: { margin: { left: (coords.x), top: (coords.y) } }
+                            },
+                        );
+
+                        if let Some(message_widget_uid) = action.as_widget_action().map(|a| a.widget_uid) {
+                            message_action_bar_popup.open(cx);
+                            message_action_bar.initialize_with_data(cx, widget_uid, message_widget_uid, item_id);
+                        }
+                    }
+                    */
+                    _ => {}
                 }
 
                 // Keep all unhandled actions so we can add them back to the global action list below.
@@ -1921,7 +1932,8 @@ impl RoomScreen {
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
         if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            // A closure that handles both MatrixToUri and MatrixUri links.
+            // A closure that handles both MatrixToUri and MatrixUri links,
+            // and returns whether the link was handled.
             let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
                 match id {
                     MatrixId::Room(room_id) => {
@@ -2012,7 +2024,6 @@ impl RoomScreen {
     ) {
         pane.set_info(cx, info);
         pane.show(cx);
-        // Not sure if this redraw is necessary
         self.redraw(cx);
     }
 
@@ -4025,7 +4036,8 @@ pub enum MessageAction {
     /// that can be performed on a given message.
     OpenMessageContextMenu {
         details: MessageDetails,
-        coords: DVec2,
+        /// The absolute posiiton where we should show the context menu.
+        abs_pos: DVec2,
     },
     /// The user requested opening the message action bar
     ActionBarOpen {
@@ -4101,7 +4113,7 @@ impl Widget for Message {
                     &scope.path,
                     MessageAction::OpenMessageContextMenu {
                         details: details.clone(),
-                        coords: *abs_pos,
+                        abs_pos: *abs_pos,
                     }
                 );
                 cx.stop_timer(self.long_press_timer);
@@ -4163,7 +4175,7 @@ impl Widget for Message {
                     &scope.path,
                     MessageAction::OpenMessageContextMenu {
                         details: details.clone(),
-                        coords: fe.abs,
+                        abs_pos: fe.abs,
                     }
                 );
             }
@@ -4179,7 +4191,7 @@ impl Widget for Message {
         //       since we also want this jump-to-reply behavior for the reply preview
         //       that appears above the message input box when you click the reply button.
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
-            if fe.was_tap() {
+            if fe.is_over && fe.was_tap() {
                 if let Some(replied_to_event) = details.related_event_id.as_ref() {
                     cx.widget_action(
                         details.room_screen_widget_uid,

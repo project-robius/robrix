@@ -21,6 +21,7 @@ pub fn live_design(cx: &mut Cx) {
     loading_pane::live_design(cx);
     rooms_list::live_design(cx);
     room_preview::live_design(cx);
+    new_message_context_menu::live_design(cx);
     room_screen::live_design(cx);
     room_read_receipt::live_design(cx);
     rooms_sidebar::live_design(cx);
@@ -31,5 +32,4 @@ pub fn live_design(cx: &mut Cx) {
     light_themed_dock::live_design(cx);
     event_reaction_list::live_design(cx);
     // message_context_menu::live_design(cx);
-    new_message_context_menu::live_design(cx);
 }
