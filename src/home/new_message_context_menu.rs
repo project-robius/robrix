@@ -333,6 +333,7 @@ impl Widget for NewMessageContextMenu {
         // 1. The back navigational gesture/action occurs (e.g., Back on Android),
         // 2. The escape key is pressed if this menu has key focus,
         // 3. The user clicks/touches outside the main_content view area.
+        // 4. The user scrolls anywhere.
         let close_menu = matches!(event, Event::BackPressed)                    // 1
         || match event.hits_with_capture_overload(cx, area, true) {
             Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                 // 2
@@ -343,6 +344,7 @@ impl Widget for NewMessageContextMenu {
             Hit::FingerUp(fue) if fue.is_over => {
                 !self.view(id!(main_content)).area().rect(cx).contains(fue.abs) // 3
             }
+            Hit::FingerScroll(_) => true,                                       // 4
             _ => false,
         };
         if close_menu {

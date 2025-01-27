@@ -120,21 +120,24 @@ live_design! {
                             <PopupList> {}
                         }
                     }
+
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
-
-                    verification_modal = <Modal> {
-                        content: {
-                            verification_modal_inner = <VerificationModal> {}
-                        }
-                    }
                     
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
                     //     }
                     // }
+
+                    // We want the verification modal to always show up on top of
+                    // all other elements when an incoming verification request is received.
+                    verification_modal = <Modal> {
+                        content: {
+                            verification_modal_inner = <VerificationModal> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -312,10 +315,42 @@ impl AppMain for App {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
-        // Forward events to the MatchEvent trait impl, and then to the App's UI element.
+        // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+
+        /*
+         * TODO: I'd like for this to work, but it doesn't behave as expected.
+         *       It fails to draw the context menu.
+         *       Also, once we do get this to work, we should remove the
+         *       Hit::FingerScroll event handler in the new_message_context_menu widget.
+         *
+        // We only forward "interactive hit" events to the underlying UI view
+        // if none of the various overlay views are visible.
+        // Currently, the only overlay view that captures interactive events is
+        // the new message context menu.
+        // We always forward "non-interactive hit" events to the inner UI view.
+        // We check which overlay views are visible in the order of those views' z-ordering,
+        // such that the top-most views get a chance to handle the event first.
+
+        let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
+        let is_interactive_hit = utils::is_interactive_hit_event(event);
+        let is_pane_shown: bool;
+        if new_message_context_menu.is_currently_shown(cx) {
+            is_pane_shown = true;
+            new_message_context_menu.handle_event(cx, event, scope);
+        }
+        else {
+            is_pane_shown = false;
+        }
+
+        if !is_pane_shown || !is_interactive_hit {
+            // Forward the event to the inner UI view.
+            self.ui.handle_event(cx, event, scope);
+        }
+         *
+         */
     }
 }
 
