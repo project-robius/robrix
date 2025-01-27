@@ -20,7 +20,7 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
@@ -922,7 +922,14 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
 
-static DEFAULT_SSO_CLIENT: OnceLock<(Client, ClientSessionPersisted)> = OnceLock::new();
+static DEFAULT_SSO_CLIENT: std::sync::LazyLock<Mutex<Option<(Client, ClientSessionPersisted)>>> = std::sync::LazyLock::new(||{
+    Mutex::new(None)
+});
+
+static DEFAULT_SSO_CLIENT_NOTIFIER: std::sync::LazyLock<Arc<Notify>> = std::sync::LazyLock::new(||{
+    // Set up a notifier for the async task that builds the default SSO client.
+    Arc::new(Notify::new())
+});
 
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
@@ -953,8 +960,11 @@ pub fn start_matrix_tokio() -> Result<()> {
                     return;
                 }
             };
+            if let Ok(mut guard) = DEFAULT_SSO_CLIENT.lock() {
+                guard.get_or_insert((client, client_session));
+            }
             Cx::post_action(LoginAction::SsoPending(false));
-            let _ = DEFAULT_SSO_CLIENT.set((client, client_session));
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         });
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
@@ -1236,7 +1246,13 @@ async fn async_main_loop(
     };
 
     Cx::post_action(LoginAction::LoginSuccess);
-
+    {
+        // Deallocate the default SSO client after logged in successfully
+        if let Ok(mut guard) = DEFAULT_SSO_CLIENT.lock() {
+            let _ = guard.take();
+        }
+    }
+    
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -2151,19 +2167,37 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
-    // Wait for the DEFAULT_SSO_CLIENT to be set.
-    let Some((client, client_session)) = DEFAULT_SSO_CLIENT.get() else {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let future = Box::pin(spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender));
-        let _ = future.await;
-        Cx::post_action(LoginAction::SsoPending(false));
-        return 
+    // Post a status update to inform the user that we're waiting for the client to be built.
+    Cx::post_action(LoginAction::Status {
+        title: "Building client...".into(),
+        status: "Please wait while we prepare the client for login.".into(),
+    });
+
+    // Wait for the notification that the client has been built
+    DEFAULT_SSO_CLIENT_NOTIFIER.notified().await;
+
+    // Now, check if the DEFAULT_SSO_CLIENT is set.
+    let Ok(guard) = DEFAULT_SSO_CLIENT.lock() else {
+        return
     };
+    let (client, client_session) = if let Some(default_sso_client) = guard.clone().as_ref() {
+        default_sso_client.clone()
+    } else {
+        Cx::post_action(LoginAction::LoginFailure(
+            "Failed to build the default client.".into(),
+        ));
+        Cx::post_action(LoginAction::SsoPending(false));
+        return
+    };
+
     Handle::current().spawn(async move {        
         // If the homeserver_url is not empty, builds a new Matrix Client.
         // If the homeserver_url is empty, use the DEFAULT_SSO_CLIENT which started during initialisation
         // to speed up opening the browser.
-        let (client, client_session) = if !homeserver_url.is_empty() {
+        let (
+            client, 
+            client_session
+        ) = if !homeserver_url.is_empty() && homeserver_url != "https://matrix-client.matrix.org/" {
             match build_client(&Cli {
                 homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
                 ..Default::default()
@@ -2174,12 +2208,14 @@ async fn spawn_sso_server(
                         format!("Could not create client object.\n\nError: {e}")
                     ));
                     Cx::post_action(LoginAction::SsoPending(false));
+                    DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
                     return;
                 }
             }
         } else {
             (client.clone(), client_session.clone())
         };
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         let mut is_logged_in = false;
         Cx::post_action(LoginAction::Status {
             title: "Opening your browser...".into(),
