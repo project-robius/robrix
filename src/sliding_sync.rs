@@ -34,6 +34,8 @@ use crate::{
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::AVATAR_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
+use crate::room::room_members_cache::{enqueue_room_members_update, RoomMembersUpdate};
+
 #[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user ID to login with.
@@ -510,23 +512,51 @@ async fn async_worker(
             }
 
             MatrixRequest::FetchRoomMembers { room_id } => {
+                // let (timeline, sender) = {
+                //     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                //     let Some(room_info) = all_room_info.get(&room_id) else {
+                //         log!("BUG: room info not found for fetch members request {room_id}");
+                //         continue;
+                //     };
+
+                //     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                // };
+
+                // // Spawn a new async task that will make the actual fetch request.
+                // let _fetch_task = Handle::current().spawn(async move {
+                //     log!("Sending fetch room members request for room {room_id}...");
+                //     timeline.fetch_members().await;
+                //     log!("Completed fetch room members request for room {room_id}.");
+                //     sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                //     SignalToUI::set_ui_signal();
+                // });
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
-
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
-                // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch room members request for room {room_id}...");
-                    timeline.fetch_members().await;
-                    log!("Completed fetch room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
-                    SignalToUI::set_ui_signal();
+                    let room = timeline.room();
+                    match room.members(RoomMemberships::JOIN).await {
+                        Ok(members) => {
+                            log!("Successfully fetched {} members for room {}", members.len(), room_id);
+                            // 将成员列表添加到缓存
+                            enqueue_room_members_update(RoomMembersUpdate {
+                                room_id: room_id.clone(),
+                                members,
+                            });
+                            // 通知 UI 线程更新已完成
+                            sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch members for room {}: {:?}", room_id, e);
+                        }
+                    }
                 });
             }
 
