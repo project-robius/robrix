@@ -185,9 +185,14 @@ live_design! {
                         width: 250, height: Fit,
                         margin: {left: 5, right: 5} // make the inner view 240 pixels wide
                         flow: RightWrap,
-                        google_button = <SsoButton> {
+                        apple_button = <SsoButton> {
                             image = <SsoImage> {
-                                source: dep("crate://self/resources/img/google.png")
+                                source: dep("crate://self/resources/img/apple.png")
+                            }
+                        }
+                        facebook_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/facebook.png")
                             }
                         }
                         github_button = <SsoButton> {
@@ -200,14 +205,9 @@ live_design! {
                                 source: dep("crate://self/resources/img/gitlab.png")
                             }
                         }
-                        apple_button = <SsoButton> {
+                        google_button = <SsoButton> {
                             image = <SsoImage> {
-                                source: dep("crate://self/resources/img/apple.png")
-                            }
-                        }
-                        facebook_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/facebook.png")
+                                source: dep("crate://self/resources/img/google.png")
                             }
                         }
                         twitter_button = <SsoButton> {
@@ -280,7 +280,9 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
+    /// Boolean to indicate if the SSO login process is still in flight
     #[rust] sso_pending: bool,
+    /// The URL to redirect to after logging in with SSO.
     #[rust] sso_redirect_url: Option<String>,
 }
 
@@ -343,7 +345,14 @@ impl MatchEvent for LoginScreen {
         }
         
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
-        let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button, twitter_button);
+        let button_set: &[&[LiveId]] = ids!(
+            apple_button, 
+            facebook_button, 
+            github_button, 
+            gitlab_button, 
+            google_button, 
+            twitter_button
+        );
         for action in actions {
             if let LoginStatusModalAction::Close = action.as_widget_action().cast() {
                 login_status_modal.close(cx);
@@ -432,7 +441,7 @@ impl MatchEvent for LoginScreen {
                 self.sso_redirect_url = None;
             }
         }
-        
+
         // Handle any of the SSO login buttons being clicked
         for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
             if view_ref.finger_up(actions).is_some() && !self.sso_pending {
@@ -476,7 +485,7 @@ pub enum LoginAction {
     /// additional SSO login requests while a previous request is in flight. 
     SsoPending(bool),
     /// Set the SSO redirect URL in the LoginScreen.
-    /// 
+    ///
     /// When an SSO-based login is pendng, pressing the cancel button will send
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),

@@ -2197,7 +2197,7 @@ async fn spawn_sso_server(
         let (
             client, 
             client_session
-        ) = if !homeserver_url.is_empty() && homeserver_url != "https://matrix-client.matrix.org/" {
+        ) = if !homeserver_url.is_empty() && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/") {
             match build_client(&Cli {
                 homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
                 ..Default::default()
