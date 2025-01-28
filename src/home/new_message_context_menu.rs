@@ -478,7 +478,6 @@ impl NewMessageContextMenu {
     fn set_button_visibility(&mut self, cx: &mut Cx) -> f64 {
         let Some(details) = self.details.as_ref() else { return 0.0 };
 
-        
         let react_button = self.view.button(id!(react_button));
         let reply_button = self.view.button(id!(reply_button));
         let edit_button = self.view.button(id!(edit_message_button));
@@ -490,7 +489,7 @@ impl NewMessageContextMenu {
         let jump_to_related_button = self.view.button(id!(jump_to_related_button));
         // let report_button = self.view.button(id!(report_button));
         let delete_button = self.view.button(id!(delete_button));
-        
+
         // Determine which buttons should be shown.
         // Note that some buttons are always enabled:
         // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
