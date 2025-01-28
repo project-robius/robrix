@@ -808,8 +808,10 @@ live_design! {
                 input_bar = <View> {
                     width: Fill, height: Fit
                     flow: Right,
-                    align: {y: 0.5},
-                    padding: 10.
+                    // Bottom-align everything to ensure that buttons always stick to the bottom
+                    // even when the message_input box is very tall.
+                    align: {y: 1.0},
+                    padding: 8.
                     show_bg: true,
                     draw_bg: {
                         color: (COLOR_PRIMARY)
@@ -817,20 +819,20 @@ live_design! {
 
                     location_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5}},
+                        icon_walk: {width: Fit, height: 26, margin: {left: 0, right: 3}},
                         text: "",
                     }
 
                     message_input = <RobrixTextInput> {
                         width: Fill, height: Fit,
-                        margin: 0,
+                        margin: { bottom: 7 }
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
                     }
 
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
-                        icon_walk: {width: 18.0, height: Fit},
+                        icon_walk: {width: Fit, height: 25, margin: {left: -3} },
                     }
                 }
                 can_not_send_message_notice = <View> {
@@ -847,6 +849,7 @@ live_design! {
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                            wrap: Word,
                         }
                         text: (CAN_NOT_SEND_NOTICE)
                     }
