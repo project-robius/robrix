@@ -129,6 +129,7 @@ live_design! {
 
     pub RoomPreview = {{RoomPreview}} {
         flow: Down, height: Fit
+        cursor: Default,
 
         // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.

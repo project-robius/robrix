@@ -819,7 +819,7 @@ live_design! {
 
                     location_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: Fit, height: 26, margin: {left: 0, right: 3}},
+                        icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
                         text: "",
                     }
 
@@ -841,11 +841,12 @@ live_design! {
                     draw_bg: {
                         color: (COLOR_SECONDARY)
                     }
-                    padding: {left: 75}
-                    align: {y: 0.3}
-                    width: Fill, height: 37.5
+                    padding: {left: 50, right: 50, top: 20, bottom: 20}
+                    align: {y: 0.5}
+                    width: Fill, height: Fit
 
                     text = <Label> {
+                        width: Fill,
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <THEME_FONT_ITALIC>{font_size: 12.2}

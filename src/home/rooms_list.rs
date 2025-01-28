@@ -49,6 +49,7 @@ live_design! {
     pub RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
+        cursor: Default,
 
         list = <PortalList> {
             keep_invisible: false
