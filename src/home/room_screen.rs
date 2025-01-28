@@ -1937,16 +1937,13 @@ impl RoomScreen {
                 }
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
-                    let mut success = false;
-                    if let Some(tl_item) = tl.items.get(details.item_id) {
-                        if let Some(text) = tl_item.as_event()
-                            .map(|event_tl_item| body_of_timeline_item(event_tl_item))
-                        {
-                            cx.copy_to_clipboard(&text);
-                            success = true;
-                        }
+                    if let Some(text) = tl.items
+                        .get(details.item_id)
+                        .and_then(|tl_item| tl_item.as_event().map(body_of_timeline_item))
+                    {
+                        cx.copy_to_clipboard(&text);
                     }
-                    if !success {
+                    else {
                         enqueue_popup_notification("Could not find message in timeline to copy text from.".to_string());
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
@@ -2125,7 +2122,7 @@ impl RoomScreen {
                 //     enqueue_popup_notification("Reporting messages is not yet implemented.".to_string());
                 // }
 
-                // This is handled within the Message widget iself.
+                // This is handled within the Message widget itself.
                 MessageAction::HighlightMessage(..) => { }
                 // This is handled by the top-level App itself.
                 MessageAction::OpenMessageContextMenu { .. } => { }
@@ -4172,7 +4169,8 @@ pub enum MessageAction {
     /// that can be performed on a given message.
     OpenMessageContextMenu {
         details: MessageDetails,
-        /// The absolute posiiton where we should show the context menu.
+        /// The absolute position where we should show the context menu,
+        /// in which the (0,0) origin coordinate is the top left corner of the app window.
         abs_pos: DVec2,
     },
     /// The user requested opening the message action bar

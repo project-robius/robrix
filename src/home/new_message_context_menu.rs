@@ -556,14 +556,13 @@ impl NewMessageContextMenu {
             // + show_report as u8
             + show_delete as u8;
 
-        let height = (num_visible_buttons as f64 * (BUTTON_HEIGHT + 2.0 + 2.0))
-            + show_divider_after_react_reply.then_some(10.0).unwrap_or(0.0)
-            + show_divider_before_report_delete.then_some(10.0).unwrap_or(0.0)
-            + 20.0 // top and bottom padding
-            + 1.0  // top and bottom border
-            - 4.0; // no 2.0 spacers at the top and bottom
-        
-        height
+        // Calculate and return the total expected height:
+        (num_visible_buttons as f64 * (BUTTON_HEIGHT + 2.0 + 2.0))
+            + if show_divider_after_react_reply { 10.0 } else { 0.0 }
+            + if show_divider_before_report_delete { 10.0 } else { 0.0 }
+            + 20.0  // top and bottom padding
+            + 1.0   // top and bottom border
+            - 4.0   // no 2.0 spacers at the top and bottom
     }
 
     fn close(&mut self, cx: &mut Cx) {

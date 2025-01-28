@@ -140,10 +140,10 @@ pub fn body_of_timeline_item(
                 .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None))
         }
         TimelineItemContent::FailedToParseMessageLike { event_type, error } => {
-            format!("Failed to parse {} message. Error: {}", event_type.to_string(), error)
+            format!("Failed to parse {} message. Error: {}", event_type, error)
         }
         TimelineItemContent::FailedToParseState { event_type, error, state_key } => {
-            format!("Failed to parse {} state; key: {}. Error: {}", event_type.to_string(), state_key, error)
+            format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
         }
         TimelineItemContent::Poll(poll_state) => {
             format!("[Poll]: {}", 

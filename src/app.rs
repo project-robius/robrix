@@ -199,20 +199,17 @@ impl MatchEvent for App {
             }
 
             // Handle an action requesting to open the new message context menu.
-            match action.as_widget_action().cast() {
-                MessageAction::OpenMessageContextMenu { details, abs_pos } => {
-                    let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
-                    let expected_dimensions = new_message_context_menu.show(cx, details);
-                    // Ensure the context menu does not spill over the window's bounds.
-                    let rect = self.ui.area().rect(cx);
-                    let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
-                    let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
-                    new_message_context_menu.apply_over(cx, live! {
-                        main_content = { margin: { left: (pos_x), top: (pos_y) } }
-                    });
-                    self.ui.redraw(cx);
-                }
-                _ => {}
+            if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
+                let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
+                let expected_dimensions = new_message_context_menu.show(cx, details);
+                // Ensure the context menu does not spill over the window's bounds.
+                let rect = self.ui.area().rect(cx);
+                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                new_message_context_menu.apply_over(cx, live! {
+                    main_content = { margin: { left: (pos_x), top: (pos_y) } }
+                });
+                self.ui.redraw(cx);
             }
 
             match action.downcast_ref() {
