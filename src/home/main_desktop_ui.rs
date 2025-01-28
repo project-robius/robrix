@@ -248,10 +248,7 @@ impl MatchEvent for MainDesktopUI {
                 // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                 // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                 // a redraw to be happening in order to draw the tab content.
-                self.focus_or_create_tab(cx, SelectedRoom {
-                    room_id: room_id.clone(),
-                    room_name: room_name.clone(),
-                });
+                self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name });
             }
         }
     }

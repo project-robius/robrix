@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -9,13 +10,13 @@ use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
         api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, TimelineEventType
+                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+            }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -31,7 +32,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -371,10 +372,10 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
-    /// Sends a request checking if the currently logged-in user can send a message to the given room.
+    /// Sends a request to obtain the power levels for this room.
     ///
-    /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
-    CheckCanUserSendMessage {
+    /// The response is delivered back to the main UI thread via [`TimelineUpdate::UserPowerLevels`].
+    GetRoomPowerLevels {
         room_id: OwnedRoomId,
     },
     /// Toggles the given reaction to the given event in the given room.
@@ -740,7 +741,7 @@ async fn async_worker(
 
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {    
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
                     };
@@ -764,8 +765,8 @@ async fn async_worker(
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                             log!("Received own user read receipt: {receipt:?} {event_id:?}");
-                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
-                                error!("Failed to get own user read receipt: {e:?}"); 
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
                         while (update_receiver.next().await).is_some() {
@@ -776,8 +777,8 @@ async fn async_worker(
                                 break;
                             }
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
-                                    error!("Failed to get own user read receipt: {e:?}"); 
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                    error!("Failed to get own user read receipt: {e:?}");
                                 }
                             }
                         }
@@ -802,7 +803,7 @@ async fn async_worker(
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequest {
                         source: MediaSource::Plain(mxc_uri.clone()),
-                        format: MEDIA_THUMBNAIL_FORMAT.into(),
+                        format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
                     let res = client.media().get_media_content(&media_request, true).await;
                     // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
@@ -889,7 +890,7 @@ async fn async_worker(
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}", 
+                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}",
                             if sent { "Sent" } else { "Already sent" }
                         ),
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
@@ -903,7 +904,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::CheckCanUserSendMessage { room_id } => {
+            MatrixRequest::GetRoomPowerLevels { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -916,16 +917,20 @@ async fn async_worker(
 
                 let Some(user_id) = current_user_id() else { continue };
 
-                let _check_can_user_send_message_task = Handle::current().spawn(async move {
-                    let can_user_send_message = timeline.room().can_user_send_message(
-                        &user_id,
-                        MessageLikeEventType::Message
-                    )
-                    .await
-                    .unwrap_or(true);
-
-                    if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
-                        error!("Failed to send the result of if user can send message: {e}")
+                let _power_levels_task = Handle::current().spawn(async move {
+                    match timeline.room().power_levels().await {
+                        Ok(power_levels) => {
+                            log!("Successfully fetched power levels for room {room_id}.");
+                            if let Err(e) = sender.send(TimelineUpdate::UserPowerLevels(
+                                UserPowerLevels::from(&power_levels, &user_id),
+                            )) {
+                                error!("Failed to send the result of if user can send message: {e}")
+                            }
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch power levels for room {room_id}: {e:?}");
+                        }
                     }
                 });
             },
@@ -1526,7 +1531,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     //     log!("Room {room_id} is now fully synced? {}", room.is_state_fully_synced());
     // }
 
-    // This will sync the room 
+    // This will sync the room
     room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
@@ -1709,20 +1714,7 @@ fn get_latest_event_details(
     latest_event: &EventTimelineItem,
     room_id: &OwnedRoomId,
 ) -> (MilliSecondsSinceUnixEpoch, String) {
-    let sender_username = match latest_event.sender_profile() {
-        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
-        TimelineDetails::Unavailable => {
-            if let Some(event_id) = latest_event.event_id() {
-                submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                    room_id: room_id.clone(),
-                    event_id: event_id.to_owned(),
-                });
-            }
-            None
-        }
-        _ => None,
-    }
-    .unwrap_or_else(|| latest_event.sender().as_str());
+    let sender_username = &utils::get_or_fetch_event_sender(latest_event, Some(room_id));
     (
         latest_event.timestamp(),
         text_preview_of_timeline_item(latest_event.content(), sender_username)
@@ -2071,7 +2063,7 @@ async fn timeline_subscriber_handler(
 /// This currently includes checking the given event for:
 /// * room name changes, in which it sends a `RoomsListUpdate`.
 /// * room power level changes to see if the current user's permissions
-///   have changed; if so, it sends a `TimelineUpdate::CanUserSendMessage`.
+///   have changed; if so, it sends a [`TimelineUpdate::UserPowerLevels`].
 /// * room avatar changes, which is not handled here.
 ///   Instead, we return `true` such that other code can fetch the new avatar.
 /// * membership changes to see if the current user has joined or left a room.
@@ -2105,17 +2097,15 @@ fn update_latest_event(
                 }
                 // Check for if can user send message.
                 AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
-                    if let Some(sender) = timeline_update_sender {
-                        if let Some(user_power) = current_user_id().and_then(|uid| content.users.get(&uid)) {
-                            let power_level_to_send_message_like_event = content.events
-                                .get(&TimelineEventType::RoomMessage)
-                                .or_else(|| content.events.get(&TimelineEventType::Message))
-                                .unwrap_or(&content.events_default);
-                            let _res = sender.send(TimelineUpdate::CanUserSendMessage(
-                                user_power >= power_level_to_send_message_like_event
-                            ));
-                            if let Err(e) = _res {
-                                error!("Failed to send the result of if user can send message: {e}")
+                    if let (Some(sender), Some(user_id)) = (timeline_update_sender, current_user_id()) {
+                        match sender.send(TimelineUpdate::UserPowerLevels(
+                            UserPowerLevels::from(&content.clone().into(), &user_id)
+                        )) {
+                            Ok(_) => {
+                                SignalToUI::set_ui_signal();
+                            }
+                            Err(e) => {
+                                error!("Failed to send the new RoomPowerLevels from an updated latest event: {e}");
                             }
                         }
                     }
@@ -2129,7 +2119,7 @@ fn update_latest_event(
                 Some(MembershipChange::InvitationAccepted | MembershipChange::Joined)
             ) {
                 if current_user_id().as_deref() == Some(room_membership_change.user_id()) {
-                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                    submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
                 }
             }
         }
@@ -2160,13 +2150,13 @@ fn spawn_fetch_room_avatar(room: Room) {
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
-    match room.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+    match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
         _ => {
             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
                 if room_members.len() == 2 {
                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        return match non_account_member.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+                        return match non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
                             Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
                             _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
                         };
@@ -2185,7 +2175,7 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
-            .find(|&g| g != "@") 
+            .find(|&g| g != "@")
             .map(ToString::to_string)
             .unwrap_or_default()
     )
@@ -2274,4 +2264,148 @@ async fn spawn_sso_server(
         }
         Cx::post_action(LoginAction::SsoPending(false));
     });
+}
+
+
+bitflags! {
+    /// The powers that a user has in a given room.
+    #[derive(Copy, Clone, PartialEq, Eq)]
+    pub struct UserPowerLevels: u64 {
+        const Ban = 1 << 0;
+        const Invite = 1 << 1;
+        const Kick = 1 << 2;
+        const Redact = 1 << 3;
+        const NotifyRoom = 1 << 4;
+        // -------------------------------------
+        // -- Copied from TimelineEventType ----
+        // -- Unused powers are commented out --
+        // -------------------------------------
+        // const CallAnswer = 1 << 5;
+        // const CallInvite = 1 << 6;
+        // const CallHangup = 1 << 7;
+        // const CallCandidates = 1 << 8;
+        // const CallNegotiate = 1 << 9;
+        // const CallReject = 1 << 10;
+        // const CallSdpStreamMetadataChanged = 1 << 11;
+        // const CallSelectAnswer = 1 << 12;
+        // const KeyVerificationReady = 1 << 13;
+        // const KeyVerificationStart = 1 << 14;
+        // const KeyVerificationCancel = 1 << 15;
+        // const KeyVerificationAccept = 1 << 16;
+        // const KeyVerificationKey = 1 << 17;
+        // const KeyVerificationMac = 1 << 18;
+        // const KeyVerificationDone = 1 << 19;
+        const Location = 1 << 20;
+        const Message = 1 << 21;
+        // const PollStart = 1 << 22;
+        // const UnstablePollStart = 1 << 23;
+        // const PollResponse = 1 << 24;
+        // const UnstablePollResponse = 1 << 25;
+        // const PollEnd = 1 << 26;
+        // const UnstablePollEnd = 1 << 27;
+        // const Beacon = 1 << 28;
+        const Reaction = 1 << 29;
+        // const RoomEncrypted = 1 << 30;
+        const RoomMessage = 1 << 31;
+        const RoomRedaction = 1 << 32;
+        const Sticker = 1 << 33;
+        // const CallNotify = 1 << 34;
+        // const PolicyRuleRoom = 1 << 35;
+        // const PolicyRuleServer = 1 << 36;
+        // const PolicyRuleUser = 1 << 37;
+        // const RoomAliases = 1 << 38;
+        // const RoomAvatar = 1 << 39;
+        // const RoomCanonicalAlias = 1 << 40;
+        // const RoomCreate = 1 << 41;
+        // const RoomEncryption = 1 << 42;
+        // const RoomGuestAccess = 1 << 43;
+        // const RoomHistoryVisibility = 1 << 44;
+        // const RoomJoinRules = 1 << 45;
+        // const RoomMember = 1 << 46;
+        // const RoomName = 1 << 47;
+        const RoomPinnedEvents = 1 << 48;
+        // const RoomPowerLevels = 1 << 49;
+        // const RoomServerAcl = 1 << 50;
+        // const RoomThirdPartyInvite = 1 << 51;
+        // const RoomTombstone = 1 << 52;
+        // const RoomTopic = 1 << 53;
+        // const SpaceChild = 1 << 54;
+        // const SpaceParent = 1 << 55;
+        // const BeaconInfo = 1 << 56;
+        // const CallMember = 1 << 57;
+        // const MemberHints = 1 << 58;
+    }
+}
+impl UserPowerLevels {
+    pub fn from(power_levels: &RoomPowerLevels, user_id: &UserId) -> Self {
+        let mut retval = UserPowerLevels::empty();
+        let user_power = power_levels.for_user(user_id);
+        retval.set(UserPowerLevels::Ban, user_power >= power_levels.ban);
+        retval.set(UserPowerLevels::Invite, user_power >= power_levels.invite);
+        retval.set(UserPowerLevels::Kick, user_power >= power_levels.kick);
+        retval.set(UserPowerLevels::Redact, user_power >= power_levels.redact);
+        retval.set(UserPowerLevels::NotifyRoom, user_power >= power_levels.notifications.room);
+        retval.set(UserPowerLevels::Location, user_power >= power_levels.for_message(MessageLikeEventType::Location));
+        retval.set(UserPowerLevels::Message, user_power >= power_levels.for_message(MessageLikeEventType::Message));
+        retval.set(UserPowerLevels::Reaction, user_power >= power_levels.for_message(MessageLikeEventType::Reaction));
+        retval.set(UserPowerLevels::RoomMessage, user_power >= power_levels.for_message(MessageLikeEventType::RoomMessage));
+        retval.set(UserPowerLevels::RoomRedaction, user_power >= power_levels.for_message(MessageLikeEventType::RoomRedaction));
+        retval.set(UserPowerLevels::Sticker, user_power >= power_levels.for_message(MessageLikeEventType::Sticker));
+        retval.set(UserPowerLevels::RoomPinnedEvents, user_power >= power_levels.for_state(StateEventType::RoomPinnedEvents));
+        retval
+    }
+
+    pub fn can_ban(self) -> bool {
+        self.contains(UserPowerLevels::Ban)
+    }
+
+    pub fn can_unban(self) -> bool {
+        self.can_ban() && self.can_kick()
+    }
+
+    pub fn can_invite(self) -> bool {
+        self.contains(UserPowerLevels::Invite)
+    }
+
+    pub fn can_kick(self) -> bool {
+        self.contains(UserPowerLevels::Kick)
+    }
+
+    pub fn can_redact(self) -> bool {
+        self.contains(UserPowerLevels::Redact)
+    }
+
+    pub fn can_notify_room(self) -> bool {
+        self.contains(UserPowerLevels::NotifyRoom)
+    }
+
+    pub fn can_redact_own(self) -> bool {
+        self.contains(UserPowerLevels::RoomRedaction)
+    }
+
+    pub fn can_redact_others(self) -> bool {
+        self.can_redact_own() && self.contains(UserPowerLevels::Redact)
+    }
+
+    pub fn can_send_location(self) -> bool {
+        self.contains(UserPowerLevels::Location)
+    }
+
+    pub fn can_send_message(self) -> bool {
+        self.contains(UserPowerLevels::RoomMessage)
+        || self.contains(UserPowerLevels::Message)
+    }
+
+    pub fn can_send_reaction(self) -> bool {
+        self.contains(UserPowerLevels::Reaction)
+    }
+
+    pub fn can_send_sticker(self) -> bool {
+        self.contains(UserPowerLevels::Sticker)
+    }
+
+    #[doc(alias("unpin"))]
+    pub fn can_pin(self) -> bool {
+        self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
 }

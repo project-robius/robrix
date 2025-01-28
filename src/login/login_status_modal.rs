@@ -66,6 +66,7 @@ live_design! {
                 margin: {top: 10}
 
                 button = <RobrixIconButton> {
+                    align: {x: 0.5, y: 0.5}
                     width: Fit, height: Fit
                     padding: 10
                     draw_bg: {
