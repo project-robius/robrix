@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, image_viewer_modal::{ImageViewerAction, ImageViewerModalWidgetRefExt}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -14,7 +14,6 @@ live_design! {
     use crate::home::home_screen::HomeScreen;
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
-    use crate::image_viewer_modal::ImageViewerModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
@@ -122,16 +121,10 @@ live_design! {
                         }
                     }
 
-                    image_viewer_modal = <Modal> {
-                        content: {
-                            image_viewer_modal_inner = <ImageViewerModal> {}
-                        }
-                    }
-
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
-                    
+
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -174,7 +167,6 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
-        crate::image_viewer_modal::live_design(cx);
     }
 }
 
@@ -183,7 +175,6 @@ impl LiveHook for App {
         self.update_login_visibility(cx);
     }
 }
-
 
 impl MatchEvent for App {
     fn handle_startup(&mut self, cx: &mut Cx) {
@@ -225,7 +216,7 @@ impl MatchEvent for App {
                     image_viewer_modal_inner.show_and_fill_image(cx, text_or_image_uid);
                     self.ui.redraw(cx);
                 }
-                _ => { }
+                 _ => { }
             }
 
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {

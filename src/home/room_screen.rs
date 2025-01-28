@@ -1094,125 +1094,6 @@ impl Widget for RoomScreen {
                 }
             }
 
-            for action in actions {
-                // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
-                match action.as_widget_action().widget_uid_eq(widget_uid).cast() {
-                    MessageAction::ViewSourceButtonClicked(item_id) => {
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            continue;
-                        };
-
-                        let Some(event_tl_item) = tl.items
-                            .get(item_id)
-                            .and_then(|tl_item| tl_item.as_event().cloned())
-                        else {
-                            continue;
-                        };
-
-                        let Some(_message_event) = event_tl_item.content().as_message() else {
-                            continue;
-                        };
-
-                        let original_json: Option<serde_json::Value> = event_tl_item
-                            .original_json()
-                            .and_then(|raw_event| serde_json::to_value(raw_event).ok());
-                        let room_id = self.room_id.to_owned();
-                        let event_id = event_tl_item.event_id().map(|e| e.to_owned());
-
-                        cx.widget_action(
-                            widget_uid,
-                            &scope.path,
-                            MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
-                        );
-                    }
-                    MessageAction::MessageReplyButtonClicked(item_id) => {
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            continue;
-                        };
-
-                        if let Some(event_tl_item) = tl.items
-                            .get(item_id)
-                            .and_then(|tl_item| tl_item.as_event().cloned())
-                        {
-                            if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
-                                self.show_replying_to(cx, (event_tl_item, replied_to_info));
-                            }
-                        }
-                    }
-                    MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
-                        let loading_pane = self.loading_pane(id!(loading_pane));
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            continue;
-                        };
-                        let tl_idx = reply_message_item_id;
-
-                        /// The maximum number of items to search through when looking for the replied-to message.
-                        /// This is a safety measure to prevent the main UI thread from getting stuck in a
-                        /// long-running loop if the replied-to message is not found quickly.
-                        const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
-
-                        // Attempt to find the index of replied-to message in the timeline.
-                        // Start from the current item's index (`tl_idx`)and search backwards,
-                        // since we know the replied-to message must come before the current item.
-                        let mut num_items_searched = 0;
-                        let replied_to_msg_tl_index = tl.items
-                            .focus()
-                            .narrow(..tl_idx)
-                            .into_iter()
-                            .rev()
-                            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
-                            .position(|i| {
-                                num_items_searched += 1;
-                                i.as_event()
-                                    .and_then(|e| e.event_id())
-                                    .is_some_and(|ev_id| ev_id == replied_to_event)
-                            })
-                            .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
-
-                        if let Some(index) = replied_to_msg_tl_index {
-                            // log!("The replied-to message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
-                            let speed = 50.0;
-                            // Scroll to the message right *before* the replied-to message.
-                            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
-                            //       so that we can scroll to the replied-to message and have it
-                            //       appear beneath the top of the viewport.
-                            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
-                            // start highlight animation.
-                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                                item_id: index
-                            };
-                        } else {
-                            // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
-                            // Here, we set the state of the loading pane and display it to the user.
-                            // The main logic will be handled in `process_timeline_updates()`, which is the only
-                            // place where we can receive updates to the timeline from the background tasks.
-                            loading_pane.set_state(
-                                cx,
-                                LoadingPaneState::BackwardsPaginateUntilEvent {
-                                    target_event_id: replied_to_event.clone(),
-                                    events_paginated: 0,
-                                    request_sender: tl.request_sender.clone(),
-                                },
-                            );
-                            loading_pane.show(cx);
-
-                            tl.request_sender.send_if_modified(|requests| {
-                                if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
-                                    warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
-                                    // We might as well re-use this existing request...
-                                    existing.target_event_id = replied_to_event;
-                                } else {
-                                    requests.push(BackwardsPaginateUntilEventRequest {
-                                        room_id: tl.room_id.clone(),
-                                        target_event_id: replied_to_event,
-                                        // avoid re-searching through items we already searched through.
-                                        starting_index: tl_idx.saturating_sub(num_items_searched),
-                                        current_tl_len: tl.items.len(),
-                                    });
-                                }
-                                true
-                            });
-
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             for action in actions {
@@ -3559,7 +3440,6 @@ fn populate_image_message_content(
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
-    let text_or_image_uid = text_or_image_ref.widget_uid();
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
     let (mimetype, _width, _height) = image_info_source.as_ref()
@@ -3643,8 +3523,6 @@ fn populate_image_message_content(
             fully_drawn = true;
         }
     }
-
-    Cx::post_action(ImageViewerAction::SetMediaCache(media_cache.clone()));
 
     fully_drawn
 }
