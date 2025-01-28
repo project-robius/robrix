@@ -44,10 +44,8 @@ live_design! {
 
     MessagePreview = <View> {
         width: Fill, height: Fit
-        // flow: Down, spacing: 5.
 
         latest_message = <HtmlOrPlaintext> {
-            // padding: {top: 3.0}
             html_view = { html = {
                 font_size: 9.3,
                 draw_normal:      { text_style: { font_size: 9.3 } },
@@ -167,6 +165,7 @@ live_design! {
                         spacing: 5,
                         flow: Right,
                         room_name = <RoomName> {}
+                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
                         timestamp = <Timestamp> { margin: { top: 1.3 } }
                     }
                     bottom = <View> {
