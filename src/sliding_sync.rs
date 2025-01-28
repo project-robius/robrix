@@ -32,7 +32,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, MEDIA_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -617,7 +617,8 @@ async fn async_worker(
                     }
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                        unread_mentions:timeline.room().num_unread_mentions(),
                     });
                 });
             }
@@ -740,7 +741,7 @@ async fn async_worker(
 
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {    
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
                     };
@@ -764,8 +765,8 @@ async fn async_worker(
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                             log!("Received own user read receipt: {receipt:?} {event_id:?}");
-                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
-                                error!("Failed to get own user read receipt: {e:?}"); 
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
                         while (update_receiver.next().await).is_some() {
@@ -776,8 +777,8 @@ async fn async_worker(
                                 break;
                             }
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) { 
-                                    error!("Failed to get own user read receipt: {e:?}"); 
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                    error!("Failed to get own user read receipt: {e:?}");
                                 }
                             }
                         }
@@ -802,7 +803,7 @@ async fn async_worker(
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequest {
                         source: MediaSource::Plain(mxc_uri.clone()),
-                        format: MEDIA_THUMBNAIL_FORMAT.into(),
+                        format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
                     let res = client.media().get_media_content(&media_request, true).await;
                     // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
@@ -872,7 +873,8 @@ async fn async_worker(
                     // Also update the number of unread messages in the room.
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                        unread_mentions: timeline.room().num_unread_mentions()
                     });
                 });
             },
@@ -888,7 +890,7 @@ async fn async_worker(
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
-                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}", 
+                        Ok(sent) => log!("{} fully read receipt to room {room_id} for event {event_id}",
                             if sent { "Sent" } else { "Already sent" }
                         ),
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id} for event {event_id}; error: {_e:?}"),
@@ -896,7 +898,8 @@ async fn async_worker(
                     // Also update the number of unread messages in the room.
                     enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
                         room_id: room_id.clone(),
-                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages())
+                        count: UnreadMessageCount::Known(timeline.room().num_unread_messages()),
+                        unread_mentions: timeline.room().num_unread_mentions()
                     });
                 });
             },
@@ -1490,6 +1493,7 @@ async fn update_room(
         enqueue_rooms_list_update(RoomsListUpdate::UpdateNumUnreadMessages {
             room_id: new_room_id.clone(),
             count: UnreadMessageCount::Known(new_room.num_unread_messages()),
+            unread_mentions: new_room.num_unread_mentions()
         });
 
         Ok(())
@@ -1527,7 +1531,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     //     log!("Room {room_id} is now fully synced? {}", room.is_state_fully_synced());
     // }
 
-    // This will sync the room 
+    // This will sync the room
     room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
@@ -1583,6 +1587,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         latest,
         tags: room.tags().await.ok().flatten(),
         num_unread_messages: room.num_unread_messages(),
+        num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
         avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
         room_name,
@@ -2145,13 +2150,13 @@ fn spawn_fetch_room_avatar(room: Room) {
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
-    match room.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+    match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
         _ => {
             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
                 if room_members.len() == 2 {
                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        return match non_account_member.avatar(MEDIA_THUMBNAIL_FORMAT.into()).await {
+                        return match non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
                             Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
                             _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
                         };
@@ -2170,7 +2175,7 @@ fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
-            .find(|&g| g != "@") 
+            .find(|&g| g != "@")
             .map(ToString::to_string)
             .unwrap_or_default()
     )

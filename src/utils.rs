@@ -200,13 +200,25 @@ impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
     }
 }
 
-/// The default media format to use for thumbnail requests.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+/// The thumbnail format to use for user and room avatars.
+pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         size: MediaThumbnailSizeConst {
             method: Method::Scale,
             width: 40,
             height: 40,
+        },
+        animated: false,
+    }
+);
+
+/// The thumbnail format to use for regular media images.
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst {
+        size: MediaThumbnailSizeConst {
+            method: Method::Scale,
+            width: 400,
+            height: 400,
         },
         animated: false,
     }

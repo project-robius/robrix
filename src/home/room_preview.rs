@@ -9,7 +9,6 @@ use crate::{
 };
 
 use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -19,6 +18,8 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
+    pub UNREAD_DEFAULT_COLOR = #d8d8d8;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -105,12 +106,14 @@ live_design! {
         show_bg: true
         align: { x: 0.5, y: 0.5 }
         draw_bg: {
-            instance background_color: (COLOR_TEXT_IDLE)
+            instance highlight: 0.0,
+            instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
+            instance default_color: (UNREAD_DEFAULT_COLOR),
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let c = self.rect_size * 0.5;
                 sdf.circle(c.x, c.x, c.x)
-                sdf.fill_keep(self.background_color);
+                sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
                 return sdf.result
             }
         }
@@ -278,22 +281,33 @@ impl Widget for RoomPreviewContent {
                 }
             }
 
-            let unread_badge = self.view(id!(unread_badge));
-
-            if room_info.num_unread_messages > 0 {
-                if room_info.num_unread_messages > 99 {
-                    // We don't need to show unread messages over 99, so we show 99+ instead.
-                    unread_badge.label(id!(unread_message_count)).set_text(cx, "99+");
+            let unread_badge = self.view(id!(unread_badge)); 
+            // Helper function to format the unread count, display "99+" if greater than 99
+            fn format_unread_count(count: u64) -> String {
+                if count > 99 {
+                    "99+".to_string()
                 } else {
-                    unread_badge
-                        .label(id!(unread_message_count))
-                        .set_text(cx, &room_info.num_unread_messages.to_string());
+                    count.to_string()
                 }
+            }
+            if room_info.num_unread_mentions > 0 {
+                // If there are unread mentions, show red badge and the number of unread mentions
+                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 1.0 }});
+                unread_badge
+                    .label(id!(unread_message_count))
+                    .set_text(cx, &format_unread_count(room_info.num_unread_mentions));
+                unread_badge.set_visible(cx, true);
+            } else if room_info.num_unread_messages > 0 {
+                // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
+                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 0.0 }});
+                unread_badge
+                    .label(id!(unread_message_count))
+                    .set_text(cx, &format_unread_count(room_info.num_unread_messages));
                 unread_badge.set_visible(cx, true);
             } else {
+                // If there are no unread mentions and no unread messages, hide the badge
                 unread_badge.set_visible(cx, false);
             }
-
             if cx.display_context.is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
             } else if room_info.is_selected {
