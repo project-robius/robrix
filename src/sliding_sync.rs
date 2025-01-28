@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -32,7 +32,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, MEDIA_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -1709,20 +1709,7 @@ fn get_latest_event_details(
     latest_event: &EventTimelineItem,
     room_id: &OwnedRoomId,
 ) -> (MilliSecondsSinceUnixEpoch, String) {
-    let sender_username = match latest_event.sender_profile() {
-        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
-        TimelineDetails::Unavailable => {
-            if let Some(event_id) = latest_event.event_id() {
-                submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                    room_id: room_id.clone(),
-                    event_id: event_id.to_owned(),
-                });
-            }
-            None
-        }
-        _ => None,
-    }
-    .unwrap_or_else(|| latest_event.sender().as_str());
+    let sender_username = &utils::get_or_fetch_event_sender(latest_event, Some(room_id));
     (
         latest_event.timestamp(),
         text_preview_of_timeline_item(latest_event.content(), sender_username)

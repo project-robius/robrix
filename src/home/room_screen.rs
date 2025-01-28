@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -1090,135 +1090,11 @@ impl Widget for RoomScreen {
                 if avatar_row_ref.hover_out(actions) {
                     tooltip.hide(cx);
                 }
-            }   
+            }
+
+            self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
+
             for action in actions {
-                // Handle actions on a message, e.g., clicking the reply button or clicking the reply preview.
-                match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
-                    // MessageAction::ViewSourceButtonClicked(item_id) => {
-                    //     let Some(tl) = self.tl_state.as_mut() else {
-                    //         continue;
-                    //     };
-
-                    //     let Some(event_tl_item) = tl.items
-                    //         .get(item_id)
-                    //         .and_then(|tl_item| tl_item.as_event().cloned())
-                    //     else {
-                    //         continue;
-                    //     };
-
-                    //     let Some(_message_event) = event_tl_item.content().as_message() else {
-                    //         continue;
-                    //     };
-
-                    //     let original_json: Option<serde_json::Value> = event_tl_item
-                    //         .original_json()
-                    //         .and_then(|raw_event| serde_json::to_value(raw_event).ok());
-                    //     let room_id = self.room_id.to_owned();
-                    //     let event_id = event_tl_item.event_id().map(|e| e.to_owned());
-
-                    //     cx.widget_action(
-                    //         widget_uid,
-                    //         &scope.path,
-                    //         MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
-                    //     );
-                    // }
-                    MessageAction::MessageReplyButtonClicked(item_id) => {
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            continue;
-                        };
-
-                        if let Some(event_tl_item) = tl.items
-                            .get(item_id)
-                            .and_then(|tl_item| tl_item.as_event().cloned())
-                        {
-                            if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
-                                self.show_replying_to(cx, (event_tl_item, replied_to_info));
-                            }
-                        }
-                    }
-                    MessageAction::ReplyPreviewClicked { reply_message_item_id, replied_to_event } => {
-                        let loading_pane = self.loading_pane(id!(loading_pane));
-                        let Some(tl) = self.tl_state.as_mut() else {
-                            continue;
-                        };
-                        let tl_idx = reply_message_item_id;
-
-                        /// The maximum number of items to search through when looking for the replied-to message.
-                        /// This is a safety measure to prevent the main UI thread from getting stuck in a
-                        /// long-running loop if the replied-to message is not found quickly.
-                        const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
-
-                        // Attempt to find the index of replied-to message in the timeline.
-                        // Start from the current item's index (`tl_idx`)and search backwards,
-                        // since we know the replied-to message must come before the current item.
-                        let mut num_items_searched = 0;
-                        let replied_to_msg_tl_index = tl.items
-                            .focus()
-                            .narrow(..tl_idx)
-                            .into_iter()
-                            .rev()
-                            .take(MAX_ITEMS_TO_SEARCH_THROUGH)
-                            .position(|i| {
-                                num_items_searched += 1;
-                                i.as_event()
-                                    .and_then(|e| e.event_id())
-                                    .is_some_and(|ev_id| ev_id == replied_to_event)
-                            })
-                            .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
-
-                        if let Some(index) = replied_to_msg_tl_index {
-                            // log!("The replied-to message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
-                            let speed = 50.0;
-                            // Scroll to the message right *before* the replied-to message.
-                            // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
-                            //       so that we can scroll to the replied-to message and have it
-                            //       appear beneath the top of the viewport.
-                            portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
-                            // start highlight animation.
-                            tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                                item_id: index
-                            };
-                        } else {
-                            // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
-                            // Here, we set the state of the loading pane and display it to the user.
-                            // The main logic will be handled in `process_timeline_updates()`, which is the only
-                            // place where we can receive updates to the timeline from the background tasks.
-                            loading_pane.set_state(
-                                cx,
-                                LoadingPaneState::BackwardsPaginateUntilEvent {
-                                    target_event_id: replied_to_event.clone(),
-                                    events_paginated: 0,
-                                    request_sender: tl.request_sender.clone(),
-                                },
-                            );
-                            loading_pane.show(cx);
-
-                            tl.request_sender.send_if_modified(|requests| {
-                                if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
-                                    warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
-                                    // We might as well re-use this existing request...
-                                    existing.target_event_id = replied_to_event;
-                                } else {
-                                    requests.push(BackwardsPaginateUntilEventRequest {
-                                        room_id: tl.room_id.clone(),
-                                        target_event_id: replied_to_event,
-                                        // avoid re-searching through items we already searched through.
-                                        starting_index: tl_idx.saturating_sub(num_items_searched),
-                                        current_tl_len: tl.items.len(),
-                                    });
-                                }
-                                true
-                            });
-
-                            // Don't unconditionally start backwards pagination here, because we want to give the
-                            // background `timeline_subscriber_handler` task a chance to process the request first
-                            // and search our locally-known timeline history for the replied-to message.
-                        }
-                        self.redraw(cx);
-                    }
-                    _ => {}
-                }
-
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -1226,7 +1102,7 @@ impl Widget for RoomScreen {
                         cx.widget_action(
                             room_screen_widget_uid,
                             &scope.path,
-                            MessageAction::MessageHighlight(item_id),
+                            MessageAction::HighlightMessage(item_id),
                         );
                         tl.message_highlight_animation_state = MessageHighlightAnimationState::Off;
                         // Adjust the scrolled-to item's position to be slightly beneath the top of the viewport.
@@ -1750,7 +1626,7 @@ impl RoomScreen {
                         loading_pane.set_status(cx, "Successfully found replied-to message!");
                         loading_pane.set_state(cx, LoadingPaneState::None);
 
-                        // NOTE: this code was copied from the `ReplyPreviewClicked` action handler;
+                        // NOTE: this code was copied from the `MessageAction::JumpToRelated` handler;
                         //       we should deduplicate them at some point.
                         let speed = 50.0;
                         // Scroll to the message right above the replied-to message.
@@ -1770,7 +1646,7 @@ impl RoomScreen {
                         error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
                         // Show this error in the loading pane, which should already be open.
                         loading_pane.set_state(cx, LoadingPaneState::Error(
-                            String::from("Unable to find replied-to message; it may have been deleted.")
+                            String::from("Unable to find related message; it may have been deleted.")
                         ));
                     }
 
@@ -1987,6 +1863,278 @@ impl RoomScreen {
             true
         } else {
             false
+        }
+    }
+
+    /// Handles any [`MessageAction`]s received by this RoomScreen.
+    fn handle_message_actions(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+        portal_list: &PortalListRef,
+        loading_pane: &LoadingPaneRef,
+    ) {
+        let room_screen_widget_uid = self.widget_uid();
+        for action in actions {
+            match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
+                MessageAction::React { details, reaction } => {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let mut success = false;
+                    if let Some(timeline_item) = tl.items.get(details.item_id) {
+                        if let Some(event_tl_item) = timeline_item.as_event() {
+                            if event_tl_item.event_id() == details.event_id.as_deref() {
+                                let timeline_event_id = event_tl_item.identifier();
+                                submit_async_request(MatrixRequest::ToggleReaction {
+                                    room_id: tl.room_id.clone(),
+                                    timeline_event_id,
+                                    reaction,
+                                });
+                                success = true;
+                            }
+                        }
+                    }
+                    if !success {
+                        enqueue_popup_notification("Couldn't find message in timeline to react to.".to_string());
+                        error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            tl.room_id,
+                        );
+                    }
+                }
+                MessageAction::Reply(details) => {
+                    let mut success = false;
+                    if let Some(event_tl_item) = self.tl_state.as_ref()
+                        .and_then(|tl| tl.items.get(details.item_id))
+                        .and_then(|tl_item| tl_item.as_event().cloned())
+                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    {
+                        if let Ok(replied_to_info) = event_tl_item.replied_to_info() {
+                            success = true;
+                            self.show_replying_to(cx, (event_tl_item, replied_to_info));
+                        }
+                    }
+                    if !success {
+                        enqueue_popup_notification("Could not find message in timeline to reply to.".to_string());
+                        error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            self.room_id,
+                        );
+                    }
+                }
+                MessageAction::Edit(_details) => {
+                    // TODO
+                    enqueue_popup_notification("Editing messages is not yet implemented.".to_string());
+                }
+                MessageAction::Pin(_details) => {
+                    // TODO
+                    enqueue_popup_notification("Pinning messages is not yet implemented.".to_string());
+                }
+                MessageAction::Unpin(_details) => {
+                    // TODO
+                    enqueue_popup_notification("Unpinning messages is not yet implemented.".to_string());
+                }
+                MessageAction::CopyText(details) => {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let mut success = false;
+                    if let Some(tl_item) = tl.items.get(details.item_id) {
+                        if let Some(text) = tl_item.as_event()
+                            .map(|event_tl_item| body_of_timeline_item(event_tl_item))
+                        {
+                            cx.copy_to_clipboard(&text);
+                            success = true;
+                        }
+                    }
+                    if !success {
+                        enqueue_popup_notification("Could not find message in timeline to copy text from.".to_string());
+                        error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            tl.room_id,
+                        );
+                    }
+                }
+                MessageAction::CopyHtml(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    // The logic for getting the formatted body of a message is the same
+                    // as the logic used in `populate_message_view()`.
+                    let mut success = false;
+                    if let Some(event_tl_item) = tl.items
+                        .get(details.item_id)
+                        .and_then(|tl_item| tl_item.as_event())
+                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    {
+                        if let TimelineItemContent::Message(message) = event_tl_item.content() {
+                            match message.msgtype() {
+                                MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::Notice(NoticeMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::Emote(EmoteMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::Image(ImageMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::File(FileMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::Audio(AudioMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::Video(VideoMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
+                                | MessageType::VerificationRequest(KeyVerificationRequestEventContent { formatted: Some(FormattedBody { body, .. }), .. }) =>
+                                {
+                                    cx.copy_to_clipboard(body);
+                                    success = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    if !success {
+                        enqueue_popup_notification("Could not find message in timeline to copy HTML from.".to_string());
+                        error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            tl.room_id,
+                        );
+                    }
+                }
+                MessageAction::CopyLink(details) => {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    if let Some(event_id) = details.event_id {
+                        let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id);
+                        cx.copy_to_clipboard(&matrix_to_uri.to_string());
+                    } else {
+                        enqueue_popup_notification("Couldn't create permalink to message.".to_string());
+                        error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            tl.room_id,
+                        );
+                    }
+                }
+                MessageAction::ViewSource(_details) => {
+                    enqueue_popup_notification("Viewing an event's source is not yet implemented.".to_string());
+                    // TODO: re-use Franco's implementation below:
+
+                    // let Some(tl) = self.tl_state.as_mut() else { continue };
+                    // let Some(event_tl_item) = tl.items
+                    //     .get(details.item_id)
+                    //     .and_then(|tl_item| tl_item.as_event().cloned())
+                    //     .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    // else {
+                    //     continue;
+                    // };
+
+                    // let Some(_message_event) = event_tl_item.content().as_message() else {
+                    //     continue;
+                    // };
+
+                    // let original_json: Option<serde_json::Value> = event_tl_item
+                    //     .original_json()
+                    //     .and_then(|raw_event| serde_json::to_value(raw_event).ok());
+                    // let room_id = self.room_id.to_owned();
+                    // let event_id = event_tl_item.event_id().map(|e| e.to_owned());
+
+                    // cx.widget_action(
+                    //     widget_uid,
+                    //     &scope.path,
+                    //     MessageAction::MessageSourceModalOpen { room_id, event_id, original_json },
+                    // );
+                }
+                MessageAction::JumpToRelated(details) => {
+                    let Some(tl) = self.tl_state.as_mut() else { continue };
+                    let Some(related_event_id) = details.related_event_id.as_ref() else {
+                        error!("BUG: MessageAction::JumpToRelated had not related event ID.");
+                        continue;
+                    };
+                    let tl_idx = details.item_id;
+
+                    /// The maximum number of items to search through when looking for the earlier related message.
+                    /// This is a safety measure to prevent the main UI thread from getting stuck in a
+                    /// long-running loop if the related message is not found quickly.
+                    const MAX_ITEMS_TO_SEARCH_THROUGH: usize = 50;
+
+                    // Attempt to find the index of replied-to message in the timeline.
+                    // Start from the current item's index (`tl_idx`)and search backwards,
+                    // since we know the related message must come before the current item.
+                    let mut num_items_searched = 0;
+                    let related_msg_tl_index = tl.items
+                        .focus()
+                        .narrow(..tl_idx)
+                        .into_iter()
+                        .rev()
+                        .take(MAX_ITEMS_TO_SEARCH_THROUGH)
+                        .position(|i| {
+                            num_items_searched += 1;
+                            i.as_event()
+                                .and_then(|e| e.event_id())
+                                .is_some_and(|ev_id| ev_id == related_event_id)
+                        })
+                        .map(|position| tl_idx.saturating_sub(position).saturating_sub(1));
+
+                    if let Some(index) = related_msg_tl_index {
+                        // log!("The related message {replied_to_event} was immediately found in room {}, scrolling to from index {reply_message_item_id} --> {index} (first ID {}).", tl.room_id, portal_list.first_id());
+                        let speed = 50.0;
+                        // Scroll to the message right *before* the replied-to message.
+                        // FIXME: `smooth_scroll_to` should accept a "scroll offset" (first scroll) parameter too,
+                        //       so that we can scroll to the replied-to message and have it
+                        //       appear beneath the top of the viewport.
+                        portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
+                        // start highlight animation.
+                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
+                            item_id: index
+                        };
+                    } else {
+                        // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
+                        // Here, we set the state of the loading pane and display it to the user.
+                        // The main logic will be handled in `process_timeline_updates()`, which is the only
+                        // place where we can receive updates to the timeline from the background tasks.
+                        loading_pane.set_state(
+                            cx,
+                            LoadingPaneState::BackwardsPaginateUntilEvent {
+                                target_event_id: related_event_id.clone(),
+                                events_paginated: 0,
+                                request_sender: tl.request_sender.clone(),
+                            },
+                        );
+                        loading_pane.show(cx);
+
+                        tl.request_sender.send_if_modified(|requests| {
+                            if let Some(existing) = requests.iter_mut().find(|r| r.room_id == tl.room_id) {
+                                warning!("Unexpected: room {} already had an existing timeline request in progress, event: {:?}", tl.room_id, existing.target_event_id);
+                                // We might as well re-use this existing request...
+                                existing.target_event_id = related_event_id.clone();
+                            } else {
+                                requests.push(BackwardsPaginateUntilEventRequest {
+                                    room_id: tl.room_id.clone(),
+                                    target_event_id: related_event_id.clone(),
+                                    // avoid re-searching through items we already searched through.
+                                    starting_index: tl_idx.saturating_sub(num_items_searched),
+                                    current_tl_len: tl.items.len(),
+                                });
+                            }
+                            true
+                        });
+
+                        // Don't unconditionally start backwards pagination here, because we want to give the
+                        // background `timeline_subscriber_handler` task a chance to process the request first
+                        // and search our locally-known timeline history for the replied-to message.
+                    }
+                    self.redraw(cx);
+                }
+                MessageAction::Delete(_details) => {
+                    // TODO
+                    enqueue_popup_notification("Deleting messages is not yet implemented.".to_string())
+                }
+                // MessageAction::Report(details) => {
+                //     // TODO
+                //     enqueue_popup_notification("Reporting messages is not yet implemented.".to_string());
+                // }
+
+                // This is handled within the Message widget iself.
+                MessageAction::HighlightMessage(..) => { }
+                // This is handled by the top-level App itself.
+                MessageAction::OpenMessageContextMenu { .. } => { }
+                // This isn't yet handled, as we need to completely redesign it.
+                MessageAction::ActionBarOpen { .. } => { }
+                // This isn't yet handled, as we need to completely redesign it.
+                MessageAction::ActionBarClose => { }
+                MessageAction::None => { }
+            }
         }
     }
 
@@ -3025,7 +3173,7 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::File(file_content) => {
-            has_html_body = false;
+            has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3044,7 +3192,7 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::Audio(audio) => {
-            has_html_body = false;
+            has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3063,7 +3211,7 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::Video(video) => {
-            has_html_body = false;
+            has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3082,7 +3230,7 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::VerificationRequest(verification) => {
-            has_html_body = false;
+            has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = live_id!(Message);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
@@ -3993,20 +4141,40 @@ impl LocationPreviewRef {
 /// Actions related to a specific message within a room timeline.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum MessageAction {
-    /// The user clicked a message's reply button, indicating that they want to
-    /// reply to this message (the message at the given timeline item index).
-    MessageReplyButtonClicked(usize),
-    /// The user clicked the inline reply preview above a message
-    /// indicating that they want to jump upwards to the replied-to message shown in the preview.
-    ReplyPreviewClicked {
-        /// The item ID (in the timeline PortalList) of the reply message
-        /// that the user clicked the reply preview above.
-        reply_message_item_id: usize,
-        /// The event ID of the replied-to message (the target of the reply).
-        replied_to_event: OwnedEventId,
+    /// The user clicked the "react" button on a message
+    /// and wants to send the given `reaction` to that message.
+    React {
+        details: MessageDetails,
+        reaction: String,
     },
+    /// The user clicked the "reply" button on a message.
+    Reply(MessageDetails),
+    /// The user clicked the "edit" button on a message.
+    Edit(MessageDetails),
+    /// The user clicked the "pin" button on a message.
+    Pin(MessageDetails),
+    /// The user clicked the "unpin" button on a message.
+    Unpin(MessageDetails),
+    /// The user clicked the "copy text" button on a message.
+    CopyText(MessageDetails),
+    /// The user clicked the "copy HTML" button on a message.
+    CopyHtml(MessageDetails),
+    /// The user clicked the "copy link" button on a message.
+    CopyLink(MessageDetails),
+    /// The user clicked the "view source" button on a message.
+    ViewSource(MessageDetails),
+    /// The user clicked the "jump to related" button on a message,
+    /// indicating that they want to auto-scroll back to the related message,
+    /// e.g., a replied-to message.
+    JumpToRelated(MessageDetails),
+    /// The user clicked the "delete" button on a message.
+    Delete(MessageDetails),
+
+    // /// The user clicked the "report" button on a message.
+    // Report(MessageDetails),
+
     /// The message at the given item index in the timeline should be highlighted.
-    MessageHighlight(usize),
+    HighlightMessage(usize),
     /// The user requested that we show a context menu with actions
     /// that can be performed on a given message.
     OpenMessageContextMenu {
@@ -4023,17 +4191,6 @@ pub enum MessageAction {
     },
     /// The user requested closing the message action bar
     ActionBarClose,
-    /// The user clicked the view source button,
-    /// requesting to see the message (at the given timeline item index) source
-    ViewSourceButtonClicked(usize),
-    // /// The message event source modal should be oppened
-    // MessageSourceModalOpen {
-    //     room_id: Option<OwnedRoomId>,
-    //     event_id: Option<OwnedEventId>,
-    //     original_json: Option<serde_json::Value>,
-    // },
-    // /// The message event source modal should be closed
-    // MessageSourceModalClose,
     None,
 }
 
@@ -4167,25 +4324,18 @@ impl Widget for Message {
         //       that appears above the message input box when you click the reply button.
         if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
             if fe.is_over && fe.was_tap() {
-                if let Some(replied_to_event) = details.related_event_id.as_ref() {
-                    cx.widget_action(
-                        details.room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::ReplyPreviewClicked {
-                            reply_message_item_id: details.item_id,
-                            replied_to_event: replied_to_event.clone(),
-                        },
-                    );
-                } else {
-                    error!("BUG: reply preview clicked for message {} with no replied-to event!", details.item_id);
-                }
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::JumpToRelated(details.clone()),
+                );
             }
         }
 
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.as_widget_action().cast() {
-                    MessageAction::MessageHighlight(id) if id == details.item_id => {
+                    MessageAction::HighlightMessage(id) if id == details.item_id => {
                         self.animator_play(cx, id!(highlight.on));
                         self.redraw(cx);
                     }

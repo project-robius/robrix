@@ -8,7 +8,7 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::room_screen::MessageOrSticker;
+use super::room_screen::{MessageAction, MessageOrSticker};
 
 const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
@@ -216,28 +216,6 @@ live_design! {
 }
 
 
-/// Actions that can be emitted from a message context menu.
-///
-/// These are handled by the parent RoomScreen widget.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum MessageContextMenuAction {
-    React {
-        details: MessageDetails,
-        reaction: String,
-    },
-    Reply(MessageDetails),
-    Edit(MessageDetails),
-    Pin(MessageDetails),
-    Unpin(MessageDetails),
-    CopyText(MessageDetails),
-    CopyHtml(MessageDetails),
-    CopyLink(MessageDetails),
-    ViewSource(MessageDetails),
-    JumpToRelated(MessageDetails),
-    Delete(MessageDetails),
-    None,
-}
-
 bitflags! {
     /// Possible actions that the user can perform on a message.
     ///
@@ -365,7 +343,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::React {
+                MessageAction::React {
                     details: details.clone(),
                     // TODO: show a dialog to choose the reaction (or a TextInput for custom),
                     //       which itself should send this action (instead of doing it here).
@@ -378,7 +356,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::Reply(details.clone()),
+                MessageAction::Reply(details.clone()),
             );
             close_menu = true;
         }
@@ -386,7 +364,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::Edit(details.clone()),
+                MessageAction::Edit(details.clone()),
             );
             close_menu = true;
         }
@@ -395,13 +373,13 @@ impl WidgetMatchEvent for NewMessageContextMenu {
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
-                    MessageContextMenuAction::Pin(details.clone()),
+                    MessageAction::Pin(details.clone()),
                 );
             } else if details.abilities.contains(MessageAbilities::CanUnpin) {
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
-                    MessageContextMenuAction::Unpin(details.clone()),
+                    MessageAction::Unpin(details.clone()),
                 );
             }
             close_menu = true;
@@ -410,7 +388,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::CopyText(details.clone()),
+                MessageAction::CopyText(details.clone()),
             );
             close_menu = true;
         }
@@ -418,7 +396,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::CopyHtml(details.clone()),
+                MessageAction::CopyHtml(details.clone()),
             );
             close_menu = true;
         }
@@ -426,7 +404,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::CopyLink(details.clone()),
+                MessageAction::CopyLink(details.clone()),
             );
             close_menu = true;
         }
@@ -434,7 +412,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::ViewSource(details.clone()),
+                MessageAction::ViewSource(details.clone()),
             );
             close_menu = true;
         }
@@ -442,7 +420,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::JumpToRelated(details.clone()),
+                MessageAction::JumpToRelated(details.clone()),
             );
             close_menu = true;
         }
@@ -451,7 +429,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
         //         details.room_screen_widget_uid,
         //         &scope.path,
         //         // TODO: display a dialog to confirm the report reason.
-        //         MessageContextMenuAction::Report {
+        //         MessageAction::Report {
         //             event_id: details.event_id.clone(),
         //             item_id: details.item_id,
         //         },
@@ -462,7 +440,7 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageContextMenuAction::Delete(details.clone()),
+                MessageAction::Delete(details.clone()),
             );
             close_menu = true;
         }
@@ -500,19 +478,22 @@ impl NewMessageContextMenu {
     fn set_button_visibility(&mut self, cx: &mut Cx) -> f64 {
         let Some(details) = self.details.as_ref() else { return 0.0 };
 
-        // Note that some buttons are always enabled:
-        // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
-
+        
         let react_button = self.view.button(id!(react_button));
         let reply_button = self.view.button(id!(reply_button));
         let edit_button = self.view.button(id!(edit_message_button));
         let pin_button = self.view.button(id!(pin_button));
+        let copy_text_button = self.view.button(id!(copy_text_button));
         let copy_html_button = self.view.button(id!(copy_html_button));
+        let copy_link_button = self.view.button(id!(copy_link_to_message_button));
+        let view_source_button = self.view.button(id!(view_source_button));
         let jump_to_related_button = self.view.button(id!(jump_to_related_button));
         // let report_button = self.view.button(id!(report_button));
         let delete_button = self.view.button(id!(delete_button));
-
+        
         // Determine which buttons should be shown.
+        // Note that some buttons are always enabled:
+        // `copy_text_button`, `copy_link_to_message_button`, and `view_source_button`
         let show_react = details.abilities.contains(MessageAbilities::CanReact);
         let show_reply_to = details.abilities.contains(MessageAbilities::CanReplyTo);
         let show_divider_after_react_reply = show_react || show_reply_to;
@@ -553,7 +534,10 @@ impl NewMessageContextMenu {
         reply_button.reset_hover(cx);
         edit_button.reset_hover(cx);
         pin_button.reset_hover(cx);
+        copy_text_button.reset_hover(cx);
         copy_html_button.reset_hover(cx);
+        copy_link_button.reset_hover(cx);
+        view_source_button.reset_hover(cx);
         jump_to_related_button.reset_hover(cx);
         // report_button.reset_hover(cx);
         delete_button.reset_hover(cx);

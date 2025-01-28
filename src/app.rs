@@ -322,7 +322,7 @@ impl AppMain for App {
 
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
-         *       It fails to draw the context menu.
+         *       The context menu fails to draw properly when a draw event is passed to it.
          *       Also, once we do get this to work, we should remove the
          *       Hit::FingerScroll event handler in the new_message_context_menu widget.
          *
