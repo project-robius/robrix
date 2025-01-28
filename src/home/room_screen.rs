@@ -1797,6 +1797,10 @@ impl RoomScreen {
                         if self.room_id.as_ref() == Some(room_id) {
                             return true;
                         }
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                        }
                         if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                             log!("TODO: jump to known room {}", room_id);
                         } else {
@@ -1805,6 +1809,10 @@ impl RoomScreen {
                         true
                     }
                     MatrixId::RoomAlias(room_alias) => {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                        }
                         log!("TODO: open room alias {}", room_alias);
                         // TODO: open a room loading screen that shows a spinner
                         //       while our background async task calls Client::resolve_room_alias()
@@ -1813,8 +1821,6 @@ impl RoomScreen {
                         true
                     }
                     MatrixId::User(user_id) => {
-                        log!("Opening matrix.to user link for {}", user_id);
-
                         // There is no synchronous way to get the user's full profile info
                         // including the details of their room membership,
                         // so we fill in with the details we *do* know currently,
@@ -1841,6 +1847,10 @@ impl RoomScreen {
                         true
                     }
                     MatrixId::Event(room_id, event_id) => {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                        }
                         log!("TODO: open event {} in room {}", event_id, room_id);
                         // TODO: this requires the same first step as the `MatrixId::Room` case above,
                         //       but then we need to call Room::event_with_context() to get the event
