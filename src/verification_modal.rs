@@ -70,6 +70,7 @@ live_design! {
                     spacing: 20
 
                     cancel_button = <RobrixIconButton> {
+                        align: {x: 0.5, y: 0.5}
                         padding: {left: 15, right: 15}
                         draw_icon: {
                             svg_file: (ICON_BLOCK_USER)
@@ -88,6 +89,7 @@ live_design! {
                     }
 
                     accept_button = <RobrixIconButton> {
+                        align: {x: 0.5, y: 0.5}
                         padding: {left: 15, right: 15}
                         draw_icon: {
                             svg_file: (ICON_CHECKMARK)

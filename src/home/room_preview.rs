@@ -19,7 +19,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
-    pub UNREAD_DEFAULT_COLOR = #d8d8d8;
+    pub UNREAD_DEFAULT_COLOR = #AAA;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -217,7 +217,7 @@ impl Widget for RoomPreview {
             Hit::FingerDown(_fe) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) => {
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
                 if fe.was_tap() {
                     cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
                 }

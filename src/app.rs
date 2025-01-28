@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -16,13 +16,8 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
+    use crate::home::new_message_context_menu::*;
     
-    ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
-    ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
-    ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
-    ICON_ME = dep("crate://self/resources/icons/me.svg")
-
-
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
     APP_TAB_COLOR_SELECTED = #091
@@ -125,17 +120,24 @@ live_design! {
                             <PopupList> {}
                         }
                     }
-                    verification_modal = <Modal> {
-                        content: {
-                            verification_modal_inner = <VerificationModal> {}
-                        }
-                    }
+
+                    // Context menus should be shown above other UI elements,
+                    // but beneath the verification modal.
+                    new_message_context_menu = <NewMessageContextMenu> { }
                     
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
                     //     }
                     // }
+
+                    // We want the verification modal to always show up on top of
+                    // all other elements when an incoming verification request is received.
+                    verification_modal = <Modal> {
+                        content: {
+                            verification_modal_inner = <VerificationModal> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -195,6 +197,21 @@ impl MatchEvent for App {
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
             }
+
+            // Handle an action requesting to open the new message context menu.
+            if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
+                let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
+                let expected_dimensions = new_message_context_menu.show(cx, details);
+                // Ensure the context menu does not spill over the window's bounds.
+                let rect = self.ui.area().rect(cx);
+                let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
+                let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
+                new_message_context_menu.apply_over(cx, live! {
+                    main_content = { margin: { left: (pos_x), top: (pos_y) } }
+                });
+                self.ui.redraw(cx);
+            }
+
             match action.downcast_ref() {
                 Some(PopupNotificationAction::Open) => {
                     self.ui.popup_notification(id!(popup)).open(cx);
@@ -204,14 +221,10 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomsListAction::Selected {
-                    room_id,
-                    room_index: _,
-                    room_name,
-                } => {
-
+                RoomsListAction::Selected { room_id, room_index: _, room_name } => {
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
                         room_id: room_id.clone(),
                         room_name: room_name.clone(),
@@ -251,22 +264,21 @@ impl MatchEvent for App {
                     .initialize_with_data(cx, state.clone());
                 self.ui.modal(id!(verification_modal)).open(cx);
             }
-
             if let VerificationModalAction::Close = action.as_widget_action().cast() {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
-            // message source modal handling.
-            match action.as_widget_action().cast() {
-                MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
-                   // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
-                   // self.ui.modal(id!(message_source_modal)).open(cx);
-                }
-                MessageAction::MessageSourceModalClose => {
-                    self.ui.modal(id!(message_source_modal)).close(cx);
-                }
-                _ => {}
-            }
+            // // message source modal handling.
+            // match action.as_widget_action().cast() {
+            //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
+            //        // self.ui.message_source(id!(message_source_modal_inner)).initialize_with_data(room_id, event_id, original_json);
+            //        // self.ui.modal(id!(message_source_modal)).open(cx);
+            //     }
+            //     MessageAction::MessageSourceModalClose => {
+            //         self.ui.modal(id!(message_source_modal)).close(cx);
+            //     }
+            //     _ => {}
+            // }
         }
     }
 
@@ -300,10 +312,42 @@ impl AppMain for App {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
-        // Forward events to the MatchEvent trait impl, and then to the App's UI element.
+        // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+
+        /*
+         * TODO: I'd like for this to work, but it doesn't behave as expected.
+         *       The context menu fails to draw properly when a draw event is passed to it.
+         *       Also, once we do get this to work, we should remove the
+         *       Hit::FingerScroll event handler in the new_message_context_menu widget.
+         *
+        // We only forward "interactive hit" events to the underlying UI view
+        // if none of the various overlay views are visible.
+        // Currently, the only overlay view that captures interactive events is
+        // the new message context menu.
+        // We always forward "non-interactive hit" events to the inner UI view.
+        // We check which overlay views are visible in the order of those views' z-ordering,
+        // such that the top-most views get a chance to handle the event first.
+
+        let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
+        let is_interactive_hit = utils::is_interactive_hit_event(event);
+        let is_pane_shown: bool;
+        if new_message_context_menu.is_currently_shown(cx) {
+            is_pane_shown = true;
+            new_message_context_menu.handle_event(cx, event, scope);
+        }
+        else {
+            is_pane_shown = false;
+        }
+
+        if !is_pane_shown || !is_interactive_hit {
+            // Forward the event to the inner UI view.
+            self.ui.handle_event(cx, event, scope);
+        }
+         *
+         */
     }
 }
 
