@@ -115,9 +115,6 @@ live_design! {
     }
 
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
-    ICON_COPY        = dep("crate://self/resources/icons/copy.svg")
-    ICON_JUMP        = dep("crate://self/resources/icons/go_back.svg")
-
 
     UserProfileView = <ScrollXYView> {
         width: Fill,
@@ -424,6 +421,7 @@ impl Widget for UserProfileSlidingPane {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
+                    cx.revert_key_focus();
                     self.view(id!(bg_view)).set_visible(cx, false);
                     self.redraw(cx);
                     return;
@@ -435,22 +433,25 @@ impl Widget for UserProfileSlidingPane {
             }
         }
 
+        let area = self.view.area();
+
         // Close the pane if:
         // 1. The close button is clicked,
         // 2. The back navigational gesture/action occurs (e.g., Back on Android),
-        // 3. The escape key is pressed,
+        // 3. The escape key is pressed if this pane has key focus,
         // 4. The back mouse button is clicked within this view,
         // 5. The user clicks/touches outside the main_content view area.
         let close_pane = match event {
             Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),  // 1
             Event::BackPressed => true,                                                  // 2
-            Event::KeyUp(key) => key.key_code == KeyCode::Escape,                        // 3
             _ => false,
-        } || match event.hits_with_capture_overload(cx, self.view.area(), true) {
-            // Note: ideally we should handle `Hit::KeyUp` here, but that doesn't work as expected.
-            Hit::FingerUp(fue) => {
-                log!("UserProfileSlidingPane area: {:?}, got FingerUp: {:?}", self.view.area().rect(cx), fue);
-
+        } || match event.hits_with_capture_overload(cx, area, true) {
+            Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                          // 3
+            Hit::FingerDown(_fde) => {
+                cx.set_key_focus(area);
+                false
+            }
+            Hit::FingerUp(fue) if fue.is_over => {
                 fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
                 || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
             }
@@ -649,6 +650,7 @@ impl UserProfileSlidingPane {
 
     pub fn show(&mut self, cx: &mut Cx) {
         self.visible = true;
+        cx.set_key_focus(self.view.area());
         self.animator_play(cx, id!(panel.show));
         self.view(id!(bg_view)).set_visible(cx, true);
         self.redraw(cx);

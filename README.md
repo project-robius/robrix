@@ -54,13 +54,13 @@ The following table shows which host systems can currently be used to build Robr
    ```sh
    cargo run
    ```
-   If you want to provide a username and password for fast auto-login, you can do that on the command line like so. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user's ID or password.
+   Optionally, you can provide a username and password on the command line for fast auto-login. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user ID or password.
    ```sh
    cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
    ```
     * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
-    * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
-    * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
+    * The `HOMESERVER_URL` argument is optional and uses the `matrix.org` homeserver by default.
+    * The Matrix homeserver must support native Sliding Sync, the same requirement as Element X.
 
 
 ### Building Robrix for Android

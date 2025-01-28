@@ -124,7 +124,7 @@ live_design! {
                         }
 
                         <View> {
-                            width: 215,
+                            width: 250,
                             height: Fit,
                             flow: Right,
                             padding: {top: 3, left: 2, right: 2}
@@ -148,7 +148,6 @@ live_design! {
                                 draw_bg: { color: #C8C8C8 }
                             }
                         }
-
                     }
                     
 
@@ -157,6 +156,7 @@ live_design! {
                         height: 40
                         padding: 10
                         margin: {top: 5, bottom: 10}
+                        align: {x: 0.5, y: 0.5}
                         draw_bg: {
                             color: (COLOR_SELECTED_PRIMARY)
                         }
@@ -248,6 +248,7 @@ live_design! {
                         width: Fit, height: Fit
                         padding: {left: 15, right: 15, top: 10, bottom: 10}
                         margin: {bottom: 5}
+                        align: {x: 0.5, y: 0.5}
                         draw_bg: {
                             color: (COLOR_SELECTED_PRIMARY)
                         }
