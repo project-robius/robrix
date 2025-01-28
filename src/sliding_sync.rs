@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
+        api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
@@ -21,10 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use url::Url;
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -66,7 +67,7 @@ impl From<LoginByPassword> for Cli {
         Self {
             user_id: login.user_id,
             password: login.password,
-            homeserver: None,
+            homeserver: login.homeserver,
             proxy: None,
             login_screen: false,
             verbose: false,
@@ -138,7 +139,6 @@ async fn build_client(
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
-    login_types: &[LoginType],
 ) -> Result<(Client, Option<String>)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
@@ -148,12 +148,6 @@ async fn login(
                 cli
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
-            if !login_types
-                .iter()
-                .any(|flow| matches!(flow, LoginType::Password(_)))
-            {
-                bail!("Homeserver does not support username + password login flow.");
-            }
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
@@ -192,40 +186,6 @@ async fn login(
     }
 }
 
-async fn populate_login_types(
-    homeserver_url: &str,
-    login_types: &mut Vec<LoginType>,
-) -> Result<()> {
-    Cx::post_action(LoginAction::Status {
-        title: "Querying login types".into(),
-        status: "Fetching supported login types from the homeserver...".into(),
-    });
-    let homeserver_url = if homeserver_url.is_empty() {
-        DEFAULT_HOMESERVER
-    } else {
-        homeserver_url
-    };
-    let client = Client::builder()
-        .server_name_or_homeserver_url(homeserver_url)
-        .build()
-        .await?;
-    match client.matrix_auth().get_login_types().await {
-        Ok(login_types_res) => {
-            *login_types = login_types_res.flows;
-            let identity_providers = login_types.iter().fold(Vec::new(), |mut acc, login_type| {
-                if let LoginType::Sso(sso_type) = login_type {
-                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
-                }
-                acc
-            });
-            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-            Ok(())
-        }
-        Err(e) => {
-            Err(e.into())
-        }
-    }
-}
 
 /// Which direction to paginate in.
 ///
@@ -970,6 +930,13 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
 
+/// A client object that is proactively created during initialization
+/// in order to speed up the client-building process when the user logs in.
+static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+/// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
+static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
+    || Arc::new(Notify::new())
+);
 
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
@@ -987,6 +954,19 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        
+        // Build a Matrix Client in the background so that SSO Server starts earlier.
+        rt.spawn(async move {
+            match build_client(&Cli::default(), app_data_dir()).await {
+                Ok(client_and_session) => {
+                    DEFAULT_SSO_CLIENT.lock().unwrap()
+                        .get_or_insert(client_and_session);
+                }
+                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
+            };
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+        });
 
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
@@ -1217,15 +1197,7 @@ async fn async_main_loop(
                     user_id: cli.user_id.clone(),
                     homeserver: cli.homeserver.clone(),
                 });
-                let mut login_types: Vec<LoginType> = Vec::new();
-                let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-                if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                    error!("Populating Login types failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(
-                        format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                    ));
-                }
-                match login(cli, LoginRequest::LoginByCli, &login_types).await {
+                match login(cli, LoginRequest::LoginByCli).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
@@ -1249,29 +1221,11 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-            let mut login_types = Vec::new();
-            // Display the available Identity providers by fetching the login types
-            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                error!("Populating Login types failed for {homeserver_url}: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(
-                    format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                ));
-            }
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
-                        if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
-                            if let Err(e) = populate_login_types(&homeserver_url, &mut login_types).await {
-                                error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(
-                                    format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                                ));
-                            }
-                            continue
-                        }
-                        match login(&cli, login_request, &login_types).await {
+                        match login(&cli, login_request).await {
                             Ok((client, sync_token)) => {
                                 break (client, sync_token);
                             }
@@ -1295,6 +1249,11 @@ async fn async_main_loop(
 
     Cx::post_action(LoginAction::LoginSuccess);
 
+    // Deallocate the default SSO client after a successful login.
+    if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
+        let _ = client_opt.take();
+    }
+    
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -2196,28 +2155,79 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
+    // Post a status update to inform the user that we're waiting for the client to be built.
     Cx::post_action(LoginAction::Status {
-        title: "Opening your browser...".into(),
-        status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+        title: "Initializing client...".into(),
+        status: "Please wait while Matrix builds and configures the client object for login.".into(),
     });
-    let cli = Cli {
-        homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
-        ..Default::default()
-    };
+
+    // Wait for the notification that the client has been built
+    DEFAULT_SSO_CLIENT_NOTIFIER.notified().await;
+
+    // Try to use the DEFAULT_SSO_CLIENT, if it was successfully built.
+    // We do not clone it because a Client cannot be re-used again
+    // once it has been used for a login attempt, so this forces us to create a new one
+    // if that occurs.
+    let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
+
     Handle::current().spawn(async move {
-        let (client, client_session) = match build_client(&cli, app_data_dir()).await {
-            Ok(success) => success,
-            Err(e) => {
-                Cx::post_action(LoginAction::LoginFailure(
-                    format!("Could not create client object.\n\nError: {e}")
-                ));
-                return;
+        // Try to use the DEFAULT_SSO_CLIENT that we proactively created
+        // during initialization (to speed up opening the SSO browser window).
+        let mut client_and_session = client_and_session_opt;
+        
+        // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
+        // or if the homeserver_url is *not* empty and isn't the default,
+        // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
+        let mut build_client_error = None;
+        if client_and_session.is_none() || (
+            !homeserver_url.is_empty()
+                && homeserver_url != "matrix.org"
+                && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/")
+                && Url::parse(&homeserver_url) != Url::parse("https://matrix.org/")
+        ) {
+            match build_client(
+                &Cli {
+                    homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
+                    ..Default::default()
+                },
+                app_data_dir(),
+            ).await {
+                Ok(success) => client_and_session = Some(success),
+                Err(e) => build_client_error = Some(e),
             }
+        }
+
+        let Some((client, client_session)) = client_and_session else {
+            Cx::post_action(LoginAction::LoginFailure(
+                if let Some(err) = build_client_error {
+                    format!("Could not create client object. Please try to login again.\n\nError: {err}")
+                } else {
+                    String::from("Could not create client object. Please try to login again.")
+                }
+            ));
+            // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
+            // at the top of this function will not block upon the next login attempt.
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+            return;
         };
+
         let mut is_logged_in = false;
+        Cx::post_action(LoginAction::Status {
+            title: "Opening your browser...".into(),
+            status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+        });
         match client
             .matrix_auth()
             .login_sso(|sso_url: String| async move {
+                let url = Url::parse(&sso_url)?;
+                for (key, value) in url.query_pairs() {
+                    if key == "redirectUrl" {
+                        let redirect_url = Url::parse(&value)?;
+                        Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
+                        break
+                    }
+                }
                 Uri::new(&sso_url).open().map_err(|err| {
                     Error::UnknownError(
                         Box::new(io::Error::new(
@@ -2262,6 +2272,10 @@ async fn spawn_sso_server(
                 }
             }
         }
+
+        // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
+        // at the top of this function will not block upon the next login attempt.
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         Cx::post_action(LoginAction::SsoPending(false));
     });
 }

@@ -12,7 +12,7 @@ use tokio::fs;
 use crate::{app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
