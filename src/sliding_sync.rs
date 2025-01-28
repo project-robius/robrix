@@ -24,7 +24,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -922,14 +922,13 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
 
-static DEFAULT_SSO_CLIENT: std::sync::LazyLock<Mutex<Option<(Client, ClientSessionPersisted)>>> = std::sync::LazyLock::new(||{
-    Mutex::new(None)
-});
-
-static DEFAULT_SSO_CLIENT_NOTIFIER: std::sync::LazyLock<Arc<Notify>> = std::sync::LazyLock::new(||{
-    // Set up a notifier for the async task that builds the default SSO client.
-    Arc::new(Notify::new())
-});
+/// A client object that is proactively created during initialization
+/// in order to speed up the client-building process when the user logs in.
+static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+/// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
+static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
+    || Arc::new(Notify::new())
+);
 
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
@@ -950,22 +949,17 @@ pub fn start_matrix_tokio() -> Result<()> {
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
-            let cli = Cli::default();
-            let (client, client_session) = match build_client(&cli, app_data_dir()).await {
-                Ok(success) => success,
-                Err(e) => {
-                    Cx::post_action(LoginAction::LoginFailure(
-                        format!("Could not create client object.\n\nError: {e}")
-                    ));
-                    return;
+            match build_client(&Cli::default(), app_data_dir()).await {
+                Ok(client_and_session) => {
+                    DEFAULT_SSO_CLIENT.lock().unwrap()
+                        .get_or_insert(client_and_session);
                 }
+                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
             };
-            if let Ok(mut guard) = DEFAULT_SSO_CLIENT.lock() {
-                guard.get_or_insert((client, client_session));
-            }
-            Cx::post_action(LoginAction::SsoPending(false));
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
         });
+
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
             tokio::select! {
@@ -1246,11 +1240,10 @@ async fn async_main_loop(
     };
 
     Cx::post_action(LoginAction::LoginSuccess);
-    {
-        // Deallocate the default SSO client after logged in successfully
-        if let Ok(mut guard) = DEFAULT_SSO_CLIENT.lock() {
-            let _ = guard.take();
-        }
+
+    // Deallocate the default SSO client after a successful login.
+    if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
+        let _ = client_opt.take();
     }
     
     let logged_in_user_id = client.user_id()
@@ -2169,53 +2162,61 @@ async fn spawn_sso_server(
     Cx::post_action(LoginAction::SsoPending(true));
     // Post a status update to inform the user that we're waiting for the client to be built.
     Cx::post_action(LoginAction::Status {
-        title: "Building client...".into(),
-        status: "Please wait while we prepare the client for login.".into(),
+        title: "Initializing client...".into(),
+        status: "Please wait while Matrix builds and configures the client object for login.".into(),
     });
 
     // Wait for the notification that the client has been built
     DEFAULT_SSO_CLIENT_NOTIFIER.notified().await;
 
-    // Now, check if the DEFAULT_SSO_CLIENT is set.
-    let Ok(guard) = DEFAULT_SSO_CLIENT.lock() else {
-        return
-    };
-    let (client, client_session) = if let Some(default_sso_client) = guard.clone().as_ref() {
-        default_sso_client.clone()
-    } else {
-        Cx::post_action(LoginAction::LoginFailure(
-            "Failed to build the default client.".into(),
-        ));
-        Cx::post_action(LoginAction::SsoPending(false));
-        return
-    };
+    // Try to use the DEFAULT_SSO_CLIENT, if it was successfully built.
+    // We do not clone it because a Client cannot be re-used again
+    // once it has been used for a login attempt, so this forces us to create a new one
+    // if that occurs.
+    let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
 
-    Handle::current().spawn(async move {        
-        // If the homeserver_url is not empty, builds a new Matrix Client.
-        // If the homeserver_url is empty, use the DEFAULT_SSO_CLIENT which started during initialisation
-        // to speed up opening the browser.
-        let (
-            client, 
-            client_session
-        ) = if !homeserver_url.is_empty() && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/") {
-            match build_client(&Cli {
-                homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
-                ..Default::default()
-            }, app_data_dir()).await {
-                Ok(success) => success,
-                Err(e) => {
-                    Cx::post_action(LoginAction::LoginFailure(
-                        format!("Could not create client object.\n\nError: {e}")
-                    ));
-                    Cx::post_action(LoginAction::SsoPending(false));
-                    DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
-                    return;
-                }
+    Handle::current().spawn(async move {
+        // Try to use the DEFAULT_SSO_CLIENT that we proactively created
+        // during initialization (to speed up opening the SSO browser window).
+        let mut client_and_session = client_and_session_opt;
+        
+        // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
+        // or if the homeserver_url is *not* empty and isn't the default,
+        // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
+        let mut build_client_error = None;
+        if client_and_session.is_none() || (
+            !homeserver_url.is_empty()
+                && homeserver_url != "matrix.org"
+                && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/")
+                && Url::parse(&homeserver_url) != Url::parse("https://matrix.org/")
+        ) {
+            match build_client(
+                &Cli {
+                    homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
+                    ..Default::default()
+                },
+                app_data_dir(),
+            ).await {
+                Ok(success) => client_and_session = Some(success),
+                Err(e) => build_client_error = Some(e),
             }
-        } else {
-            (client.clone(), client_session.clone())
+        }
+
+        let Some((client, client_session)) = client_and_session else {
+            Cx::post_action(LoginAction::LoginFailure(
+                if let Some(err) = build_client_error {
+                    format!("Could not create client object. Please try to login again.\n\nError: {err}")
+                } else {
+                    String::from("Could not create client object. Please try to login again.")
+                }
+            ));
+            // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
+            // at the top of this function will not block upon the next login attempt.
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+            return;
         };
-        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+
         let mut is_logged_in = false;
         Cx::post_action(LoginAction::Status {
             title: "Opening your browser...".into(),
@@ -2276,6 +2277,10 @@ async fn spawn_sso_server(
                 }
             }
         }
+
+        // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
+        // at the top of this function will not block upon the next login attempt.
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         Cx::post_action(LoginAction::SsoPending(false));
     });
 }
