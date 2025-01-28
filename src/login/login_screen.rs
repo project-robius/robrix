@@ -158,6 +158,7 @@ live_design! {
                         sso_search_button = <RobrixIconButton> {
                             width: 28, height: 28,
                             margin: { left: 5, top: 1}
+                            align: {x: 0.5, y: 0.5}
                             draw_icon: {
                                 svg_file: (ICON_SEARCH)
                             }
@@ -169,6 +170,7 @@ live_design! {
                         width: 250, height: 40
                         padding: 10
                         margin: {top: 5, bottom: 10}
+                        align: {x: 0.5, y: 0.5}
                         draw_bg: {
                             color: (COLOR_SELECTED_PRIMARY)
                         }
@@ -260,6 +262,7 @@ live_design! {
                         width: Fit, height: Fit
                         padding: {left: 15, right: 15, top: 10, bottom: 10}
                         margin: {bottom: 5}
+                        align: {x: 0.5, y: 0.5}
                         draw_bg: {
                             color: (COLOR_SELECTED_PRIMARY)
                         }

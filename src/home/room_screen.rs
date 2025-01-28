@@ -657,6 +657,7 @@ live_design! {
             spacing: 15
 
             cancel_location_button = <RobrixIconButton> {
+                align: {x: 0.5, y: 0.5}
                 padding: {left: 15, right: 15}
                 draw_icon: {
                     svg_file: (ICON_BLOCK_USER)
@@ -677,6 +678,7 @@ live_design! {
             send_location_button = <RobrixIconButton> {
                 // disabled by default; will be enabled upon receiving valid location update.
                 enabled: false,
+                align: {x: 0.5, y: 0.5}
                 padding: {left: 15, right: 15}
                 draw_icon: {
                     svg_file: (ICO_SEND)

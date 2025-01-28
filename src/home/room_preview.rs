@@ -19,7 +19,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
-    pub UNREAD_DEFAULT_COLOR = #d8d8d8;
+    pub UNREAD_DEFAULT_COLOR = #AAA;
 
     RoomName = <Label> {
         width: Fill, height: Fit

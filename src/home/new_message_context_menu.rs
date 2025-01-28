@@ -1,4 +1,4 @@
-//! A context menu that appears when the user right-clics
+//! A context menu that appears when the user right-clicks
 //! or long-presses on a message/event in a room timeline.
 
 use bitflags::bitflags;
@@ -36,10 +36,7 @@ live_design! {
         // when showing this menu pane will work correctly.
         align: {x: 0, y: 0}
 
-        // Show a clear background such that we can capture hits
-        // on the background to close the context menu.
-        // TODO: test removing this; it may not be necessary,
-        //       because the parent view already has width: Fill, height: Fill.
+        // Show a slightly darkened translucent background to make the menu stand out.
         show_bg: true
         draw_bg: {
             fn pixel(self) -> vec4 {
