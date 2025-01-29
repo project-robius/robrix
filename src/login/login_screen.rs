@@ -332,7 +332,7 @@ impl MatchEvent for LoginScreen {
                 login_status_modal_inner.set_status(cx, "Please enter a valid password.");
                 login_status_modal_inner.button_ref().set_text(cx, "Okay");
             } else {
-                login_status_modal_inner.set_title(cx, "Logging in");
+                login_status_modal_inner.set_title(cx, "Logging in...");
                 login_status_modal_inner.set_status(cx, "Waiting for a login response...");
                 login_status_modal_inner.button_ref().set_text(cx, "Cancel");
                 submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
@@ -365,7 +365,7 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
-                    login_status_modal_inner.set_title(cx, "Logging in via CLI");
+                    login_status_modal_inner.set_title(cx, "Logging in via CLI...");
                     login_status_modal_inner.set_status(
                         cx,
                         &format!("Auto-logging in as user {user_id}...")
@@ -382,24 +382,20 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_button.set_text(cx, "Cancel");
                     login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
-
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginSuccess) => {
                     // The main `App` component handles showing the main screen
                     // and hiding the login screen & login status modal.
+                    log!("Login success! Closing login_status_modal.");
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
-                    login_status_modal_inner.set_title(cx, "Login Succeeded");
-                    login_status_modal_inner.set_status(cx, "You are now logged in.\n\nLoading your rooms now...");
-                    let login_status_modal_button = login_status_modal_inner.button_ref();
-                    login_status_modal_button.set_text(cx, "Okay");
-                    login_status_modal_button.set_enabled(cx, true);
+                    login_status_modal.close(cx);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
-                    login_status_modal_inner.set_title(cx, "Login Failed");
+                    login_status_modal_inner.set_title(cx, "Login Failed.");
                     login_status_modal_inner.set_status(cx, error);
                     let login_status_modal_button = login_status_modal_inner.button_ref();
                     login_status_modal_button.set_text(cx, "Okay");
@@ -461,8 +457,6 @@ impl MatchEvent for LoginScreen {
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LoginAction {
     /// A positive response from the backend Matrix task to the login screen.
-    ///
-    /// This is not handled by the login screen itself, but by the main app.
     LoginSuccess,
     /// A negative response from the backend Matrix task to the login screen.
     LoginFailure(String),
