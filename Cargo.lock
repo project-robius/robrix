@@ -3360,7 +3360,7 @@ dependencies = [
 
 [[package]]
 name = "robrix"
-version = "0.0.1-pre-alpha"
+version = "0.0.1-pre-alpha-2"
 dependencies = [
  "anyhow",
  "bitflags 2.6.0",
