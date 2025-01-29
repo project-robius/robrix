@@ -387,7 +387,6 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::LoginSuccess) => {
                     // The main `App` component handles showing the main screen
                     // and hiding the login screen & login status modal.
-                    log!("Login success! Closing login_status_modal.");
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
