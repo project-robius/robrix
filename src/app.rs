@@ -354,13 +354,13 @@ impl AppMain for App {
 impl App {
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
-        self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
-        self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
         if !show_login {
             self.ui
                 .modal(id!(login_screen_view.login_screen.login_status_modal))
                 .close(cx);
         }
+        self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
 }
 

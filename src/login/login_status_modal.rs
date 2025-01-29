@@ -115,7 +115,7 @@ impl WidgetMatchEvent for LoginStatusModal {
             .iter()
             .any(|a| matches!(a.downcast_ref(), Some(ModalAction::Dismissed)));
 
-        if button.clicked(actions) || modal_dismissed {
+        if modal_dismissed || button.clicked(actions) {
             // Here, we could optionally attempt to cancel the in-flight login request.
             // But our background async task doesn't yet support that, so we do nothing atm.
 
