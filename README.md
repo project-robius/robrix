@@ -127,11 +127,12 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
-- [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
+- [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
-- [ ] Room creation
-- [ ] Room settings/info screen
+- [ ] Join room, invite to room, knock on room
+- [ ] Administrative abilities: ban, kick, etc
+- [ ] Room creation/settings/info screen
 - [ ] Room members pane
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
