@@ -14,12 +14,11 @@ pub mod home;
 mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
 mod verification_modal;
+pub mod image_viewer;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
-
-pub mod image_viewer_modal;
 
 
 // Matrix stuff
