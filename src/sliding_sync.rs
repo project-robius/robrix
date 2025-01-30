@@ -29,7 +29,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, image_viewer::ImageViewerAction, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -321,6 +321,9 @@ pub enum MatrixRequest {
         on_fetched: OnMediaFetchedFn,
         destination: Arc<Mutex<MediaCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    FetchOriginalMedia {
+        media_request: MediaRequest,
     },
     /// Request to send a message to the given room.
     SendMessage {
@@ -820,6 +823,15 @@ async fn async_worker(
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
                 });
+            }
+            MatrixRequest::FetchOriginalMedia { media_request } => {
+                log!("Received...");
+                let Some(client) = CLIENT.get() else { continue };
+                let media = client.media();
+
+                if let Ok(data) = media.get_media_content(&media_request, true).await {
+                    Cx::post_action(ImageViewerAction::Receive(data));
+                }
             }
 
             MatrixRequest::SendMessage { room_id, message, replied_to } => {

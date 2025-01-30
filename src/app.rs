@@ -128,7 +128,7 @@ live_design! {
 
                     image_viewer_modal = <Modal> {
                         content: {
-                            image_viewer_modal_inner = <VerificationModal> {}
+                            image_viewer_modal_inner = <ImageViewer> {}
                         }
                     }
 
@@ -174,6 +174,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::image_viewer::live_design(cx);
     }
 }
 
@@ -213,14 +214,19 @@ impl MatchEvent for App {
                 Some(ImageViewerAction::SetMediaCache(media_cache)) => {
                     image_viewer_modal_inner.set_media_cache(media_cache.clone());
                 }
-                Some(ImageViewerAction::Insert(text_or_image_uid, mx_uri)) => {
+                Some(ImageViewerAction::Insert{text_or_image_uid, mxc_uri, is_large}) => {
                 //We restore image message id and the image inside the message's mx_uri into HashMap.
-                    image_viewer_modal_inner.insert_data(text_or_image_uid, mx_uri.clone());
+                    image_viewer_modal_inner.insert_data(text_or_image_uid, mxc_uri.clone(), is_large);
                 }
                 // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
                 Some(ImageViewerAction::Show(text_or_image_uid)) => {
                     image_viewer_modal.open(cx);
                     image_viewer_modal_inner.show_and_fill_image(cx, text_or_image_uid);
+                    self.ui.redraw(cx);
+                }
+                Some(ImageViewerAction::Receive(data)) => {
+                    image_viewer_modal.open(cx);
+                    image_viewer_modal_inner.load_and_redraw(cx, data);
                     self.ui.redraw(cx);
                 }
                  _ => { }

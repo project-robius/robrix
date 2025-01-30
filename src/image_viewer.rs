@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedMxcUri;
+use matrix_sdk::{media::{MediaFormat, MediaRequest}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 
-use crate::{media_cache::{MediaCache, MediaCacheEntry}, utils};
+use crate::{media_cache::{MediaCache, MediaCacheEntry}, sliding_sync::{self, MatrixRequest}, utils};
 
 live_design! {
     use link::theme::*;
@@ -49,16 +49,17 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct ImageViewer {
     #[deref] view: View,
-    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
+    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, (OwnedMxcUri, bool)>,
     #[rust] media_cache: Option<MediaCache>,
 }
 
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    Insert(WidgetUid, OwnedMxcUri),
+    Insert{text_or_image_uid: WidgetUid, mxc_uri: OwnedMxcUri, is_large: bool},
     SetMediaCache(MediaCache),
     Show(WidgetUid),
+    Receive(Vec<u8>),
     None,
 }
 
@@ -88,33 +89,49 @@ impl ImageViewer {
     }
     /// We restore image message uid and the image inside the message's mx_uri into HashMap
     /// when the message is being populated.
-    fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mx_uri: OwnedMxcUri) {
-        self.widgetref_image_uri_map.insert(*text_or_image_uid, mx_uri);
+    fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri, is_large: &bool) {
+        self.widgetref_image_uri_map.insert(*text_or_image_uid, (mxc_uri, *is_large));
         log!("Inserted");
     }
     /// We find mx_uid via the given `text_or_image_uid`.
     fn show_and_fill_image(&mut self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
-        if let Some(mxc_uri) = self.widgetref_image_uri_map.get(text_or_image_uid) {
-            match self.media_cache.as_mut().unwrap().try_get_media_or_fetch(mxc_uri.clone(), None) {
-                MediaCacheEntry::Loaded(data) => {
-                    let image_view = self.view.image(id!(image_view));
+        if let Some((mxc_uri, is_large)) = self.widgetref_image_uri_map.get(text_or_image_uid) {
+            let media_cache = self.media_cache.as_mut().unwrap();
 
-                    if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &data) {
-                        log!("Error to load image: {e}");
+            if *is_large {
+                sliding_sync::submit_async_request(
+                    MatrixRequest::FetchOriginalMedia {
+                        media_request: MediaRequest {
+                            source: MediaSource::Plain(mxc_uri.clone()),
+                            format: MediaFormat::File,
+                        },
                     }
-                    self.view.redraw(cx);
-                }
-                MediaCacheEntry::Requested => {
+                );
+            } else {
+                match media_cache.try_get_media(mxc_uri).unwrap() {
+                    MediaCacheEntry::Loaded(data) => {
+                        self.load_and_redraw(cx, &data);
+                    }
+                    MediaCacheEntry::Requested => {
 
-                }
-                MediaCacheEntry::Failed => {
+                    }
+                    MediaCacheEntry::Failed => {
 
-                }
-            };
+                    }
+                };
+            }
         }
     }
-    pub fn clear_image(&mut self, cx: &mut Cx) {
+    fn clear_image(&mut self, cx: &mut Cx) {
         self.view.image(id!(image_view)).set_texture(cx, None);
+    }
+    fn load_and_redraw(&mut self, cx: &mut Cx, data: &[u8]) {
+        let image_view = self.view.image(id!(image_view));
+
+        if let Err(e) = utils::load_png_or_jpg(&image_view, cx, data) {
+            log!("Error to load image: {e}");
+        }
+        self.view.redraw(cx);
     }
 }
 
@@ -124,9 +141,9 @@ impl ImageViewerRef {
             inner.set_media_cache(media_cache)
         }
     }
-    pub fn insert_data(&self, text_or_image_uid: &WidgetUid, mx_uri: OwnedMxcUri) {
+    pub fn insert_data(&self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri, is_large: &bool) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.insert_data(text_or_image_uid, mx_uri);
+            inner.insert_data(text_or_image_uid, mxc_uri, is_large);
         }
     }
     pub fn show_and_fill_image(&self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
@@ -137,6 +154,11 @@ impl ImageViewerRef {
     pub fn clear_image(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.clear_image(cx);
+        }
+    }
+    pub fn load_and_redraw(&self, cx: &mut Cx, data: &[u8]) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.load_and_redraw(cx, data);
         }
     }
 }
