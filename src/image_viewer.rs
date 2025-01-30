@@ -51,7 +51,6 @@ pub struct ImageViewer {
     #[deref] view: View,
     #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
     #[rust] media_cache: Option<MediaCache>,
-    #[rust(false)] need_to_draw_all: bool
 }
 
 
@@ -70,10 +69,6 @@ impl Widget for ImageViewer {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.need_to_draw_all {
-            self.view.draw_all(cx, scope);
-            self.need_to_draw_all = false;
-        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -107,9 +102,6 @@ impl ImageViewer {
                     if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &data) {
                         log!("Error to load image: {e}");
                     }
-
-                    self.need_to_draw_all = true;
-
                     self.view.redraw(cx);
                 }
                 MediaCacheEntry::Requested => {
