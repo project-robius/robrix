@@ -32,7 +32,7 @@ live_design! {
                 flow: Down
                 width: Fill, height: Fill
                 <SearchBar> {}
-                main_desktop_ui = <MainDesktopUI> {}
+                <MainDesktopUI> {}
             }
         }
 
