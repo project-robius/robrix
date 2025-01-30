@@ -101,28 +101,46 @@ live_design! {
     }
 
     UnreadBadge = <View> {
-        width: 16.0, height: 16.0
-        show_bg: true
-        align: { x: 0.5, y: 0.5 }
-        draw_bg: {
-            instance highlight: 0.0,
-            instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
-            instance default_color: (UNREAD_DEFAULT_COLOR),
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                let c = self.rect_size * 0.5;
-                sdf.circle(c.x, c.x, c.x)
-                sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
-                return sdf.result
+        width: 30, height: 20,
+        align: {
+            x: 0.5,
+            y: 0.5
+        }
+        visible: false,
+        flow: Overlay,
+        rounded_label = <View> {
+            width: Fill,
+            height: Fill,
+            show_bg: true,
+            draw_bg: {
+                instance highlight: 0.0,
+                instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
+                instance default_color: (UNREAD_DEFAULT_COLOR),
+                instance radius: 4.0
+                // Adjust this border_width to larger value to make oval smaller 
+                instance border_width: 2.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        self.border_width,
+                        1.0,
+                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.y - 2.0,
+                        max(1.0, self.radius)
+                    )
+                    sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
+                    return sdf.result;
+                }
             }
         }
-        unread_message_count = <Label> {
-            text: "?"
-            draw_text:{
-                color: #FFF
-                text_style: <TIMESTAMP_TEXT_STYLE>{
-                    font_size: 7.5
-                },
+        // Label that displays the unread message count
+        unread_messages_count = <Label> {
+            width: Fit,
+            height: Fit,
+            text: "",
+            draw_text: {
+                color: #ffffff,
+                text_style: {font_size: 8.0},
             }
         }
     }
@@ -285,27 +303,45 @@ impl Widget for RoomPreviewContent {
             }
 
             let unread_badge = self.view(id!(unread_badge)); 
-            // Helper function to format the unread count, display "99+" if greater than 99
-            fn format_unread_count(count: u64) -> String {
-                if count > 99 {
-                    "99+".to_string()
+            // Helper function to format the rounded rectangle.
+            //
+            // The rounded rectangle needs to be wider for longer text.
+            // It also adds a plus sign at the end if the unread count is greater than 99. 
+            fn format_border_and_truncation(count: u64) -> (f64, &'static str) {
+                let (border_size, plus_sign) = if count > 99 {
+                    (0.0, "+")
+                } else if count > 9 {
+                    (2.0, "")
                 } else {
-                    count.to_string()
-                }
+                    (5.0, "")
+                };
+                (border_size, plus_sign)
             }
             if room_info.num_unread_mentions > 0 {
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_mentions);
                 // If there are unread mentions, show red badge and the number of unread mentions
-                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 1.0 }});
                 unread_badge
-                    .label(id!(unread_message_count))
-                    .set_text(cx, &format_unread_count(room_info.num_unread_mentions));
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_mentions, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 1.0
+                    }
+                });
                 unread_badge.set_visible(cx, true);
             } else if room_info.num_unread_messages > 0 {
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_messages);
                 // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
-                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 0.0 }});
                 unread_badge
-                    .label(id!(unread_message_count))
-                    .set_text(cx, &format_unread_count(room_info.num_unread_messages));
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_messages, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 0.0
+                    }
+                });
                 unread_badge.set_visible(cx, true);
             } else {
                 // If there are no unread mentions and no unread messages, hide the badge
