@@ -11,7 +11,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
 
-    pub ImageViewerModal = {{ImageViewerModal}} {
+    pub ImageViewer = {{ImageViewer}} {
         width: 1600, height: 900
         align: {x: 0.5}
         spacing: 15
@@ -47,7 +47,7 @@ live_design! {
 }
 
 #[derive(Live, LiveHook, Widget)]
-pub struct ImageViewerModal {
+pub struct ImageViewer {
     #[deref] view: View,
     #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
     #[rust] media_cache: Option<MediaCache>,
@@ -63,7 +63,7 @@ pub enum ImageViewerAction {
     None,
 }
 
-impl Widget for ImageViewerModal {
+impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
@@ -77,7 +77,7 @@ impl Widget for ImageViewerModal {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-impl MatchEvent for ImageViewerModal {
+impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
         for _action in actions {
 
@@ -85,7 +85,7 @@ impl MatchEvent for ImageViewerModal {
     }
 }
 
-impl ImageViewerModal {
+impl ImageViewer {
     // We clone the media cache here, is unnecessary, but I can't find a way get its mut reference.
     fn set_media_cache(&mut self, media_cache: MediaCache) {
         self.media_cache = Some(media_cache);
@@ -126,8 +126,8 @@ impl ImageViewerModal {
     }
 }
 
-impl ImageViewerModalRef {
-    pub fn set_media_cache(&mut self, media_cache: MediaCache) {
+impl ImageViewerRef {
+    pub fn set_media_cache(&self, media_cache: MediaCache) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_media_cache(media_cache)
         }

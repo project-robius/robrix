@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, image_viewer_modal::{ImageViewerAction, ImageViewerModalWidgetRefExt}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, image_viewer::ImageViewerWidgetRefExt, image_viewer::ImageViewerAction, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -14,6 +14,7 @@ live_design! {
     use crate::home::home_screen::HomeScreen;
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
+    use crate::image_viewer::ImageViewer;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
@@ -125,6 +126,12 @@ live_design! {
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
 
+                    image_viewer_modal = <Modal> {
+                        content: {
+                            image_viewer_modal_inner = <VerificationModal> {}
+                        }
+                    }
+
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -190,7 +197,7 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let mut image_viewer_modal_inner = self.ui.image_viewer_modal(id!(image_viewer_modal_inner));
+        let image_viewer_modal_inner = self.ui.image_viewer(id!(image_viewer_modal_inner));
         let image_viewer_modal = self.ui.modal(id!(image_viewer_modal));
 
         if image_viewer_modal_inner.button(id!(close_button)).clicked(actions) {

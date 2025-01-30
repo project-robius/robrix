@@ -5,7 +5,7 @@
 
 use makepad_widgets::*;
 
-use crate::image_viewer_modal::ImageViewerAction;
+use crate::image_viewer::ImageViewerAction;
 
 live_design! {
     use link::theme::*;
