@@ -275,43 +275,32 @@ impl Widget for MentionInputBar {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Let the CommandTextInput handle keyboard navigation first
+        // 让 CommandTextInput 处理所有基础事件
         self.view.handle_event(cx, event, scope);
 
-        // Only handle our own events if the CommandTextInput didn't consume them
-        if let Event::KeyDown(key_event) = event {
-            log!("MentionInputBar received key event: {:?}", key_event.key_code);
-            log!("is_searching: {}, popup visible: {}",
-                self.is_searching,
-                self.command_text_input(id!(message_input)).view(id!(popup)).is_visible()
-            );
+        // 只处理 Actions 事件
+        if let Event::Actions(actions) = event {
+            let mut message_input = self.command_text_input(id!(message_input));
 
-            let message_input = self.command_text_input(id!(message_input));
+            // 1. 处理选择事件
+            if let Some(selected) = message_input.item_selected(actions) {
+                self.on_user_selected(cx, scope, selected);
+                return;
+            }
 
-            // Only handle keys if popup is visible and we're searching
-            if self.is_searching && message_input.view(id!(popup)).is_visible() {
-                match key_event.key_code {
-                    KeyCode::ArrowUp | KeyCode::ArrowDown => {
-                        log!("MentionInputBar received key event : {:?} let CommandTextInput handle it", key_event.key_code);
-                        // Don't do anything here - let CommandTextInput handle it
-                        cx.redraw_all();
-                    }
-                    KeyCode::ReturnKey => {
-                        // Handle selection
-                        if let Some(selected) = message_input.borrow()
-                            .and_then(|input| input.keyboard_focus_index
-                                .map(|idx| input.selectable_widgets[idx].clone()))
-                        {
-                            log!("MentionInputBar received key event : {:?} let CommandTextInput handle it", key_event.key_code);
-                            self.on_user_selected(cx, scope, selected);
-                        }
-                    }
-                    _ => {}
+            // 2. 处理搜索更新
+            if message_input.should_build_items(actions) {
+                let search_text = message_input.search_text().to_lowercase();
+                self.update_user_list(cx, &mut message_input, &search_text);
+            }
+
+            // 3. 处理文本变化
+            if let Some(action) = actions.find_widget_action(message_input.text_input_ref().widget_uid()) {
+                if let TextInputAction::Change(text) = action.cast() {
+                    self.handle_text_change(cx, &mut message_input, scope, text);
                 }
             }
         }
-
-        self.widget_match_event(cx, event, scope);
     }
 }
 
@@ -406,29 +395,24 @@ impl MentionInputBar {
 
     fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
         let username = selected.label(id!(user_info.label)).text();
+        let message_input = self.command_text_input(id!(message_input));
 
         if let Some(start_idx) = self.mention_start_index {
-            // 获取当前文本状态
-            let current_text = self.text();
-            let message_input = self.command_text_input(id!(message_input));
-            let cursor_pos = message_input.text_input_ref().borrow()
+            let current_text = message_input.text();
+            let head = message_input.text_input_ref().borrow()
                 .map_or(0, |p| p.get_cursor().head.index);
 
-            // 正确分割文本部分
-            let before_mention = &current_text[..start_idx];
-            let after_mention = &current_text[cursor_pos..];
+            // 构建提及文本
+            let before = &current_text[..start_idx];
+            let after = &current_text[head..];
+            let mention = format!("{before} @{username} {after}");
 
-            // 构建新的文本 - 确保格式为 " @username "
-            let format_mention = format!("{before_mention}@{} {after_mention}", username.trim());
+            // 更新文本和光标
+            message_input.set_text(cx, &mention);
+            let new_pos = start_idx + username.len() + 2;
+            message_input.text_input_ref().set_cursor(new_pos, new_pos);
 
-            // 更新文本和光标位置
-            self.set_text(cx, &format_mention);
-
-            // 将光标移动到提及的后面
-            let new_cursor_pos = start_idx + username.len() + 2; // 加2是因为有@和空格
-            message_input.text_input_ref().set_cursor(new_cursor_pos, new_cursor_pos);
-
-            // 发送提及事件
+            // 发送事件
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
@@ -698,11 +682,12 @@ impl LiveHook for MentionInputBar {
                 message_input.inline_search);
         }
 
-
         // 确保 CommandTextInput 的配置正确
         message_input.apply_over(cx, live! {
             trigger: "@",
-            inline_search: true,  // 启用内联搜索
+            inline_search: true,
+            keyboard_focus_color: #eaecf0,
+            pointer_hover_color: #f5f5f5
         });
 
         log!("CommandTextInput configuration applied");
