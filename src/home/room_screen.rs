@@ -808,8 +808,10 @@ live_design! {
                 input_bar = <View> {
                     width: Fill, height: Fit
                     flow: Right,
-                    align: {y: 0.5},
-                    padding: 10.
+                    // Bottom-align everything to ensure that buttons always stick to the bottom
+                    // even when the message_input box is very tall.
+                    align: {y: 1.0},
+                    padding: 8.
                     show_bg: true,
                     draw_bg: {
                         color: (COLOR_PRIMARY)
@@ -817,20 +819,20 @@ live_design! {
 
                     location_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5}},
+                        icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
                         text: "",
                     }
 
                     message_input = <RobrixTextInput> {
                         width: Fill, height: Fit,
-                        margin: 0,
+                        margin: { bottom: 7 }
                         align: {y: 0.5}
                         empty_message: "Write a message (in Markdown) ..."
                     }
 
                     send_message_button = <IconButton> {
                         draw_icon: {svg_file: (ICO_SEND)},
-                        icon_walk: {width: 18.0, height: Fit},
+                        icon_walk: {width: Fit, height: 25, margin: {left: -3} },
                     }
                 }
                 can_not_send_message_notice = <View> {
@@ -839,14 +841,16 @@ live_design! {
                     draw_bg: {
                         color: (COLOR_SECONDARY)
                     }
-                    padding: {left: 75}
-                    align: {y: 0.3}
-                    width: Fill, height: 37.5
+                    padding: {left: 50, right: 50, top: 20, bottom: 20}
+                    align: {y: 0.5}
+                    width: Fill, height: Fit
 
                     text = <Label> {
+                        width: Fill,
                         draw_text: {
                             color: (COLOR_TEXT)
                             text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                            wrap: Word,
                         }
                         text: (CAN_NOT_SEND_NOTICE)
                     }
@@ -1793,6 +1797,10 @@ impl RoomScreen {
                         if self.room_id.as_ref() == Some(room_id) {
                             return true;
                         }
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                        }
                         if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                             log!("TODO: jump to known room {}", room_id);
                         } else {
@@ -1801,6 +1809,10 @@ impl RoomScreen {
                         true
                     }
                     MatrixId::RoomAlias(room_alias) => {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                        }
                         log!("TODO: open room alias {}", room_alias);
                         // TODO: open a room loading screen that shows a spinner
                         //       while our background async task calls Client::resolve_room_alias()
@@ -1809,8 +1821,6 @@ impl RoomScreen {
                         true
                     }
                     MatrixId::User(user_id) => {
-                        log!("Opening matrix.to user link for {}", user_id);
-
                         // There is no synchronous way to get the user's full profile info
                         // including the details of their room membership,
                         // so we fill in with the details we *do* know currently,
@@ -1837,6 +1847,10 @@ impl RoomScreen {
                         true
                     }
                     MatrixId::Event(room_id, event_id) => {
+                        if let Err(e) = robius_open::Uri::new(&url).open() {
+                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                        }
                         log!("TODO: open event {} in room {}", event_id, room_id);
                         // TODO: this requires the same first step as the `MatrixId::Room` case above,
                         //       but then we need to call Room::event_with_context() to get the event
@@ -4207,7 +4221,6 @@ enum LongPressState {
 pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
-    #[rust(false)] hovered: bool,
 
     /// A timer used to detect long presses on the message body.
     #[rust] long_press_timer: Timer,
@@ -4230,7 +4243,6 @@ impl Widget for Message {
         }
 
         let Some(details) = self.details.clone() else { return };
-        let message_widget_uid = self.widget_uid();
 
         /// 500ms long press is default on Android/iOS
         const LONG_PRESS_DURATION: f64 = 0.500;
@@ -4289,49 +4301,66 @@ impl Widget for Message {
                 false
             }
         };
+        
+        let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,
-            self.view(id!(body)).area(),
+            message_view_area,
+            // self.view(id!(body)).area(),
             mark_as_handled_fn,
         );
         match hit {
             // a long press has started
             Hit::FingerDown(fe) => {
+                cx.set_key_focus(message_view_area);
                 if matches!(self.long_press_state, LongPressState::None) {
                     self.long_press_state = LongPressState::Pressing(fe.abs);
                     self.long_press_timer = cx.start_interval(LONG_PRESS_DURATION);
                 }
             }
-            // a right-click event
-            Hit::FingerUp(fe) if fe.is_over && fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
-                    MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
-                        abs_pos: fe.abs,
-                    }
-                );
+            // A click/touch event has occurred somewhere within this Message's entire view area.
+            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
+                cx.stop_timer(self.long_press_timer);
+                self.long_press_state = LongPressState::None;
+
+                // A right click means we should display the context menu.
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::OpenMessageContextMenu {
+                            details: details.clone(),
+                            abs_pos: fe.abs,
+                        }
+                    );
+                }
+                // If the hit occurred on the replied-to message preview, jump to it.
+                //
+                // TODO: move this to the event handler for any reply preview content,
+                //       since we also want this jump-to-reply behavior for the reply preview
+                //       that appears above the message input box when you click the reply button.
+                if fe.is_primary_hit() && self.view(id!(replied_to_message)).area().rect(cx).contains(fe.abs) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::JumpToRelated(details.clone()),
+                    );
+                }
             }
             // a long press has ended
             Hit::FingerUp(_) | Hit::FingerMove(_) => {
                 cx.stop_timer(self.long_press_timer);
                 self.long_press_state = LongPressState::None;
             }
-            _ => { }
-        }
-
-        // TODO: move this to the event handler for any reply preview content,
-        //       since we also want this jump-to-reply behavior for the reply preview
-        //       that appears above the message input box when you click the reply button.
-        if let Hit::FingerUp(fe) = event.hits(cx, self.view(id!(replied_to_message)).area()) {
-            if fe.is_over && fe.was_tap() {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
-                    MessageAction::JumpToRelated(details.clone()),
-                );
+            Hit::FingerHoverIn(_fhi) => {
+                self.animator_play(cx, id!(hover.on));
+                // TODO: here, show the "action bar" buttons upon hover-in
             }
+            Hit::FingerHoverOut(_fho) => {
+                self.animator_play(cx, id!(hover.off));
+                // TODO: here, hide the "action bar" buttons upon hover-out
+            }
+            _ => { }
         }
 
         if let Event::Actions(actions) = event {
@@ -4346,40 +4375,6 @@ impl Widget for Message {
             }
         }
 
-        // TODO: I think this could be more efficient if we only handle
-        //       hover in/out actions rather than every mouse movement.
-        if let Event::MouseMove(e) = event {
-            let hovered = self.view.area().rect(cx).contains(e.abs);
-
-            let hover_changed = self.hovered != hovered;
-            let animation_needs_update = hovered != self.animator_in_state(cx, id!(hover.on));
-
-            if hover_changed {
-                if hovered {
-                    cx.widget_action(
-                        message_widget_uid,
-                        &scope.path,
-                        MessageAction::ActionBarOpen {
-                            item_id: details.item_id,
-                            message_rect: self.view.area().rect(cx)
-                        }
-                    );
-                } else {
-                    cx.widget_action(message_widget_uid, &scope.path, MessageAction::ActionBarClose);
-                }
-
-                self.hovered = hovered;
-            }
-
-            if animation_needs_update {
-                let hover_animator = if hovered {
-                    id!(hover.on)
-                } else {
-                    id!(hover.off)
-                };
-                self.animator_play(cx, hover_animator);
-            }
-        }
         self.view.handle_event(cx, event, scope);
     }
 

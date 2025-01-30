@@ -18,7 +18,7 @@ live_design! {
 
         <RoundedView> {
             flow: Down
-            width: 600
+            width: 400
             height: Fit
             padding: {top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10

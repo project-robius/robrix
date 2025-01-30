@@ -1,7 +1,7 @@
 use std::ops::Not;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::api::client::session::get_login_types::v3::IdentityProvider;
+use url::Url;
 
 use crate::sliding_sync::{submit_async_request, LoginByPassword, LoginRequest, MatrixRequest};
 
@@ -26,7 +26,6 @@ live_design! {
         cursor: Hand,
         visible: true,
         padding: 10,
-        // margin: 10,
         margin: { left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg: {
             border_width: 0.5,
@@ -114,60 +113,47 @@ live_design! {
 
                     <View> {
                         width: 250, height: Fit,
-                        align: {x: 0.5}
-                        flow: Right,
-                        <View> {
-                            width: 215, height: Fit,
-                            flow: Down,
+                        flow: Down,
 
-                            homeserver_input = <RobrixTextInput> {
-                                width: 215, height: 30,
-                                empty_message: "matrix.org"
-                                draw_text: {
-                                    text_style: <TITLE_TEXT>{font_size: 10.0}
-                                }
+                        homeserver_input = <RobrixTextInput> {
+                            width: Fill, height: 30,
+                            empty_message: "matrix.org"
+                            draw_text: {
+                                text_style: <TITLE_TEXT>{font_size: 10.0}
                             }
-
-                            <View> {
-                                width: 215,
-                                height: Fit,
-                                flow: Right,
-                                padding: {top: 3, left: 2, right: 2}
-                                spacing: 0.0,
-                                align: {x: 0.5, y: 0.5} // center horizontally and vertically
-
-                                left_line = <LineH> {
-                                    draw_bg: { color: #C8C8C8 }
-                                }
-
-                                <Label> {
-                                    width: Fit, height: Fit
-                                    draw_text: {
-                                        color: #8C8C8C
-                                        text_style: <REGULAR_TEXT>{font_size: 9}
-                                    }
-                                    text: "Homeserver URL (optional)"
-                                }
-
-                                right_line = <LineH> {
-                                    draw_bg: { color: #C8C8C8 }
-                                }
-                            }
-
                         }
-                        sso_search_button = <RobrixIconButton> {
-                            width: 28, height: 28,
-                            margin: { left: 5, top: 1}
-                            align: {x: 0.5, y: 0.5}
-                            draw_icon: {
-                                svg_file: (ICON_SEARCH)
+
+                        <View> {
+                            width: 250,
+                            height: Fit,
+                            flow: Right,
+                            padding: {top: 3, left: 2, right: 2}
+                            spacing: 0.0,
+                            align: {x: 0.5, y: 0.5} // center horizontally and vertically
+
+                            left_line = <LineH> {
+                                draw_bg: { color: #C8C8C8 }
                             }
-                            icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                            <Label> {
+                                width: Fit, height: Fit
+                                draw_text: {
+                                    color: #8C8C8C
+                                    text_style: <REGULAR_TEXT>{font_size: 9}
+                                }
+                                text: "Homeserver URL (optional)"
+                            }
+
+                            right_line = <LineH> {
+                                draw_bg: { color: #C8C8C8 }
+                            }
                         }
                     }
+                    
 
                     login_button = <RobrixIconButton> {
-                        width: 250, height: 40
+                        width: 250,
+                        height: 40
                         padding: 10
                         margin: {top: 5, bottom: 10}
                         align: {x: 0.5, y: 0.5}
@@ -214,11 +200,6 @@ live_design! {
                                 source: dep("crate://self/resources/img/github.png")
                             }
                         }
-                        github_button = <SsoButton> {
-                            image = <SsoImage> {
-                                source: dep("crate://self/resources/img/github.png")
-                            }
-                        }
                         gitlab_button = <SsoButton> {
                             image = <SsoImage> {
                                 source: dep("crate://self/resources/img/gitlab.png")
@@ -227,6 +208,11 @@ live_design! {
                         google_button = <SsoButton> {
                             image = <SsoImage> {
                                 source: dep("crate://self/resources/img/google.png")
+                            }
+                        }
+                        twitter_button = <SsoButton> {
+                            image = <SsoImage> {
+                                source: dep("crate://self/resources/img/x.png")
                             }
                         }
                     }
@@ -295,12 +281,10 @@ static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-fo
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
     #[deref] view: View,
-    #[rust]
-    identity_providers: Vec<IdentityProvider>,
-    #[rust]
-    sso_pending: bool,
-    #[rust]
-    prev_homeserver_url: Option<String>,
+    /// Boolean to indicate if the SSO login process is still in flight
+    #[rust] sso_pending: bool,
+    /// The URL to redirect to after logging in with SSO.
+    #[rust] sso_redirect_url: Option<String>,
 }
 
 
@@ -322,7 +306,6 @@ impl MatchEvent for LoginScreen {
         let user_id_input = self.view.text_input(id!(user_id_input));
         let password_input = self.view.text_input(id!(password_input));
         let homeserver_input = self.view.text_input(id!(homeserver_input));
-        let sso_search_button = self.view.button(id!(sso_search_button));
 
         let login_status_modal = self.view.modal(id!(login_status_modal));
         let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
@@ -349,7 +332,7 @@ impl MatchEvent for LoginScreen {
                 login_status_modal_inner.set_status(cx, "Please enter a valid password.");
                 login_status_modal_inner.button_ref().set_text(cx, "Okay");
             } else {
-                login_status_modal_inner.set_title(cx, "Logging in");
+                login_status_modal_inner.set_title(cx, "Logging in...");
                 login_status_modal_inner.set_status(cx, "Waiting for a login response...");
                 login_status_modal_inner.button_ref().set_text(cx, "Cancel");
                 submit_async_request(MatrixRequest::Login(LoginRequest::LoginByPassword(LoginByPassword {
@@ -359,12 +342,18 @@ impl MatchEvent for LoginScreen {
                 })));
             }
             login_status_modal.open(cx);
-            sso_search_button.set_enabled(cx, self.prev_homeserver_url == Some(homeserver_input.text()));
             self.redraw(cx);
         }
         
-        let provider_brands = ["apple", "facebook", "github", "gitlab", "google"];
-        let button_set: &[&[LiveId]] = ids!(apple_button, facebook_button, github_button, gitlab_button, google_button);
+        let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
+        let button_set: &[&[LiveId]] = ids!(
+            apple_button, 
+            facebook_button, 
+            github_button, 
+            gitlab_button, 
+            google_button, 
+            twitter_button
+        );
         for action in actions {
             if let LoginStatusModalAction::Close = action.as_widget_action().cast() {
                 login_status_modal.close(cx);
@@ -376,7 +365,7 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, user_id);
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, homeserver.as_deref().unwrap_or_default());
-                    login_status_modal_inner.set_title(cx, "Logging in via CLI");
+                    login_status_modal_inner.set_title(cx, "Logging in via CLI...");
                     login_status_modal_inner.set_status(
                         cx,
                         &format!("Auto-logging in as user {user_id}...")
@@ -391,10 +380,8 @@ impl MatchEvent for LoginScreen {
                     login_status_modal_inner.set_status(cx, status);
                     let login_status_modal_button = login_status_modal_inner.button_ref();
                     login_status_modal_button.set_text(cx, "Cancel");
-                    login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
+                    login_status_modal_button.set_enabled(cx, true);
                     login_status_modal.open(cx);
-
-                    sso_search_button.set_enabled(cx, true);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginSuccess) => {
@@ -403,15 +390,11 @@ impl MatchEvent for LoginScreen {
                     user_id_input.set_text(cx, "");
                     password_input.set_text(cx, "");
                     homeserver_input.set_text(cx, "");
-                    login_status_modal_inner.set_title(cx, "Login Succeeded");
-                    login_status_modal_inner.set_status(cx, "You are now logged in.\n\nLoading your rooms now...");
-                    let login_status_modal_button = login_status_modal_inner.button_ref();
-                    login_status_modal_button.set_text(cx, "Okay");
-                    login_status_modal_button.set_enabled(cx, true);
+                    login_status_modal.close(cx);
                     self.redraw(cx);
                 }
                 Some(LoginAction::LoginFailure(error)) => {
-                    login_status_modal_inner.set_title(cx, "Login Failed");
+                    login_status_modal_inner.set_title(cx, "Login Failed.");
                     login_status_modal_inner.set_status(cx, error);
                     let login_status_modal_button = login_status_modal_inner.button_ref();
                     login_status_modal_button.set_text(cx, "Okay");
@@ -422,7 +405,7 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoPending(ref pending)) => {
                     for view_ref in self.view_set(button_set).iter() {
                         let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
-                        if *pending {    
+                        if *pending {
                             view_mut.apply_over(cx, live! {
                                 cursor: NotAllowed,
                                 image = { draw_bg: { mask: 1.0 } }
@@ -437,56 +420,32 @@ impl MatchEvent for LoginScreen {
                     self.sso_pending = *pending;
                     self.redraw(cx);
                 }
-                Some(LoginAction::IdentityProvider(identity_providers)) => {
-                    for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
-                        for ip in identity_providers.iter() {
-                            if ip.id.contains(brand) {
-                                view_ref.set_visible(cx, true);
-                                break;
-                            }
-                        }  
-                    }
-                    self.identity_providers = identity_providers.clone();
-                    sso_search_button.set_enabled(cx, true);
-                    // Hide the status modal such that the user can see the newly-populated SSO buttons.
-                    login_status_modal.close(cx);
-                    self.redraw(cx);
+                Some(LoginAction::SsoSetRedirectUrl(url)) => {
+                    self.sso_redirect_url = Some(url.to_string());
                 }
                 _ => { }
             }
         }
 
-        // If the homeserver "search" button was clicked, fetch supported login types.
-        if sso_search_button.clicked(actions) && self.prev_homeserver_url != Some(homeserver_input.text()) {
-            login_status_modal_inner.set_title(cx, "Querying login types");
-            login_status_modal_inner.set_status(cx, "Fetching supported login types from the homeserver...");
+        // If the Login SSO screen's "cancel" button was clicked, send a http request to gracefully shutdown the SSO server
+        if let Some(sso_redirect_url) = &self.sso_redirect_url {
             let login_status_modal_button = login_status_modal_inner.button_ref();
-            login_status_modal_button.set_text(cx, "Cancel");
-            login_status_modal_button.set_enabled(cx, false); // Login cancel not yet supported
-            login_status_modal.open(cx);
-            
-            self.prev_homeserver_url = Some(homeserver_input.text());
-            submit_async_request(MatrixRequest::Login(LoginRequest::HomeserverLoginTypesQuery(homeserver_input.text())));
-            sso_search_button.set_enabled(cx, false);
-            for view_ref in self.view_set(button_set).iter() {
-                view_ref.set_visible(cx, false);
+            if login_status_modal_button.clicked(actions) {
+                let request_id = live_id!(SSO_CANCEL_BUTTON);
+                let request = HttpRequest::new(format!("{}/?login_token=",sso_redirect_url), HttpMethod::GET);
+                cx.http_request(request_id, request);
+                self.sso_redirect_url = None;
             }
-            self.redraw(cx);
         }
 
         // Handle any of the SSO login buttons being clicked
         for (view_ref, brand) in self.view_set(button_set).iter().zip(&provider_brands) {
-            for ip in self.identity_providers.iter() {
-                if ip.id.contains(brand) {
-                    if view_ref.finger_up(actions).is_some() && !self.sso_pending {
-                        submit_async_request(MatrixRequest::SpawnSSOServer{
-                            identity_provider_id: ip.id.clone(),
-                            brand: brand.to_string(),
-                            homeserver_url: homeserver_input.text()
-                        });
-                    }
-                    break;
-                }
+            if view_ref.finger_up(actions).is_some() && !self.sso_pending {
+                submit_async_request(MatrixRequest::SpawnSSOServer{
+                    identity_provider_id: format!("oidc-{}",brand),
+                    brand: brand.to_string(),
+                    homeserver_url: homeserver_input.text()
+                });
             }
         }
     }
@@ -497,8 +456,6 @@ impl MatchEvent for LoginScreen {
 #[derive(Clone, DefaultNone, Debug)]
 pub enum LoginAction {
     /// A positive response from the backend Matrix task to the login screen.
-    ///
-    /// This is not handled by the login screen itself, but by the main app.
     LoginSuccess,
     /// A negative response from the backend Matrix task to the login screen.
     LoginFailure(String),
@@ -521,10 +478,10 @@ pub enum LoginAction {
     /// The login screen can use this to prevent the user from submitting
     /// additional SSO login requests while a previous request is in flight. 
     SsoPending(bool),
-    /// A list of SSO identity providers supported by the homeserver.
+    /// Set the SSO redirect URL in the LoginScreen.
     ///
-    /// This is sent from the backend async task to the login screen in order to
-    /// inform the login screen which SSO identity providers it should display to the user.
-    IdentityProvider(Vec<IdentityProvider>),
+    /// When an SSO-based login is pendng, pressing the cancel button will send
+    /// an HTTP request to this SSO server URL to gracefully shut it down.
+    SsoSetRedirectUrl(Url),
     None,
 }

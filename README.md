@@ -127,11 +127,12 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
-- [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
+- [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
-- [ ] Room creation
-- [ ] Room settings/info screen
+- [ ] Join room, invite to room, knock on room
+- [ ] Administrative abilities: ban, kick, etc
+- [ ] Room creation/settings/info screen
 - [ ] Room members pane
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
 
@@ -208,3 +209,7 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
+# Credits
+X-logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
+
+https://matrix-client.matrix.org/_matrix/client/v3/login/sso/redirect/oidc-google?redirectUrl=element%3A%2F%2Fvector%2Fwebapp%2F%3Felement-desktop-ssoid%3Du9E0ZjkYArE8Yhxi9rpki0DOu2d8MWNS

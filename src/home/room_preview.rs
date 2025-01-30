@@ -44,10 +44,8 @@ live_design! {
 
     MessagePreview = <View> {
         width: Fill, height: Fit
-        flow: Down, spacing: 5.
 
         latest_message = <HtmlOrPlaintext> {
-            padding: {top: 3.0}
             html_view = { html = {
                 font_size: 9.3,
                 draw_normal:      { text_style: { font_size: 9.3 } },
@@ -66,7 +64,8 @@ live_design! {
     }
 
     RoomPreviewContent = {{RoomPreviewContent}} {
-        flow: Right, spacing: 10., padding: 10.
+        flow: Right,
+        spacing: 10., padding: 10.
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
@@ -130,6 +129,7 @@ live_design! {
 
     pub RoomPreview = {{RoomPreview}} {
         flow: Down, height: Fit
+        cursor: Default,
 
         // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.
@@ -155,23 +155,28 @@ live_design! {
                 unread_badge = <UnreadBadge> {}
             }
             FullPreview = <RoomPreviewContent> {
+                padding: 10
                 avatar = <Avatar> {}
                 <View> {
-                    flow: Right
+                    flow: Down
                     width: Fill, height: 56
-                    align: { x: 0.5, y: 0.5 }
-                    left = <View> {
-                        width: Fill, height: Fill,
-                        flow: Down,
+                    align: { x: 0.0, y: 0.0 }
+                    top = <View> {
+                        width: Fill, height: Fit,
+                        spacing: 5,
+                        flow: Right,
                         room_name = <RoomName> {}
-                        preview = <MessagePreview> {}
+                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
+                        timestamp = <Timestamp> { margin: { top: 1.3 } }
                     }
-                    right = <View> {
-                        width: Fit, height: Fill,
-                        flow: Down,
-                        timestamp = <Timestamp> {}
+                    bottom = <View> {
+                        width: Fill, height: Fill,
+                        spacing: 5,
+                        margin: { top: 7. }
+                        flow: Right,
+                        preview = <MessagePreview> {}
                         <View> {
-                            width: Fill, height: Fill
+                            width: Fit, height: Fit
                             align: { x: 1.0 }
                             unread_badge = <UnreadBadge> {
                                 margin: { top: 5. } // Align the badge with the timestamp, same as the message preview's margin top.
@@ -218,9 +223,7 @@ impl Widget for RoomPreview {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
-                if fe.was_tap() {
-                    cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
-                }
+                cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
             }
             _ => (),
         }
