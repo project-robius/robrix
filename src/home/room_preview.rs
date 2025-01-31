@@ -241,7 +241,14 @@ impl Widget for RoomPreview {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
-                cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
+                // This logic is taken from FingerUpEvent::was_tap(), but we ignore
+                // the time check because we want to allow for slower taps or long presses.
+                // All we do here is check that the finger hasn't moved too much (more than 3 pixels)
+                // since the start of the gesture (the FingerDown hit), because that would mean
+                // the user is trying to scroll rather than wanting to select a room.
+                if (fe.abs_start - fe.abs).length() < 3.0 {
+                    cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
+                }
             }
             _ => (),
         }
