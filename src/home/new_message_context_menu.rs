@@ -84,7 +84,7 @@ live_design! {
                         width: Fill,
                         height: Fit,
                         align: {x: 0, y: 0.5}
-                        empty_message: "Reaction..."
+                        empty_message: "Enter reaction..."
                     }
                     reaction_send_button = <RobrixIconButton> {
                         height: (BUTTON_HEIGHT)
@@ -105,7 +105,6 @@ live_design! {
                             color: (COLOR_ACCEPT_GREEN),
                         }
                     }
-
                 }
             }
 
