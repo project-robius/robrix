@@ -343,7 +343,14 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reaction: String,
-    }
+    },
+    /// Redacts (deletes) the given event in the given room.
+    #[doc(alias("delete"))]
+    RedactMessage {
+        room_id: OwnedRoomId,
+        timeline_event_id: TimelineEventItemId,
+        reason: Option<String>,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -914,7 +921,27 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
                     }
                 });
-            }
+            },
+            MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for redact message {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+
+                let _redact_task = Handle::current().spawn(async move {
+                    match timeline.redact(&timeline_event_id, reason.as_deref()).await {
+                        Ok(()) => log!("Successfully redacted message in room {room_id}."),
+                        Err(e) => {
+                            error!("Failed to redact message in {room_id}; error: {e:?}");
+                            enqueue_popup_notification(format!("Failed to redact message. Error: {e}"));
+                        }
+                    }
+                });
+            },
         }
     }
 
@@ -1991,21 +2018,18 @@ async fn timeline_subscriber_handler(
                     );
                 }
 
+                // Update the latest event for this room.
+                // We always do this in case a redaction or other event has changed the latest event.
+                if let Some(new_latest) = new_latest_event {
+                    let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
+                    if room_avatar_changed {
+                        spawn_fetch_room_avatar(room.clone());
+                    }
+                    latest_event = Some(new_latest);
+                }
+
                 // Send a Makepad-level signal to update this room's timeline UI view.
                 SignalToUI::set_ui_signal();
-
-                // Update the latest event for this room.
-                if let Some(new_latest) = new_latest_event {
-                    if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
-
-                        if room_avatar_changed {
-                            spawn_fetch_room_avatar(room.clone());
-                        }
-
-                        latest_event = Some(new_latest);
-                    }
-                }
             }
         }
 

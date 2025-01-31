@@ -494,7 +494,11 @@ impl WidgetMatchEvent for NewMessageContextMenu {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
-                MessageAction::Delete(details.clone()),
+                MessageAction::Redact {
+                    details: details.clone(),
+                    // TODO: show a Modal to confirm deletion, and get the reason.
+                    reason: None,
+                },
             );
             close_menu = true;
         }
