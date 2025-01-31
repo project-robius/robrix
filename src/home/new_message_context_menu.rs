@@ -85,6 +85,15 @@ live_design! {
                         height: Fit,
                         align: {x: 0, y: 0.5}
                         empty_message: "Enter reaction..."
+                        draw_text: {
+                            // TODO: we want the TextInput flow to show all text
+                            // within the single-line box by scrolling horizontally
+                            // when the text is too long, upon a user typing/pasting
+                            // or navigating with the mouse or arrow keys.
+                            // However, makepad doesn't yet support this feature,
+                            // so Ellipsis is the closest we can get.
+                            wrap: Ellipsis,
+                        }
                     }
                     reaction_send_button = <RobrixIconButton> {
                         height: (BUTTON_HEIGHT)
