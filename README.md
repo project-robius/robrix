@@ -36,6 +36,13 @@ The following table shows which host systems can currently be used to build Robr
 | Windows | Android         | ✅      | ✅    |
 
 
+## Known issues
+ - Drag-n-drop on Linux isn't implemented by Makepad, so you cannot drag room tabs around yet. (see: https://github.com/makepad/makepad/issues/650)
+ - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
+ - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
+ - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
+ - The app window may be titled "Makepad" on certain platforms, e.g., Linux. We are improving our packaging+windowing infrastructure to fix this.
+
 
 ## Building and Running
 
@@ -135,11 +142,6 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Room creation/settings/info screen
 - [ ] Room members pane
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
-
-
-## Known problems/issues
- - Matrix-specific links are not yet fully handled (https://matrix.to/...)
- - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport position is not maintained
 
 
 ## Packaging Robrix for Distribution on Desktop Platforms
