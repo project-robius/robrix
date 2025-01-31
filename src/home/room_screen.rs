@@ -61,7 +61,6 @@ live_design! {
     use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-    ICO_SEND = dep("crate://self/resources/icon_send.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
@@ -681,7 +680,7 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 padding: {left: 15, right: 15}
                 draw_icon: {
-                    svg_file: (ICO_SEND)
+                    svg_file: (ICON_SEND)
                     color: (COLOR_ACCEPT_GREEN),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
@@ -831,7 +830,7 @@ live_design! {
                     }
 
                     send_message_button = <IconButton> {
-                        draw_icon: {svg_file: (ICO_SEND)},
+                        draw_icon: {svg_file: (ICON_SEND)},
                         icon_walk: {width: Fit, height: 25, margin: {left: -3} },
                     }
                 }

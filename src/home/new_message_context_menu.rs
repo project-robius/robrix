@@ -60,14 +60,53 @@ live_design! {
                 border_color: #888
             }
 
-            react_button = <RobrixIconButton> {
+            // Shows either the "Add Reaction" button or a reaction text input.
+            react_view = <View> {
+                flow: Overlay
                 height: (BUTTON_HEIGHT)
-                width: Fill,
-                draw_icon: {
-                    svg_file: (ICON_ADD_REACTION)
+                react_button = <RobrixIconButton> {
+                    height: (BUTTON_HEIGHT)
+                    width: Fill,
+                    draw_icon: {
+                        svg_file: (ICON_ADD_REACTION)
+                    }
+                    icon_walk: {width: 16, height: 16, margin: {right: 3}}
+                    text: "Add Reaction"
                 }
-                icon_walk: {width: 16, height: 16, margin: {right: 3}}
-                text: "Add Reaction"
+
+                reaction_input_view = <View> {
+                    width: Fill,
+                    height: (BUTTON_HEIGHT)
+                    flow: Right,
+                    visible: false, // will be shown once the react_button is clicked
+
+                    reaction_text_input = <RobrixTextInput> {
+                        width: Fill,
+                        height: Fit,
+                        align: {x: 0, y: 0.5}
+                        empty_message: "Reaction..."
+                    }
+                    reaction_send_button = <RobrixIconButton> {
+                        height: (BUTTON_HEIGHT)
+                        align: {x: 0.5, y: 0.5}
+                        padding: {left: 10, right: 10}
+                        draw_icon: {
+                            svg_file: (ICON_SEND)
+                            color: (COLOR_ACCEPT_GREEN),
+                        }
+                        icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
+
+                        draw_bg: {
+                            border_color: (COLOR_ACCEPT_GREEN),
+                            color: #f0fff0 // light green
+                        }
+                        text: ""
+                        draw_text:{
+                            color: (COLOR_ACCEPT_GREEN),
+                        }
+                    }
+
+                }
             }
 
             reply_button = <RobrixIconButton> {
@@ -312,8 +351,13 @@ impl Widget for NewMessageContextMenu {
         let close_menu = matches!(event, Event::BackPressed)                    // 1
         || match event.hits_with_capture_overload(cx, area, true) {
             Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                 // 2
-            Hit::FingerDown(_fde) => {
-                cx.set_key_focus(area);
+            Hit::FingerDown(fde) => {
+                let reaction_text_input = self.view.text_input(id!(reaction_input_view.reaction_text_input));
+                if reaction_text_input.area().rect(cx).contains(fde.abs) {
+                    reaction_text_input.set_key_focus(cx);
+                } else {
+                    cx.set_key_focus(area);
+                }
                 false
             }
             Hit::FingerUp(fue) if fue.is_over => {
@@ -332,22 +376,36 @@ impl Widget for NewMessageContextMenu {
 }
 
 impl WidgetMatchEvent for NewMessageContextMenu {
-    fn handle_actions(&mut self, cx: &mut Cx, actions :&Actions, scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let Some(details) = self.details.as_ref() else { return };
         let mut close_menu = false;
 
-        if self.button(id!(react_button)).clicked(actions) {
+        let reaction_text_input = self.view.text_input(id!(reaction_input_view.reaction_text_input));
+        let reaction_send_button = self.view.button(id!(reaction_input_view.reaction_send_button));
+        if reaction_send_button.clicked(actions)
+            || reaction_text_input.returned(actions).is_some()
+        {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::React {
                     details: details.clone(),
-                    // TODO: show a dialog to choose the reaction (or a TextInput for custom),
-                    //       which itself should send this action (instead of doing it here).
-                    reaction: "Test Reaction".to_string(),
+                    reaction: reaction_text_input.text(),
                 },
             );
             close_menu = true;
+        }
+        else if reaction_text_input.escape(actions) {
+            close_menu = true;
+        }
+        else if self.button(id!(react_button)).clicked(actions) {
+            // Show a box to allow the user to input the reaction.
+            // In the future, we'll show an emoji chooser.
+            self.view.button(id!(react_button)).set_visible(cx, false);
+            self.view.view(id!(reaction_input_view)).set_visible(cx, true);
+            self.text_input(id!(reaction_input_view.reaction_text_input)).set_key_focus(cx);
+            self.redraw(cx);
+            close_menu = false;
         }
         else if self.button(id!(reply_button)).clicked(actions) {
             cx.widget_action(
@@ -505,6 +563,7 @@ impl NewMessageContextMenu {
         let show_divider_before_report_delete = show_delete; // || show_report;
 
         // Actually set the buttons' visibility.
+        self.view.view(id!(react_view)).set_visible(cx, show_react);
         react_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
         self.view.view(id!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
@@ -537,6 +596,10 @@ impl NewMessageContextMenu {
         jump_to_related_button.reset_hover(cx);
         // report_button.reset_hover(cx);
         delete_button.reset_hover(cx);
+
+        // Reset reaction input view stuff.
+        self.view.view(id!(reaction_input_view)).set_visible(cx, false); // hide until the react_button is clicked
+        self.text_input(id!(reaction_input_view.reaction_text_input)).set_text(cx, "");
 
         self.redraw(cx);
 
