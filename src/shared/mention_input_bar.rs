@@ -30,18 +30,28 @@ live_design! {
         cursor: Hand
         draw_bg: {
             color: #fff,
+            uniform radius: 6.0,
             instance hover: 0.0,  // 添加实例状态
             instance selected: 0.0  // 添加实例状态
 
             fn pixel(self) -> vec4 {
-                // 根据状态返回不同的颜色
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(
+                    0.,
+                    0.,
+                    self.rect_size.x,
+                    self.rect_size.y,
+                    self.radius
+                );
+
                 if self.selected > 0.0 {
-                    return #eaecf0
+                    sdf.fill(#eaecf0)
+                } else if self.hover > 0.0 {
+                    sdf.fill(#f5f5f5)
+                } else {
+                    sdf.fill(self.color)
                 }
-                if self.hover > 0.0 {
-                    return #f5f5f5
-                }
-                return self.color
+                return sdf.result
             }
         }
         flow: Down
@@ -364,34 +374,6 @@ impl WidgetMatchEvent for MentionInputBar {
 
 // MentionInputBar 实现
 impl MentionInputBar {
-
-    fn update_item_highlights(&self, cx: &mut Cx, message_input: &CommandTextInputRef) {
-        // 先获取当前选中的索引，避免多次借用
-        let focus_idx = message_input.borrow()
-            .map(|input| input.keyboard_focus_index)
-            .flatten();
-
-        // 在单独的作用域中遍历更新样式
-        if let Some(input) = message_input.borrow() {
-            for (idx, item) in input.selectable_widgets.iter().enumerate() {
-                if Some(idx) == focus_idx {
-                    // 选中状态使用浅灰色背景
-                    item.apply_over(cx, live! {
-                        draw_bg: {
-                            color: #eaecf0  // 选中状态的浅灰色
-                        }
-                    });
-                } else {
-                    // 未选中状态使用白色背景
-                    item.apply_over(cx, live! {
-                        draw_bg: {
-                            color: #fff
-                        }
-                    });
-                }
-            }
-        }
-    }
 
     fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
         let username = selected.label(id!(user_info.label)).text();
