@@ -38,6 +38,7 @@ The following table shows which host systems can currently be used to build Robr
 
 ## Known issues
  - Drag-n-drop on Linux isn't implemented by Makepad, so you cannot drag room tabs around yet. (see: https://github.com/makepad/makepad/issues/650)
+ - There is currently no way to explicitly log out of Robrix. You can run `robrix --login-screen` to show the login screen upon app startup, or delete the app data directory.
  - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
  - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
