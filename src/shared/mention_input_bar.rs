@@ -55,7 +55,7 @@ live_design! {
             }
         }
         flow: Down
-        spacing: 8.0
+        spacing: 8.0        // 移除默认间距
 
         // 用户信息容器 (头像和用户名)
         user_info = <View> {
@@ -129,6 +129,9 @@ live_design! {
 
             // 弹出框配置
             popup = {
+                spacing: 0.0     // 移除内部间距
+                padding: 0.0     // 移除内边距
+                clip_y: true
                 draw_bg: {
                     color: #fff,
                     radius: 8.0,
@@ -136,8 +139,10 @@ live_design! {
                     border_color: #e5e5e5
                 }
                 list = {
-                    height: 200.0
+                    height: Fill
                     clip_y: true
+                    spacing: 0.0
+                    padding: 0.0
                 }
             }
 
@@ -456,12 +461,13 @@ impl MentionInputBar {
                 }
             }
 
+
             // 添加日志看看搜索状态
             log!("Updating user list with search text: '{}', is_searching: {}",
                             search_text, self.is_searching);
 
             // 收集匹配的成员
-            for member in &self.room_members {
+            for member in self.room_members.iter() {
                 let display_name = member.display_name()
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| member.user_id().to_string());
@@ -471,8 +477,45 @@ impl MentionInputBar {
                 }
             }
 
+            let member_count = matched_members.len();
+            // 调整弹出框高度
+            log!("== adjust_popup_height member_count {}", member_count);
+            const MAX_VISIBLE_ITEMS: usize = 15;
+            let popup = message_input.view(id!(popup));
+
+            if member_count <= MAX_VISIBLE_ITEMS {
+                // 精确计算列表高度
+                let single_item_height = if is_desktop {
+                    32.0  // 桌面端单项高度：头像(24) + 上下内边距(4 * 2)
+                } else {
+                    64.0  // 移动端单项高度：头像(24) + matrix_id(16) + 间距(8) + 上下内边距(8 * 2)
+                };
+
+                // 计算总高度
+                let total_height = (member_count as f64 * single_item_height) +
+                                    16.0;  // 弹出框上下内边距(8 * 2)
+
+                // 应用高度
+                popup.apply_over(cx, live! {
+                    height: (total_height),
+                    draw_bg: {
+                        color: #ff000088  // 半透明红色
+                    }
+                });
+            } else {
+                // 固定最大高度
+                let max_height = if is_desktop { 400.0 } else { 480.0 };
+                popup.apply_over(cx, live! {
+                    height: (max_height),
+                    draw_bg: {
+                        color: #ff000088  // 半透明红色
+                    }
+                });
+            }
+
             // 限制显示数量但保持合理的范围
-            const MAX_DISPLAY: usize = 50;
+            // 如果不设置这个，会导致运行时 Panic : HarfBuzz guarantees monotonic cluster values
+            const MAX_DISPLAY: usize = 200;
             if matched_members.len() > MAX_DISPLAY {
                 matched_members.truncate(MAX_DISPLAY);
             }
@@ -492,7 +535,8 @@ impl MentionInputBar {
                 // 正确设置高亮和交互状态
                 item.apply_over(cx, live! {
                     show_bg: true,
-                    cursor: Hand
+                    cursor: Hand,
+                    padding: {left: 8., right: 8., top: 4., bottom: 4.}
                 });
 
                 if index == 0 {
@@ -502,18 +546,18 @@ impl MentionInputBar {
                 if is_desktop {
                     item.apply_over(cx, live!(
                         flow: Right,
+                        height: 32.0,
                         align: {y: 0.5}
                     ));
                     item.view(id!(user_info.filler)).set_visible(cx, true);
                 } else {
+                    // 移动端列表项的精确布局控制
                     item.apply_over(cx, live!(
                         flow: Down,
-                        spacing: 4.0
+                        height: 64.0,          // 固定高度
+                        spacing: 4.0           // 内部元素间距
                     ));
                     item.view(id!(user_info.filler)).set_visible(cx, false);
-                    item.label(id!(matrix_url)).apply_over(cx, live!(
-                        margin: {left: 0.}
-                    ));
                 }
 
                 // 设置头像
