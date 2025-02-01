@@ -36,6 +36,14 @@ The following table shows which host systems can currently be used to build Robr
 | Windows | Android         | ✅      | ✅    |
 
 
+## Known issues
+ - Drag-n-drop on Linux isn't implemented by Makepad, so you cannot drag room tabs around yet. (see: https://github.com/makepad/makepad/issues/650)
+ - There is currently no way to explicitly log out of Robrix. You can run `robrix --login-screen` to show the login screen upon app startup, or delete the app data directory.
+ - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
+ - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
+ - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
+ - The app window may be titled "Makepad" on certain platforms, e.g., Linux. We are improving our packaging+windowing infrastructure to fix this.
+
 
 ## Building and Running
 
@@ -54,13 +62,13 @@ The following table shows which host systems can currently be used to build Robr
    ```sh
    cargo run
    ```
-   If you want to provide a username and password for fast auto-login, you can do that on the command line like so. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user's ID or password.
+   Optionally, you can provide a username and password on the command line for fast auto-login. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user ID or password.
    ```sh
    cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
    ```
     * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
-    * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
-    * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
+    * The `HOMESERVER_URL` argument is optional and uses the `matrix.org` homeserver by default.
+    * The Matrix homeserver must support native Sliding Sync, the same requirement as Element X.
 
 
 ### Building Robrix for Android
@@ -127,18 +135,14 @@ These are generally sorted in order of priority. If you're interested in helping
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
-- [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
+- [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
-- [ ] Room creation
-- [ ] Room settings/info screen
+- [ ] Join room, invite to room, knock on room
+- [ ] Administrative abilities: ban, kick, etc
+- [ ] Room creation/settings/info screen
 - [ ] Room members pane
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
-
-
-## Known problems/issues
- - Matrix-specific links are not yet fully handled (https://matrix.to/...)
- - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport position is not maintained
 
 
 ## Packaging Robrix for Distribution on Desktop Platforms
@@ -208,3 +212,5 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
+# Credits
+X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)

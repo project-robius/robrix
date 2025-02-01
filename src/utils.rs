@@ -2,7 +2,10 @@ use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
+
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
 
 /// Returns true if the given event is an interactive hit-related event
@@ -197,13 +200,25 @@ impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
     }
 }
 
-/// The default media format to use for thumbnail requests.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+/// The thumbnail format to use for user and room avatars.
+pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         size: MediaThumbnailSizeConst {
             method: Method::Scale,
             width: 40,
             height: 40,
+        },
+        animated: false,
+    }
+);
+
+/// The thumbnail format to use for regular media images.
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst {
+        size: MediaThumbnailSizeConst {
+            method: Method::Scale,
+            width: 400,
+            height: 400,
         },
         animated: false,
     }
@@ -380,6 +395,36 @@ where
     };
     result
 }
+
+
+/// Returns the sender's display name if available.
+///
+/// If not available, and if the `room_id` is provided, this function will
+/// submit an async request to fetch the event details.
+/// In this case, this will return the event sender's user ID as a string.
+pub fn get_or_fetch_event_sender(
+    event_tl_item: &EventTimelineItem,
+    room_id: Option<&OwnedRoomId>,
+) -> String {
+    let sender_username = match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+        TimelineDetails::Unavailable => {
+            if let Some(room_id) = room_id {
+                if let Some(event_id) = event_tl_item.event_id() {
+                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                        room_id: room_id.clone(),
+                        event_id: event_id.to_owned(),
+                    });
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+    .unwrap_or_else(|| event_tl_item.sender().as_str());
+    sender_username.to_owned()
+}
+
 
 #[cfg(test)]
 mod tests_human_readable_list {
