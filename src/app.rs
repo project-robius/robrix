@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, image_viewer::ImageViewerWidgetRefExt, image_viewer::ImageViewerAction, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt}, login::login_screen::LoginAction, media_cache::MediaCacheEntry, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -217,7 +217,10 @@ impl MatchEvent for App {
                 Some(ImageViewerAction::Clicked(text_or_image_uid)) => {
                     image_viewer_modal_inner.clear_image(cx);
                     image_viewer_modal.open(cx);
-                    image_viewer_modal_inner.image_viewer_try_get_or_fetch(text_or_image_uid);
+                    if let MediaCacheEntry::Loaded(data) = image_viewer_modal_inner.image_viewer_try_get_or_fetch(text_or_image_uid) {
+                        image_viewer_modal_inner.load_and_redraw(cx, &data);
+                    }
+
                 }
                 Some(ImageViewerAction::Fetched(mxc_uri)) => {
                     image_viewer_modal_inner.find_and_load(cx, mxc_uri)

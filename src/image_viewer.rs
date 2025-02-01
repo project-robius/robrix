@@ -124,6 +124,14 @@ impl ImageViewer {
             }
         }
     }
+    fn load_and_redraw(&mut self, cx: &mut Cx, data: &[u8]) {
+            let image_view = self.view.image(id!(image_view));
+            if let Err(e) = utils::load_png_or_jpg(&image_view, cx, data) {
+                log!("Error to load image: {e}");
+            } else {
+                self.view.redraw(cx);
+            }
+    }
     fn clear_image(&mut self, cx: &mut Cx) {
         self.view.image(id!(image_view)).set_texture(cx, None);
     }
@@ -135,10 +143,9 @@ impl ImageViewerRef {
             inner.insert_data(text_or_image_uid, mxc_uri);
         }
     }
-    pub fn image_viewer_try_get_or_fetch(&self, text_or_image_uid: &WidgetUid) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.image_viewer_try_get_or_fetch(text_or_image_uid);
-        }
+    pub fn image_viewer_try_get_or_fetch(&self, text_or_image_uid: &WidgetUid) -> MediaCacheEntry {
+        let mut inner = self.borrow_mut().unwrap();
+        inner.image_viewer_try_get_or_fetch(text_or_image_uid)
     }
     pub fn find_and_load(&self, cx: &mut Cx, mxc_uri: &OwnedMxcUri) {
         if let Some(mut inner) = self.borrow_mut() {
@@ -148,6 +155,11 @@ impl ImageViewerRef {
     pub fn clear_image(&self, cx: &mut Cx) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.clear_image(cx);
+        }
+    }
+    pub fn load_and_redraw(&self, cx: &mut Cx, data: &[u8]) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.load_and_redraw(cx, data);
         }
     }
 }
