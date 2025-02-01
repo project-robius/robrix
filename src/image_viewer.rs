@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::{collections::{btree_map::Entry, HashMap}, sync::Arc};
+use std::sync::Mutex;
 use makepad_widgets::*;
-use matrix_sdk::{media::{MediaFormat, MediaRequest}, ruma::{events::room::MediaSource, OwnedMxcUri}};
+use matrix_sdk::ruma::OwnedMxcUri;
 
 use crate::{media_cache::{MediaCache, MediaCacheEntry}, sliding_sync::{self, MatrixRequest}, utils};
 
@@ -49,17 +50,16 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct ImageViewer {
     #[deref] view: View,
-    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, (OwnedMxcUri, bool)>,
-    #[rust] media_cache: Option<MediaCache>,
+    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
+    #[rust] media_cache: MediaCache,
 }
 
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    Insert{text_or_image_uid: WidgetUid, mxc_uri: OwnedMxcUri, is_large: bool},
-    SetMediaCache(MediaCache),
-    Show(WidgetUid),
-    Receive(Vec<u8>),
+    SetData {text_or_image_uid: WidgetUid, mxc_uri: OwnedMxcUri},
+    Clicked(WidgetUid),
+    Fetched(OwnedMxcUri),
     None,
 }
 
@@ -82,73 +82,67 @@ impl MatchEvent for ImageViewer {
 }
 
 impl ImageViewer {
-    // We clone the media cache here, is unnecessary, but I can't find a way get its mut reference.
-    fn set_media_cache(&mut self, media_cache: MediaCache) {
-        self.media_cache = Some(media_cache);
-        log!("Set media cache")
-    }
     /// We restore image message uid and the image inside the message's mx_uri into HashMap
     /// when the message is being populated.
-    fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri, is_large: &bool) {
-        self.widgetref_image_uri_map.insert(*text_or_image_uid, (mxc_uri, *is_large));
+    fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri) {
+        self.widgetref_image_uri_map.insert(*text_or_image_uid, mxc_uri);
         log!("Inserted");
     }
     /// We find mx_uid via the given `text_or_image_uid`.
-    fn show_and_fill_image(&mut self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
-        if let Some((mxc_uri, is_large)) = self.widgetref_image_uri_map.get(text_or_image_uid) {
-            let media_cache = self.media_cache.as_mut().unwrap();
+    fn image_viewer_try_get_or_fetch(
+        &mut self,
+        text_or_image_uid: &WidgetUid,
+    ) -> MediaCacheEntry {
+        if let Some(mxc_uri) = self.widgetref_image_uri_map.get(text_or_image_uid) {
 
-            if *is_large {
-                sliding_sync::submit_async_request(
-                    MatrixRequest::FetchOriginalMedia {
-                        media_request: MediaRequest {
-                            source: MediaSource::Plain(mxc_uri.clone()),
-                            format: MediaFormat::File,
-                        },
-                    }
-                );
+            let destination = match self.media_cache.entry(mxc_uri.clone()) {
+                Entry::Vacant(vacant) => {
+                    vacant.insert(Arc::new(Mutex::new(MediaCacheEntry::Requested)))
+                }
+                Entry::Occupied(occupied) => return occupied.get().lock().unwrap().clone(),
+            };
+
+            let destination = destination.clone();
+
+            sliding_sync::submit_async_request(
+                MatrixRequest::FetchOriginalMedia {
+                    destination,
+                    mxc_uri: mxc_uri.clone()
+                }
+            );
+        }
+        MediaCacheEntry::Requested
+    }
+    fn find_and_load(&mut self, cx: &mut Cx, mxc_uri: &OwnedMxcUri) {
+        if let Some(MediaCacheEntry::Loaded(image_data)) = self.media_cache.try_get_media(mxc_uri) {
+            let image_view = self.view.image(id!(image_view));
+
+            if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &image_data) {
+                log!("Error to load image: {e}");
             } else {
-                match media_cache.try_get_media(mxc_uri).unwrap() {
-                    MediaCacheEntry::Loaded(data) => {
-                        self.load_and_redraw(cx, &data);
-                    }
-                    MediaCacheEntry::Requested => {
-
-                    }
-                    MediaCacheEntry::Failed => {
-
-                    }
-                };
+                self.view.redraw(cx);
             }
         }
     }
     fn clear_image(&mut self, cx: &mut Cx) {
         self.view.image(id!(image_view)).set_texture(cx, None);
     }
-    fn load_and_redraw(&mut self, cx: &mut Cx, data: &[u8]) {
-        let image_view = self.view.image(id!(image_view));
-
-        if let Err(e) = utils::load_png_or_jpg(&image_view, cx, data) {
-            log!("Error to load image: {e}");
-        }
-        self.view.redraw(cx);
-    }
 }
 
 impl ImageViewerRef {
-    pub fn set_media_cache(&self, media_cache: MediaCache) {
+    pub fn insert_data(&self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_media_cache(media_cache)
+            inner.insert_data(text_or_image_uid, mxc_uri);
         }
     }
-    pub fn insert_data(&self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri, is_large: &bool) {
+    pub fn image_viewer_try_get_or_fetch(&self, text_or_image_uid: &WidgetUid) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.insert_data(text_or_image_uid, mxc_uri, is_large);
+            inner.image_viewer_try_get_or_fetch(text_or_image_uid);
         }
     }
-    pub fn show_and_fill_image(&self, cx: &mut Cx, text_or_image_uid: &WidgetUid) {
+    pub fn find_and_load(&self, cx: &mut Cx, mxc_uri: &OwnedMxcUri) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.show_and_fill_image(cx, text_or_image_uid);
+            inner.find_and_load(cx, mxc_uri);
         }
     }
     pub fn clear_image(&self, cx: &mut Cx) {
@@ -156,9 +150,31 @@ impl ImageViewerRef {
             inner.clear_image(cx);
         }
     }
-    pub fn load_and_redraw(&self, cx: &mut Cx, data: &[u8]) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.load_and_redraw(cx, data);
+}
+
+
+pub fn image_viewer_insert_into_media_cache<D: Into<Arc<[u8]>>>(
+    destination: &Mutex<MediaCacheEntry>,
+    data: matrix_sdk::Result<D>,
+    mxc_uri: OwnedMxcUri,
+) {
+    let mut finished = false;
+
+    let new_value = match data {
+        Ok(data) => {
+            let data = data.into();
+            finished = true;
+            MediaCacheEntry::Loaded(data)
         }
+        Err(e) => {
+            error!("Failed to fetch media for {e:?}");
+            MediaCacheEntry::Failed
+        }
+    };
+
+    *destination.lock().unwrap() = new_value;
+
+    if finished {
+        Cx::post_action(ImageViewerAction::Fetched(mxc_uri));
     }
 }

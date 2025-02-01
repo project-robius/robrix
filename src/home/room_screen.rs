@@ -3537,7 +3537,7 @@ fn populate_image_message_content(
             fetch_and_show_media_source(cx, media_source);
 
             if let MediaSource::Plain(mxc_uri) = original_source {
-                Cx::post_action(ImageViewerAction::Insert { text_or_image_uid, mxc_uri, is_large});
+                Cx::post_action(ImageViewerAction::SetData {text_or_image_uid, mxc_uri});
             }
         }
         None => {
@@ -3545,7 +3545,6 @@ fn populate_image_message_content(
             fully_drawn = true;
         }
     }
-    Cx::post_action(ImageViewerAction::SetMediaCache(media_cache.clone()));
 
     fully_drawn
 }
@@ -4301,7 +4300,7 @@ impl Widget for Message {
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,

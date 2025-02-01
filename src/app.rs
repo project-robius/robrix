@@ -203,31 +203,24 @@ impl MatchEvent for App {
 
         if image_viewer_modal_inner.button(id!(close_button)).clicked(actions) {
             // Clear the image cache once the modal is closed.
-            image_viewer_modal_inner.clear_image(cx);
             image_viewer_modal.close(cx);
-            self.ui.redraw(cx);
+            image_viewer_modal_inner.clear_image(cx);
         }
 
         for action in actions {
             match action.downcast_ref() {
-                //TODO: the media cache is cloned here, we only need a mutable reference.
-                Some(ImageViewerAction::SetMediaCache(media_cache)) => {
-                    image_viewer_modal_inner.set_media_cache(media_cache.clone());
-                }
-                Some(ImageViewerAction::Insert{text_or_image_uid, mxc_uri, is_large}) => {
+                Some(ImageViewerAction::SetData{text_or_image_uid, mxc_uri}) => {
                 //We restore image message id and the image inside the message's mx_uri into HashMap.
-                    image_viewer_modal_inner.insert_data(text_or_image_uid, mxc_uri.clone(), is_large);
+                    image_viewer_modal_inner.insert_data(text_or_image_uid, mxc_uri.clone());
                 }
                 // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
-                Some(ImageViewerAction::Show(text_or_image_uid)) => {
+                Some(ImageViewerAction::Clicked(text_or_image_uid)) => {
+                    image_viewer_modal_inner.clear_image(cx);
                     image_viewer_modal.open(cx);
-                    image_viewer_modal_inner.show_and_fill_image(cx, text_or_image_uid);
-                    self.ui.redraw(cx);
+                    image_viewer_modal_inner.image_viewer_try_get_or_fetch(text_or_image_uid);
                 }
-                Some(ImageViewerAction::Receive(data)) => {
-                    image_viewer_modal.open(cx);
-                    image_viewer_modal_inner.load_and_redraw(cx, data);
-                    self.ui.redraw(cx);
+                Some(ImageViewerAction::Fetched(mxc_uri)) => {
+                    image_viewer_modal_inner.find_and_load(cx, mxc_uri)
                 }
                  _ => { }
             }

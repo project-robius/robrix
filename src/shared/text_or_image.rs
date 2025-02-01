@@ -39,8 +39,8 @@ live_design! {
             cursor: Default, // Use `Hand` once we support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
-                width: Fill, height: Fit,
-                fit: Smallest,
+                width: Fill, height: Fill,
+                fit: Size,
             }
         }
     }
@@ -74,7 +74,7 @@ impl Widget for TextOrImage {
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
                     // Once Clicked, We post an action.
-                    Cx::post_action(ImageViewerAction::Show(self.widget_uid()));
+                    Cx::post_action(ImageViewerAction::Clicked(self.widget_uid()));
                 }
             }
             _ => (),

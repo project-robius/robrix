@@ -17,7 +17,7 @@ pub enum MediaCacheEntry {
 }
 
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MediaCache {
     /// The actual cached data.
     cache: BTreeMap<OwnedMxcUri, MediaCacheEntryRef>,
