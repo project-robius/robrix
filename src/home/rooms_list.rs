@@ -741,14 +741,14 @@ impl Widget for RoomsList {
                     match draw_header_status {
                         DrawRoomListHeader::HaveNotDrawnPeople => {
                             if room_info.is_direct {
-                                header.set_text("People");
+                                header.set_text(cx, "People");
                                 header.draw_all(cx, &mut scope);
                                 draw_header_status = DrawRoomListHeader::Done;
                             }
                         }
                         DrawRoomListHeader::HaveNotDrawnRoom => {
                             if !room_info.is_direct {
-                                header.set_text("Rooms");
+                                header.set_text(cx, "Rooms");
                                 header.draw_all(cx, &mut scope);
                                 draw_header_status = DrawRoomListHeader::HaveNotDrawnPeople
                             }
