@@ -61,7 +61,6 @@ live_design! {
     use crate::home::event_reaction_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
-    ICO_SEND = dep("crate://self/resources/icon_send.svg")
 
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
@@ -681,7 +680,7 @@ live_design! {
                 align: {x: 0.5, y: 0.5}
                 padding: {left: 15, right: 15}
                 draw_icon: {
-                    svg_file: (ICO_SEND)
+                    svg_file: (ICON_SEND)
                     color: (COLOR_ACCEPT_GREEN),
                 }
                 icon_walk: {width: 16, height: 16, margin: {left: -2, right: -1} }
@@ -831,7 +830,7 @@ live_design! {
                     }
 
                     send_message_button = <IconButton> {
-                        draw_icon: {svg_file: (ICO_SEND)},
+                        draw_icon: {svg_file: (ICON_SEND)},
                         icon_walk: {width: Fit, height: 25, margin: {left: -3} },
                     }
                 }
@@ -2129,9 +2128,30 @@ impl RoomScreen {
                     }
                     self.redraw(cx);
                 }
-                MessageAction::Delete(_details) => {
-                    // TODO
-                    enqueue_popup_notification("Deleting messages is not yet implemented.".to_string())
+                MessageAction::Redact { details, reason } => {
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let mut success = false;
+                    if let Some(timeline_item) = tl.items.get(details.item_id) {
+                        if let Some(event_tl_item) = timeline_item.as_event() {
+                            if event_tl_item.event_id() == details.event_id.as_deref() {
+                                let timeline_event_id = event_tl_item.identifier();
+                                submit_async_request(MatrixRequest::RedactMessage {
+                                    room_id: tl.room_id.clone(),
+                                    timeline_event_id,
+                                    reason,
+                                });
+                                success = true;
+                            }
+                        }
+                    }
+                    if !success {
+                        enqueue_popup_notification("Couldn't find message in timeline to delete.".to_string());
+                        error!("MessageAction::Redact: couldn't find event [{}] {:?} to react to in room {}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            tl.room_id,
+                        );
+                    }
                 }
                 // MessageAction::Report(details) => {
                 //     // TODO
@@ -4182,7 +4202,11 @@ pub enum MessageAction {
     /// e.g., a replied-to message.
     JumpToRelated(MessageDetails),
     /// The user clicked the "delete" button on a message.
-    Delete(MessageDetails),
+    #[doc(alias("delete"))]
+    Redact {
+        details: MessageDetails,
+        reason: Option<String>,
+    },
 
     // /// The user clicked the "report" button on a message.
     // Report(MessageDetails),
