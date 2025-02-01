@@ -42,7 +42,7 @@ live_design! {
 
         main_content = <RoundedView> {
             flow: Down
-            width: 600
+            width: 400
             height: Fit
             padding: {top: 25, right: 30 bottom: 30 left: 45}
             spacing: 10
@@ -95,6 +95,7 @@ live_design! {
                     spacing: 20
 
                     cancel_button = <RobrixIconButton> {
+                        align: {x: 0.5, y: 0.5}
                         padding: {left: 15, right: 15}
                         // draw_icon: {
                         //     svg_file: (ICON_BLOCK_USER)

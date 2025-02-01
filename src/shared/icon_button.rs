@@ -62,6 +62,7 @@ live_design! {
         height: Fit,
         spacing: 10,
         padding: {top: 10, bottom: 10, left: 8, right: 15}
+        align: {x: 0.0, y: 0.5}
 
         draw_bg: {
             instance color: (COLOR_PRIMARY)

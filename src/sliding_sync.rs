@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
@@ -7,23 +8,24 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType}, events::{
+        api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, TimelineEventType
+                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+            }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use url::Url;
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -31,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::AVATAR_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 use crate::room::room_members_cache::{enqueue_room_members_update, RoomMembersUpdate};
@@ -67,7 +69,7 @@ impl From<LoginByPassword> for Cli {
         Self {
             user_id: login.user_id,
             password: login.password,
-            homeserver: None,
+            homeserver: login.homeserver,
             proxy: None,
             login_screen: false,
             verbose: false,
@@ -139,7 +141,6 @@ async fn build_client(
 async fn login(
     cli: &Cli,
     login_request: LoginRequest,
-    login_types: &[LoginType],
 ) -> Result<(Client, Option<String>)> {
     match login_request {
         LoginRequest::LoginByCli | LoginRequest::LoginByPassword(_) => {
@@ -149,12 +150,6 @@ async fn login(
                 cli
             };
             let (client, client_session) = build_client(cli, app_data_dir()).await?;
-            if !login_types
-                .iter()
-                .any(|flow| matches!(flow, LoginType::Password(_)))
-            {
-                bail!("Homeserver does not support username + password login flow.");
-            }
             // Attempt to login using the CLI-provided username & password.
             let login_result = client
                 .matrix_auth()
@@ -193,40 +188,6 @@ async fn login(
     }
 }
 
-async fn populate_login_types(
-    homeserver_url: &str,
-    login_types: &mut Vec<LoginType>,
-) -> Result<()> {
-    Cx::post_action(LoginAction::Status {
-        title: "Querying login types".into(),
-        status: "Fetching supported login types from the homeserver...".into(),
-    });
-    let homeserver_url = if homeserver_url.is_empty() {
-        DEFAULT_HOMESERVER
-    } else {
-        homeserver_url
-    };
-    let client = Client::builder()
-        .server_name_or_homeserver_url(homeserver_url)
-        .build()
-        .await?;
-    match client.matrix_auth().get_login_types().await {
-        Ok(login_types_res) => {
-            *login_types = login_types_res.flows;
-            let identity_providers = login_types.iter().fold(Vec::new(), |mut acc, login_type| {
-                if let LoginType::Sso(sso_type) = login_type {
-                    acc.extend_from_slice(sso_type.identity_providers.as_slice());
-                }
-                acc
-            });
-            Cx::post_action(LoginAction::IdentityProvider(identity_providers));
-            Ok(())
-        }
-        Err(e) => {
-            Err(e.into())
-        }
-    }
-}
 
 /// Which direction to paginate in.
 ///
@@ -373,10 +334,10 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
     },
-    /// Sends a request checking if the currently logged-in user can send a message to the given room.
+    /// Sends a request to obtain the power levels for this room.
     ///
-    /// The response is delivered back to the main UI thread via a `TimelineUpdate::CanUserSendMessage`.
-    CheckCanUserSendMessage {
+    /// The response is delivered back to the main UI thread via [`TimelineUpdate::UserPowerLevels`].
+    GetRoomPowerLevels {
         room_id: OwnedRoomId,
     },
     /// Toggles the given reaction to the given event in the given room.
@@ -384,7 +345,14 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reaction: String,
-    }
+    },
+    /// Redacts (deletes) the given event in the given room.
+    #[doc(alias("delete"))]
+    RedactMessage {
+        room_id: OwnedRoomId,
+        timeline_event_id: TimelineEventItemId,
+        reason: Option<String>,
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -933,7 +901,7 @@ async fn async_worker(
                 });
             },
 
-            MatrixRequest::CheckCanUserSendMessage { room_id } => {
+            MatrixRequest::GetRoomPowerLevels { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -946,16 +914,20 @@ async fn async_worker(
 
                 let Some(user_id) = current_user_id() else { continue };
 
-                let _check_can_user_send_message_task = Handle::current().spawn(async move {
-                    let can_user_send_message = timeline.room().can_user_send_message(
-                        &user_id,
-                        MessageLikeEventType::Message
-                    )
-                    .await
-                    .unwrap_or(true);
-
-                    if let Err(e) = sender.send(TimelineUpdate::CanUserSendMessage(can_user_send_message)) {
-                        error!("Failed to send the result of if user can send message: {e}")
+                let _power_levels_task = Handle::current().spawn(async move {
+                    match timeline.room().power_levels().await {
+                        Ok(power_levels) => {
+                            log!("Successfully fetched power levels for room {room_id}.");
+                            if let Err(e) = sender.send(TimelineUpdate::UserPowerLevels(
+                                UserPowerLevels::from(&power_levels, &user_id),
+                            )) {
+                                error!("Failed to send the result of if user can send message: {e}")
+                            }
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch power levels for room {room_id}: {e:?}");
+                        }
                     }
                 });
             },
@@ -979,7 +951,27 @@ async fn async_worker(
                         Err(_e) => error!("Failed to send toggle reaction to room {room_id} {reaction}; error: {_e:?}"),
                     }
                 });
-            }
+            },
+            MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
+                let timeline = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for redact message {room_id}");
+                        continue;
+                    };
+                    room_info.timeline.clone()
+                };
+
+                let _redact_task = Handle::current().spawn(async move {
+                    match timeline.redact(&timeline_event_id, reason.as_deref()).await {
+                        Ok(()) => log!("Successfully redacted message in room {room_id}."),
+                        Err(e) => {
+                            error!("Failed to redact message in {room_id}; error: {e:?}");
+                            enqueue_popup_notification(format!("Failed to redact message. Error: {e}"));
+                        }
+                    }
+                });
+            },
         }
     }
 
@@ -995,6 +987,13 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
 static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
 
+/// A client object that is proactively created during initialization
+/// in order to speed up the client-building process when the user logs in.
+static DEFAULT_SSO_CLIENT: Mutex<Option<(Client, ClientSessionPersisted)>> = Mutex::new(None);
+/// Used to notify the SSO login task that the async creation of the `DEFAULT_SSO_CLIENT` has finished.
+static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
+    || Arc::new(Notify::new())
+);
 
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
@@ -1012,6 +1011,19 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        
+        // Build a Matrix Client in the background so that SSO Server starts earlier.
+        rt.spawn(async move {
+            match build_client(&Cli::default(), app_data_dir()).await {
+                Ok(client_and_session) => {
+                    DEFAULT_SSO_CLIENT.lock().unwrap()
+                        .get_or_insert(client_and_session);
+                }
+                Err(e) => error!("Error: could not create DEFAULT_SSO_CLIENT object: {e}"),
+            };
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+        });
 
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
@@ -1242,15 +1254,7 @@ async fn async_main_loop(
                     user_id: cli.user_id.clone(),
                     homeserver: cli.homeserver.clone(),
                 });
-                let mut login_types: Vec<LoginType> = Vec::new();
-                let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-                if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                    error!("Populating Login types failed: {e:?}");
-                    Cx::post_action(LoginAction::LoginFailure(
-                        format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                    ));
-                }
-                match login(cli, LoginRequest::LoginByCli, &login_types).await {
+                match login(cli, LoginRequest::LoginByCli).await {
                     Ok(new_login) => Some(new_login),
                     Err(e) => {
                         error!("CLI-based login failed: {e:?}");
@@ -1274,29 +1278,11 @@ async fn async_main_loop(
     let (client, _sync_token) = match new_login_opt {
         Some(new_login) => new_login,
         None => {
-            let homeserver_url = cli.homeserver.as_deref().unwrap_or(DEFAULT_HOMESERVER);
-            let mut login_types = Vec::new();
-            // Display the available Identity providers by fetching the login types
-            if let Err(e) = populate_login_types(homeserver_url, &mut login_types).await {
-                error!("Populating Login types failed for {homeserver_url}: {e:?}");
-                Cx::post_action(LoginAction::LoginFailure(
-                    format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                ));
-            }
             loop {
                 log!("Waiting for login request...");
                 match login_receiver.recv().await {
                     Some(login_request) => {
-                        if let LoginRequest::HomeserverLoginTypesQuery(homeserver_url) = login_request {
-                            if let Err(e) = populate_login_types(&homeserver_url, &mut login_types).await {
-                                error!("Populating Login types failed: {e:?}");
-                                Cx::post_action(LoginAction::LoginFailure(
-                                    format!("Failed to fetch supported login types from homeserver {homeserver_url}")
-                                ));
-                            }
-                            continue
-                        }
-                        match login(&cli, login_request, &login_types).await {
+                        match login(&cli, login_request).await {
                             Ok((client, sync_token)) => {
                                 break (client, sync_token);
                             }
@@ -1320,6 +1306,11 @@ async fn async_main_loop(
 
     Cx::post_action(LoginAction::LoginSuccess);
 
+    // Deallocate the default SSO client after a successful login.
+    if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
+        let _ = client_opt.take();
+    }
+    
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -1739,20 +1730,7 @@ fn get_latest_event_details(
     latest_event: &EventTimelineItem,
     room_id: &OwnedRoomId,
 ) -> (MilliSecondsSinceUnixEpoch, String) {
-    let sender_username = match latest_event.sender_profile() {
-        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
-        TimelineDetails::Unavailable => {
-            if let Some(event_id) = latest_event.event_id() {
-                submit_async_request(MatrixRequest::FetchDetailsForEvent {
-                    room_id: room_id.clone(),
-                    event_id: event_id.to_owned(),
-                });
-            }
-            None
-        }
-        _ => None,
-    }
-    .unwrap_or_else(|| latest_event.sender().as_str());
+    let sender_username = &utils::get_or_fetch_event_sender(latest_event, Some(room_id));
     (
         latest_event.timestamp(),
         text_preview_of_timeline_item(latest_event.content(), sender_username)
@@ -2070,21 +2048,18 @@ async fn timeline_subscriber_handler(
                     );
                 }
 
+                // Update the latest event for this room.
+                // We always do this in case a redaction or other event has changed the latest event.
+                if let Some(new_latest) = new_latest_event {
+                    let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
+                    if room_avatar_changed {
+                        spawn_fetch_room_avatar(room.clone());
+                    }
+                    latest_event = Some(new_latest);
+                }
+
                 // Send a Makepad-level signal to update this room's timeline UI view.
                 SignalToUI::set_ui_signal();
-
-                // Update the latest event for this room.
-                if let Some(new_latest) = new_latest_event {
-                    if latest_event.as_ref().map_or(true, |ev| ev.timestamp() < new_latest.timestamp()) {
-                        let room_avatar_changed = update_latest_event(room_id.clone(), &new_latest, Some(&timeline_update_sender));
-
-                        if room_avatar_changed {
-                            spawn_fetch_room_avatar(room.clone());
-                        }
-
-                        latest_event = Some(new_latest);
-                    }
-                }
             }
         }
 
@@ -2101,7 +2076,7 @@ async fn timeline_subscriber_handler(
 /// This currently includes checking the given event for:
 /// * room name changes, in which it sends a `RoomsListUpdate`.
 /// * room power level changes to see if the current user's permissions
-///   have changed; if so, it sends a `TimelineUpdate::CanUserSendMessage`.
+///   have changed; if so, it sends a [`TimelineUpdate::UserPowerLevels`].
 /// * room avatar changes, which is not handled here.
 ///   Instead, we return `true` such that other code can fetch the new avatar.
 /// * membership changes to see if the current user has joined or left a room.
@@ -2135,17 +2110,15 @@ fn update_latest_event(
                 }
                 // Check for if can user send message.
                 AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content, prev_content: _ }) => {
-                    if let Some(sender) = timeline_update_sender {
-                        if let Some(user_power) = current_user_id().and_then(|uid| content.users.get(&uid)) {
-                            let power_level_to_send_message_like_event = content.events
-                                .get(&TimelineEventType::RoomMessage)
-                                .or_else(|| content.events.get(&TimelineEventType::Message))
-                                .unwrap_or(&content.events_default);
-                            let _res = sender.send(TimelineUpdate::CanUserSendMessage(
-                                user_power >= power_level_to_send_message_like_event
-                            ));
-                            if let Err(e) = _res {
-                                error!("Failed to send the result of if user can send message: {e}")
+                    if let (Some(sender), Some(user_id)) = (timeline_update_sender, current_user_id()) {
+                        match sender.send(TimelineUpdate::UserPowerLevels(
+                            UserPowerLevels::from(&content.clone().into(), &user_id)
+                        )) {
+                            Ok(_) => {
+                                SignalToUI::set_ui_signal();
+                            }
+                            Err(e) => {
+                                error!("Failed to send the new RoomPowerLevels from an updated latest event: {e}");
                             }
                         }
                     }
@@ -2159,7 +2132,7 @@ fn update_latest_event(
                 Some(MembershipChange::InvitationAccepted | MembershipChange::Joined)
             ) {
                 if current_user_id().as_deref() == Some(room_membership_change.user_id()) {
-                    submit_async_request(MatrixRequest::CheckCanUserSendMessage { room_id: room_id.clone() })
+                    submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
                 }
             }
         }
@@ -2236,28 +2209,79 @@ async fn spawn_sso_server(
     login_sender: Sender<LoginRequest>,
 ) {
     Cx::post_action(LoginAction::SsoPending(true));
+    // Post a status update to inform the user that we're waiting for the client to be built.
     Cx::post_action(LoginAction::Status {
-        title: "Opening your browser...".into(),
-        status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+        title: "Initializing client...".into(),
+        status: "Please wait while Matrix builds and configures the client object for login.".into(),
     });
-    let cli = Cli {
-        homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
-        ..Default::default()
-    };
+
+    // Wait for the notification that the client has been built
+    DEFAULT_SSO_CLIENT_NOTIFIER.notified().await;
+
+    // Try to use the DEFAULT_SSO_CLIENT, if it was successfully built.
+    // We do not clone it because a Client cannot be re-used again
+    // once it has been used for a login attempt, so this forces us to create a new one
+    // if that occurs.
+    let client_and_session_opt = DEFAULT_SSO_CLIENT.lock().unwrap().take();
+
     Handle::current().spawn(async move {
-        let (client, client_session) = match build_client(&cli, app_data_dir()).await {
-            Ok(success) => success,
-            Err(e) => {
-                Cx::post_action(LoginAction::LoginFailure(
-                    format!("Could not create client object.\n\nError: {e}")
-                ));
-                return;
+        // Try to use the DEFAULT_SSO_CLIENT that we proactively created
+        // during initialization (to speed up opening the SSO browser window).
+        let mut client_and_session = client_and_session_opt;
+        
+        // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
+        // or if the homeserver_url is *not* empty and isn't the default,
+        // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
+        let mut build_client_error = None;
+        if client_and_session.is_none() || (
+            !homeserver_url.is_empty()
+                && homeserver_url != "matrix.org"
+                && Url::parse(&homeserver_url) != Url::parse("https://matrix-client.matrix.org/")
+                && Url::parse(&homeserver_url) != Url::parse("https://matrix.org/")
+        ) {
+            match build_client(
+                &Cli {
+                    homeserver: homeserver_url.is_empty().not().then_some(homeserver_url),
+                    ..Default::default()
+                },
+                app_data_dir(),
+            ).await {
+                Ok(success) => client_and_session = Some(success),
+                Err(e) => build_client_error = Some(e),
             }
+        }
+
+        let Some((client, client_session)) = client_and_session else {
+            Cx::post_action(LoginAction::LoginFailure(
+                if let Some(err) = build_client_error {
+                    format!("Could not create client object. Please try to login again.\n\nError: {err}")
+                } else {
+                    String::from("Could not create client object. Please try to login again.")
+                }
+            ));
+            // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
+            // at the top of this function will not block upon the next login attempt.
+            DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
+            Cx::post_action(LoginAction::SsoPending(false));
+            return;
         };
+
         let mut is_logged_in = false;
+        Cx::post_action(LoginAction::Status {
+            title: "Opening your browser...".into(),
+            status: "Please finish logging in using your browser, and then come back to Robrix.".into(),
+        });
         match client
             .matrix_auth()
             .login_sso(|sso_url: String| async move {
+                let url = Url::parse(&sso_url)?;
+                for (key, value) in url.query_pairs() {
+                    if key == "redirectUrl" {
+                        let redirect_url = Url::parse(&value)?;
+                        Cx::post_action(LoginAction::SsoSetRedirectUrl(redirect_url));
+                        break
+                    }
+                }
                 Uri::new(&sso_url).open().map_err(|err| {
                     Error::UnknownError(
                         Box::new(io::Error::new(
@@ -2302,6 +2326,154 @@ async fn spawn_sso_server(
                 }
             }
         }
+
+        // This ensures that the called to `DEFAULT_SSO_CLIENT_NOTIFIER.notified()`
+        // at the top of this function will not block upon the next login attempt.
+        DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
         Cx::post_action(LoginAction::SsoPending(false));
     });
+}
+
+
+bitflags! {
+    /// The powers that a user has in a given room.
+    #[derive(Copy, Clone, PartialEq, Eq)]
+    pub struct UserPowerLevels: u64 {
+        const Ban = 1 << 0;
+        const Invite = 1 << 1;
+        const Kick = 1 << 2;
+        const Redact = 1 << 3;
+        const NotifyRoom = 1 << 4;
+        // -------------------------------------
+        // -- Copied from TimelineEventType ----
+        // -- Unused powers are commented out --
+        // -------------------------------------
+        // const CallAnswer = 1 << 5;
+        // const CallInvite = 1 << 6;
+        // const CallHangup = 1 << 7;
+        // const CallCandidates = 1 << 8;
+        // const CallNegotiate = 1 << 9;
+        // const CallReject = 1 << 10;
+        // const CallSdpStreamMetadataChanged = 1 << 11;
+        // const CallSelectAnswer = 1 << 12;
+        // const KeyVerificationReady = 1 << 13;
+        // const KeyVerificationStart = 1 << 14;
+        // const KeyVerificationCancel = 1 << 15;
+        // const KeyVerificationAccept = 1 << 16;
+        // const KeyVerificationKey = 1 << 17;
+        // const KeyVerificationMac = 1 << 18;
+        // const KeyVerificationDone = 1 << 19;
+        const Location = 1 << 20;
+        const Message = 1 << 21;
+        // const PollStart = 1 << 22;
+        // const UnstablePollStart = 1 << 23;
+        // const PollResponse = 1 << 24;
+        // const UnstablePollResponse = 1 << 25;
+        // const PollEnd = 1 << 26;
+        // const UnstablePollEnd = 1 << 27;
+        // const Beacon = 1 << 28;
+        const Reaction = 1 << 29;
+        // const RoomEncrypted = 1 << 30;
+        const RoomMessage = 1 << 31;
+        const RoomRedaction = 1 << 32;
+        const Sticker = 1 << 33;
+        // const CallNotify = 1 << 34;
+        // const PolicyRuleRoom = 1 << 35;
+        // const PolicyRuleServer = 1 << 36;
+        // const PolicyRuleUser = 1 << 37;
+        // const RoomAliases = 1 << 38;
+        // const RoomAvatar = 1 << 39;
+        // const RoomCanonicalAlias = 1 << 40;
+        // const RoomCreate = 1 << 41;
+        // const RoomEncryption = 1 << 42;
+        // const RoomGuestAccess = 1 << 43;
+        // const RoomHistoryVisibility = 1 << 44;
+        // const RoomJoinRules = 1 << 45;
+        // const RoomMember = 1 << 46;
+        // const RoomName = 1 << 47;
+        const RoomPinnedEvents = 1 << 48;
+        // const RoomPowerLevels = 1 << 49;
+        // const RoomServerAcl = 1 << 50;
+        // const RoomThirdPartyInvite = 1 << 51;
+        // const RoomTombstone = 1 << 52;
+        // const RoomTopic = 1 << 53;
+        // const SpaceChild = 1 << 54;
+        // const SpaceParent = 1 << 55;
+        // const BeaconInfo = 1 << 56;
+        // const CallMember = 1 << 57;
+        // const MemberHints = 1 << 58;
+    }
+}
+impl UserPowerLevels {
+    pub fn from(power_levels: &RoomPowerLevels, user_id: &UserId) -> Self {
+        let mut retval = UserPowerLevels::empty();
+        let user_power = power_levels.for_user(user_id);
+        retval.set(UserPowerLevels::Ban, user_power >= power_levels.ban);
+        retval.set(UserPowerLevels::Invite, user_power >= power_levels.invite);
+        retval.set(UserPowerLevels::Kick, user_power >= power_levels.kick);
+        retval.set(UserPowerLevels::Redact, user_power >= power_levels.redact);
+        retval.set(UserPowerLevels::NotifyRoom, user_power >= power_levels.notifications.room);
+        retval.set(UserPowerLevels::Location, user_power >= power_levels.for_message(MessageLikeEventType::Location));
+        retval.set(UserPowerLevels::Message, user_power >= power_levels.for_message(MessageLikeEventType::Message));
+        retval.set(UserPowerLevels::Reaction, user_power >= power_levels.for_message(MessageLikeEventType::Reaction));
+        retval.set(UserPowerLevels::RoomMessage, user_power >= power_levels.for_message(MessageLikeEventType::RoomMessage));
+        retval.set(UserPowerLevels::RoomRedaction, user_power >= power_levels.for_message(MessageLikeEventType::RoomRedaction));
+        retval.set(UserPowerLevels::Sticker, user_power >= power_levels.for_message(MessageLikeEventType::Sticker));
+        retval.set(UserPowerLevels::RoomPinnedEvents, user_power >= power_levels.for_state(StateEventType::RoomPinnedEvents));
+        retval
+    }
+
+    pub fn can_ban(self) -> bool {
+        self.contains(UserPowerLevels::Ban)
+    }
+
+    pub fn can_unban(self) -> bool {
+        self.can_ban() && self.can_kick()
+    }
+
+    pub fn can_invite(self) -> bool {
+        self.contains(UserPowerLevels::Invite)
+    }
+
+    pub fn can_kick(self) -> bool {
+        self.contains(UserPowerLevels::Kick)
+    }
+
+    pub fn can_redact(self) -> bool {
+        self.contains(UserPowerLevels::Redact)
+    }
+
+    pub fn can_notify_room(self) -> bool {
+        self.contains(UserPowerLevels::NotifyRoom)
+    }
+
+    pub fn can_redact_own(self) -> bool {
+        self.contains(UserPowerLevels::RoomRedaction)
+    }
+
+    pub fn can_redact_others(self) -> bool {
+        self.can_redact_own() && self.contains(UserPowerLevels::Redact)
+    }
+
+    pub fn can_send_location(self) -> bool {
+        self.contains(UserPowerLevels::Location)
+    }
+
+    pub fn can_send_message(self) -> bool {
+        self.contains(UserPowerLevels::RoomMessage)
+        || self.contains(UserPowerLevels::Message)
+    }
+
+    pub fn can_send_reaction(self) -> bool {
+        self.contains(UserPowerLevels::Reaction)
+    }
+
+    pub fn can_send_sticker(self) -> bool {
+        self.contains(UserPowerLevels::Sticker)
+    }
+
+    #[doc(alias("unpin"))]
+    pub fn can_pin(self) -> bool {
+        self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
 }

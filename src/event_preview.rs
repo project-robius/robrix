@@ -106,6 +106,56 @@ pub fn text_preview_of_timeline_item(
     }
 }
 
+
+
+/// Returns the plaintext `body` of the given timeline event.
+pub fn body_of_timeline_item(
+    event_tl_item: &EventTimelineItem,
+) -> String {
+    match event_tl_item.content() {
+        TimelineItemContent::Message(m) => m.body().into(),
+        TimelineItemContent::RedactedMessage => "[Message was deleted]".into(),
+        TimelineItemContent::Sticker(sticker) => sticker.content().body.clone(),
+        TimelineItemContent::UnableToDecrypt(_encrypted_msg) => "[Unable to Decrypt]".into(),
+        TimelineItemContent::MembershipChange(membership_change) => {
+            text_preview_of_room_membership_change(membership_change)
+                .unwrap_or_else(|| TextPreview::from((
+                    String::from("underwent a membership change."),
+                    BeforeText::UsernameWithoutColon,
+                )))
+                .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None))
+        }
+        TimelineItemContent::ProfileChange(profile_change) => {
+            text_preview_of_member_profile_change(
+                profile_change,
+                &utils::get_or_fetch_event_sender(event_tl_item, None),
+            ).text
+        }
+        TimelineItemContent::OtherState(other_state) => {
+            text_preview_of_other_state(other_state)
+                .unwrap_or_else(|| TextPreview::from((
+                    String::from("initiated another state change."),
+                    BeforeText::UsernameWithoutColon,
+                )))
+                .format_with(&utils::get_or_fetch_event_sender(event_tl_item, None))
+        }
+        TimelineItemContent::FailedToParseMessageLike { event_type, error } => {
+            format!("Failed to parse {} message. Error: {}", event_type, error)
+        }
+        TimelineItemContent::FailedToParseState { event_type, error, state_key } => {
+            format!("Failed to parse {} state; key: {}. Error: {}", event_type, state_key, error)
+        }
+        TimelineItemContent::Poll(poll_state) => {
+            format!("[Poll]: {}", 
+                poll_state.fallback_text().unwrap_or_else(|| poll_state.results().question)
+            )
+        }
+        TimelineItemContent::CallInvite => String::from("[Call Invitation]"),
+        TimelineItemContent::CallNotify => String::from("[Call Notification]"),
+    }
+}
+
+
 /// Returns a text preview of the given message as an Html-formatted string.
 pub fn text_preview_of_message(
     message: &timeline::Message,
@@ -334,7 +384,7 @@ pub fn text_preview_of_other_state(
 }
 
 
-/// Returns a text preview of the given member profile change as an Html-formatted string.
+/// Returns a text preview of the given member profile change as a plaintext string.
 pub fn text_preview_of_member_profile_change(
     change: &MemberProfileChange,
     username: &str,
@@ -366,7 +416,7 @@ pub fn text_preview_of_member_profile_change(
 }
 
 
-/// Returns a text preview of the given room membership change as an Html-formatted string.
+/// Returns a text preview of the given room membership change as a plaintext string.
 pub fn text_preview_of_room_membership_change(
     change: &RoomMembershipChange,
 ) -> Option<TextPreview> {
