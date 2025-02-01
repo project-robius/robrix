@@ -1405,47 +1405,56 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send message button being clicked and enter key being pressed.
-            let message_input = self.text_input(id!(message_input));
-            let send_message_shortcut_pressed = message_input
-                .key_down_unhandled(actions)
-                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
-            if send_message_shortcut_pressed
-                || self.button(id!(send_message_button)).clicked(actions)
-            {
-                let entered_text = message_input.text().trim().to_string();
-                if !entered_text.is_empty() {
-                    let room_id = self.room_id.clone().unwrap();
-                    log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        RoomMessageEventContent::text_html(html_text, html_text)
-                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        RoomMessageEventContent::text_plain(plain_text)
-                    } else {
-                        RoomMessageEventContent::text_markdown(entered_text)
-                    };
-                    submit_async_request(MatrixRequest::SendMessage {
-                        room_id,
-                        message,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
-                        ),
-                        // TODO: support attaching mentions, etc.
-                    });
+            let input_bar = self.mention_input_bar(id!(input_bar));
+            let message_input = input_bar.command_text_input(id!(message_input));
 
-                    self.clear_replying_to(cx);
-                    message_input.set_text(cx, "");
+            let mut should_send = false;
+
+            if let Some(ke) = message_input.text_input_ref().key_down_unhandled(actions) {
+                log!("检测到键盘事件: {:?}", ke);
+
+                // 直接检查这个键盘事件的状态
+                if ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary() {
+                    log!("检测到有效的 Command+Enter 组合键，准备发送消息");
+                    should_send = true;
                 }
             }
 
-            // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
-                cx,
-                &portal_list,
-                actions,
-            );
+            if should_send || self.button(id!(send_message_button)).clicked(actions) {
+                // 确保有文本要发送
+                if let Some(text) = input_bar.text() {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        log!("正在发送消息: {}", text);
 
-            // Handle a typing action on the message input box.
-            if let Some(new_text) = message_input.changed(actions) {
+                        let room_id = self.room_id.clone().unwrap();
+                        let message = if let Some(html_text) = text.strip_prefix("/html") {
+                            RoomMessageEventContent::text_html(html_text, html_text)
+                        } else if let Some(plain_text) = text.strip_prefix("/plain") {
+                            RoomMessageEventContent::text_plain(plain_text)
+                        } else {
+                            RoomMessageEventContent::text_markdown(text)
+                        };
+
+                        // 发送消息
+                        submit_async_request(MatrixRequest::SendMessage {
+                            room_id,
+                            message,
+                            replied_to: self.tl_state.as_mut().and_then(
+                                |tl| tl.replying_to.take().map(|(_, rep)| rep)
+                            ),
+                        });
+
+                        // 清理状态
+                        self.clear_replying_to(cx);
+                        input_bar.set_text(cx, "");
+                        log!("消息已发送，输入框已清空");
+                    }
+                }
+            }
+
+            // 处理打字状态通知
+            if let Some(new_text) = message_input.text_input_ref().changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),

@@ -38,7 +38,7 @@ pub fn enqueue_room_members_update(update: RoomMembersUpdate) {
 }
 
 // 处理所有待处理的更新
-pub fn process_room_members_updates(cx: &mut Cx) {
+pub fn process_room_members_updates(_cx: &mut Cx) {
     log!("Processing room members updates...");
     ROOM_MEMBERS_CACHE.with_borrow_mut(|cache| {
         let mut processed = 0;
