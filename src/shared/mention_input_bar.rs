@@ -1,4 +1,11 @@
-// 消息输入栏组件 - 支持@提及功能
+//! MentionInputBar component provides a message input interface with @mention capabilities
+//! Supports user mention autocomplete, avatar display, and desktop/mobile layouts
+//!
+//! TODO for the future:
+//!   1. Add a header to the user list to display the current number of users in the room.
+//!   2. Implement scrolling functionality for the user list.
+//!   3. Enable sorting for the user list to show currently online users.
+//!   4. Optimize performance and add a loading animation for the user list.
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use crate::shared::avatar::AvatarWidgetRefExt;
@@ -7,7 +14,6 @@ use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use crate::avatar_cache::*;
 use crate::utils;
 
-// UI 设计定义
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -17,11 +23,9 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
 
-    // 图标资源定义
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
     ICO_SEND = dep("crate://self/resources/icon_send.svg")
 
-    // 用户列表项模板定义
     UserListItem = <View> {
         width: Fill,
         height: Fit,
@@ -36,6 +40,7 @@ live_design! {
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                // Draw rounded rectangle with configurable radius
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
 
                 if self.selected > 0.0 {
@@ -51,7 +56,6 @@ live_design! {
         flow: Down
         spacing: 8.0
 
-        // 用户信息容器
         user_info = <View> {
             width: Fill,
             height: Fit,
@@ -59,7 +63,6 @@ live_design! {
             spacing: 8.0
             align: {y: 0.5}
 
-            // 用户头像配置
             avatar = <Avatar> {
                 width: 24,
                 height: 24,
@@ -68,7 +71,6 @@ live_design! {
                 }}}
             }
 
-            // 用户名配置
             label = <Label> {
                 height: Fit,
                 draw_text: {
@@ -80,7 +82,6 @@ live_design! {
             filler = <FillerX> {}
         }
 
-        // Matrix ID显示配置
         matrix_url = <Label> {
             height: Fit,
             draw_text: {
@@ -90,7 +91,6 @@ live_design! {
         }
     }
 
-    // 主输入栏组件配置
     pub MentionInputBar = {{MentionInputBar}} {
         width: Fill,
         height: Fit
@@ -100,7 +100,6 @@ live_design! {
         show_bg: true
         draw_bg: {color: (COLOR_PRIMARY)}
 
-        // 位置按钮
         location_button = <IconButton> {
             draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
             icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5}},
@@ -109,7 +108,6 @@ live_design! {
 
         user_list_item: <UserListItem> {}
 
-        // 消息输入框配置
         message_input = <CommandTextInput> {
             width: Fill,
             height: Fit
@@ -118,7 +116,6 @@ live_design! {
             trigger: "@"
             inline_search: true
 
-            // 弹出框配置
             popup = {
                 spacing: 0.0
                 padding: 0.0
@@ -137,7 +134,6 @@ live_design! {
                 }
             }
 
-            // 输入框持久化配置
             persistent = {
                 center = {
                     text_input = {
@@ -209,7 +205,6 @@ live_design! {
             }
         }
 
-        // 发送按钮
         send_message_button = <IconButton> {
             draw_icon: {svg_file: (ICO_SEND)},
             icon_walk: {width: 18.0, height: Fit},
@@ -217,40 +212,46 @@ live_design! {
     }
 }
 
-// 组件事件定义
+/// Actions emitted by the MentionInputBar component
 #[derive(Clone, Debug)]
 pub enum MentionInputBarAction {
-    // 消息内容变更事件
+    /// Triggered when message content changes
     MessageChanged(String),
-    // 用户被提及事件
+    /// Triggered when a user is specifically mentioned
     UserMentioned(String),
 }
 
-// 主组件结构体定义
+/// Main component for message input with @mention support
+/// Provides a text input area with autocomplete popup for user mentions
 #[derive(Live, Widget)]
 pub struct MentionInputBar {
+    /// Base view properties
     #[deref]
     view: View,
+    /// Template for user list items
     #[live]
     user_list_item: Option<LivePtr>,
+    /// Current Matrix room ID
     #[rust]
     room_id: Option<OwnedRoomId>,
+    /// List of available room members for mentions
     #[rust]
     room_members: Vec<RoomMember>,
+    /// Current input text content
     #[rust]
     current_input: String,
+    /// Position where the @ mention starts
     #[rust]
     mention_start_index: Option<usize>,
+    /// Indicates if currently in mention search mode
     #[rust]
     is_searching: bool,
 }
 
-// Widget trait 实现
 impl Widget for MentionInputBar {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let mut ret = self.view.draw_walk(cx, scope, walk);
 
-        // 处理IME输入
         let text_input = self.command_text_input(id!(message_input)).text_input_ref();
         let area = text_input.area();
         cx.show_text_ime(area, DVec2::default());
@@ -268,19 +269,16 @@ impl Widget for MentionInputBar {
         if let Event::Actions(actions) = event {
             let mut message_input = self.command_text_input(id!(message_input));
 
-            // 处理用户选择事件
             if let Some(selected) = message_input.item_selected(actions) {
                 self.on_user_selected(cx, scope, selected);
                 return;
             }
 
-            // 处理搜索更新
             if message_input.should_build_items(actions) {
                 let search_text = message_input.search_text().to_lowercase();
                 self.update_user_list(cx, &mut message_input, &search_text);
             }
 
-            // 处理文本变化
             if let Some(action) = actions.find_widget_action(message_input.text_input_ref().widget_uid()) {
                 if let TextInputAction::Change(text) = action.cast() {
                     self.handle_text_change(cx, &mut message_input, scope, text);
@@ -290,9 +288,9 @@ impl Widget for MentionInputBar {
     }
 }
 
-// MentionInputBar 核心功能实现
 impl MentionInputBar {
-    // 处理用户选择事件
+    // Handles user selection from mention popup
+    // Manages text insertion and cursor positioning
     fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
         let username = selected.label(id!(user_info.label)).text();
         let message_input = self.command_text_input(id!(message_input));
@@ -302,17 +300,14 @@ impl MentionInputBar {
             let head = message_input.text_input_ref().borrow()
                 .map_or(0, |p| p.get_cursor().head.index);
 
-            // 构建提及文本
             let before = &current_text[..start_idx];
             let after = &current_text[head..];
             let mention = format!("{before} @{username} {after}");
 
-            // 更新文本和光标位置
             message_input.set_text(cx, &mention);
             let new_pos = start_idx + username.len() + 2;
             message_input.text_input_ref().set_cursor(new_pos, new_pos);
 
-            // 发送用户提及事件
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
@@ -323,13 +318,13 @@ impl MentionInputBar {
         self.close_mention_popup(cx);
     }
 
-    // 处理文本变化事件
+    // Core text change handler that manages mention context
+    // Controls popup visibility and search state
     fn handle_text_change(&mut self, cx: &mut Cx, message_input: &mut CommandTextInputRef, scope: &mut Scope, text: String) {
         self.current_input = text.clone();
         let cursor_pos = message_input.text_input_ref().borrow()
             .map_or(0, |p| p.get_cursor().head.index);
 
-        // 检查是否在提及上下文中
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
             self.mention_start_index = Some(trigger_pos);
             self.is_searching = true;
@@ -342,7 +337,6 @@ impl MentionInputBar {
             self.close_mention_popup(cx);
         }
 
-        // 发送文本变化事件
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
@@ -350,7 +344,8 @@ impl MentionInputBar {
         );
     }
 
-    // 更新用户列表显示
+    // Updates the mention suggestion list based on search
+    // Handles member filtering, popup sizing, and layout adaptation
     fn update_user_list(&mut self, cx: &mut Cx, message_input: &mut CommandTextInputRef, search_text: &str) {
         message_input.clear_items();
 
@@ -358,7 +353,6 @@ impl MentionInputBar {
             let is_desktop = cx.display_context.is_desktop();
             let mut matched_members = Vec::new();
 
-            // 收集匹配的成员
             for member in self.room_members.iter() {
                 let display_name = member.display_name()
                     .map(|n| n.to_string())
@@ -369,7 +363,6 @@ impl MentionInputBar {
                 }
             }
 
-            // 调整弹出框高度
             let member_count = matched_members.len();
             const MAX_VISIBLE_ITEMS: usize = 15;
             let popup = message_input.view(id!(popup));
@@ -385,36 +378,31 @@ impl MentionInputBar {
                 let total_height = (member_count as f64 * single_item_height) + 16.0;
                 popup.apply_over(cx, live! { height: (total_height) });
             } else {
-                // 设置最大高度限制
                 let max_height = if is_desktop { 400.0 } else { 480.0 };
                 popup.apply_over(cx, live! { height: (max_height) });
             }
 
-            // 限制显示成员数量以保证性能
+            // FIXME:
+            // Limit the number of members displayed to avoid errors: "HarfBuzz guarantees monotonic cluster values"
             const MAX_DISPLAY: usize = 200;
             if matched_members.len() > MAX_DISPLAY {
                 matched_members.truncate(MAX_DISPLAY);
             }
 
-            // 创建并添加成员列表项
             for (index, (display_name, member)) in matched_members.into_iter().enumerate() {
                 let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
 
-                // 设置用户显示名
                 item.label(id!(user_info.label)).set_text(cx, &display_name);
 
-                // 设置 Matrix ID
                 let safe_matrix_id = format!("{}:matrix.org", member.user_id().localpart());
                 item.label(id!(matrix_url)).set_text(cx, &safe_matrix_id);
 
-                // 设置列表项基础样式
                 item.apply_over(cx, live! {
                     show_bg: true,
                     cursor: Hand,
                     padding: {left: 8., right: 8., top: 4., bottom: 4.}
                 });
 
-                // 根据设备类型设置不同的布局样式
                 if is_desktop {
                     item.apply_over(cx, live!(
                         flow: Right,
@@ -431,7 +419,6 @@ impl MentionInputBar {
                     item.view(id!(user_info.filler)).set_visible(cx, false);
                 }
 
-                // 设置用户头像
                 let avatar = item.avatar(id!(user_info.avatar));
                 if let Some(mxc_uri) = member.avatar_url() {
                     if let Some(avatar_data) = get_avatar(cx, mxc_uri) {
@@ -447,13 +434,13 @@ impl MentionInputBar {
 
                 message_input.add_item(item.clone());
 
-                // 设置第一个项目获得键盘焦点
                 if index == 0 {
-                    message_input.borrow_mut().unwrap().keyboard_focus_index = Some(0);
+                    if let Some(mut message_input) = message_input.borrow_mut() {
+                        message_input.set_keyboard_focus_index(0)
+                    }
                 }
             }
 
-            // 确保显示状态正确
             message_input.view(id!(popup)).set_visible(cx, true);
             if self.is_searching {
                 message_input.text_input_ref().set_key_focus(cx);
@@ -461,34 +448,30 @@ impl MentionInputBar {
         }
     }
 
-    // 查找@提及的触发位置
+    // Detects valid mention trigger positions in text
+    // Handles various edge cases and validation rules
     fn find_mention_trigger_position(&self, text: &str, cursor_pos: usize) -> Option<usize> {
         if cursor_pos == 0 {
             return None;
         }
 
-        // 检查是否刚输入了@符号
         if text.chars().nth(cursor_pos.saturating_sub(1)) == Some('@') {
             return Some(cursor_pos - 1);
         }
 
-        // 检查是否在已存在的提及中
         text[..cursor_pos]
             .rfind('@')
             .filter(|&idx| {
                 let after_trigger = &text[idx..cursor_pos];
 
-                // 验证提及的有效性
                 if after_trigger.len() == 1 {
                     return true;
                 }
 
-                // 检查非法提及情况
                 if after_trigger.chars().nth(1).map_or(false, |c| c.is_whitespace()) {
                     return false;
                 }
 
-                // 检查连续空格
                 let chars: Vec<char> = after_trigger.chars().collect();
                 for i in 0..chars.len().saturating_sub(1) {
                     if chars[i].is_whitespace() && chars[i + 1].is_whitespace() {
@@ -496,7 +479,6 @@ impl MentionInputBar {
                     }
                 }
 
-                // 换行符会终止提及
                 if after_trigger.contains('\n') {
                     return false;
                 }
@@ -505,7 +487,8 @@ impl MentionInputBar {
             })
     }
 
-    // 关闭提及弹出框
+    // Cleanup helper for closing mention popup
+    // Resets search state and manages focus
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         self.mention_start_index = None;
         self.is_searching = false;
@@ -516,13 +499,18 @@ impl MentionInputBar {
         self.redraw(cx);
     }
 
-    // 公共接口方法
+    /// Returns the current text content of the input bar
     pub fn text(&self) -> String {
         self.command_text_input(id!(message_input))
             .text_input_ref()
             .text()
     }
 
+    /// Sets the text content of the input bar
+    ///
+    /// # Arguments
+    /// * `cx` - Widget context
+    /// * `text` - New text content
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
         let message_input = self.command_text_input(id!(message_input));
         message_input.text_input_ref().set_text(cx, text);
@@ -530,17 +518,23 @@ impl MentionInputBar {
         self.redraw(cx);
     }
 
+    /// Sets the Matrix room ID and initiates member list loading
+    ///
+    /// # Arguments
+    /// * `room_id` - The Matrix room identifier
     pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
         self.room_id = Some(room_id.clone());
-        // 请求加载房间成员列表
         submit_async_request(MatrixRequest::FetchRoomMembers {
-            room_id: room_id
+            room_id
         });
     }
 
-    // 设置并处理房间成员列表
+    /// Updates the list of available room members for mentions
+    /// Filters invalid members and sorts by display name
+    ///
+    /// # Arguments
+    /// * `members` - Vector of room members to process
     pub fn set_room_members(&mut self, mut members: Vec<RoomMember>) {
-        // 过滤掉无效成员
         members.retain(|member| {
             let display_name = member.display_name()
                 .map(|n| n.to_string())
@@ -548,7 +542,6 @@ impl MentionInputBar {
             !display_name.trim().is_empty()
         });
 
-        // 按显示名称排序
         members.sort_by(|a, b| {
             let a_name = a.display_name()
                 .map(|n| n.to_string())
@@ -563,12 +556,10 @@ impl MentionInputBar {
     }
 }
 
-// LiveHook trait 实现 - 处理组件初始化
 impl LiveHook for MentionInputBar {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         let message_input = self.command_text_input(id!(message_input));
 
-        // 配置 CommandTextInput
         message_input.apply_over(cx, live! {
             trigger: "@",
             inline_search: true,
@@ -576,12 +567,10 @@ impl LiveHook for MentionInputBar {
             pointer_hover_color: #f5f5f5
         });
 
-        // 设置初始焦点
         message_input.request_text_input_focus();
     }
 }
 
-// 组件引用方法实现
 impl MentionInputBarRef {
     pub fn set_text(&self, cx: &mut Cx, text: &str) {
         if let Some(mut inner) = self.borrow_mut() {

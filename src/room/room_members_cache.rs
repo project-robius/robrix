@@ -8,36 +8,27 @@ use matrix_sdk::{room::RoomMember, ruma::OwnedRoomId};
 use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}};
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
-// 使用线程本地存储存储房间成员缓存
 thread_local! {
-    /// 按房间 ID 索引的成员缓存，仅可从主 UI 线程访问
     static ROOM_MEMBERS_CACHE: RefCell<BTreeMap<OwnedRoomId, RoomMembersCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
-// 缓存条目的状态
 enum RoomMembersCacheEntry {
-    /// 已发出请求，等待完成
     Requested,
-    /// 成功从服务器加载的成员列表
     Loaded(Vec<RoomMember>),
 }
 
-// 待处理的更新队列
 static PENDING_ROOM_MEMBERS_UPDATES: SegQueue<RoomMembersUpdate> = SegQueue::new();
 
-// 更新类型
 pub struct RoomMembersUpdate {
     pub room_id: OwnedRoomId,
     pub members: Vec<RoomMember>,
 }
 
-// 将更新添加到队列
 pub fn enqueue_room_members_update(update: RoomMembersUpdate) {
     PENDING_ROOM_MEMBERS_UPDATES.push(update);
     SignalToUI::set_ui_signal();
 }
 
-// 处理所有待处理的更新
 pub fn process_room_members_updates(_cx: &mut Cx) {
     log!("Processing room members updates...");
     ROOM_MEMBERS_CACHE.with_borrow_mut(|cache| {
@@ -61,7 +52,6 @@ pub fn process_room_members_updates(_cx: &mut Cx) {
     });
 }
 
-// 获取房间成员，如果不存在则可选择发起获取请求
 pub fn get_room_members(
     _cx: &mut Cx,
     room_id: OwnedRoomId,
@@ -76,7 +66,6 @@ pub fn get_room_members(
             Entry::Vacant(entry) => {
                 if fetch_if_missing {
                     log!("Room members not found in cache for room {}, fetching from server.", entry.key());
-                    // 发起获取请求
                     submit_async_request(MatrixRequest::FetchRoomMembers {
                         room_id: entry.key().clone(),
                     });

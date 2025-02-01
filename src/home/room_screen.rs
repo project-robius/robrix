@@ -1411,22 +1411,15 @@ impl Widget for RoomScreen {
             let mut should_send = false;
 
             if let Some(ke) = message_input.text_input_ref().key_down_unhandled(actions) {
-                log!("检测到键盘事件: {:?}", ke);
-
-                // 直接检查这个键盘事件的状态
                 if ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary() {
-                    log!("检测到有效的 Command+Enter 组合键，准备发送消息");
                     should_send = true;
                 }
             }
 
             if should_send || self.button(id!(send_message_button)).clicked(actions) {
-                // 确保有文本要发送
                 if let Some(text) = input_bar.text() {
                     let text = text.trim();
                     if !text.is_empty() {
-                        log!("正在发送消息: {}", text);
-
                         let room_id = self.room_id.clone().unwrap();
                         let message = if let Some(html_text) = text.strip_prefix("/html") {
                             RoomMessageEventContent::text_html(html_text, html_text)
@@ -1436,7 +1429,6 @@ impl Widget for RoomScreen {
                             RoomMessageEventContent::text_markdown(text)
                         };
 
-                        // 发送消息
                         submit_async_request(MatrixRequest::SendMessage {
                             room_id,
                             message,
@@ -1445,15 +1437,12 @@ impl Widget for RoomScreen {
                             ),
                         });
 
-                        // 清理状态
                         self.clear_replying_to(cx);
                         input_bar.set_text(cx, "");
-                        log!("消息已发送，输入框已清空");
                     }
                 }
             }
 
-            // 处理打字状态通知
             if let Some(new_text) = message_input.text_input_ref().changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
