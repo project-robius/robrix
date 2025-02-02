@@ -112,8 +112,6 @@ impl LiveHook for VerificationBadge {
 
 impl Widget for VerificationBadge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
-
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
@@ -128,10 +126,11 @@ impl Widget for VerificationBadge {
         let badge = self.view(id!(verification_icons));
         let badge_area = badge.area();
         match event.hits(cx, badge_area) {
-            Hit::FingerDown(_)
-            | Hit::FingerUp(_)
-            | Hit::FingerHoverIn(_)
-            | Hit::FingerHoverOver(_) => {
+            h @ Hit::FingerDown(_)
+            | h @ Hit::FingerUp(_)
+            | h @ Hit::FingerHoverIn(_)
+            | h @ Hit::FingerHoverOver(_) => {
+                log!("Got hit on badge: {h:?}");
                 let badge_rect = badge_area.rect(cx);
                 let tooltip_pos = if cx.display_context.is_desktop() {
                     DVec2 {
@@ -155,7 +154,8 @@ impl Widget for VerificationBadge {
                     },
                 );
             }
-            Hit::FingerHoverOut(_) => {
+            Hit::FingerHoverOut(_fho) => {
+                log!("Got HoverOut hit on badge: {_fho:?}."); 
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
@@ -164,6 +164,8 @@ impl Widget for VerificationBadge {
             }
             _ => { }
         }
+
+        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
