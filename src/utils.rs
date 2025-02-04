@@ -150,7 +150,8 @@ pub fn user_name_first_letter(user_name: &str) -> Option<&str> {
 #[derive(Clone, Debug, Default)]
 pub enum MediaFormatConst {
     /// The file that was uploaded.
-    #[default] File,    /// A thumbnail of the file that was uploaded.
+    #[default] File,
+    /// A thumbnail of the file that was uploaded.
     Thumbnail(MediaThumbnailSettingsConst),
 }
 impl From<MediaFormatConst> for MediaFormat {
