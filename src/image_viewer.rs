@@ -19,7 +19,7 @@ live_design! {
         width: Fill, height: Fill
         align: {x: 0.5, y: 0.5}
         spacing: 12
-        flow: Down
+        flow: Overlay
         show_bg: true
         draw_bg: {
             color: #00000080
@@ -27,7 +27,7 @@ live_design! {
 
         <View> {
             align: {x: 1.0, y: 0.0}
-            width: Fill, height: Fit
+            width: Fill, height: Fill
             close_button = <RobrixIconButton> {
                 padding: {left: 15, right: 15}
                 draw_icon: {
@@ -43,14 +43,15 @@ live_design! {
             }
         }
 
-        image_view = <Image> {
-            width: Fill, height: Fill,
-            fit: Smallest,
-        }
-
-        // An Empty space to let `image_view` far from the bottom, which euqals to `close_button`'s height.
         <View> {
-            height: 20
+            padding: {top: 40, bottom: 30, left: 20, right: 20}
+            flow: Overlay
+            align: {x: 0.5, y: 0.5}
+            width: Fill, height: Fill,
+            image_view = <Image> {
+                width: Fill, height: Fill,
+                fit: Smallest,
+            }
         }
     }
 }
