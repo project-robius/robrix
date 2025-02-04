@@ -58,9 +58,9 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct ImageViewer {
     #[deref] view: View,
-    /// Key is `TextOrImage`'s uid.
-    #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
-    /// We use a standalone `MediaCache` to store the image data.
+    /// Key is uid of `TextOrImage`, val is the corresponded image uri.
+    #[rust] text_or_image_ref_mxc_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
+    /// We use a standalone `MediaCache` to store the original image data.
     #[rust] media_cache: MediaCache,
 }
 
@@ -128,7 +128,7 @@ impl ImageViewer {
     /// We restore image message uid and the image inside the message's mx_uri into HashMap
     /// when the message is being populated.
     fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri) {
-        self.widgetref_image_uri_map.insert(*text_or_image_uid, mxc_uri);
+        self.text_or_image_ref_mxc_uri_map.insert(*text_or_image_uid, mxc_uri);
         log!("Inserted");
     }
     /// We find mx_uid via the given `text_or_image_uid`.
@@ -136,7 +136,7 @@ impl ImageViewer {
         &mut self,
         text_or_image_uid: &WidgetUid,
     ) -> MediaCacheEntry {
-        if let Some(mxc_uri) = self.widgetref_image_uri_map.get(text_or_image_uid) {
+        if let Some(mxc_uri) = self.text_or_image_ref_mxc_uri_map.get(text_or_image_uid) {
 
             let destination = match self.media_cache.entry(mxc_uri.clone()) {
                 Entry::Vacant(vacant) => {
