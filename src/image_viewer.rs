@@ -97,13 +97,12 @@ impl MatchEvent for ImageViewer {
         for action in actions {
             match action.downcast_ref() {
                 Some(ImageViewerAction::SetData{text_or_image_uid, mxc_uri}) => {
-                //We restore image message id and the image inside the message's mx_uri into HashMap.
                     self.insert_data(text_or_image_uid, mxc_uri.clone());
                 }
-                // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
                 Some(ImageViewerAction::ImageClicked(text_or_image_uid)) => {
                     self.clear_image(cx);
                     self.open(cx);
+                    //Todo: show a spin loader before the image is loaded.
                     if let MediaCacheEntry::Loaded(data) = self.image_viewer_try_get_or_fetch(text_or_image_uid) {
                         self.load_and_redraw(cx, &data);
                     }
