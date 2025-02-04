@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, image_viewer::{ImageViewerAction, ImageViewerWidgetRefExt}, login::login_screen::LoginAction, media_cache::MediaCacheEntry, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -126,11 +126,7 @@ live_design! {
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
 
-                    image_viewer_modal = <Modal> {
-                        content: {
-                            image_viewer_modal_inner = <ImageViewer> {}
-                        }
-                    }
+                    image_viewer = <ImageViewer> {}
 
                     // message_source_modal = <Modal> {
                     //     content: {
@@ -198,36 +194,7 @@ impl MatchEvent for App {
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let image_viewer_modal_inner = self.ui.image_viewer(id!(image_viewer_modal_inner));
-        let image_viewer_modal = self.ui.modal(id!(image_viewer_modal));
-
-        if image_viewer_modal_inner.button(id!(close_button)).clicked(actions) {
-            // Clear the image cache once the modal is closed.
-            image_viewer_modal.close(cx);
-            image_viewer_modal_inner.clear_image(cx);
-        }
-
         for action in actions {
-            match action.downcast_ref() {
-                Some(ImageViewerAction::SetData{text_or_image_uid, mxc_uri}) => {
-                //We restore image message id and the image inside the message's mx_uri into HashMap.
-                    image_viewer_modal_inner.insert_data(text_or_image_uid, mxc_uri.clone());
-                }
-                // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
-                Some(ImageViewerAction::Clicked(text_or_image_uid)) => {
-                    image_viewer_modal_inner.clear_image(cx);
-                    image_viewer_modal.open(cx);
-                    if let MediaCacheEntry::Loaded(data) = image_viewer_modal_inner.image_viewer_try_get_or_fetch(text_or_image_uid) {
-                        image_viewer_modal_inner.load_and_redraw(cx, &data);
-                    }
-
-                }
-                Some(ImageViewerAction::Fetched(mxc_uri)) => {
-                    image_viewer_modal_inner.find_and_load(cx, mxc_uri)
-                }
-                 _ => { }
-            }
-
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;

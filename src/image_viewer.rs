@@ -13,9 +13,10 @@ live_design! {
     use crate::shared::icon_button::RobrixIconButton;
 
     pub ImageViewer = {{ImageViewer}} {
-        width: 1600, height: 900
-        align: {x: 0.5}
-        spacing: 15
+        visible: false
+        width: Fill, height: Fill
+        align: {x: 0.5, y: 0.5}
+        spacing: 12
         flow: Down
         show_bg: true
         draw_bg: {
@@ -44,13 +45,20 @@ live_design! {
             width: Fill, height: Fill,
             fit: Smallest,
         }
+
+        // Empty space to let `image_view` far from the bottom, which euqals to `close_button`'s height.
+        <View> {
+            height: 20
+        }
     }
 }
 
 #[derive(Live, LiveHook, Widget)]
 pub struct ImageViewer {
     #[deref] view: View,
+    /// Key is `TextOrImage`'s uid.
     #[rust] widgetref_image_uri_map: HashMap<WidgetUid, OwnedMxcUri>,
+    /// We use a standalone `MediaCache` to store the image data.
     #[rust] media_cache: MediaCache,
 }
 
@@ -58,7 +66,9 @@ pub struct ImageViewer {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
     SetData {text_or_image_uid: WidgetUid, mxc_uri: OwnedMxcUri},
-    Clicked(WidgetUid),
+    ImageClicked(WidgetUid),
+    ///We post this action on fetching the image
+    ///which is clicked by user first time (not in `media_cache` currently) in timeline.
     Fetched(OwnedMxcUri),
     None,
 }
@@ -74,14 +84,45 @@ impl Widget for ImageViewer {
     }
 }
 impl MatchEvent for ImageViewer {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
-        for _action in actions {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        if self.view.button(id!(close_button)).clicked(actions) {
+            // Clear the image cache once the modal is closed.
+            self.close(cx);
+            self.clear_image(cx);
+        }
 
+        for action in actions {
+            match action.downcast_ref() {
+                Some(ImageViewerAction::SetData{text_or_image_uid, mxc_uri}) => {
+                //We restore image message id and the image inside the message's mx_uri into HashMap.
+                    self.insert_data(text_or_image_uid, mxc_uri.clone());
+                }
+                // We open the image viewer modal and show the image once the status of `text_or_image` is image and it was clicked.
+                Some(ImageViewerAction::ImageClicked(text_or_image_uid)) => {
+                    self.clear_image(cx);
+                    self.open(cx);
+                    if let MediaCacheEntry::Loaded(data) = self.image_viewer_try_get_or_fetch(text_or_image_uid) {
+                        self.load_and_redraw(cx, &data);
+                    }
+                }
+                Some(ImageViewerAction::Fetched(mxc_uri)) => {
+                    self.find_and_load(cx, mxc_uri)
+                }
+                 _ => { }
+            }
         }
     }
 }
 
 impl ImageViewer {
+    fn open(&mut self, cx: &mut Cx) {
+        self.visible = true;
+        self.view.redraw(cx);
+    }
+    fn close(&mut self, cx: &mut Cx) {
+        self.visible = false;
+        self.view.redraw(cx);
+    }
     /// We restore image message uid and the image inside the message's mx_uri into HashMap
     /// when the message is being populated.
     fn insert_data(&mut self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri) {

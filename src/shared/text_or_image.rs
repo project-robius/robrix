@@ -74,7 +74,7 @@ impl Widget for TextOrImage {
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
                     // Once Clicked, We post an action.
-                    Cx::post_action(ImageViewerAction::Clicked(self.widget_uid()));
+                    Cx::post_action(ImageViewerAction::ImageClicked(self.widget_uid()));
                 }
             }
             _ => (),
