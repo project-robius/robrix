@@ -48,7 +48,7 @@ live_design! {
             fit: Smallest,
         }
 
-        // Empty space to let `image_view` far from the bottom, which euqals to `close_button`'s height.
+        // An Empty space to let `image_view` far from the bottom, which euqals to `close_button`'s height.
         <View> {
             height: 20
         }
