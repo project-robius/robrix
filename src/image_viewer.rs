@@ -1,6 +1,8 @@
 use std::{collections::{btree_map::Entry, HashMap}, sync::Arc};
 use std::sync::Mutex;
+
 use makepad_widgets::*;
+
 use matrix_sdk::ruma::OwnedMxcUri;
 
 use crate::{media_cache::{MediaCache, MediaCacheEntry}, sliding_sync::{self, MatrixRequest}, utils};
@@ -20,7 +22,7 @@ live_design! {
         flow: Down
         show_bg: true
         draw_bg: {
-            color: #1F1F1F80
+            color: #00000080
         }
 
         <View> {
@@ -177,34 +179,6 @@ impl ImageViewer {
         self.view.image(id!(image_view)).set_texture(cx, None);
     }
 }
-
-impl ImageViewerRef {
-    pub fn insert_data(&self, text_or_image_uid: &WidgetUid, mxc_uri: OwnedMxcUri) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.insert_data(text_or_image_uid, mxc_uri);
-        }
-    }
-    pub fn image_viewer_try_get_or_fetch(&self, text_or_image_uid: &WidgetUid) -> MediaCacheEntry {
-        let mut inner = self.borrow_mut().unwrap();
-        inner.image_viewer_try_get_or_fetch(text_or_image_uid)
-    }
-    pub fn find_and_load(&self, cx: &mut Cx, mxc_uri: &OwnedMxcUri) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.find_and_load(cx, mxc_uri);
-        }
-    }
-    pub fn clear_image(&self, cx: &mut Cx) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.clear_image(cx);
-        }
-    }
-    pub fn load_and_redraw(&self, cx: &mut Cx, data: &[u8]) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.load_and_redraw(cx, data);
-        }
-    }
-}
-
 
 pub fn image_viewer_insert_into_media_cache<D: Into<Arc<[u8]>>>(
     destination: &Mutex<MediaCacheEntry>,
