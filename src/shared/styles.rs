@@ -101,7 +101,7 @@ live_design! {
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
     pub COLOR_CLOSE = #000000
-
+    pub COLOR_IMAGE_VIEWER_BG = #00000090
     pub COLOR_CLOSE_BG = #FFFFFF90
 
 

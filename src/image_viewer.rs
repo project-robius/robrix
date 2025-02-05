@@ -22,7 +22,7 @@ live_design! {
         flow: Overlay
         show_bg: true
         draw_bg: {
-            color: #00000080
+            color: (COLOR_IMAGE_VIEWER_BG)
         }
 
         <View> {
@@ -78,6 +78,19 @@ pub enum ImageViewerAction {
 
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        let whole_area = self.view.area();
+        let image_view_area = self.view.image(id!(image_view)).area();
+
+        // Close the image viewer once clicking the blank area (except image) in image viewer.
+        event.hits(cx, image_view_area);
+        if let Hit::FingerUp(fe) = event.hits(cx, whole_area) {
+            if fe.was_tap() {
+                // Once Clicking, we close image viewer.
+                self.close(cx);
+                self.clear_image(cx);
+            }
+        }
+
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
@@ -161,7 +174,7 @@ impl ImageViewer {
             let image_view = self.view.image(id!(image_view));
 
             if let Err(e) = utils::load_png_or_jpg(&image_view, cx, &image_data) {
-                log!("Error to load image: {e}");
+                log!("Error loading image: {e}");
             } else {
                 self.view.redraw(cx);
             }

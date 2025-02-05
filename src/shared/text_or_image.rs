@@ -36,7 +36,7 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fill,
@@ -45,7 +45,6 @@ live_design! {
         }
     }
 }
-
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
