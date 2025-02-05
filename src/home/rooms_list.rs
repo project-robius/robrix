@@ -51,14 +51,6 @@ live_design! {
         }
     }
 
-    RoomsOrPeopleLabel = <Label> {
-        text: "[Rooms or People holder]"
-        draw_text: {
-            color: #x0
-            text_style: <TITLE_TEXT>{}
-        }
-    }
-
     pub RoomsList = {{RoomsList}} {
         width: Fill, height: Fill
         flow: Down
@@ -71,7 +63,6 @@ live_design! {
             flow: Down, spacing: 0.0
 
             blank = <Blank> {}
-            rooms_or_people_label = <RoomsOrPeopleLabel> {}
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
             status_label = <StatusLabel> {}
@@ -79,18 +70,6 @@ live_design! {
                 width: Fill,
                 height: 100.0,
             }
-        }
-        header_template: <Label> {
-            width: Fill,
-            height: Fit,
-            align: {x: 0.0, y: 0.5},
-            padding: {left: 5.0}
-            draw_text: {
-                wrap: Word,
-                color: (MESSAGE_TEXT_COLOR),
-                text_style: <TITLE_TEXT>{},
-            }
-            text: "Rooms"
         }
     }
 }
@@ -687,16 +666,10 @@ impl Widget for RoomsList {
             self.current_active_room_index = None;
         }
 
-        let header = WidgetRef::new_from_ptr(cx, self.header_template).as_label();
-
         let count = self.displayed_rooms.len();
 
         let status_label_id = count;
 
-        // We put non-direct rooms at the beginning of the list.
-        // If we put direct rooms at the beginning, `draw_header_status` here should be `HaveDrawnPeople`.
-        let mut draw_header_status = DrawRoomListHeader::HaveNotDrawnRoom;
-        // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = list_item.as_portal_list();
@@ -731,30 +704,6 @@ impl Widget for RoomsList {
                     // Pass the room info down to the RoomPreview widget via Scope.
                     scope = Scope::with_props(&*room_info);
 
-
-                    // This match block is: we find a suitable place to draw headers.
-                    //
-                    // We first draw the header for non-direct rooms.
-                    // And following, all the non-direct rooms will be drawn.
-                    // We draw the header for direct rooms after all the non-direct rooms are drawn.
-                    // Finally, we draw the direct rooms.
-                    match draw_header_status {
-                        DrawRoomListHeader::HaveNotDrawnPeople => {
-                            if room_info.is_direct {
-                                header.set_text(cx, "People");
-                                header.draw_all(cx, &mut scope);
-                                draw_header_status = DrawRoomListHeader::Done;
-                            }
-                        }
-                        DrawRoomListHeader::HaveNotDrawnRoom => {
-                            if !room_info.is_direct {
-                                header.set_text(cx, "Rooms");
-                                header.draw_all(cx, &mut scope);
-                                draw_header_status = DrawRoomListHeader::HaveNotDrawnPeople
-                            }
-                        }
-                        DrawRoomListHeader::Done => { }
-                    }
                     item
                 }
                 // Draw the status label as the bottom entry.
