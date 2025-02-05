@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
@@ -311,12 +313,19 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
+            if let Some(ref dock_state) = self.app_state.rooms_panel.dock {
+                let dock = self.ui.dock(id!(dock));
+                let Some(mut dock) = dock.borrow_mut() else {return };
+                println!("window_geom_change_event {:?}", dock_state);
+                
+                dock.load_state(cx, dock_state.clone());
+            }
         }
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
-
+        
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
@@ -372,9 +381,12 @@ pub struct AppState {
     pub window_geom: Option<event::WindowGeom>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct RoomsPanelState {
     pub selected_room: Option<SelectedRoom>,
+    pub open_rooms: HashMap<LiveId, SelectedRoom>,
+    pub room_order: Vec<SelectedRoom>,
+    pub dock: Option<HashMap<LiveId, DockItem>>,
 }
 
 /// Represents a room currently or previously selected by the user.
