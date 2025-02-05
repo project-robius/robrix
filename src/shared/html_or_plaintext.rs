@@ -1,7 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedUserId}, OwnedServerName};
+use matrix_sdk::{ruma::matrix_uri::MatrixId, OwnedServerName};
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -20,21 +20,23 @@ live_design! {
     // HTML_TEXT_HEIGHT_FACTOR = 1.1
 
     pub BaseLinkPill = <RoundedView> {
+        visible: false,
         width: Fit, height: Fit,
         align: {x: 0.5, y: 0.5},
         padding: {left: 4.0, right: 4.0, top: 2.0, bottom: 2.0},
         spacing: 5.0,
+        show_bg: true,
+        draw_bg: {
+            color: #000,
+            radius: 6.
+        }
         avatar = <Avatar> {
             height: 20.0, width: 20.0,
             text_view = { text = { draw_text: {
                 text_style: <TITLE_TEXT>{ font_size: 10.0 }
             }}}
         }
-        show_bg: true,
-        draw_bg: {
-            color: #000,
-            radius: 6.
-        }
+
         title = <Label> {
             draw_text: {
                 wrap: Word,
@@ -44,16 +46,20 @@ live_design! {
         }
     }
 
-    pub MatrixLinkPill = {{MatrixLinkPill}}<BaseLinkPill> { }
+    pub MatrixLinkPill = {{MatrixLinkPill}}<BaseLinkPill> {}
 
     pub RobrixHtmlLink = {{RobrixHtmlLink}} {
         width: Fit, height: Fit,
         align: {x: 0., y: 0.}
 
-        // link = <HtmlLink> { }
-        matrix_link = <MatrixLinkPill> {}
-    }
+        link = <HtmlLink> {
+            hover_color: #21b070,
+            grab_key_focus: false,
+            padding: {left: 1.0, right: 1.5}
+        }
 
+        matrix_link = <MatrixLinkPill> { }
+    }
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
     pub MatrixHtmlSpan = {{MatrixHtmlSpan}} {
@@ -271,6 +277,111 @@ impl MatrixLinkPillRef {
     pub fn set_matrix_link_info(&self, matrix_id: MatrixId, via: Vec<OwnedServerName>) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_matrix_link_info(matrix_id, via);
+        }
+    }
+}
+#[derive(Debug, Clone, DefaultNone)]
+pub enum RobrixHtmlLinkAction {
+    Clicked {
+        url: String,
+        key_modifiers: KeyModifiers
+    },
+    ClickedMatrixLink{
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>,
+        key_modifiers: KeyModifiers
+    },
+    None
+}
+
+#[derive(Live, Widget)]
+struct RobrixHtmlLink {
+    #[deref] view: View,
+
+    #[live] pub text: ArcStringMut,
+    #[live] pub url: String,
+}
+
+impl LiveHook for RobrixHtmlLink {
+    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
+        match apply.from {
+            ApplyFrom::NewFromDoc { .. } => {
+                let scope = apply.scope.as_ref().unwrap();
+                let doc = scope.props.get::<HtmlDoc>().unwrap();
+                let mut walker = doc.new_walker_with_index(scope.index + 1);
+
+                if let Some((lc, attr)) = walker.while_attr_lc() {
+                    match lc {
+                        live_id!(href)=> {
+                            self.url = attr.into()
+                        }
+                        _=>()
+                    }
+                }
+            }
+            _ => ()
+        }
+    }
+}
+
+impl Widget for RobrixHtmlLink {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        let link = self.view.html_link(id!(link));
+        link.set_text(cx, &self.url);
+        log!("drawing robrix html link");
+        log!("url: {}", self.url);
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+#[derive(Live, LiveHook, Widget)]
+struct MatrixLinkPill {
+    #[deref] view: View,
+
+    #[rust] matrix_id: Option<MatrixId>,
+    #[rust] via: Vec<OwnedServerName>,
+}
+
+impl Widget for MatrixLinkPill {
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if !self.visible {
+            return DrawStep::done();
+        }
+        log!("drawing matrix link pill");
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl MatrixLinkPill {
+    pub fn set_matrix_id(&mut self, matrix_id: MatrixId) {
+        self.matrix_id = Some(matrix_id);
+    }
+
+    pub fn set_via(&mut self, via: Vec<OwnedServerName>) {
+        self.via = via;
+    }
+}
+
+impl MatrixLinkPillRef {
+    pub fn show_pill(&self, cx: &mut Cx) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.visible = true;
+            inner.redraw(cx);
+        }
+    }
+
+    pub fn set_matrix_id(&self, matrix_id: MatrixId) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_matrix_id(matrix_id);
+        }
+    }
+
+    pub fn set_via(&self, via: Vec<OwnedServerName>) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_via(via);
         }
     }
 }
