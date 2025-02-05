@@ -19,7 +19,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
     pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
-    pub UNREAD_DEFAULT_COLOR = #d8d8d8;
+    pub UNREAD_DEFAULT_COLOR = #AAA;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -44,10 +44,8 @@ live_design! {
 
     MessagePreview = <View> {
         width: Fill, height: Fit
-        flow: Down, spacing: 5.
 
         latest_message = <HtmlOrPlaintext> {
-            padding: {top: 3.0}
             html_view = { html = {
                 font_size: 9.3,
                 draw_normal:      { text_style: { font_size: 9.3 } },
@@ -66,7 +64,8 @@ live_design! {
     }
 
     RoomPreviewContent = {{RoomPreviewContent}} {
-        flow: Right, spacing: 10., padding: 10.
+        flow: Right,
+        spacing: 10., padding: 10.
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
@@ -102,34 +101,53 @@ live_design! {
     }
 
     UnreadBadge = <View> {
-        width: 16.0, height: 16.0
-        show_bg: true
-        align: { x: 0.5, y: 0.5 }
-        draw_bg: {
-            instance highlight: 0.0,
-            instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
-            instance default_color: (UNREAD_DEFAULT_COLOR),
-            fn pixel(self) -> vec4 {
-                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                let c = self.rect_size * 0.5;
-                sdf.circle(c.x, c.x, c.x)
-                sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
-                return sdf.result
+        width: 30, height: 20,
+        align: {
+            x: 0.5,
+            y: 0.5
+        }
+        visible: false,
+        flow: Overlay,
+        rounded_label = <View> {
+            width: Fill,
+            height: Fill,
+            show_bg: true,
+            draw_bg: {
+                instance highlight: 0.0,
+                instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
+                instance default_color: (UNREAD_DEFAULT_COLOR),
+                instance radius: 4.0
+                // Adjust this border_width to larger value to make oval smaller 
+                instance border_width: 2.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        self.border_width,
+                        1.0,
+                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.y - 2.0,
+                        max(1.0, self.radius)
+                    )
+                    sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
+                    return sdf.result;
+                }
             }
         }
-        unread_message_count = <Label> {
-            text: "?"
-            draw_text:{
-                color: #FFF
-                text_style: <TIMESTAMP_TEXT_STYLE>{
-                    font_size: 7.5
-                },
+        // Label that displays the unread message count
+        unread_messages_count = <Label> {
+            width: Fit,
+            height: Fit,
+            text: "",
+            draw_text: {
+                color: #ffffff,
+                text_style: {font_size: 8.0},
             }
         }
     }
 
     pub RoomPreview = {{RoomPreview}} {
         flow: Down, height: Fit
+        cursor: Default,
 
         // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
         // (and its layout) based on the available space in the sidebar.
@@ -155,23 +173,28 @@ live_design! {
                 unread_badge = <UnreadBadge> {}
             }
             FullPreview = <RoomPreviewContent> {
+                padding: 10
                 avatar = <Avatar> {}
                 <View> {
-                    flow: Right
+                    flow: Down
                     width: Fill, height: 56
-                    align: { x: 0.5, y: 0.5 }
-                    left = <View> {
-                        width: Fill, height: Fill,
-                        flow: Down,
+                    align: { x: 0.0, y: 0.0 }
+                    top = <View> {
+                        width: Fill, height: Fit,
+                        spacing: 5,
+                        flow: Right,
                         room_name = <RoomName> {}
-                        preview = <MessagePreview> {}
+                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
+                        timestamp = <Timestamp> { margin: { top: 1.3 } }
                     }
-                    right = <View> {
-                        width: Fit, height: Fill,
-                        flow: Down,
-                        timestamp = <Timestamp> {}
+                    bottom = <View> {
+                        width: Fill, height: Fill,
+                        spacing: 5,
+                        margin: { top: 7. }
+                        flow: Right,
+                        preview = <MessagePreview> {}
                         <View> {
-                            width: Fill, height: Fill
+                            width: Fit, height: Fit
                             align: { x: 1.0 }
                             unread_badge = <UnreadBadge> {
                                 margin: { top: 5. } // Align the badge with the timestamp, same as the message preview's margin top.
@@ -217,8 +240,13 @@ impl Widget for RoomPreview {
             Hit::FingerDown(_fe) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) => {
-                if fe.was_tap() {
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() => {
+                // This logic is taken from FingerUpEvent::was_tap(), but we ignore
+                // the time check because we want to allow for slower taps or long presses.
+                // All we do here is check that the finger hasn't moved too much (more than 3 pixels)
+                // since the start of the gesture (the FingerDown hit), because that would mean
+                // the user is trying to scroll rather than wanting to select a room.
+                if (fe.abs_start - fe.abs).length() < 3.0 {
                     cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
                 }
             }
@@ -282,27 +310,45 @@ impl Widget for RoomPreviewContent {
             }
 
             let unread_badge = self.view(id!(unread_badge)); 
-            // Helper function to format the unread count, display "99+" if greater than 99
-            fn format_unread_count(count: u64) -> String {
-                if count > 99 {
-                    "99+".to_string()
+            // Helper function to format the rounded rectangle.
+            //
+            // The rounded rectangle needs to be wider for longer text.
+            // It also adds a plus sign at the end if the unread count is greater than 99. 
+            fn format_border_and_truncation(count: u64) -> (f64, &'static str) {
+                let (border_size, plus_sign) = if count > 99 {
+                    (0.0, "+")
+                } else if count > 9 {
+                    (2.0, "")
                 } else {
-                    count.to_string()
-                }
+                    (5.0, "")
+                };
+                (border_size, plus_sign)
             }
             if room_info.num_unread_mentions > 0 {
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_mentions);
                 // If there are unread mentions, show red badge and the number of unread mentions
-                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 1.0 }});
                 unread_badge
-                    .label(id!(unread_message_count))
-                    .set_text(cx, &format_unread_count(room_info.num_unread_mentions));
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_mentions, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 1.0
+                    }
+                });
                 unread_badge.set_visible(cx, true);
             } else if room_info.num_unread_messages > 0 {
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_messages);
                 // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
-                unread_badge.apply_over(cx, live!{ draw_bg: { highlight: 0.0 }});
                 unread_badge
-                    .label(id!(unread_message_count))
-                    .set_text(cx, &format_unread_count(room_info.num_unread_messages));
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_messages, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 0.0
+                    }
+                });
                 unread_badge.set_visible(cx, true);
             } else {
                 // If there are no unread mentions and no unread messages, hide the badge
