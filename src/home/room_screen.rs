@@ -3547,13 +3547,10 @@ fn populate_image_message_content(
 
     match image_info_source {
         Some((image_info, original_source)) => {
-            let mut is_large = true;
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
             let media_source = image_info
                 .and_then(|image_info| image_info.thumbnail_source)
-                .unwrap_or_else(||{
-                    is_large = false;
-                    original_source.clone()});
+                .unwrap_or(original_source.clone());
             fetch_and_show_media_source(cx, media_source);
 
             if let MediaSource::Plain(mxc_uri) = original_source {
