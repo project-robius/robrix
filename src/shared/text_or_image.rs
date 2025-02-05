@@ -39,8 +39,8 @@ live_design! {
             cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
-                width: Fill, height: Fill,
-                fit: Size,
+                width: Fill, height: Fit,
+                fit: Smallest,
             }
         }
     }
