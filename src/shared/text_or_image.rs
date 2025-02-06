@@ -37,8 +37,8 @@ live_design! {
             cursor: Default, // Use `Hand` once we support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
-                width: Fill, height: Fit,
-                fit: Smallest,
+                width: Fill, height: Fill,
+                fit: Size,
             }
         }
     }
