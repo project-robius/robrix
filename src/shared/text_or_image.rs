@@ -44,6 +44,13 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum TextOrImageAction {
+    Post(WidgetUid, f64),
+    ImageFitSize,
+    ImageFitSmallest,
+    None,
+}
 
 /// A view that holds an image or text content, and can switch between the two.
 ///

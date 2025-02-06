@@ -1,0 +1,995 @@
+src/app.rs:184:9 - App::handle_startup(): app_data_dir: "/home/lym/.local/share/robrix"
+src/app.rs:188:9 - App::handle_startup(): starting matrix sdk loop
+src/sliding_sync.rs:388:5 - Started async_worker task.
+src/sliding_sync.rs:1190:5 - Most recent user ID: Some("@demolemon:matrix.org")
+src/sliding_sync.rs:1194:5 - CLI parsing succeeded? false. CLI has valid UN+PW? false
+src/sliding_sync.rs:1202:5 - Waiting for login? false
+src/sliding_sync.rs:1211:9 - Trying to restore session for user: Some("@demolemon:matrix.org")
+src/persistent_state.rs:101:5 - Loading previous session file for @demolemon:matrix.org...: '/home/lym/.local/share/robrix/demolemon_matrix.org/persistent_state/session'
+src/persistent_state.rs:116:5 - Loaded session file for @demolemon:matrix.org. Trying to connect to homeserver (https://matrix-client.matrix.org/)...
+[2m2025-02-06T01:12:22.206771Z[0m [32m INFO[0m [1mbuild[0m[1m{[0m[3mhomeserver[0m[2m=[0mServerNameOrHomeserverUrl("https://matrix-client.matrix.org/")[1m}[0m[2m:[0m [2mmatrix_sdk::client::builder[0m[2m:[0m selected sliding sync version [3mversion[0m[2m=[0mNative
+src/persistent_state.rs:132:5 - Authenticating previous login session for @demolemon:matrix.org...
+[2m2025-02-06T01:12:22.267261Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::backups[0m[2m:[0m Setting up secret listeners and trying to resume backups
+src/verification.rs:25:5 - Initial verification state is Unknown
+src/sliding_sync.rs:1626:5 - Initial ignored-user list is: []
+[2m2025-02-06T01:12:22.268972Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Setting up account data listeners and trying to setup recovery
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/app.rs:195:17 - Received LoginAction::LoginSuccess, hiding login view.
+src/sliding_sync.rs:1662:5 - Initial sync service state is Idle
+src/sliding_sync.rs:1678:5 - Initial room list loading state is Loaded { maximum_number_of_rooms: Some(11) }
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Running
+[2m2025-02-06T01:12:22.283347Z[0m [32m INFO[0m [1mnext_sync_with_lock[0m[2m:[0m[1msync_once[0m[2m:[0m [2mmatrix_sdk::sliding_sync[0m[2m:[0m Marking all tracked users as dirty
+src/sliding_sync.rs:1681:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(11) }
+[2m2025-02-06T01:12:22.348443Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!iYnZafYUoXkeVPOSQh:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.348912Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!iYnZafYUoXkeVPOSQh:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !iYnZafYUoXkeVPOSQh:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 11 items for room !iYnZafYUoXkeVPOSQh:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !iYnZafYUoXkeVPOSQh:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.424914Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!BHcierreUuwCMxVqOf:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.425289Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!BHcierreUuwCMxVqOf:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !BHcierreUuwCMxVqOf:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 10 items for room !BHcierreUuwCMxVqOf:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !BHcierreUuwCMxVqOf:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.497888Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!moVNEIUPxJZpxRHDUv:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.498360Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!moVNEIUPxJZpxRHDUv:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !moVNEIUPxJZpxRHDUv:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 11 items for room !moVNEIUPxJZpxRHDUv:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !moVNEIUPxJZpxRHDUv:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.527434Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!MzKbWjifQZZoIBHjCX:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.527863Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!MzKbWjifQZZoIBHjCX:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !MzKbWjifQZZoIBHjCX:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 3 items for room !MzKbWjifQZZoIBHjCX:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !MzKbWjifQZZoIBHjCX:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.579098Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!nCULugmcNjxWftdWKg:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.579534Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!nCULugmcNjxWftdWKg:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !nCULugmcNjxWftdWKg:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 9 items for room !nCULugmcNjxWftdWKg:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !nCULugmcNjxWftdWKg:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.625818Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!eMbtejjAApVrUTLFyB:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.626191Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!eMbtejjAApVrUTLFyB:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !eMbtejjAApVrUTLFyB:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 10 items for room !eMbtejjAApVrUTLFyB:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !eMbtejjAApVrUTLFyB:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 11 updates to the list of all rooms
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !iYnZafYUoXkeVPOSQh:matrix.org...
+[2m2025-02-06T01:12:22.668325Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Recovery state changed from Unknown to Incomplete
+src/verification.rs:28:13 - Received a verification state update: Unverified
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !BHcierreUuwCMxVqOf:matrix.org...
+[2m2025-02-06T01:12:22.681996Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!veagCdDBjKrMsOCzrq:privacytools.io[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.682345Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!veagCdDBjKrMsOCzrq:privacytools.io" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !veagCdDBjKrMsOCzrq:privacytools.io...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 14 items for room !veagCdDBjKrMsOCzrq:privacytools.io.
+src/sliding_sync.rs:1592:5 - Adding new room !veagCdDBjKrMsOCzrq:privacytools.io to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !moVNEIUPxJZpxRHDUv:matrix.org...
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org...
+[2m2025-02-06T01:12:22.721529Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ZJEzvNtzSGkPSynJpH:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.722053Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ZJEzvNtzSGkPSynJpH:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !ZJEzvNtzSGkPSynJpH:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 14 items for room !ZJEzvNtzSGkPSynJpH:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !ZJEzvNtzSGkPSynJpH:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !nCULugmcNjxWftdWKg:matrix.org...
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !eMbtejjAApVrUTLFyB:matrix.org...
+[2m2025-02-06T01:12:22.754795Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!ugrySPqOXlcmORZIwY:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.755166Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+[2m2025-02-06T01:12:22.764188Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"Fb3z4bsEqlOP1zptAC4oYYcohzmmevg5saAj7NAmY/w" [3mevent_id[0m[2m=[0m"$zvoxVs_cZU2v3MZy49OswxL-sBYAooFW1fqytA6CTY8"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$zvoxVs_cZU2v3MZy49OswxL-sBYAooFW1fqytA6CTY8" [3morigin_server_ts[0m[2m=[0m"2024-12-27T09:58:55.761Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"Fb3z4bsEqlOP1zptAC4oYYcohzmmevg5saAj7NAmY/w" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:22.773866Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mevent_id[0m[2m=[0m"$6oZANyY0TCQ4btosWSmzovwwZk3aQb7drYeAa4TiQP0"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$6oZANyY0TCQ4btosWSmzovwwZk3aQb7drYeAa4TiQP0" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:00:17.966Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:22.782859Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mevent_id[0m[2m=[0m"$PRR9Cvz1GKaRR9sDRrWac3PglNOfvigckaDPLcC_KCE"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$PRR9Cvz1GKaRR9sDRrWac3PglNOfvigckaDPLcC_KCE" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:04:32.899Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:22.791258Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"+4zeLQVxVXREmZG9mHF2rdSeMy+P39TnIdd3Y32yrBE" [3mevent_id[0m[2m=[0m"$WrLC6uWcYUfDto1nMzRMKE-Avzm7ExRUx_VVjwDMegg"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$WrLC6uWcYUfDto1nMzRMKE-Avzm7ExRUx_VVjwDMegg" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:13:55.662Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:edovrwKptvEQGGLXGs1IleJukotZxNo+gpk9gJ+uySg" [3msession_id[0m[2m=[0m"+4zeLQVxVXREmZG9mHF2rdSeMy+P39TnIdd3Y32yrBE" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 13 items for room !ugrySPqOXlcmORZIwY:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !ugrySPqOXlcmORZIwY:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.801320Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!cGyiuCNphlCyGxDYcZ:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.802133Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!cGyiuCNphlCyGxDYcZ:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !cGyiuCNphlCyGxDYcZ:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 0 items for room !cGyiuCNphlCyGxDYcZ:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !cGyiuCNphlCyGxDYcZ:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-02-06T01:12:22.840482Z[0m [32m INFO[0m [1msending_task[0m[1m{[0m[3mroom_id[0m[2m=[0m!vVLSRWycKVfdPUWXxI:matrix.org[1m}[0m[2m:[0m [2mmatrix_sdk::send_queue[0m[2m:[0m spawned the sending task
+[2m2025-02-06T01:12:22.840743Z[0m [32m INFO[0m [1mlocal_echo_handler[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3mfocus[0m[2m=[0m"live"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::builder[0m[2m:[0m spawned the local echo handler!
+[2m2025-02-06T01:12:22.849290Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"g+WkIWRTpGQnvcj/N9YmeK9nBcybPyvfU5L/NgI7G9o" [3mevent_id[0m[2m=[0m"$HKYEB8IRQhDvljIjD4BnzmDL-XhHcpldMV7QhVSRa-M"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$HKYEB8IRQhDvljIjD4BnzmDL-XhHcpldMV7QhVSRa-M" [3morigin_server_ts[0m[2m=[0m"2024-10-07T11:25:21.208Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:5aZTCU65HZ7j+znjd3YRvozWB3qpkq4G3ifUSGdNGQU" [3msession_id[0m[2m=[0m"g+WkIWRTpGQnvcj/N9YmeK9nBcybPyvfU5L/NgI7G9o" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:22.853027Z[0m [32m INFO[0m [1mbuild[0m[1m{[0m[3mhomeserver[0m[2m=[0mServerNameOrHomeserverUrl("https://matrix-client.matrix.org/")[1m}[0m[2m:[0m [2mmatrix_sdk::client::builder[0m[2m:[0m selected sliding sync version [3mversion[0m[2m=[0mNative
+[2m2025-02-06T01:12:22.860360Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"LNHthkmg0Ab40t0jU5a2Mvyn9WwCMNtgCurIj4Q63aM" [3mevent_id[0m[2m=[0m"$B8ou8qdmvk2Bcd7_B5fYwdGSDBQpFcad_2wr10wyMfA"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$B8ou8qdmvk2Bcd7_B5fYwdGSDBQpFcad_2wr10wyMfA" [3morigin_server_ts[0m[2m=[0m"2024-10-13T02:01:10.047Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:O68EcJ4rBhpomGmkPU8U8NOWbjlO0MgdOQvNoMUjKGs" [3msession_id[0m[2m=[0m"LNHthkmg0Ab40t0jU5a2Mvyn9WwCMNtgCurIj4Q63aM" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/sliding_sync.rs:1762:5 - Starting timeline subscriber for room !vVLSRWycKVfdPUWXxI:matrix.org...
+src/sliding_sync.rs:1764:5 - Received initial timeline update of 16 items for room !vVLSRWycKVfdPUWXxI:matrix.org.
+src/sliding_sync.rs:1592:5 - Adding new room !vVLSRWycKVfdPUWXxI:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 6 updates to the list of all rooms
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !veagCdDBjKrMsOCzrq:privacytools.io...
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !ZJEzvNtzSGkPSynJpH:matrix.org...
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/home/rooms_list.rs:572:17 - RoomsList: processed 3 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 6 updates to the list of all rooms
+src/verification.rs:28:13 - Received a verification state update: Unverified
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+[2m2025-02-06T01:12:23.622280Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org, hit start of timeline? no
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 4 updates to the list of all rooms
+[2m2025-02-06T01:12:24.068090Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !eMbtejjAApVrUTLFyB:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !nCULugmcNjxWftdWKg:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !moVNEIUPxJZpxRHDUv:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !BHcierreUuwCMxVqOf:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !iYnZafYUoXkeVPOSQh:matrix.org, hit start of timeline? no
+[2m2025-02-06T01:12:27.319503Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$WrLC6uWcYUfDto1nMzRMKE-Avzm7ExRUx_VVjwDMegg" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:13:55.662Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:edovrwKptvEQGGLXGs1IleJukotZxNo+gpk9gJ+uySg" [3msession_id[0m[2m=[0m"+4zeLQVxVXREmZG9mHF2rdSeMy+P39TnIdd3Y32yrBE" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:27.334873Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$PRR9Cvz1GKaRR9sDRrWac3PglNOfvigckaDPLcC_KCE" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:04:32.899Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:27.350591Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$6oZANyY0TCQ4btosWSmzovwwZk3aQb7drYeAa4TiQP0" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:00:17.966Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:27.361970Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$zvoxVs_cZU2v3MZy49OswxL-sBYAooFW1fqytA6CTY8" [3morigin_server_ts[0m[2m=[0m"2024-12-27T09:58:55.761Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"Fb3z4bsEqlOP1zptAC4oYYcohzmmevg5saAj7NAmY/w" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !ugrySPqOXlcmORZIwY:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !ZJEzvNtzSGkPSynJpH:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !veagCdDBjKrMsOCzrq:privacytools.io, hit start of timeline? no
+src/home/room_screen.rs:2301:13 - Sending a first-time backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org
+src/home/room_screen.rs:1563:25 - !!! Couldn't find new event with matching ID for ANY event currently visible in the portal list
+src/sliding_sync.rs:493:21 - Sending fetch room members request for room !MzKbWjifQZZoIBHjCX:matrix.org...
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org...
+src/sliding_sync.rs:734:29 - Received own user read receipt: Receipt { ts: Some(2025-02-04T14:07:38.957), thread: Unthreaded } "$HFCctC1vdrSFLJ2vS3ZptnkH1PJ9tCD0QacGqEnmB_0"
+src/sliding_sync.rs:495:21 - Completed fetch room members request for room !MzKbWjifQZZoIBHjCX:matrix.org.
+src/sliding_sync.rs:890:29 - Successfully fetched power levels for room !MzKbWjifQZZoIBHjCX:matrix.org.
+src/home/rooms_list.rs:572:17 - RoomsList: processed 8 updates to the list of all rooms
+src/home/room_screen.rs:1700:21 - Timeline::handle_event(): media fetched for room !MzKbWjifQZZoIBHjCX:matrix.org
+src/home/room_screen.rs:1700:21 - Timeline::handle_event(): media fetched for room !MzKbWjifQZZoIBHjCX:matrix.org
+src/home/room_screen.rs:1700:21 - Timeline::handle_event(): media fetched for room !MzKbWjifQZZoIBHjCX:matrix.org
+src/home/room_screen.rs:1700:21 - Timeline::handle_event(): media fetched for room !MzKbWjifQZZoIBHjCX:matrix.org
+src/home/room_screen.rs:1700:21 - Timeline::handle_event(): media fetched for room !MzKbWjifQZZoIBHjCX:matrix.org
+src/sliding_sync.rs:837:37 - Already sent read receipt to room !MzKbWjifQZZoIBHjCX:matrix.org for event $7jG8eJ129RP3FW-6SrcirAEEP1F_6rPcxTk9ACLYycg
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org, hit start of timeline? no
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/room_screen.rs:2825:17 - Found matching event ID $Em8zEdmIhJ7dhnyoumZOikAmoGUsJiIi06YyE_FmL38 at index 109 in new items list, corresponding to current item index 49 at pos offset -41.31199956258138
+src/home/room_screen.rs:1549:29 - Timeline::handle_event(): jumping view from event index 49 to new index 109, scroll -41.31199956258138, event ID $Em8zEdmIhJ7dhnyoumZOikAmoGUsJiIi06YyE_FmL38
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !cGyiuCNphlCyGxDYcZ:matrix.org...
+src/sliding_sync.rs:415:21 - Starting backwards pagination request for room !vVLSRWycKVfdPUWXxI:matrix.org...
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840877899120)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840877899120)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840880448752)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !cGyiuCNphlCyGxDYcZ:matrix.org, hit start of timeline? no
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840882367296)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840882230416)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840882367296)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840882230416)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840882367296)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.447747Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$B8ou8qdmvk2Bcd7_B5fYwdGSDBQpFcad_2wr10wyMfA" [3morigin_server_ts[0m[2m=[0m"2024-10-13T02:01:10.047Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:O68EcJ4rBhpomGmkPU8U8NOWbjlO0MgdOQvNoMUjKGs" [3msession_id[0m[2m=[0m"LNHthkmg0Ab40t0jU5a2Mvyn9WwCMNtgCurIj4Q63aM" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.464018Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$HKYEB8IRQhDvljIjD4BnzmDL-XhHcpldMV7QhVSRa-M" [3morigin_server_ts[0m[2m=[0m"2024-10-07T11:25:21.208Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:5aZTCU65HZ7j+znjd3YRvozWB3qpkq4G3ifUSGdNGQU" [3msession_id[0m[2m=[0m"g+WkIWRTpGQnvcj/N9YmeK9nBcybPyvfU5L/NgI7G9o" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.475087Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$dqmlMTRXLhneeS7W_9sLKAwBI42UkBeC5Xgj-zVRv5g" [3morigin_server_ts[0m[2m=[0m"2024-10-07T05:17:55.139Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m15[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.485979Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$nXntWh-5BQ4e8PGeCaFG0CWL3XuVjSAcLHRUgP8mqs4" [3morigin_server_ts[0m[2m=[0m"2024-10-07T05:14:15.152Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:bL+iE4J14LiR4YgtLnRNkMQI/5gudrRlxfmmDgoiGFc" [3msession_id[0m[2m=[0m"I9NEzZUsqDCthLlR1fRj/QBP01dHX6zJDWV/FbVisB8" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.505055Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$Zk9Ru1R9R98PBOmr8ayMsk8qES87lYIWMWYlqYxK4xk" [3morigin_server_ts[0m[2m=[0m"2024-10-07T02:44:48.721Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:wZVXHZKrmt33qGsX63Av2xI/JFx1bcOS2dqIcw7uGVE" [3msession_id[0m[2m=[0m"9j5UkjluGI807H9xZv67Lr5qTxLPDDACPv35jB++nnE" [3mmessage_index[0m[2m=[0m3[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.522891Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$Dt5Mu084sNvpfQzsZujwwVcO2Z2ZRwJ7NaZbhpgDCtQ" [3morigin_server_ts[0m[2m=[0m"2024-10-06T16:31:16.129Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:bL+iE4J14LiR4YgtLnRNkMQI/5gudrRlxfmmDgoiGFc" [3msession_id[0m[2m=[0m"I9NEzZUsqDCthLlR1fRj/QBP01dHX6zJDWV/FbVisB8" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.532023Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$YDiOCFNekVMKrKqKK49ERE6nU8qX8cLdYjF98sP6rcQ" [3morigin_server_ts[0m[2m=[0m"2024-10-06T16:10:16.607Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:wZVXHZKrmt33qGsX63Av2xI/JFx1bcOS2dqIcw7uGVE" [3msession_id[0m[2m=[0m"9j5UkjluGI807H9xZv67Lr5qTxLPDDACPv35jB++nnE" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.550352Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$_T1TJe5RJPFYDbcbJhYPvgf3QukLfmQJYQUnNm71YDg" [3morigin_server_ts[0m[2m=[0m"2024-10-06T15:50:14.140Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:vxNidNk6RfxEtCSapuSmXnoASujj0+ivqQPXjAYaFhA" [3msession_id[0m[2m=[0m"So6yjTWtj7Vum67zuy5OmEPnL8dn2jCF8pke4F8q9bc" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.568510Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$H1zMdOPvgNchychNZI2QZsUEVTnjTU88WrN-ZfKbinU" [3morigin_server_ts[0m[2m=[0m"2024-10-06T15:40:10.602Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:vxNidNk6RfxEtCSapuSmXnoASujj0+ivqQPXjAYaFhA" [3msession_id[0m[2m=[0m"So6yjTWtj7Vum67zuy5OmEPnL8dn2jCF8pke4F8q9bc" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.585246Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$2mNLdYjHNdy7lkw4QBLE1ix1_xhcU0A8blvRGqx9XbM" [3morigin_server_ts[0m[2m=[0m"2024-10-06T14:23:53.072Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m14[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.599430Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$1QTfEjmtFmntUJS4D6TKPSaaLi333Bpgaf4g7Cp6980" [3morigin_server_ts[0m[2m=[0m"2024-10-06T14:18:11.001Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m13[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.617700Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$ioJlXq9bLXo9MGFyRcmYwGYuA_jsAF6GXReTiPONWiU" [3morigin_server_ts[0m[2m=[0m"2024-10-05T07:14:20.519Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m8[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.635082Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$oW9NChORvjn5XgG-hmqAFC49yfdK4uDndp_Scrj8474" [3morigin_server_ts[0m[2m=[0m"2024-10-05T07:11:57.516Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m6[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+[2m2025-02-06T01:12:34.653708Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$xepl_6XCcKa2nYtlVoj0VU5-bgjAhxPL3RWXTjqvDfk" [3morigin_server_ts[0m[2m=[0m"2024-10-05T06:52:50.493Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m5[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.672075Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$RMZTWP3_fzm48tfz8rsJRw4eaoIaBjLwF1HkQOoqT5s" [3morigin_server_ts[0m[2m=[0m"2024-10-05T06:52:47.431Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m4[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.689051Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$JV8HpscovGnryGyITdXEj2foX9lEnlVh4gutpZC9rsk" [3morigin_server_ts[0m[2m=[0m"2024-10-05T03:38:19.043Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m3[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.706548Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$pat6_cJf_hZrkQ2lGlEolUE4XiLTyog699TmkMQCh_c" [3morigin_server_ts[0m[2m=[0m"2024-10-05T03:38:01.002Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.724671Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$k4xTVH0vXSyFEXgOLatv3NEHXlQFmBjoZe-jCMl9ezg" [3morigin_server_ts[0m[2m=[0m"2024-10-04T07:04:56.065Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ZpyriYGpLc4rpaz/remahZc502DFJNxtLSMI36nL/z0" [3msession_id[0m[2m=[0m"+e5iVj4/nzQ/tDxQ8+whChxs/mvPilxuzCTMKX7zOkU" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.742184Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$xbqml9pSNjdkbxaozgV2QTovYUJJI4Nk8UU5iB3j1JM" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:54:20.969Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:wZVXHZKrmt33qGsX63Av2xI/JFx1bcOS2dqIcw7uGVE" [3msession_id[0m[2m=[0m"9j5UkjluGI807H9xZv67Lr5qTxLPDDACPv35jB++nnE" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.760700Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$CUF38Uqa9EdpsDT_cpnAOBkMa89hh8z4HBZgzSfNd-k" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:53:57.205Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.777836Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$u4gRscyKN18OCWzNBOhe_fgvieTNgYrJHLAoTI9lmTU" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:42:38.737Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m12[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.795422Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$VqHEMH5zCmX2zmqDiFl_U_iZCizvo6p12IgiOkWDRF4" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:42:37.786Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m11[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.814459Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$uVJtpquur5Yd8-IAKkg95tuReBc-ke08zWYFsVV8cX0" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:36:42.179Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m10[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.831645Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$cBykXBMNT2ywKGV40gV08hNTz_aRpQbkdwiSzbqkE5A" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:36:41.400Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m9[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.842623Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$iu4ZIidhssTAsApg85_WOa9iGqi0D3Xdv-1HJJ0djJY" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:36:21.448Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m8[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.851583Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$LK8zlBqCI791TwBpASeC7gHzW3XKuw9F_SQtbWi2yKc" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:36:20.657Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m7[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.860999Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$ZAMtMsk21jAiUPGiHiQtO4E3nXdCbV2YT_LXch1k4Vo" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:29:44.067Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m6[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.870446Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$mN6Mnwceuw6OFj5mEal-CSTcFxV08RWKaXg6zJOqMRE" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:23:28.619Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m5[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.879145Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$jXfTSVljnUKx_4kGPo2EhwxAD7dss8-liZwdI-Zv3T8" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:17:13.352Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m4[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:12:34.887883Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$O7DjgqiVfIvjiZXT5fQsaUN4xWJSaJH3GVKuMHeUvh4" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:09:47.160Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.897027Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$gTS5Xm3WhDNvBPZw3EfdwGd7_4MMtZG8am88e7l5p0A" [3morigin_server_ts[0m[2m=[0m"2024-10-04T06:08:38.495Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m3[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.905851Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$H0Ns4HQfQOv3Rbi3iHKA68qU8B6w4WYOx-g2iD9g-1Y" [3morigin_server_ts[0m[2m=[0m"2024-10-01T16:30:48.817Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.914428Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$ufd87q_PCEFF84oo_5avwmVEr3BboPjjB8o5Ov-tB9Y" [3morigin_server_ts[0m[2m=[0m"2024-10-01T16:30:27.950Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:wZVXHZKrmt33qGsX63Av2xI/JFx1bcOS2dqIcw7uGVE" [3msession_id[0m[2m=[0m"9j5UkjluGI807H9xZv67Lr5qTxLPDDACPv35jB++nnE" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.923568Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$5holrQjj9JRrh_Dy2ACDOQF4Me3u9Ro2dPdjiQKivB8" [3morigin_server_ts[0m[2m=[0m"2024-10-01T16:26:11.286Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-02-06T01:12:34.932558Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mlive_paginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mrun_backwards[0m[1m{[0m[3mbatch_size[0m[2m=[0m50[1m}[0m[2m:[0m[1mmessages[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3moptions[0m[2m=[0mMessagesOptions { dir: Backward, limit: 50 }[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$qVwvW8yWNADlVlZV40Pif-lH1-A2ClgGlNyv2Ua8GlQ" [3morigin_server_ts[0m[2m=[0m"2024-10-01T16:26:09.327Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/sliding_sync.rs:427:29 - Completed backwards pagination request for room !vVLSRWycKVfdPUWXxI:matrix.org, hit start of timeline? no
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/sliding_sync.rs:1681:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(11) }
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:13:22.265775Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:13:52.781465Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+/home/lym/.cargo/git/checkouts/makepad-b7233cffc1e4fd87/c6d7ee6/platform/src/live_cx.rs:210:29 - Live reloading application: src/shared/text_or_image.rs
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:14:51.903731Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:15:22.375001Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:15:52.881643Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+/home/lym/.cargo/git/checkouts/makepad-b7233cffc1e4fd87/c6d7ee6/platform/src/live_cx.rs:210:29 - Live reloading application: src/home/room_screen.rs
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:16:23.244562Z[0m [31mERROR[0m [2mmatrix_sdk_ui::sync_service[0m[2m:[0m Error while processing encryption in sync service: Something wrong happened in sliding sync: error sending request for url (https://matrix-client.matrix.org/_matrix/client/unstable/org.matrix.simplified_msc3575/sync?pos=0%2Fs5625519428_757284974_1789442_3405131889_3751688752_263997306_1447853734_11081233840_0_426655&timeout=30000)
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Error
+src/sliding_sync.rs:1667:17 - Restarting sync service due to error.
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Running
+[2m2025-02-06T01:16:54.027781Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:17:24.503156Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:17:55.050877Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:18:25.558107Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:18:56.072623Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:19:26.590752Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:19:57.067822Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:20:27.625847Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:20:58.105798Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:21:28.646611Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:21:59.140413Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:22:29.672807Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:23:00.176859Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:23:30.694283Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:24:01.222510Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:24:32.445873Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:25:03.478872Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:25:33.986803Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:26:04.502470Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:26:34.972369Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:27:05.461101Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:27:35.946005Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:28:06.444803Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:28:36.919969Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:29:07.400238Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:29:38.004044Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:30:08.475041Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:30:39.024101Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:31:09.551525Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:31:40.032849Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:32:10.584854Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:32:41.150979Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:33:11.672032Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:33:42.222494Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:34:12.694200Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:34:43.258608Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:35:13.761590Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:35:44.384981Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:36:14.907296Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:36:45.425867Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:37:15.943406Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:37:46.796118Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:38:17.322878Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:38:47.990585Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:39:18.518390Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:39:49.062286Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:40:19.641011Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:40:50.770019Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:41:21.307167Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:41:51.844532Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:42:22.529910Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:42:53.069258Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:43:23.655585Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:43:54.183985Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:44:24.671992Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:44:30.517652Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:45:20.168183Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:45:52.111808Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:46:22.636391Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:46:54.288693Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:47:25.359874Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:48:09.732465Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:48:40.230859Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+[2m2025-02-06T01:48:59.122173Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T01:49:29.542482Z[0m [31mERROR[0m [2mmatrix_sdk_ui::sync_service[0m[2m:[0m Error while processing room list in sync service: error sending request for url (https://matrix-client.matrix.org/_matrix/client/unstable/org.matrix.simplified_msc3575/sync?pos=27220414%2Fs5625565758_757284974_1864934_3405167378_3751732021_263997597_1447863154_11081241147_0_426666&timeout=30000)
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Error
+src/sliding_sync.rs:1667:17 - Restarting sync service due to error.
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Running
+[2m2025-02-06T01:49:29.597054Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:50:01.083221Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:50:32.915797Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:51:03.396956Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:51:34.128424Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:52:05.947072Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:52:36.827888Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:53:09.128217Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:53:44.257512Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:54:00.560914Z[0m [31mERROR[0m [2mmatrix_sdk_ui::sync_service[0m[2m:[0m Error while processing room list in sync service: error sending request for url (https://matrix-client.matrix.org/_matrix/client/unstable/org.matrix.simplified_msc3575/sync?pos=27220414%2Fs5625565758_757284974_1864934_3405167378_3751732021_263997597_1447863154_11081241147_0_426666&timeout=30000)
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Error
+src/sliding_sync.rs:1667:17 - Restarting sync service due to error.
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Running
+[2m2025-02-06T01:54:32.678764Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:55:03.494095Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:55:34.252793Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:56:04.868373Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:56:35.447305Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:57:16.865972Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:57:53.666517Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:58:24.147796Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:58:54.667347Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:59:26.075231Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T01:59:56.582737Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:00:05.814676Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:00:38.753349Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:00:55.884906Z[0m [31mERROR[0m [2mmatrix_sdk_ui::sync_service[0m[2m:[0m Error while processing room list in sync service: error sending request for url (https://matrix-client.matrix.org/_matrix/client/unstable/org.matrix.simplified_msc3575/sync?pos=27220414%2Fs5625565758_757284974_1864934_3405167378_3751732021_263997597_1447863154_11081241147_0_426666&timeout=30000)
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Error
+src/sliding_sync.rs:1667:17 - Restarting sync service due to error.
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Running
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T02:01:26.969257Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:01:57.583240Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:02:32.608580Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:03:03.157581Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:03:33.748264Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:04:04.280918Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:04:34.875414Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:05:05.411026Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:05:35.947258Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:06:06.525002Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:06:37.058152Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:07:07.620353Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:07:38.150625Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:08:08.697616Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:08:39.309851Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:09:09.861511Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:09:40.443232Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:10:10.957371Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:10:41.476384Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:11:11.972850Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:11:42.533691Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:12:13.327439Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:12:43.817751Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:13:14.290496Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:13:49.684826Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:14:20.377254Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:14:51.222144Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:15:21.841191Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:15:52.306171Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:16:22.872847Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:16:53.484809Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:17:24.204630Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:17:54.678126Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:18:25.656336Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:18:56.288652Z[0m [31mERROR[0m [2mmatrix_sdk_ui::sync_service[0m[2m:[0m Error while processing encryption in sync service: Something wrong happened in sliding sync: error sending request for url (https://matrix-client.matrix.org/_matrix/client/unstable/org.matrix.simplified_msc3575/sync?pos=0%2Fs5625578604_757284974_1885768_3405177238_3751743252_263997673_1447865759_11081243338_0_426670&timeout=30000)
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Error
+src/sliding_sync.rs:1667:17 - Restarting sync service due to error.
+src/sliding_sync.rs:1665:13 - Received a sync service state update: Running
+[2m2025-02-06T02:19:27.887275Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:19:58.871750Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:20:29.430933Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:21:00.024259Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:21:30.619219Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:22:01.299069Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:22:31.951331Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:23:03.871375Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:23:34.776401Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:24:05.458579Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:24:36.185110Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:25:06.808932Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:25:37.529986Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:26:08.123961Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:26:39.155402Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:27:09.895218Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:27:41.668975Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:28:12.347160Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:28:43.439020Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:29:14.400255Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:29:45.006206Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:30:15.537996Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:30:47.266780Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:31:18.386815Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:31:48.918964Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:32:19.469333Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:32:50.024610Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:33:20.576093Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:33:51.260506Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:34:21.821992Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:34:52.391238Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:35:22.971203Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:35:53.476285Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:36:24.030188Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:36:54.572476Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:37:25.155344Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:37:55.660757Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:38:26.284544Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:38:56.746638Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:39:27.292067Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:39:57.937021Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:40:28.415205Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:40:58.983215Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:41:29.523366Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:42:00.192941Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:42:30.972836Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:43:01.628264Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:43:32.871958Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:44:03.553509Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:44:35.048349Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:45:05.971830Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:45:26.899506Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T02:45:57.667116Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:46:28.681385Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:46:49.185619Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T02:47:20.481866Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:47:50.981276Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:48:21.755790Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:48:27.332493Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T02:48:58.332565Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:49:28.895053Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:49:59.557132Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:50:30.310590Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:51:00.877239Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:51:31.531480Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:52:02.148984Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:52:33.106896Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:53:03.718602Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:53:37.683521Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:54:08.924881Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:54:40.570305Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:55:11.367029Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:55:41.925966Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:56:12.658266Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:56:43.245876Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:57:13.943451Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:57:44.843139Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:58:15.484879Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:58:46.688282Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:59:18.764061Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T02:59:49.542780Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:00:20.922810Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:00:52.439921Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:09.903128Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:01:12.598099Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:22.550344Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:23.082010Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:32.710547Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:33.253918Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:42.815584Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:43.423876Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:01:53.469469Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:02:03.607378Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:02:13.657785Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:02:44.191657Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:03:14.682571Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:03:45.511495Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:03:51.976471Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:04:22.474448Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:04:53.007566Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:05:23.649333Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:05:54.160402Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:06:24.717703Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:06:55.290494Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:07:25.888217Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:07:56.452180Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:08:26.982089Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:08:33.924222Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:08:51.083269Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:09:21.613466Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:09:32.287618Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:10:02.774856Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:10:33.322338Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:11:03.943050Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:11:34.673675Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:12:05.183190Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:12:35.797831Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:13:05.180493Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+[2m2025-02-06T03:13:14.849149Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:13:35.083222Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:13:46.653938Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:14:17.151098Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:14:47.763296Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:15:04.138720Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:15:34.661671Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:16:05.157535Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:16:35.637663Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:16:58.397043Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:17:28.874898Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:17:53.515211Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840879125152)
+src/shared/text_or_image.rs:82:17 - width: 640, image_uid: WidgetUid(94840883253872)
+src/shared/text_or_image.rs:82:17 - width: 39, image_uid: WidgetUid(94840883202672)
+[2m2025-02-06T03:18:23.971790Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:18:54.429593Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:19:24.909313Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:19:55.462019Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:20:25.917546Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:20:56.485880Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:21:26.998334Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-02-06T03:21:57.521025Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
