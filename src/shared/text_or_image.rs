@@ -63,6 +63,7 @@ pub struct TextOrImage {
     #[rust] status: TextOrImageStatus,
     // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
+    #[rust(false)] posted: bool,
 }
 
 impl Widget for TextOrImage {
@@ -71,6 +72,20 @@ impl Widget for TextOrImage {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        if let TextOrImageStatus::Image = self.status {
+            if !self.posted {
+                let image = self.view.image(id!(image_view.image));
+                image.draw_all(cx, scope);
+                let width = image.area().rect(cx).size.x;
+                let image_uid = image.widget_uid();
+
+                log!("width: {}, image_uid: {:?}", width, image_uid);
+                Cx::post_action(TextOrImageAction::Post(image_uid, width));
+                return DrawStep::done();
+            }
+        } else {
+            self.posted = true;
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
