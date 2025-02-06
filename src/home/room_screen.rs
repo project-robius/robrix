@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -1002,6 +1002,7 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    #[rust] image_uid_width_map: HashMap<WidgetUid, f64>
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1100,6 +1101,10 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             for action in actions {
+                if let Some(TextOrImageAction::Post(image_uid, image_width)) = action.downcast_ref() {
+                    self.image_uid_width_map.insert(*image_uid, *image_width);
+                }
+
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -1466,6 +1471,30 @@ impl Widget for RoomScreen {
                 item.draw_all(cx, &mut Scope::empty());
             }
         }
+        let room_screen_width = self.view.area().rect(cx).size.x;
+        let width = room_screen_width - 200.;
+        let range = width - 10. .. width + 10.;
+
+        self.image_uid_width_map
+            .iter()
+            .for_each(|(image_uid, image_width)|{
+                let image = WidgetRef::empty().uid_to_widget(*image_uid).as_image();
+                if range.contains(image_width) {
+                    log!("Smallest");
+                    image.apply_over(cx, live! {
+                        fit: Smallest
+                    });
+                } else {
+                    log!("Size");
+                    image.apply_over(cx, live! {
+                        fit: Size
+                    });
+                }
+                image.redraw(cx);
+            });
+
+
+        log!("room_screen_width: {}", room_screen_width);
 
         DrawStep::done()
     }
@@ -4316,7 +4345,7 @@ impl Widget for Message {
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,
