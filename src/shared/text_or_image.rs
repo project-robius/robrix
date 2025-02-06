@@ -61,7 +61,6 @@ pub enum TextOrImageAction {
 pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
-    // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
     #[rust(false)] posted: bool,
 }
