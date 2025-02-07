@@ -23,15 +23,48 @@ use tokio::{
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, io::Read, ops::Not, path:: Path, sync::{Arc, Mutex, OnceLock}};
 use std::io;
+
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    app_data_dir,
+    avatar_cache::AvatarUpdate,
+    card_cache::{
+        CardCacheEntry,
+        LinkPreviewCard,
+    },
+    event_preview::text_preview_of_timeline_item,
+    home::{
+        room_screen::TimelineUpdate,
+        rooms_list::{
+            self,
+            enqueue_rooms_list_update,
+            RoomPreviewAvatar,
+            RoomsListEntry,
+            RoomsListUpdate
+        }
+    },
+    login::login_screen::LoginAction,
+    media_cache::MediaCacheEntry,
+    persistent_state::{
+        self, ClientSessionPersisted
+    },
+    profile::{
         user_profile::{AvatarState, UserProfile},
-        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+        user_profile_cache::{
+            enqueue_user_profile_update,
+            UserProfileUpdate
+        },
+    },
+    shared::{
+        jump_to_bottom_button::UnreadMessageCount,
+        popup_list::enqueue_popup_notification
+    },
+    utils::{
+        fetch_link_preview_card,
+        MEDIA_THUMBNAIL_FORMAT,
+    },
+    verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -254,6 +287,15 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+/// The function signature for the callback that gets invoked when LinkPreviewCard data is fetched.
+pub type OnLinkPreviewCardFetchedFn = fn(
+    &Mutex<CardCacheEntry>,
+    String,
+    matrix_sdk::Result<LinkPreviewCard>,
+    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+);
+
+
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
@@ -319,6 +361,14 @@ pub enum MatrixRequest {
         media_request: MediaRequest,
         on_fetched: OnMediaFetchedFn,
         destination: Arc<Mutex<MediaCacheEntry>>,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Request to fetch a url and return the card style preview data
+    FetchLinkPreviewCard {
+        url: String,
+        raw_content: String,
+        on_fetched: OnLinkPreviewCardFetchedFn,
+        destination: Arc<Mutex<CardCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -817,6 +867,29 @@ async fn async_worker(
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
+                });
+            }
+
+            MatrixRequest::FetchLinkPreviewCard { url, raw_content, on_fetched, destination, update_sender } => {
+
+                log!("!!!!!!!Start Fetch link preview card for {}", url);   
+                let _fetch_task = Handle::current().spawn(async move {
+
+                    let (url, title, description, image) = fetch_link_preview_card(url).await;
+
+                    let image = if let Some(m) = image {
+                        Some(Arc::from(m))
+                    } else {
+                        None
+                    };
+
+                    on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                        url,
+                        title,
+                        description,
+                        raw_content,
+                        image,
+                    }), update_sender);
                 });
             }
 

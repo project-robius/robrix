@@ -2,6 +2,9 @@
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 
+use crate::card_cache::LinkPreviewCard;
+use crate::utils;
+
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
 
@@ -57,8 +60,80 @@ live_design! {
             grab_key_focus: false,
             padding: {left: 1.0, right: 1.5},
         }
-
+        
         body: "[<i> HTML message placeholder</i>]",
+    }
+
+    pub Card = <View> {
+        width: Fill,
+        height: Fixed(180),
+        padding: 0.0,
+        margin: 0.0,
+        flow: Down,
+        draw_bg: {
+            color: #fff
+            instance border_radius: 4.0
+            fn pixel(self) -> vec4 {
+                let border_color = #d4;
+                let border_width = 1;
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let body = #fff
+
+                sdf.box(
+                    1.,
+                    1.,
+                    self.rect_size.x - 2.0,
+                    self.rect_size.y - 2.0,
+                    self.border_radius
+                )
+                sdf.fill_keep(body)
+
+                sdf.stroke(
+                    border_color,
+                    border_width
+                )
+                return sdf.result
+            }
+        }
+
+        raw_content = <MessageHtml> {
+            width: Fill,
+            height: Fit,
+            margin: 10,
+            body: "content",
+        }
+
+        <View> {
+            image = <Image> {
+                margin: 5,
+                width: Fixed(128),
+                height: Fixed(64),
+            },
+
+            <View> {
+                flow: Down,
+                width: Fixed(320),
+                margin: 5,
+                padding: 0,
+                title = <MessageHtml> {
+                    width: Fill,
+                    height: Fit,
+                    body: "title",
+                }
+
+                description = <Label> {
+                    width: Fill,
+                    height: Fit,
+                    draw_text: {
+                        color: #000000,
+                        text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10 },
+                        wrap: Word
+                    },
+                    text: "description",
+                }
+            }
+        }
+
     }
 
     // A view container that displays either plaintext s(a simple `Label`)
@@ -93,6 +168,12 @@ live_design! {
             visible: false,
             width: Fill, height: Fit, // see above comment
             html = <MessageHtml> {}
+        }
+
+        card_view = <View> {
+            visible: false,
+            width: Fill, height: Fit, // see above comment
+            card = <Card> {}
         }
     }
 }
@@ -332,6 +413,7 @@ impl HtmlOrPlaintext {
     /// Sets the plaintext content and makes it visible, hiding the rich HTML content.
     pub fn show_plaintext<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
         self.view(id!(html_view)).set_visible(cx, false);
+        self.view(id!(card_view)).set_visible(cx, false);
         self.view(id!(plaintext_view)).set_visible(cx, true);
         self.label(id!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
     }
@@ -341,6 +423,47 @@ impl HtmlOrPlaintext {
         self.html(id!(html_view.html)).set_text(cx, html_body.as_ref());
         self.view(id!(html_view)).set_visible(cx, true);
         self.view(id!(plaintext_view)).set_visible(cx, false);
+        self.view(id!(card_view)).set_visible(cx, false);
+    }
+
+    /// Sets the link preview card content, making the preview card visible and the plaintext invisible.
+    pub fn show_card(
+        &mut self, cx: &mut Cx, card: &LinkPreviewCard
+    )
+    {
+        let raw_content = utils::linkify(
+                utils::trim_start_html_whitespace(&card.raw_content),
+                true,
+            );
+        if card.title.is_none(){
+            self.show_html(cx, &raw_content);
+            return
+        }
+
+
+        self.view(id!(html_view)).set_visible(cx, false);
+        self.view(id!(plaintext_view)).set_visible(cx, false);
+
+        self.view(id!(card_view)).set_visible(cx, true);
+
+        self.view(id!(card_view.card.raw_content)).set_text(cx, raw_content.as_ref());
+
+        let title = format!("<a href='{}'>{}</a>", card.url, card.title.as_ref().unwrap());
+        self.view(id!(card_view.card.title)).set_text(cx, title.as_ref());
+
+        if let Some(d) = card.description.as_ref(){
+            self.view(id!(card_view.card.description)).set_text(cx, &d);
+        };
+
+        let image_ref = self.view.image(id!(card_view.card.image));
+        match &card.image {
+            Some(image_data) => {
+                let _ = utils::load_png_or_jpg(&image_ref, cx, &image_data)
+                        .map(|()| image_ref.size_in_pixels(cx).unwrap_or_default());
+            },
+            None => {}
+        };
+
     }
 }
 
@@ -356,6 +479,18 @@ impl HtmlOrPlaintextRef {
     pub fn show_html<T: AsRef<str>>(&self, cx: &mut Cx, html_body: T) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_html(cx, html_body);
+        }
+    }
+
+    /// See [`cardOrPlaintext::show_card()`].
+    pub fn show_card(
+        &mut self, cx: &mut Cx, card: &LinkPreviewCard
+    ) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.show_card(
+                cx,
+                card
+            );
         }
     }
 }

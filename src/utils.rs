@@ -1,7 +1,19 @@
-use std::{borrow::Cow, time::SystemTime};
-
+use base64;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
+use imghdr;
+use reqwest;
+use scraper;
+use link_preview::{
+    og::{find_og_tag, OpenGraphTag},
+    twitter::{find_twitter_tag, TwitterMetaTag},
+    schema::{find_schema_tag, SchemaMetaTag},
+    html::first_inner_html,
+};
+
+use std::{
+    borrow::Cow, time::SystemTime
+};
+use makepad_widgets::{error, log, image_cache::ImageError, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
 
 
@@ -380,6 +392,119 @@ where
     };
     result
 }
+
+fn find_html_description(html: &scraper::html::Html) -> Option<String> {
+    
+    if let Some(description) = find_og_tag(html, OpenGraphTag::Description) {
+        return Some(description);
+    }
+
+    if let Some(description) = find_twitter_tag(html, TwitterMetaTag::Description) {
+        return Some(description);
+    }
+
+    if let Some(description) = find_schema_tag(html, SchemaMetaTag::Description) {
+        return Some(description);
+    }
+
+    let selector = scraper::Selector::parse(
+        "meta[property='og:description'],meta[name='description'],meta[name='Description']"
+    ).unwrap();
+
+    if let Some(element) = html.select(&selector).next() {
+        if let Some(value) = element.value().attr("content") {
+            return Some(value.to_string());
+        }
+    }
+
+    if let Some(description) = first_inner_html(html, "p") {
+        return Some(description);
+    }
+    return None
+}
+
+/// fetch LinkPreviewCard data by give url
+pub async fn fetch_link_preview_card(url: String) -> (String, Option<String>, Option<String>, Option<Vec<u8>>) {
+
+    let res = if let Ok(r) = reqwest::get(url.clone()).await {
+        r.bytes().await.unwrap()
+    } else {
+        log!("url error: {}", url);
+        return (url, None, None, None)
+    };
+
+    let (title, description, image_list, domain) = {
+
+        let Ok(document) = link_preview::html_from_bytes(&res)
+        else {
+            log!("data error: {}", url);
+            return (url, None, None, None)
+        };
+
+        let lp = link_preview::LinkPreview::from(&document);
+
+        let description = find_html_description(&document);
+
+        let mut image_list:Vec<String> = Vec::new();
+        if let Some(img) = lp.image_url_str() {
+            image_list.push(img)
+        };
+
+        let image_selector_meta = scraper::Selector::parse(
+            "meta[itemprop='image']"
+        ).unwrap();
+        if let Some(img) = document.select(&image_selector_meta).next() {
+            image_list.push(img.value().attr("content").unwrap().to_string());
+        };
+
+        let image_selector = scraper::Selector::parse(
+            "img[src]"
+        ).unwrap();
+        for x in document.select(&image_selector){
+            let i = x.value().attr("src").unwrap().to_string();
+            image_list.push(i);
+        };
+
+        let title = lp.title;
+        let domain = lp.domain.unwrap_or(url.clone());
+
+        (title, description, image_list, domain)
+    };
+
+    log!("card view {:?}, {:?}, {:?}", url, title, description);
+    for mut url in image_list {
+        if !url.starts_with("http") {
+            let _data = if let Some(d) = url.split_once("base64,") {
+                d.1.to_string()
+            } else {
+                url.clone()
+            };
+
+            let data = base64::decode(&_data);
+
+            if data.is_ok() {
+                return (url, title, description, Some(data.unwrap()))
+            };
+            url = format!("{}/{}", domain, url)
+        };
+        if let Ok(r) = reqwest::get(url.clone()).await {
+            let data = r.bytes().await.unwrap().to_vec();
+            match imghdr::from_bytes(data.clone()) {
+                Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => {
+                    return (url, title, description, Some(data))
+                },
+                _ => {
+                    continue
+                }
+            }
+        } else {
+            continue
+        };
+    };
+    return (url, None, None, None)
+}
+
+
 
 #[cfg(test)]
 mod tests_human_readable_list {

@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, card_cache::{CardCache, CardCacheEntry},event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1549,6 +1549,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Message(message),
                                     prev_event,
                                     &mut tl_state.media_cache,
+                                    &mut tl_state.card_cache,
                                     item_drawn_status,
                                     room_screen_widget_uid,
                                 )
@@ -1564,6 +1565,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Sticker(sticker.content()),
                                     prev_event,
                                     &mut tl_state.media_cache,
+                                    &mut tl_state.card_cache,
                                     item_drawn_status,
                                     room_screen_widget_uid,
                                 )
@@ -1872,6 +1874,12 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
+                TimelineUpdate::LinkPreviewCardFetched => {
+                    log!("Timeline::handle_event(): link fetched for room {}", tl.room_id);
+                    // Here, to be most efficient, we could redraw only the card items in the timeline,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    // GUI does not immediately display the Link Preview Card after the background process obtaining the data. Instead, the page needs to be scrolled to trigger a refresh. The relevant refresh code might need to be added here.
+                }
 
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
@@ -2134,7 +2142,8 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender.clone())),
+                card_cache: CardCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2498,6 +2507,9 @@ pub enum TimelineUpdate {
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
+    /// A notice that one or more requested html data from link
+    /// that should be displayed in this timeline have now been fetched and are available.
+    LinkPreviewCardFetched,
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
         /// The list of users (their displayable name) who are currently typing in this room.
@@ -2565,6 +2577,9 @@ struct TimelineUiState {
     ///
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
+
+    /// The cache of link preview card that appear in this timeline.
+    card_cache: CardCache,
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
@@ -2837,6 +2852,7 @@ fn populate_message_view(
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
+    card_cache: &mut CardCache,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid
 ) -> (WidgetRef, ItemDrawnStatus) {
@@ -2876,12 +2892,26 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                populate_text_message_content(
-                    cx,
-                    &item.html_or_plaintext(id!(content.message)),
-                    body,
-                    formatted.as_ref(),
-                );
+                use linkify::{LinkFinder, LinkKind};
+                let mut links = LinkFinder::new().links(body);
+
+                if let Some(url) = links.find(|l| l.kind() == &LinkKind::Url) {
+                    populate_link_preview_card(
+                        cx,
+                        &mut item.html_or_plaintext(id!(content.message)),
+                        url.as_str().to_string(),
+                        body,
+                        card_cache,
+                    );
+                } else {
+                    populate_text_message_content(
+                        cx,
+                        &item.html_or_plaintext(id!(content.message)),
+                        body,
+                        formatted.as_ref(),
+                    );
+                }
+
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -3400,6 +3430,46 @@ fn populate_image_message_content(
     fully_drawn
 }
 
+/// Draws the link preview card by given link's content into the `message_content_widget`.
+///
+/// Returns whether the card was fully drawn.
+fn populate_link_preview_card(
+    cx: &mut Cx2d,
+    card_ref: &mut HtmlOrPlaintextRef,
+    url: String,
+    body: &str,
+    card_cache: &mut CardCache,
+) -> bool {
+
+    let mut fully_drawn = false;
+
+    match card_cache.try_get_card_or_fetch(url.clone(), body.to_string()) {
+        CardCacheEntry::Loaded(card) => {
+
+            card_ref.show_card(cx, &card);
+
+            // We're done drawing the card, so mark it as fully drawn.
+            fully_drawn = true;
+        },
+        CardCacheEntry::Requested => {
+            card_ref.show_plaintext(cx, format!("{body}"));
+            log!("Link Preview Card Requested: {body}; Fetching {:?}", url);
+            // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
+            fully_drawn = false;
+        },
+        CardCacheEntry::Failed => {
+            card_ref
+                .show_plaintext(cx, format!("{body}"));
+            log!("Link Preview Card Failed: {body}; Fetching {:?}", url);
+            // For now, we consider this as being "complete". In the future, we could support
+            // retrying to fetch thumbnail of the image on a user click/tap.
+            fully_drawn = true;
+        }
+    };
+
+    fully_drawn
+}
+
 
 /// Draws a file message's content into the given `message_content_widget`.
 ///
@@ -3430,6 +3500,7 @@ fn populate_file_message_content(
     );
     true
 }
+
 
 /// Draws an audio message's content into the given `message_content_widget`.
 ///
