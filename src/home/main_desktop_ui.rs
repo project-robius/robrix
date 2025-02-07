@@ -111,6 +111,26 @@ impl Widget for MainDesktopUI {
                             app_state.rooms_panel.room_order = self.room_order.clone();
                             self.app_state_checked = false;
                         }
+                        RoomsListAction::DockSave =>{
+                            let app_state = scope.data.get_mut::<AppState>().unwrap();
+
+                            let dock = self.view.dock(id!(dock));
+                            if let Some(dock_state) = dock.clone_state() {
+                                println!("save rooms_panel_dock {:?}", dock_state);
+                                app_state.rooms_panel.dock = Some(dock_state);
+                            }
+                        }
+                        RoomsListAction::DockLoad => {
+                            let app_state = scope.data.get_mut::<AppState>().unwrap();
+
+                            let dock = self.view.dock(id!(dock));
+                            if let Some(ref dock_state) = app_state.rooms_panel.dock {
+                                let Some(mut dock) = dock.borrow_mut() else {return };
+                                println!("window_geom_change_event {:?}", dock_state);
+                                
+                                dock.load_state(cx, dock_state.clone());
+                            }
+                        }
                         _ => {
                         }
                     }

@@ -244,6 +244,12 @@ impl MatchEvent for App {
                         .set_text(cx, &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
+                RoomsListAction::DockSave => {
+
+                }
+                RoomsListAction::DockLoad => {
+
+                }
                 RoomsListAction::None => { }
             }
 

@@ -140,6 +140,8 @@ pub enum RoomsListAction {
         room_id: OwnedRoomId,
         room_name: Option<String>,
     },
+    DockSave,
+    DockLoad,
     None,
 }
 
@@ -430,6 +432,8 @@ pub struct RoomsList {
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
+
+    #[rust] count: u32,
 }
 
 impl RoomsList {
@@ -687,51 +691,60 @@ impl Widget for RoomsList {
 }
 
 impl WidgetMatchEvent for RoomsList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         for action in actions {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
-                let portal_list = self.view.portal_list(id!(list));
-                if keywords.is_empty() {
-                    // Reset the displayed rooms list to show all rooms.
-                    self.display_filter = RoomDisplayFilter::default();
-                    self.displayed_rooms = self.all_rooms.keys().cloned().collect();
-                    self.update_status_rooms_count();
-                    portal_list.set_first_id_and_scroll(0, 0.0);
-                    self.redraw(cx);
-                    return;
-                }
-
-                let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                    .set_keywords(keywords.clone())
-                    .set_filter_criteria(RoomFilterCriteria::All)
-                    .build();
-                self.display_filter = filter;
-
-                let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
-                    let mut filtered_rooms: Vec<_> = self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .collect();
-
-                    filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
-
-                    filtered_rooms
-                        .into_iter()
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
+                let app_state = scope.data.get_mut::<AppState>().unwrap();
+                if self.count == 0 {
+                    cx.widget_action(self.widget_uid(), &scope.path, RoomsListAction::DockSave);
                 } else {
-                    self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
-                };
+                    cx.widget_action(self.widget_uid(), &scope.path, RoomsListAction::DockLoad);
+                }
+                println!("keyword {:?}",keywords);
+                self.count +=1;
 
-                // Update the displayed rooms list and redraw it.
-                self.displayed_rooms = new_displayed_rooms;
-                self.update_status_matching_rooms();
-                portal_list.set_first_id_and_scroll(0, 0.0);
-                self.redraw(cx);
+                // let portal_list = self.view.portal_list(id!(list));
+                // if keywords.is_empty() {
+                //     // Reset the displayed rooms list to show all rooms.
+                //     self.display_filter = RoomDisplayFilter::default();
+                //     self.displayed_rooms = self.all_rooms.keys().cloned().collect();
+                //     self.update_status_rooms_count();
+                //     portal_list.set_first_id_and_scroll(0, 0.0);
+                //     self.redraw(cx);
+                //     return;
+                // }
+
+                // let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
+                //     .set_keywords(keywords.clone())
+                //     .set_filter_criteria(RoomFilterCriteria::All)
+                //     .build();
+                // self.display_filter = filter;
+
+                // let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
+                //     let mut filtered_rooms: Vec<_> = self.all_rooms
+                //         .iter()
+                //         .filter(|(_, room)| (self.display_filter)(room))
+                //         .collect();
+
+                //     filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
+
+                //     filtered_rooms
+                //         .into_iter()
+                //         .map(|(room_id, _)| room_id.clone())
+                //         .collect()
+                // } else {
+                //     self.all_rooms
+                //         .iter()
+                //         .filter(|(_, room)| (self.display_filter)(room))
+                //         .map(|(room_id, _)| room_id.clone())
+                //         .collect()
+                // };
+
+                // // Update the displayed rooms list and redraw it.
+                // self.displayed_rooms = new_displayed_rooms;
+                // self.update_status_matching_rooms();
+                // portal_list.set_first_id_and_scroll(0, 0.0);
+                // self.redraw(cx);
             }
         }
     }
