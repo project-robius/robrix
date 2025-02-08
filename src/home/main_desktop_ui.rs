@@ -72,11 +72,6 @@ pub struct MainDesktopUI {
     #[rust]
     most_recently_selected_room: Option<SelectedRoom>,
 
-    /// Boolean to indicate if we've stored App State's Rooms Panel into Struct before drawing
-    /// 
-    /// When switching mobile view to desktop, we need to restore the rooms panel state
-    #[rust]
-    app_state_checked: bool,
     /// Boolean to indicate if we've loaded the rooms panel once in the desktop view.
     /// 
     /// When switching mobile view to desktop, we need to restore the rooms panel state.
@@ -96,16 +91,9 @@ impl Widget for MainDesktopUI {
                     match action.cast() {
                         RoomsListAction::Selected { room_index: _, room_id, room_name } => {
                             self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name }, scope);
-
-                            let app_state = scope.data.get_mut::<AppState>().unwrap();
-                            // app_state.rooms_panel.selected_room = Some(SelectedRoom { room_id: room_id.clone(), room_name: room_name.clone() });
-                            // app_state.rooms_panel.open_rooms = self.open_rooms.clone();
-                            app_state.rooms_panel.room_order = self.room_order.clone();
-                            self.app_state_checked = false;
                         }
                         RoomsListAction::None => {}
                     }
-                    
                     let mut dock_action = false;
                     match action.cast() {
                         // Whenever a tab (except for the home_tab) is pressed, notify the app state.
@@ -259,12 +247,12 @@ impl MainDesktopUI {
             // `None` will insert the tab at the end
             None,
         );
-        
+
         // if the tab was created, set the room screen and add the room to the room order
         if let Some(widget) = result {
             self.room_order.push(room.clone());
             let app_state = scope.data.get_mut::<AppState>().unwrap();
-            app_state.rooms_panel.tab_room.insert(room_id_as_live_id, SelectedRoom{
+            app_state.rooms_panel.tab_room.insert(room_id_as_live_id, SelectedRoom {
                 room_id: room.room_id.clone(),
                 room_name: room.room_name.clone(),
             });
@@ -332,5 +320,6 @@ pub enum RoomsPanelAction {
     RoomFocused(SelectedRoom),
     /// Resets the focus on the rooms panel
     FocusNone,
+    /// Load the room panel state
     DockLoad,
 }

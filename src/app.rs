@@ -372,11 +372,9 @@ pub struct AppState {
     pub window_geom: Option<event::WindowGeom>,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Default, Debug)]
 pub struct RoomsPanelState {
     pub selected_room: Option<SelectedRoom>,
-    pub open_rooms: HashMap<LiveId, SelectedRoom>,
-    pub room_order: Vec<SelectedRoom>,
     pub dock: Option<HashMap<LiveId, DockItem>>,
     pub tab_room: HashMap<LiveId, SelectedRoom>,
 }
