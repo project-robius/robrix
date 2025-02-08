@@ -223,7 +223,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
-
+           
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomsListAction::Selected { room_id, room_index: _, room_name } => {
@@ -244,12 +244,6 @@ impl MatchEvent for App {
                         .set_text(cx, &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
-                RoomsListAction::DockSave => {
-
-                }
-                RoomsListAction::DockLoad => {
-
-                }
                 RoomsListAction::None => { }
             }
 
@@ -261,8 +255,9 @@ impl MatchEvent for App {
                     self.app_state.rooms_panel.selected_room = None;
                 }
                 RoomsPanelAction::None => { }
+                _ => {}
             }
-
+            
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
@@ -317,16 +312,6 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        if let Event::WindowGeomChange(window_geom_change_event) = event {
-            self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
-            if let Some(ref dock_state) = self.app_state.rooms_panel.dock {
-                let dock = self.ui.dock(id!(dock));
-                let Some(mut dock) = dock.borrow_mut() else {return };
-                println!("window_geom_change_event {:?}", dock_state);
-                
-                dock.load_state(cx, dock_state.clone());
-            }
-        }
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
@@ -393,6 +378,7 @@ pub struct RoomsPanelState {
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     pub room_order: Vec<SelectedRoom>,
     pub dock: Option<HashMap<LiveId, DockItem>>,
+    pub tab_room: HashMap<LiveId, SelectedRoom>,
 }
 
 /// Represents a room currently or previously selected by the user.
