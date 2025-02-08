@@ -205,7 +205,7 @@ impl Widget for MainDesktopUI {
             Cx::post_action(RoomsPanelAction::DockLoad);
             self.loaded_once = true;
         }
-        
+
         self.view.draw_walk(cx, scope, walk)
     }
 }

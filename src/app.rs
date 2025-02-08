@@ -223,7 +223,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
-           
+
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
                 RoomsListAction::Selected { room_id, room_index: _, room_name } => {
@@ -257,7 +257,7 @@ impl MatchEvent for App {
                 RoomsPanelAction::None => { }
                 _ => {}
             }
-            
+
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
@@ -316,7 +316,7 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
-        
+
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
