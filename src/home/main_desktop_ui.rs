@@ -91,41 +91,7 @@ impl Widget for MainDesktopUI {
         let dock = self.view.dock(id!(dock));
         if let Event::Actions(actions) = event {
             for action in actions {
-                match action.downcast_ref() {
-                    Some(RoomsPanelAction::DockLoad) => {
-                        let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        let dock = self.view.dock(id!(dock));
-                        let selected_room = app_state.rooms_panel.selected_room.clone();
-                        let mut found_selected_room = false;
-                        if let Some(ref dock_state) = app_state.rooms_panel.dock {
-                            if let Some(mut dock) = dock.borrow_mut() {
-                                dock.load_state(cx, dock_state.clone());
-                                dock.items().iter().for_each(|(head_liveid, (_, widget))| {
-                                    if let Some(room) = app_state.rooms_panel.tab_room.get(head_liveid) {
-                                        if let Some(ref selected_room) = selected_room {
-                                            if selected_room.room_id == room.room_id {
-                                                found_selected_room = true;
-                                            }
-                                        }
-                                        widget.as_room_screen().set_displayed_room(
-                                            cx,
-                                            room.room_id.clone(),
-                                            room.room_name.clone().unwrap_or(String::from("")),
-                                        );
-                                    }
-                                });
-                            } else {
-                                return;
-                            }
-                            if let Some(ref selected_room) = selected_room {
-                                if !found_selected_room {
-                                    self.focus_or_create_tab(cx, selected_room.clone(), scope);
-                                }
-                            }
-                        }
-                    }
-                    _ => {}
-                }
+                
                 if let Some(action) = action.as_widget_action() {
                     match action.cast() {
                         RoomsListAction::Selected { room_index: _, room_id, room_name } => {
@@ -137,8 +103,7 @@ impl Widget for MainDesktopUI {
                             app_state.rooms_panel.room_order = self.room_order.clone();
                             self.app_state_checked = false;
                         }
-                        _ => {
-                        }
+                        RoomsListAction::None => {}
                     }
                     
                     let mut dock_action = false;
@@ -205,6 +170,38 @@ impl Widget for MainDesktopUI {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
                         if let Some(dock_state) = dock.clone_state() {
                             app_state.rooms_panel.dock = Some(dock_state);
+                        }
+                    }
+                    if let Some(RoomsPanelAction::DockLoad) = action.downcast_ref() {
+                        let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        let dock = self.view.dock(id!(dock));
+                        let selected_room = app_state.rooms_panel.selected_room.clone();
+                        let mut found_selected_room = false;
+                        if let Some(ref dock_state) = app_state.rooms_panel.dock {
+                            if let Some(mut dock) = dock.borrow_mut() {
+                                dock.load_state(cx, dock_state.clone());
+                                dock.items().iter().for_each(|(head_liveid, (_, widget))| {
+                                    if let Some(room) = app_state.rooms_panel.tab_room.get(head_liveid) {
+                                        if let Some(ref selected_room) = selected_room {
+                                            if selected_room.room_id == room.room_id {
+                                                found_selected_room = true;
+                                            }
+                                        }
+                                        widget.as_room_screen().set_displayed_room(
+                                            cx,
+                                            room.room_id.clone(),
+                                            room.room_name.clone().unwrap_or(String::from("")),
+                                        );
+                                    }
+                                });
+                            } else {
+                                return;
+                            }
+                            if let Some(ref selected_room) = selected_room {
+                                if !found_selected_room {
+                                    self.focus_or_create_tab(cx, selected_room.clone(), scope);
+                                }
+                            }
                         }
                     }
                 }
