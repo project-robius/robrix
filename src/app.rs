@@ -312,6 +312,9 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
+        if let Event::WindowGeomChange(window_geom_change_event) = event {
+            self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
+        }
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);

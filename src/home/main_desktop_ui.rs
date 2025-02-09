@@ -158,89 +158,6 @@ impl Widget for MainDesktopUI {
     }
 }
 
-impl MatchEvent for MainDesktopUI {
-    fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
-        let dock = self.view.dock(id!(dock));
-
-        if let Some(action) = action.as_widget_action() {
-            let mut dock_action = false;
-            // Handle Dock actions
-            match action.cast() {
-                // Whenever a tab (except for the home_tab) is pressed, notify the app state.
-                DockAction::TabWasPressed(tab_id) => {
-                    if tab_id == live_id!(home_tab) {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &HeapLiveIdPath::default(),
-                            RoomsPanelAction::FocusNone,
-                        );
-                        self.most_recently_selected_room = None;
-                    } else if let Some(selected_room) = self.open_rooms.get(&tab_id) {
-                        cx.widget_action(
-                            self.widget_uid(),
-                            &HeapLiveIdPath::default(),
-                            RoomsPanelAction::RoomFocused(selected_room.clone()),
-                        );
-                        self.most_recently_selected_room = Some(selected_room.clone());
-                    }
-                    dock_action = true;
-                }
-                DockAction::TabCloseWasPressed(tab_id) => {
-                    self.tab_to_close = Some(tab_id);
-                    self.close_tab(cx, tab_id);
-                    self.redraw(cx);
-                    dock_action = true;
-                }
-                // When dragging a tab, allow it to be dragged
-                DockAction::ShouldTabStartDrag(tab_id) => {
-                    dock.tab_start_drag(
-                        cx,
-                        tab_id,
-                        DragItem::FilePath {
-                            path: "".to_string(),
-                            internal_id: Some(tab_id),
-                        },
-                    );
-                    dock_action = true;
-                }
-                // When dragging a tab, allow it to be dragged
-                DockAction::Drag(drag_event) => {
-                    if drag_event.items.len() == 1 {
-                        dock.accept_drag(cx, drag_event, DragResponse::Move);
-                    }
-                    dock_action = true;
-                }
-                // When dropping a tab, move it to the new position
-                DockAction::Drop(drop_event) => {
-                    // from inside the dock, otherwise it's an external file
-                    if let DragItem::FilePath {
-                        internal_id: Some(internal_id),
-                        ..
-                    } = &drop_event.items[0] {
-                        dock.drop_move(cx, drop_event.abs, *internal_id);
-                    }
-                    dock_action = true;
-                }
-                _ => (),
-            }
-            if dock_action {
-                Cx::post_action(RoomsPanelAction::DockSave);
-            }
-            // Handle RoomsList actions
-            if let super::rooms_list::RoomsListAction::Selected {
-                room_id,
-                room_index: _,
-                room_name,
-            } = action.cast() {
-                // Note that this cannot be performed within draw_walk() as the draw flow prevents from
-                // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
-                // a redraw to be happening in order to draw the tab content.
-                self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name });
-            }
-        }
-    }
-}
-
 impl MainDesktopUI {
     /// Focuses on a room if it is already open, otherwise creates a new tab for the room
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
@@ -341,6 +258,89 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+    }
+}
+
+impl MatchEvent for MainDesktopUI {
+    fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
+        let dock = self.view.dock(id!(dock));
+
+        if let Some(action) = action.as_widget_action() {
+            let mut dock_action = false;
+            // Handle Dock actions
+            match action.cast() {
+                // Whenever a tab (except for the home_tab) is pressed, notify the app state.
+                DockAction::TabWasPressed(tab_id) => {
+                    if tab_id == live_id!(home_tab) {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &HeapLiveIdPath::default(),
+                            RoomsPanelAction::FocusNone,
+                        );
+                        self.most_recently_selected_room = None;
+                    } else if let Some(selected_room) = self.open_rooms.get(&tab_id) {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &HeapLiveIdPath::default(),
+                            RoomsPanelAction::RoomFocused(selected_room.clone()),
+                        );
+                        self.most_recently_selected_room = Some(selected_room.clone());
+                    }
+                    dock_action = true;
+                }
+                DockAction::TabCloseWasPressed(tab_id) => {
+                    self.tab_to_close = Some(tab_id);
+                    self.close_tab(cx, tab_id);
+                    self.redraw(cx);
+                    dock_action = true;
+                }
+                // When dragging a tab, allow it to be dragged
+                DockAction::ShouldTabStartDrag(tab_id) => {
+                    dock.tab_start_drag(
+                        cx,
+                        tab_id,
+                        DragItem::FilePath {
+                            path: "".to_string(),
+                            internal_id: Some(tab_id),
+                        },
+                    );
+                    dock_action = true;
+                }
+                // When dragging a tab, allow it to be dragged
+                DockAction::Drag(drag_event) => {
+                    if drag_event.items.len() == 1 {
+                        dock.accept_drag(cx, drag_event, DragResponse::Move);
+                    }
+                    dock_action = true;
+                }
+                // When dropping a tab, move it to the new position
+                DockAction::Drop(drop_event) => {
+                    // from inside the dock, otherwise it's an external file
+                    if let DragItem::FilePath {
+                        internal_id: Some(internal_id),
+                        ..
+                    } = &drop_event.items[0] {
+                        dock.drop_move(cx, drop_event.abs, *internal_id);
+                    }
+                    dock_action = true;
+                }
+                _ => (),
+            }
+            if dock_action {
+                Cx::post_action(RoomsPanelAction::DockSave);
+            }
+            // Handle RoomsList actions
+            if let super::rooms_list::RoomsListAction::Selected {
+                room_id,
+                room_index: _,
+                room_name,
+            } = action.cast() {
+                // Note that this cannot be performed within draw_walk() as the draw flow prevents from
+                // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
+                // a redraw to be happening in order to draw the tab content.
+                self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name });
+            }
+        }
     }
 }
 
