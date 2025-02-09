@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::app::{AppState, SelectedRoom};
 
-use super::{room_screen::RoomScreenWidgetRefExt, rooms_list::RoomsListAction};
+use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -92,11 +92,11 @@ impl Widget for MainDesktopUI {
                         let dock = self.view.dock(id!(dock));
                         let selected_room = app_state.rooms_panel.selected_room.clone();
                         let mut found_selected_room = false;
-                        if let Some(ref dock_state) = app_state.rooms_panel.dock {
+                        if let Some(ref dock_state) = app_state.rooms_panel.dock_state {
                             if let Some(mut dock) = dock.borrow_mut() {
                                 dock.load_state(cx, dock_state.clone());
                                 dock.items().iter().for_each(|(head_liveid, (_, widget))| {
-                                    if let Some(room) = app_state.rooms_panel.tab_room.get(head_liveid) {
+                                    if let Some(room) = app_state.rooms_panel.open_rooms.get(head_liveid) {
                                         if let Some(ref selected_room) = selected_room {
                                             if selected_room.room_id == room.room_id {
                                                 found_selected_room = true;
@@ -107,6 +107,7 @@ impl Widget for MainDesktopUI {
                                             room.room_id.clone(),
                                             room.room_name.clone().unwrap_or(String::from("")),
                                         );
+                                        //self.room_order.push(room.clone());
                                     }
                                 });
                             } else {
@@ -118,19 +119,25 @@ impl Widget for MainDesktopUI {
                                 }
                             }
                         }
+                        self.room_order = app_state.rooms_panel.room_order.clone();
+                        self.open_rooms = app_state.rooms_panel.open_rooms.clone();
                     }
-                    Some(RoomsPanelAction::DockSaveSelectedRoom { tab_live_id, selected_room }) => {
+                    Some(RoomsPanelAction::DockSaveSelectedRoom { ref tab_live_id, ref selected_room }) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        app_state.rooms_panel.tab_room.insert(tab_live_id.clone(), selected_room.clone());
+                        app_state.rooms_panel.open_rooms.insert(*tab_live_id, selected_room.clone());
                         if let Some(dock_state) = dock.clone_state() {
-                            app_state.rooms_panel.dock = Some(dock_state);
+                            app_state.rooms_panel.dock_state = Some(dock_state);
                         }
+                        app_state.rooms_panel.open_rooms = self.open_rooms.clone();
+                        app_state.rooms_panel.room_order = self.room_order.clone();
                     }
                     Some(RoomsPanelAction::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
                         if let Some(dock_state) = dock.clone_state() {
-                            app_state.rooms_panel.dock = Some(dock_state);
+                            app_state.rooms_panel.dock_state = Some(dock_state);
                         }
+                        app_state.rooms_panel.open_rooms = self.open_rooms.clone();
+                        app_state.rooms_panel.room_order = self.room_order.clone();
                     }
                     _ => {}
                 }
@@ -275,7 +282,6 @@ impl MainDesktopUI {
         // if the tab was created, set the room screen and add the room to the room order
         if let Some(widget) = result {
             self.room_order.push(room.clone());
-            //123
             Cx::post_action(RoomsPanelAction::DockSaveSelectedRoom {
                 tab_live_id: room_id_as_live_id,
                 selected_room: SelectedRoom {
