@@ -990,7 +990,11 @@ impl Widget for RoomScreen {
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
-                    callout_live_nodes,
+                    tooltip_pos,
+                    tooltip_width,
+                    callout_offset,
+                    callout_angle,
+                    too_close_to_bottom,
                     color,
                     reaction_data,
                 } = reaction_list.hover_in(actions) {
@@ -1001,9 +1005,14 @@ impl Widget for RoomScreen {
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
-                    for nodes in callout_live_nodes {
-                        tooltip.apply_over(cx, &nodes);
-                    }
+                    crate::shared::callout_tooltip::draw_helper(&mut tooltip, 
+                        cx, 
+                        tooltip_pos, 
+                        tooltip_width, 
+                        callout_offset, 
+                        callout_angle, 
+                        too_close_to_bottom
+                    );
                     if let Some(color) = color {
                         tooltip.apply_over(cx, live!(
                             content: {
@@ -1023,15 +1032,24 @@ impl Widget for RoomScreen {
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
-                    callout_live_nodes,
+                    tooltip_pos,
+                    tooltip_width,
+                    callout_offset,
+                    callout_angle,
+                    too_close_to_bottom,
                     color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
                     let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
-                    for nodes in callout_live_nodes {
-                        tooltip.apply_over(cx, &nodes);
-                    }
+                    crate::shared::callout_tooltip::draw_helper(&mut tooltip, 
+                        cx, 
+                        tooltip_pos, 
+                        tooltip_width, 
+                        callout_offset, 
+                        callout_angle, 
+                        too_close_to_bottom
+                    );
                     if let Some(color) = color {
                         tooltip.apply_over(cx, live!(
                             content: {
@@ -2325,8 +2343,15 @@ impl RoomScreenRef {
 pub enum RoomScreenTooltipActions {
     /// Mouse over event when the mouse is over the read receipt.
     HoverInReadReceipt {
-        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
-        callout_live_nodes: Vec<Vec<LiveNode>>,
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        // Pointed arrow position relative to the tooltip
+        ///
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        callout_angle: f64,
+        too_close_to_bottom: bool,
         /// Color of the background, default is black
         color: Option<Vec4>,
         /// Includes the list of users who have seen this event
@@ -2334,8 +2359,15 @@ pub enum RoomScreenTooltipActions {
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
-        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
-        callout_live_nodes: Vec<Vec<LiveNode>>,
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        // Pointed arrow position relative to the tooltip
+        ///
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        callout_angle: f64,
+        too_close_to_bottom: bool,
         /// Color of the background, default is black
         color: Option<Vec4>,
         /// Includes the list of users who have reacted to the emoji
@@ -4209,48 +4241,4 @@ impl MessageRef {
             inner.set_data(can_be_replied_to, item_id, replied_to_event_id, room_screen_widget_uid, mentions_user);
         };
     }
-}
-
-/// Calculates the optimal position for a tooltip based on the widget's rectangle and
-/// window geometry.
-///
-/// This function determines where to position a tooltip such that it remains
-/// visible within the window bounds. It calculates the tooltip's position and
-/// callout offset, and checks if the tooltip is too close to the right edge of
-/// the window.
-///
-/// # Arguments
-///
-/// * `widget_rect` - The rectangle of the widget the tooltip is associated with.
-/// * `window_geom` - The geometry of the window, used to ensure the tooltip fits within.
-/// * `tooltip_width` - The width of the tooltip to be positioned.
-///
-/// # Returns
-///
-/// A tuple containing:
-/// - `DVec2`: The position of the tooltip.
-/// - `f64`: The offset for the callout, relative to the tooltip.
-/// - `bool`: A flag indicating if the tooltip is too close to the right side of the window.
-pub fn room_screen_tooltip_position_helper(widget_rect: Rect, window_geom: &event::WindowGeom, tooltip_width:f64) -> (DVec2, f64, bool) {
-    let mut too_close_to_right = false;
-    if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_geom.inner_size.x {
-        too_close_to_right = true;
-    }
-    let tooltip_pos =  if too_close_to_right {
-        DVec2 {
-            x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
-            y: widget_rect.pos.y + widget_rect.size.y
-        }
-    } else {
-        DVec2 {
-            x: widget_rect.pos.x + widget_rect.size.x,
-            y: widget_rect.pos.y - 5.0
-        }
-    };
-    let callout_offset = if too_close_to_right {
-        tooltip_width - (widget_rect.size.x - 10.0) / 2.0
-    } else {
-        10.0
-    };
-    (tooltip_pos, callout_offset, too_close_to_right)
 }

@@ -169,8 +169,15 @@ live_design! {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ProfileTooltipAction {
     HoverIn {
-        /// Nodes to apply to draw the callout properly based on the widget's position and size with respect to the screen
-        callout_live_nodes: Vec<Vec<LiveNode>>,
+        tooltip_pos: DVec2,
+        tooltip_width: f64,
+        // Pointed arrow position relative to the tooltip
+        ///
+        /// It is calculated from the right corner of tooltip to position arrow
+        /// to point towards the center of the hovered widget.
+        callout_offset: f64,
+        callout_angle: f64,
+        too_close_to_bottom: bool,
         /// Color of the background
         color: Option<Vec4>,
         /// Tooltip text

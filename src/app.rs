@@ -270,11 +270,24 @@ impl MatchEvent for App {
             }
 
             match action.as_widget_action().cast() {
-                ProfileTooltipAction::HoverIn { callout_live_nodes, text , color} => {
+                ProfileTooltipAction::HoverIn {
+                    tooltip_pos,
+                    tooltip_width,
+                    callout_offset,
+                    callout_angle,
+                    too_close_to_bottom,
+                    text, 
+                    color
+                } => {
                     let mut tooltip = self.ui.tooltip(id!(profile_tooltip));
-                    for nodes in callout_live_nodes {
-                        tooltip.apply_over(cx, &nodes);
-                    }
+                    crate::shared::callout_tooltip::draw_helper(&mut tooltip, 
+                        cx, 
+                        tooltip_pos, 
+                        tooltip_width, 
+                        callout_offset, 
+                        callout_angle, 
+                        too_close_to_bottom
+                    );
                     if let Some(color) = color {
                         tooltip.apply_over(cx, live!(
                             content: {

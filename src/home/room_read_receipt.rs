@@ -97,9 +97,13 @@ impl Widget for AvatarRow {
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(_) => {
                 if let Some(read_receipts) = &self.read_receipts {
-                    let callout_live_nodes = shared::callout_tooltip::position_helper(widget_rect, window_geom.inner_size, TOOLTIP_WIDTH);
+                    let (tooltip_pos, callout_offset, callout_angle, too_close_to_bottom) = shared::callout_tooltip::position_helper2(widget_rect, window_geom.inner_size, TOOLTIP_WIDTH);
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt { 
-                        callout_live_nodes, 
+                        tooltip_pos,
+                        tooltip_width: TOOLTIP_WIDTH,
+                        callout_offset,
+                        callout_angle,
+                        too_close_to_bottom,
                         color: None, 
                         read_receipts: read_receipts.clone()
                     });

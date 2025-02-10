@@ -134,11 +134,16 @@ impl Widget for VerificationBadge {
             | Hit::FingerHoverIn(_)
             | Hit::FingerHoverOver(_) => {
                 let badge_rect = badge_area.rect(cx);
+                let (pos, callout_offset, callout_angle, too_close_to_bottom) = super::callout_tooltip::position_helper2(badge_rect, window_geom.inner_size, 200.0);
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
                     ProfileTooltipAction::HoverIn {
-                        callout_live_nodes: super::callout_tooltip::position_helper(badge_rect, window_geom.inner_size, 200.0),
+                        tooltip_pos:pos,
+                        tooltip_width: 200.0,
+                        callout_offset,
+                        callout_angle,
+                        too_close_to_bottom,
                         text: verification_state_str(self.verification_state).to_string(),
                         color: Some(verification_state_color(self.verification_state))
                     }

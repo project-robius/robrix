@@ -127,9 +127,13 @@ impl Widget for ReactionList {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
                     let widget_rect = widget_ref.area().rect(cx);
-                    let callout_live_nodes = shared::callout_tooltip::position_helper(widget_rect, window_geom.inner_size, TOOLTIP_WIDTH);
+                    let (tooltip_pos, callout_offset, callout_angle, too_close_to_bottom) = shared::callout_tooltip::position_helper2(widget_rect, window_geom.inner_size, TOOLTIP_WIDTH);
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton { 
-                        callout_live_nodes, 
+                        tooltip_pos,
+                        tooltip_width: TOOLTIP_WIDTH,
+                        callout_offset,
+                        callout_angle,
+                        too_close_to_bottom,
                         color: None, 
                         reaction_data: reaction_data.clone() 
                     });
