@@ -80,6 +80,7 @@ impl Widget for TextOrImage {
 
                 log!("width: {}, image_uid: {:?}", width, image_uid);
                 Cx::post_action(TextOrImageAction::Post(image_uid, width));
+                self.posted = true;
                 return DrawStep::done();
             }
         } else {
