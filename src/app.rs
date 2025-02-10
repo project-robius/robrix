@@ -120,6 +120,7 @@ live_design! {
                         visible: true
                         login_screen = <LoginScreen> {}
                     }
+                    profile_tooltip = <CalloutTooltip> {}
                     popup = <PopupNotification> {
                         margin: {top: 45, right: 13},
                         content: {
@@ -131,7 +132,7 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
-                    profile_tooltip = <CalloutTooltip> {}
+                    
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}

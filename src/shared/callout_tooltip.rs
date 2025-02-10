@@ -6,7 +6,7 @@ live_design! {
     use crate::shared::styles::*;
     // A tooltip that appears when hovering over certain elements in the RoomScreen,
     // such as reactions or read receipts.
-    pub CalloutTooltip = <Tooltip> {
+    pub CalloutTooltipInner = <Tooltip> {
         content: <View> {
             flow: Overlay
             width: Fit
@@ -104,9 +104,115 @@ live_design! {
             }
         }
     }
+    pub CalloutTooltip = {{CalloutTooltip}} {
+        tooltip = <CalloutTooltipInner> {
 
+        }
+    }
 }
 
+pub struct CalloutTooltipOptions{
+    pub widget_rect: Rect, 
+    pub window_size: DVec2, 
+    pub tooltip_width: f64
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct CalloutTooltip {
+    #[deref] view: View,
+}
+
+impl Widget for CalloutTooltip {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        println!("event {:?}", event);
+        self.match_event(event);
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for CalloutTooltip {
+    fn handle_actions(&mut self, _cx: &mut Cx, _e:&Actions, _scope: &mut Scope) {
+        
+    }
+}
+impl CalloutTooltip {
+    pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
+        let mut too_close_to_right = false;
+        let mut too_close_to_bottom = false;
+        const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
+        let CalloutTooltipOptions{
+            widget_rect,
+            window_size,
+            tooltip_width
+        } = options;
+        if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_size.x {
+            too_close_to_right = true;
+        }
+        if (widget_rect.pos.y + widget_rect.size.y) + TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM > window_size.y {
+            too_close_to_bottom = true;
+        }
+        let mut pos =  if too_close_to_right {
+            DVec2 {
+                x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
+                y: widget_rect.pos.y + widget_rect.size.y
+            }
+        } else {
+            DVec2 {
+                x: widget_rect.pos.x + widget_rect.size.x,
+                y: widget_rect.pos.y - 5.0
+            }
+        };
+        if too_close_to_bottom && !too_close_to_right {
+            pos.x = widget_rect.pos.x + (widget_rect.size.x - 10.0) / 2.0;
+            pos.y = widget_rect.pos.y - TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM + 10.0;
+        }
+        let callout_offset = if too_close_to_right {
+            tooltip_width - (widget_rect.size.x - 10.0) / 2.0
+        } else {
+            10.0
+        };
+        let callout_angle = match (too_close_to_right, too_close_to_bottom) {
+            (true, true) => 0.0, //point up
+            (true, false) => 0.0, // point up
+            (false, true) => 180.0, //point down
+            (false, false) => 270.0 //point left
+        };
+        let tooltip = self.view.tooltip(id!(tooltip));
+        tooltip.apply_over(cx, live!(
+            content: {
+                margin: { left: (pos.x), top: (pos.y)},
+                width: (tooltip_width),
+                height: Fit,
+                rounded_view = {
+                    height: Fit,
+                    draw_bg: {
+                        callout_offset: (callout_offset)
+                        // callout angle in clockwise direction
+                        callout_angle: (callout_angle)
+                    }
+                }
+            }
+        ));
+        if too_close_to_bottom {
+            tooltip.apply_over(cx, live!(
+                content: {
+                    height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM),
+                    width: Fill
+                    rounded_view = {
+                        height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM - 10.0),
+                    }
+                }
+            ));
+        }
+        if let Some(mut tooltip) = tooltip.borrow_mut() {
+            tooltip.set_text(cx, text);
+        };
+    }
+}
 pub const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
 
 /// Calculates the position and styling attributes for a tooltip relative to a widget, 
@@ -125,75 +231,8 @@ pub const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
 ///
 /// # Returns
 ///
-/// A vector of `LiveNode` vectors representing the tooltip's position, size, and 
-/// styling attributes to be applied.
-pub fn position_helper(widget_rect: Rect, window_size: DVec2, tooltip_width: f64) -> Vec<Vec<LiveNode>> {    
-    let mut too_close_to_right = false;
-    let mut too_close_to_bottom = false;
-    
-    if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_size.x {
-        too_close_to_right = true;
-    }
-    if (widget_rect.pos.y + widget_rect.size.y) + TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM > window_size.y {
-        too_close_to_bottom = true;
-    }
-    let mut pos =  if too_close_to_right {
-        DVec2 {
-            x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
-            y: widget_rect.pos.y + widget_rect.size.y
-        }
-    } else {
-        DVec2 {
-            x: widget_rect.pos.x + widget_rect.size.x,
-            y: widget_rect.pos.y - 5.0
-        }
-    };
-    if too_close_to_bottom && !too_close_to_right {
-        pos.x = widget_rect.pos.x + (widget_rect.size.x - 10.0) / 2.0;
-        pos.y = widget_rect.pos.y - TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM + 10.0;
-    }
-    let callout_offset = if too_close_to_right {
-        tooltip_width - (widget_rect.size.x - 10.0) / 2.0
-    } else {
-        10.0
-    };
-    let callout_angle = match (too_close_to_right, too_close_to_bottom) {
-        (true, true) => 0.0, //point up
-        (true, false) => 90.0, // it is still pointing left, as point right is not supported
-        (false, true) => 180.0, //point down
-        (false, false) => 270.0 //point left
-    };
-    let mut to_apply = vec![live!(
-        content: {
-            margin: { left: (pos.x), top: (pos.y)},
-            width: (tooltip_width),
-            height: Fit,
-            rounded_view = {
-                height: Fit,
-                draw_bg: {
-                    callout_offset: (callout_offset)
-                    // callout angle in clockwise direction
-                    callout_angle: (callout_angle)
-                }
-            }
-        }
-    ).to_vec()];
-    if too_close_to_bottom {
-        to_apply.push(live!(
-            content: {
-                height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM),
-                //width: (tooltip_width + 50.0), // Make too close to bottom tooltip wider
-                //width: Fit
-                width: Fill
-                rounded_view = {
-                    height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM - 10.0),
-                }
-            }
-        ).to_vec());
-    }
-    to_apply
-}
-pub fn position_helper2(widget_rect: Rect, window_size: DVec2, tooltip_width: f64) -> (DVec2, f64, f64, bool) {
+/// A tuple of tooltip's position, callout_offset, callout_angle and boolean for too_close_to_bottom
+pub fn position_helper(widget_rect: Rect, window_size: DVec2, tooltip_width: f64) -> (DVec2, f64, f64, bool) {
     let mut too_close_to_right = false;
     let mut too_close_to_bottom = false;
     const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
