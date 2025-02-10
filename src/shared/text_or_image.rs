@@ -34,11 +34,11 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: NotAllowed, // we don't yet support clicking on the image
+            cursor: Default, // Use `Hand` once we support clicking on the image
             width: Fill, height: Fit,
             image = <Image> {
-                width: Fill, height: Fill,
-                fit: Size,
+                width: Fill, height: Fit,
+                fit: Smallest,
             }
         }
     }

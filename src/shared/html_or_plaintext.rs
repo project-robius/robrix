@@ -48,9 +48,14 @@ live_design! {
             quote_fg_color: (MESSAGE_TEXT_COLOR)
         }
         list_item_layout: { padding: {left: 5.0, top: 1.0, bottom: 1.0}, }
-        code_layout: { padding: {left: 7.0, right: 7.0, top: 8.0, bottom: 0.0}, }
-        quote_layout: { padding: {top: 0.0, bottom: 0.0}, }
-        inline_code_padding: { left: 5.0, right: 5.0, top: 7.0, bottom: 0.0 }
+        list_item_walk: { margin: { left: 0, right: 0, top: 2, bottom: 4 } }
+        code_layout: { padding: 10.0 }
+        code_walk: { margin: { top: 10, bottom: 10, left: 0, right: 0 } }
+        quote_layout: { spacing: 0, padding: {top: 0.0, bottom: 0.0}, }
+        quote_walk: { margin: { top: 5, bottom: 5 } }
+        inline_code_padding: {top: 3, bottom: 3, left: 4, right: 4 }
+        inline_code_margin: { left: 3, right: 3, bottom: 2, top: 2 }
+
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
