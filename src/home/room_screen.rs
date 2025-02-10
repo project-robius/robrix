@@ -1023,6 +1023,10 @@ impl Widget for RoomScreen {
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
+        let template_count = portal_list.template_count();
+        log!("template_count: {template_count}");
+
+
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
