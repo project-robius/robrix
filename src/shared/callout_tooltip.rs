@@ -160,25 +160,15 @@ impl WidgetMatchEvent for CalloutTooltip {
     }
 }
 impl CalloutTooltip {
-    /// Shows a tooltip with callout pointing to it's target with the given text and options.
+    /// Shows a tooltip with the given text and options.
+    /// 
+    /// The tooltip comes with a callout pointing to it's target.
     /// 
     /// By default, the tooltip will be displayed to the widget's right.
-    /// If the widget is too close to right of the window, the tooltip 
-    /// is positioned to the bottom of the widget. If it is too close to bottom, the
+    /// 
+    /// If the widget is too close to right of the window, the tooltip is positioned to the
+    /// bottom of the widget, pointed at the center. If it is too close to bottom, the
     /// tooltip is positioned above the widget. 
-    ///
-    /// The `callout_offset` parameter is used to calculate the position of the callout
-    /// triangle. If `too_close_to_right` is true, the callout will try to point at the center 
-    /// of the mouse over area.
-    ///
-    /// The `callout_angle` parameter is used to calculate the angle of the callout
-    /// triangle. The angle is in the clockwise direction, and is calculated as
-    /// follows: if `too_close_to_right` is true, the angle is 0.0. If `too_close_to_bottom`
-    /// is true, the angle is 180.0. Otherwise, the angle is 270.0.
-    ///
-    /// The `tooltip_width` parameter is used to set the width of the tooltip. 
-    ///
-    /// The `window_size` parameter is used to get the size of the window.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let mut too_close_to_right = false;
         let mut too_close_to_bottom = false;
@@ -273,11 +263,11 @@ impl CalloutTooltip {
     }
 
     /// Shows the tooltip.
-    fn show(&self, cx: &mut Cx) {
+    pub fn show(&self, cx: &mut Cx) {
         self.view.tooltip(id!(tooltip)).show(cx);
     }
     /// Hide the tooltip.
-    fn hide(&self, cx: &mut Cx) {
+    pub fn hide(&self, cx: &mut Cx) {
         self.view.tooltip(id!(tooltip)).hide(cx);
     }
 }
