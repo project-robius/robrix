@@ -292,3 +292,18 @@ impl CalloutTooltipRef {
         }
     }
 }
+
+/// An action emitted to show or hide the `tooltip`.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum TooltipAction {
+    HoverIn {
+        widget_rect: Rect,
+        tooltip_width: f64,
+        /// Color of the background
+        color: Option<Vec4>,
+        /// Tooltip text
+        text: String,
+    },
+    HoverOut,
+    None,
+}

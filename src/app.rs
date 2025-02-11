@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -372,17 +372,3 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-/// An action emitted to show or hide the `tooltip`.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum TooltipAction {
-    HoverIn {
-        widget_rect: Rect,
-        tooltip_width: f64,
-        /// Color of the background
-        color: Option<Vec4>,
-        /// Tooltip text
-        text: String,
-    },
-    HoverOut,
-    None,
-}

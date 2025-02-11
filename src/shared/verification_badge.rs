@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
-use crate::{app::TooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
+use crate::{shared::callout_tooltip::TooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
 
 // First, define the verification icons component layout
 live_design! {
@@ -137,7 +137,7 @@ impl Widget for VerificationBadge {
                     &scope.path,
                     TooltipAction::HoverIn {
                         widget_rect: badge_rect,
-                        tooltip_width: 200.0,
+                        tooltip_width: 230.0,
                         text: verification_state_str(self.verification_state).to_string(),
                         color: Some(verification_state_color(self.verification_state))
                     }

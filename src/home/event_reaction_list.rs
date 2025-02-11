@@ -7,7 +7,7 @@ use crate::home::room_screen::RoomScreenTooltipActions;
 use indexmap::IndexMap;
 
 
-const TOOLTIP_WIDTH: f64 = 200.0;
+const TOOLTIP_WIDTH: f64 = 230.0;
 const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
 const EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
 
