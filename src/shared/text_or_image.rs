@@ -40,7 +40,7 @@ live_design! {
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Smallest,
+                fit: Size,
             }
         }
     }
@@ -55,7 +55,6 @@ live_design! {
 pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
-    // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
 }
 
@@ -64,11 +63,11 @@ impl Widget for TextOrImage {
         // We only handle events if the status is `Image`.
         if TextOrImageStatus::Image != self.status() { return };
 
-        let image_view_area = self.view.view(id!(image_view)).area();
+        let image_area = self.view.image(id!(image_view.image)).area();
 
-        match event.hits(cx, image_view_area) {
+        match event.hits(cx, image_area) {
             Hit::FingerDown(_fe) => {
-                cx.set_key_focus(image_view_area);
+                cx.set_key_focus(image_area);
             }
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
