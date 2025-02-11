@@ -21,12 +21,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::TooltipAction, avatar_cache, event_preview::{text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
+        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -57,7 +57,6 @@ live_design! {
     use crate::shared::typing_animation::TypingAnimation;
     use crate::shared::icon_button::*;
     use crate::shared::jump_to_bottom_button::*;
-    use crate::shared::callout_tooltip::CalloutTooltip;
     use crate::home::loading_pane::*;
     use crate::home::message_context_menu::*;
     use crate::home::message_context_menu::*;
@@ -864,10 +863,6 @@ live_design! {
             // The top space should be displayed as an overlay at the top of the timeline.
             top_space = <TopSpace> { }
 
-            // A tooltip that appears when hovering over certain elements in the RoomScreen,
-            // such as reactions or read receipts.
-            room_screen_tooltip = <CalloutTooltip> {}
-
             message_context_menu_modal = <Modal> {
                 align: {x: 0.0, y: 0.0}
                 bg_view: {
@@ -986,7 +981,6 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let mut tooltip = self.callout_tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
@@ -1002,14 +996,23 @@ impl Widget for RoomScreen {
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
-                    tooltip.show_with_options(cx, &tooltip_text, CalloutTooltipOptions{
-                        widget_rect,
-                        tooltip_width,
-                        color
-                    });
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            widget_rect,
+                            tooltip_width,
+                            color,
+                            text: tooltip_text
+                        }
+                    );
                 }
                 if reaction_list.hover_out(actions) {
-                    tooltip.hide(cx);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverOut
+                    );
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
@@ -1020,14 +1023,23 @@ impl Widget for RoomScreen {
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
                     let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
-                    tooltip.show_with_options(cx, &tooltip_text, CalloutTooltipOptions{
-                        widget_rect,
-                        tooltip_width,
-                        color
-                    });
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            widget_rect,
+                            tooltip_width,
+                            color,
+                            text: tooltip_text
+                        }
+                    );
                 }
                 if avatar_row_ref.hover_out(actions) {
-                    tooltip.hide(cx);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverOut
+                    );
                 }
             }   
             for action in actions {

@@ -165,21 +165,6 @@ live_design! {
     }
 }
 
-/// An action emitted to show or hide the `profile_tooltip`.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum ProfileTooltipAction {
-    HoverIn {
-        widget_rect: Rect,
-        tooltip_width: f64,
-        /// Color of the background
-        color: Option<Vec4>,
-        /// Tooltip text
-        text: String,
-    },
-    HoverOut,
-    None,
-}
-
 #[derive(Live, LiveHook, Widget)]
 pub struct Profile {
     #[deref] view: View,

@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
-use crate::{home::spaces_dock::ProfileTooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
+use crate::{app::TooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
 
 // First, define the verification icons component layout
 live_design! {
@@ -113,7 +113,6 @@ impl LiveHook for VerificationBadge {
 impl Widget for VerificationBadge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-        let Some(app_state) = scope.data.get::<crate::app::AppState>() else { return };
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
@@ -136,7 +135,7 @@ impl Widget for VerificationBadge {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::HoverIn {
+                    TooltipAction::HoverIn {
                         widget_rect: badge_rect,
                         tooltip_width: 200.0,
                         text: verification_state_str(self.verification_state).to_string(),
@@ -148,7 +147,7 @@ impl Widget for VerificationBadge {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::HoverOut,
+                    TooltipAction::HoverOut,
                 );
             }
             _ => { }

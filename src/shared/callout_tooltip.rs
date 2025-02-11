@@ -1,3 +1,7 @@
+//! A tooltip widget that a callout pointing towards the referenced widget. 
+//! 
+//! By default, the tooltip has a black background color
+
 use makepad_widgets::*;
 live_design! {
     use link::theme::*;
@@ -112,12 +116,17 @@ live_design! {
 }
 pub const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
 
+/// A struct that holds the options for a callout tooltip
 pub struct CalloutTooltipOptions{
+    /// The rect of the widget that the tooltip is pointing to
     pub widget_rect: Rect, 
+    /// Tooltip width
     pub tooltip_width: f64,
+    /// The background color of the tooltip
     pub color: Option<Vec4>
 }
 
+/// A tooltip widget that a callout pointing towards the referenced widget. 
 #[derive(Live, LiveHook, Widget)]
 pub struct CalloutTooltip {
     #[deref] view: View,
@@ -151,35 +160,29 @@ impl WidgetMatchEvent for CalloutTooltip {
     }
 }
 impl CalloutTooltip {
-    /// Shows a tooltip with the given text and options. The tooltip is positioned
-    /// above the widget that the `widget_rect` parameter refers to, unless the
-    /// tooltip would be too close to the right or bottom of the window, in which
-    /// case it is positioned differently. The `color` parameter sets the color of
-    /// the background of the tooltip, and defaults to black if `None`.
-    ///
-    /// The `too_close_to_right` and `too_close_to_bottom` flags are used to determine
-    /// how the tooltip should be positioned. If `too_close_to_right` is true, the tooltip
-    /// is positioned to the left of the widget. If `too_close_to_bottom` is true, the
-    /// tooltip is positioned above the widget. If both flags are true, the tooltip is
-    /// positioned above and to the left of the widget.
+    /// Shows a tooltip with callout pointing to it's target with the given text and options.
+    /// 
+    /// By default, the tooltip will be displayed to the widget's right.
+    /// If the widget is too close to right of the window, the tooltip 
+    /// is positioned to the bottom of the widget. If it is too close to bottom, the
+    /// tooltip is positioned above the widget. 
     ///
     /// The `callout_offset` parameter is used to calculate the position of the callout
-    /// triangle. If `too_close_to_right` is true, the callout offset is calculated as
-    /// the width of the tooltip minus the width of the widget divided by 2. If
-    /// `too_close_to_right` is false, the callout offset is simply 10.0.
+    /// triangle. If `too_close_to_right` is true, the callout will try to point at the center 
+    /// of the mouse over area.
     ///
     /// The `callout_angle` parameter is used to calculate the angle of the callout
     /// triangle. The angle is in the clockwise direction, and is calculated as
     /// follows: if `too_close_to_right` is true, the angle is 0.0. If `too_close_to_bottom`
     /// is true, the angle is 180.0. Otherwise, the angle is 270.0.
     ///
-    /// The `tooltip_width` parameter is used to set the width of the tooltip.
+    /// The `tooltip_width` parameter is used to set the width of the tooltip. 
     ///
     /// The `window_size` parameter is used to get the size of the window.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let mut too_close_to_right = false;
         let mut too_close_to_bottom = false;
-        let Some(window_size) = self.window_size else { println!("no window size"); return };
+        let Some(window_size) = self.window_size else { return };
         let CalloutTooltipOptions{
             widget_rect,
             tooltip_width,
@@ -229,6 +232,12 @@ impl CalloutTooltip {
                         callout_offset: (callout_offset)
                         // callout angle in clockwise direction
                         callout_angle: (callout_angle)
+                        background_color: (if let Some(color) = color {
+                            color
+                        } else {
+                            //#3b444b
+                            vec4(0.26, 0.30, 0.333, 1.0)
+                        })
                     }
                     padding: { left: ( 
                         if callout_angle == 270.0 {
@@ -260,17 +269,6 @@ impl CalloutTooltip {
         if let Some(mut tooltip) = tooltip.borrow_mut() {
             tooltip.set_text(cx, text);
         };
-        if let Some(color) = color {
-            tooltip.apply_over(cx, live!(
-                content: {
-                    rounded_view = {
-                        draw_bg: {
-                            background_color: (color)
-                        }
-                    }
-                }
-            ));
-        }
         tooltip.show(cx);
     }
 

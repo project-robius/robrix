@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction, spaces_dock::ProfileTooltipAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -120,7 +120,7 @@ live_design! {
                         visible: true
                         login_screen = <LoginScreen> {}
                     }
-                    profile_tooltip = <CalloutTooltip> {}
+                    app_tooltip = <CalloutTooltip> {}
                     popup = <PopupNotification> {
                         margin: {top: 45, right: 13},
                         content: {
@@ -271,21 +271,21 @@ impl MatchEvent for App {
             }
 
             match action.as_widget_action().cast() {
-                ProfileTooltipAction::HoverIn {
+                TooltipAction::HoverIn {
                     widget_rect,
                     tooltip_width,
                     text, 
                     color
                 } => {
-                    let mut tooltip = self.ui.callout_tooltip(id!(profile_tooltip));
+                    let mut tooltip = self.ui.callout_tooltip(id!(app_tooltip));
                     tooltip.show_with_options(cx, &text, CalloutTooltipOptions {
                         widget_rect,
                         tooltip_width,
                         color
                     });
                 }
-                ProfileTooltipAction::HoverOut => {
-                    let tooltip = self.ui.callout_tooltip(id!(profile_tooltip));
+                TooltipAction::HoverOut => {
+                    let tooltip = self.ui.callout_tooltip(id!(app_tooltip));
                     tooltip.hide(cx);
                 }
                 _ => {}
@@ -372,3 +372,17 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
+/// An action emitted to show or hide the `tooltip`.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum TooltipAction {
+    HoverIn {
+        widget_rect: Rect,
+        tooltip_width: f64,
+        /// Color of the background
+        color: Option<Vec4>,
+        /// Tooltip text
+        text: String,
+    },
+    HoverOut,
+    None,
+}
