@@ -235,12 +235,6 @@ impl CalloutTooltip {
                         } else {
                             10.0
                         }
-                    ), top: ( 
-                        if callout_angle == 0.0 {
-                            10.0 + 7.5 // 7.5 is the height of the isoceles triangle
-                        } else {
-                            10.0
-                        }
                     )}
                 }
             }

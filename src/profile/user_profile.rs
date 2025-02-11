@@ -115,9 +115,6 @@ live_design! {
     }
 
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
-    ICON_COPY        = dep("crate://self/resources/icons/copy.svg")
-    ICON_JUMP        = dep("crate://self/resources/icons/go_back.svg")
-
 
     UserProfileView = <ScrollXYView> {
         width: Fill,

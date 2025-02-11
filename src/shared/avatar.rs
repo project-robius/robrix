@@ -109,7 +109,7 @@ impl Widget for Avatar {
             Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
-            Hit::FingerUp(fue) => if fue.was_tap() {
+            Hit::FingerUp(fue) => if fue.is_over && fue.was_tap() {
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
