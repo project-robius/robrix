@@ -131,13 +131,11 @@ pub struct CalloutTooltipOptions {
 pub struct CalloutTooltip {
     #[deref]
     view: View,
-    #[rust]
-    window_size: Option<DVec2>,
 }
 
 impl Widget for CalloutTooltip {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.widget_match_event(cx, event, scope);
+        //self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope);
     }
 
@@ -146,21 +144,6 @@ impl Widget for CalloutTooltip {
     }
 }
 
-impl WidgetMatchEvent for CalloutTooltip {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        if self.window_size.is_none() {
-            let app_state = scope.data.get::<crate::app::AppState>().unwrap();
-            if let Some(ref window_geom) = app_state.window_geom {
-                self.window_size = Some(window_geom.inner_size);
-            }
-        }
-        for action in actions {
-            if let WindowAction::WindowGeomChange(window_geom) = action.as_widget_action().cast() {
-                self.window_size = Some(window_geom.new_geom.inner_size);
-            }
-        }
-    }
-}
 impl CalloutTooltip {
     /// Shows a tooltip with the given text and options.
     ///
@@ -174,9 +157,7 @@ impl CalloutTooltip {
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let mut too_close_to_right = false;
         let mut too_close_to_bottom = false;
-        let Some(window_size) = self.window_size else {
-            return;
-        };
+        let window_size = cx.display_context.screen_size;
         let CalloutTooltipOptions {
             widget_rect,
             tooltip_width,
