@@ -1,7 +1,10 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
-use crate::{shared::callout_tooltip::TooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
+use crate::{
+    shared::callout_tooltip::TooltipAction, sliding_sync::get_client,
+    verification::VerificationStateAction,
+};
 
 // First, define the verification icons component layout
 live_design! {
@@ -75,7 +78,6 @@ live_design! {
     }
 }
 
-
 pub fn verification_state_str(state: VerificationState) -> &'static str {
     match state {
         VerificationState::Verified => "This device is fully verified.",
@@ -94,10 +96,12 @@ pub fn verification_state_color(state: VerificationState) -> Vec4 {
 
 #[derive(Live, Widget)]
 pub struct VerificationBadge {
-    #[deref] view: View,
-    #[rust(VerificationState::Unknown)] verification_state: VerificationState,
-} 
- 
+    #[deref]
+    view: View,
+    #[rust(VerificationState::Unknown)]
+    verification_state: VerificationState,
+}
+
 impl LiveHook for VerificationBadge {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         if let Some(client) = get_client() {
@@ -140,18 +144,14 @@ impl Widget for VerificationBadge {
                         widget_rect: badge_rect,
                         tooltip_width: 230.0,
                         text: verification_state_str(self.verification_state).to_string(),
-                        color: Some(verification_state_color(self.verification_state))
-                    }
+                        color: Some(verification_state_color(self.verification_state)),
+                    },
                 );
             }
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    TooltipAction::HoverOut,
-                );
+                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
             }
-            _ => { }
+            _ => {}
         }
     }
 

@@ -1,18 +1,37 @@
+use crate::home::room_screen::RoomScreenTooltipActions;
+use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
+use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionInfo, ReactionsByKeyBySender, TimelineEventItemId};
-use crate::profile::user_profile_cache::get_user_profile_and_room_member;
-use crate::home::room_screen::RoomScreenTooltipActions;
-use indexmap::IndexMap;
-
 
 const TOOLTIP_WIDTH: f64 = 230.0;
-const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.0, y: 0.6, z: 0.47, w: 1.0 }; // DarkGreen
-const EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.714, y: 0.73, z: 0.75, w: 1.0 }; // Grey
+const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 {
+    x: 0.0,
+    y: 0.6,
+    z: 0.47,
+    w: 1.0,
+}; // DarkGreen
+const EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 {
+    x: 0.714,
+    y: 0.73,
+    z: 0.75,
+    w: 1.0,
+}; // Grey
 
-const EMOJI_BG_COLOR_INCLUDE_SELF: Vec4 = Vec4 { x: 0.89, y: 0.967, z: 0.929, w: 1.0 }; // LightGreen
-const EMOJI_BG_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 { x: 0.968, y: 0.976, z: 0.98, w: 1.0 }; // LightGrey
+const EMOJI_BG_COLOR_INCLUDE_SELF: Vec4 = Vec4 {
+    x: 0.89,
+    y: 0.967,
+    z: 0.929,
+    w: 1.0,
+}; // LightGreen
+const EMOJI_BG_COLOR_NOT_INCLUDE_SELF: Vec4 = Vec4 {
+    x: 0.968,
+    y: 0.976,
+    z: 0.98,
+    w: 1.0,
+}; // LightGrey
 
 live_design! {
     use link::theme::*;
@@ -74,7 +93,7 @@ live_design! {
             }
         }
     }
-    
+
 }
 #[derive(Clone, Debug)]
 pub struct ReactionData {
@@ -88,7 +107,7 @@ pub struct ReactionData {
     /// List of all users who have reacted to the emoji.
     pub reaction_senders: IndexMap<OwnedUserId, ReactionInfo>,
     /// The ID of the room that the reaction is for
-    pub room_id: OwnedRoomId
+    pub room_id: OwnedRoomId,
 }
 
 #[derive(Live, LiveHook, Widget)]
@@ -113,7 +132,7 @@ impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
         self.children.iter_mut().for_each(|(target, _)| {
-            let _ = target.draw(cx, scope); 
+            let _ = target.draw(cx, scope);
         });
         cx.end_turtle();
         DrawStep::done()
@@ -124,12 +143,16 @@ impl Widget for ReactionList {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
                     let widget_rect = widget_ref.area().rect(cx);
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton { 
-                        widget_rect,
-                        tooltip_width: TOOLTIP_WIDTH,
-                        color: None, 
-                        reaction_data: reaction_data.clone() 
-                    });
+                    cx.widget_action(
+                        uid,
+                        &scope.path,
+                        RoomScreenTooltipActions::HoverInReactionButton {
+                            widget_rect,
+                            tooltip_width: TOOLTIP_WIDTH,
+                            color: None,
+                            reaction_data: reaction_data.clone(),
+                        },
+                    );
                     cx.set_cursor(MouseCursor::Hand);
                     widget_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));
                     break;
@@ -154,15 +177,21 @@ impl Widget for ReactionList {
                     let (bg_color, border_color) = if !reaction_data.includes_user {
                         (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
                     } else {
-                        (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+                        (
+                            EMOJI_BG_COLOR_NOT_INCLUDE_SELF,
+                            EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF,
+                        )
                     };
-                    widget_ref.apply_over(cx, live! {
-                        draw_bg: { color: (bg_color) , border_color: (border_color) }
-                    });
+                    widget_ref.apply_over(
+                        cx,
+                        live! {
+                            draw_bg: { color: (bg_color) , border_color: (border_color) }
+                        },
+                    );
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                     cx.set_cursor(MouseCursor::Hand);
                     break;
-                },
+                }
                 Hit::FingerUp(_) => {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                     cx.set_cursor(MouseCursor::Hand);
@@ -172,10 +201,10 @@ impl Widget for ReactionList {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                     cx.set_cursor(MouseCursor::Default);
                 }
-                _ => { }
+                _ => {}
             }
         }
-    }    
+    }
 }
 
 impl ReactionListRef {
@@ -200,9 +229,13 @@ impl ReactionListRef {
         id: usize,
     ) {
         const DRAW_ITEM_ID_REACTION: bool = false;
-        
-        let Some(client_user_id) = current_user_id() else { return };
-        let Some(mut inner) = self.borrow_mut() else { return };
+
+        let Some(client_user_id) = current_user_id() else {
+            return;
+        };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         if event_tl_item_reactions.is_empty() && !DRAW_ITEM_ID_REACTION {
             inner.children.clear();
             return;
@@ -220,7 +253,7 @@ impl ReactionListRef {
                 if sender == &client_user_id {
                     includes_user = true;
                 }
-                // Cache the reaction sender's user profile so that tooltip will show displayable name 
+                // Cache the reaction sender's user profile so that tooltip will show displayable name
                 let _ = get_user_profile_and_room_member(cx, sender.clone(), &room_id, true);
             }
             let mut emoji_text = emoji_text.to_string();
@@ -239,25 +272,34 @@ impl ReactionListRef {
             let button = WidgetRef::new_from_ptr(cx, inner.item).as_button();
             button.set_text(
                 cx,
-                &format!("{}  {}", reaction_data.emoji_shortcode, reaction_senders.len()),
+                &format!(
+                    "{}  {}",
+                    reaction_data.emoji_shortcode,
+                    reaction_senders.len()
+                ),
             );
             let (bg_color, border_color) = if reaction_data.includes_user {
                 (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
             } else {
-                (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+                (
+                    EMOJI_BG_COLOR_NOT_INCLUDE_SELF,
+                    EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF,
+                )
             };
-            button.apply_over(cx, live! {
-                draw_bg: { color: (bg_color) , border_color: (border_color) }
-            });
+            button.apply_over(
+                cx,
+                live! {
+                    draw_bg: { color: (bg_color) , border_color: (border_color) }
+                },
+            );
             inner.children.push((button, reaction_data));
         }
         inner.room_id = Some(room_id);
         inner.timeline_event_id = Some(timeline_event_item_id);
     }
 
-
     /// Handles hover in action and returns the appropriate `RoomScreenTooltipActions`.
-    /// 
+    ///
     /// This function checks if there is a widget action associated with the current
     /// widget's unique identifier in the provided `actions`. If an action exists,
     /// it is cast to `RoomScreenTooltipActions` and returned. Otherwise, it returns

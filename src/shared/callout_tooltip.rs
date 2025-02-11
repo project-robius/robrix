@@ -1,5 +1,5 @@
-//! A tooltip widget that a callout pointing towards the referenced widget. 
-//! 
+//! A tooltip widget that a callout pointing towards the referenced widget.
+//!
 //! By default, the tooltip has a black background color
 
 use makepad_widgets::*;
@@ -55,7 +55,7 @@ live_design! {
                             sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
                             sdf.line_to(0.0, self.callout_triangle_height * 1.0);
                             sdf.line_to(self.callout_triangle_height, 0.0);
-                        } else if self.callout_angle < 90.5 || self.callout_angle > 180.5{ // By right, it should 
+                        } else if self.callout_angle < 90.5 || self.callout_angle > 180.5{ // By right, it should
                             sdf.box(
                                 // Minus 2.0 to overlap the triangle and rectangle
                                 (self.callout_triangle_height - 2.0) + self.border_width,
@@ -117,20 +117,22 @@ live_design! {
 pub const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
 
 /// A struct that holds the options for a callout tooltip
-pub struct CalloutTooltipOptions{
+pub struct CalloutTooltipOptions {
     /// The rect of the widget that the tooltip is pointing to
-    pub widget_rect: Rect, 
+    pub widget_rect: Rect,
     /// Tooltip width
     pub tooltip_width: f64,
     /// The background color of the tooltip
-    pub color: Option<Vec4>
+    pub color: Option<Vec4>,
 }
 
-/// A tooltip widget that a callout pointing towards the referenced widget. 
+/// A tooltip widget that a callout pointing towards the referenced widget.
 #[derive(Live, LiveHook, Widget)]
 pub struct CalloutTooltip {
-    #[deref] view: View,
-    #[rust] window_size: Option<DVec2>
+    #[deref]
+    view: View,
+    #[rust]
+    window_size: Option<DVec2>,
 }
 
 impl Widget for CalloutTooltip {
@@ -161,38 +163,42 @@ impl WidgetMatchEvent for CalloutTooltip {
 }
 impl CalloutTooltip {
     /// Shows a tooltip with the given text and options.
-    /// 
+    ///
     /// The tooltip comes with a callout pointing to it's target.
-    /// 
+    ///
     /// By default, the tooltip will be displayed to the widget's right.
-    /// 
+    ///
     /// If the widget is too close to right of the window, the tooltip is positioned to the
     /// bottom of the widget, pointed at the center. If it is too close to bottom, the
-    /// tooltip is positioned above the widget. 
+    /// tooltip is positioned above the widget.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let mut too_close_to_right = false;
         let mut too_close_to_bottom = false;
-        let Some(window_size) = self.window_size else { return };
-        let CalloutTooltipOptions{
+        let Some(window_size) = self.window_size else {
+            return;
+        };
+        let CalloutTooltipOptions {
             widget_rect,
             tooltip_width,
-            color
+            color,
         } = options;
         if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_size.x {
             too_close_to_right = true;
         }
-        if (widget_rect.pos.y + widget_rect.size.y) + TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM > window_size.y {
+        if (widget_rect.pos.y + widget_rect.size.y) + TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM
+            > window_size.y
+        {
             too_close_to_bottom = true;
         }
-        let mut pos =  if too_close_to_right {
+        let mut pos = if too_close_to_right {
             DVec2 {
                 x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
-                y: widget_rect.pos.y + widget_rect.size.y
+                y: widget_rect.pos.y + widget_rect.size.y,
             }
         } else {
             DVec2 {
                 x: widget_rect.pos.x + widget_rect.size.x,
-                y: widget_rect.pos.y - 5.0
+                y: widget_rect.pos.y - 5.0,
             }
         };
         if too_close_to_bottom && !too_close_to_right {
@@ -205,50 +211,56 @@ impl CalloutTooltip {
             10.0
         };
         let callout_angle = match (too_close_to_right, too_close_to_bottom) {
-            (true, true) => 0.0, //point up
-            (true, false) => 0.0, // point up
-            (false, true) => 180.0, //point down
-            (false, false) => 270.0 //point left
+            (true, true) => 0.0,     //point up
+            (true, false) => 0.0,    // point up
+            (false, true) => 180.0,  //point down
+            (false, false) => 270.0, //point left
         };
         let tooltip = self.view.tooltip(id!(tooltip));
-        tooltip.apply_over(cx, live!(
-            content: {
-                margin: { left: (pos.x), top: (pos.y)},
-                width: (tooltip_width),
-                height: Fit,
-                rounded_view = {
-                    height: Fit,
-                    draw_bg: {
-                        callout_offset: (callout_offset)
-                        // callout angle in clockwise direction
-                        callout_angle: (callout_angle)
-                        background_color: (if let Some(color) = color {
-                            color
-                        } else {
-                            //#3b444b
-                            vec4(0.26, 0.30, 0.333, 1.0)
-                        })
-                    }
-                    padding: { left: ( 
-                        if callout_angle == 270.0 {
-                            10.0 + 7.5 // 7.5 is the height of the isoceles triangle
-                        } else {
-                            10.0
-                        }
-                    )}
-                }
-            }
-        ));
-        if too_close_to_bottom {
-            tooltip.apply_over(cx, live!(
+        tooltip.apply_over(
+            cx,
+            live!(
                 content: {
-                    height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM),
-                    width: Fill
+                    margin: { left: (pos.x), top: (pos.y)},
+                    width: (tooltip_width),
+                    height: Fit,
                     rounded_view = {
-                        height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM - 10.0),
+                        height: Fit,
+                        draw_bg: {
+                            callout_offset: (callout_offset)
+                            // callout angle in clockwise direction
+                            callout_angle: (callout_angle)
+                            background_color: (if let Some(color) = color {
+                                color
+                            } else {
+                                //#3b444b
+                                vec4(0.26, 0.30, 0.333, 1.0)
+                            })
+                        }
+                        padding: { left: (
+                            if callout_angle == 270.0 {
+                                10.0 + 7.5 // 7.5 is the height of the isoceles triangle
+                            } else {
+                                10.0
+                            }
+                        )}
                     }
                 }
-            ));
+            ),
+        );
+        if too_close_to_bottom {
+            tooltip.apply_over(
+                cx,
+                live!(
+                    content: {
+                        height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM),
+                        width: Fill
+                        rounded_view = {
+                            height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM - 10.0),
+                        }
+                    }
+                ),
+            );
         }
         if let Some(mut tooltip) = tooltip.borrow_mut() {
             tooltip.set_text(cx, text);

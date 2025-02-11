@@ -1,6 +1,6 @@
+use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
-use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
@@ -14,7 +14,6 @@ const TOOLTIP_WIDTH: f64 = 180.0;
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
 pub const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT: usize = 3;
-
 
 live_design! {
     use link::theme::*;
@@ -78,27 +77,35 @@ pub struct AvatarRow {
     #[rust]
     area: Area,
     /// The read receipts for this row
-    /// 
+    ///
     /// Contains a map of user id required to render its tooltip
     #[rust]
-    read_receipts: Option<indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>>
+    read_receipts: Option<indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>>,
 }
 
 impl Widget for AvatarRow {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let Some(read_receipts) = &self.read_receipts else { return };
-        if read_receipts.is_empty() { return; }
+        let Some(read_receipts) = &self.read_receipts else {
+            return;
+        };
+        if read_receipts.is_empty() {
+            return;
+        }
         let uid: WidgetUid = self.widget_uid();
         let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(_) => {
                 if let Some(read_receipts) = &self.read_receipts {
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt { 
-                        widget_rect,
-                        tooltip_width: TOOLTIP_WIDTH,
-                        color: None, 
-                        read_receipts: read_receipts.clone()
-                    });
+                    cx.widget_action(
+                        uid,
+                        &scope.path,
+                        RoomScreenTooltipActions::HoverInReadReceipt {
+                            widget_rect,
+                            tooltip_width: TOOLTIP_WIDTH,
+                            color: None,
+                            read_receipts: read_receipts.clone(),
+                        },
+                    );
                 }
             }
             Hit::FingerHoverOut(_) => {
@@ -109,8 +116,12 @@ impl Widget for AvatarRow {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let Some(read_receipts) = &self.read_receipts else { return DrawStep::done() };
-        if read_receipts.is_empty() { return DrawStep::done() }
+        let Some(read_receipts) = &self.read_receipts else {
+            return DrawStep::done();
+        };
+        if read_receipts.is_empty() {
+            return DrawStep::done();
+        }
         cx.begin_turtle(walk, Layout::default());
         for (avatar_ref, _) in self.buttons.iter_mut() {
             let _ = avatar_ref.draw(cx, scope);
@@ -118,8 +129,11 @@ impl Widget for AvatarRow {
         if read_receipts.len() > MAX_VISIBLE_AVATARS_IN_READ_RECEIPT {
             if let Some(label) = &mut self.label {
                 label.set_text(
-                    cx, 
-                    &format!(" + {:?}", read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT),
+                    cx,
+                    &format!(
+                        " + {:?}",
+                        read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT
+                    ),
                 );
                 let _ = label.draw(cx, scope);
             }
@@ -147,14 +161,20 @@ impl AvatarRow {
         if receipts_map.len() != self.buttons.len() {
             self.buttons.clear();
             for _ in 0..cmp::min(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT, receipts_map.len()) {
-                self.buttons.push((WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(), false));
+                self.buttons.push((
+                    WidgetRef::new_from_ptr(cx, self.avatar_template).as_avatar(),
+                    false,
+                ));
             }
             self.label = Some(WidgetRef::new_from_ptr(cx, self.plus_template).as_label());
             self.read_receipts = Some(receipts_map.clone());
         }
-        for ((avatar_ref, drawn), (user_id, _)) in self.buttons.iter_mut().zip(receipts_map.iter().rev()) {
+        for ((avatar_ref, drawn), (user_id, _)) in
+            self.buttons.iter_mut().zip(receipts_map.iter().rev())
+        {
             if !*drawn {
-                let (_, drawn_status) = avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id); 
+                let (_, drawn_status) =
+                    avatar_ref.set_avatar_and_get_username(cx, room_id, user_id, None, event_id);
                 *drawn = drawn_status;
             }
         }
@@ -178,7 +198,13 @@ impl AvatarRowRef {
         }
     }
     /// See [`AvatarRow::set_avatar_row()`].
-    pub fn set_avatar_row(&mut self, cx: &mut Cx, room_id: &RoomId, event_id: Option<&EventId>, receipts_map: &IndexMap<OwnedUserId, Receipt>) {
+    pub fn set_avatar_row(
+        &mut self,
+        cx: &mut Cx,
+        room_id: &RoomId,
+        event_id: Option<&EventId>,
+        receipts_map: &IndexMap<OwnedUserId, Receipt>,
+    ) {
         if let Some(ref mut inner) = self.borrow_mut() {
             inner.set_avatar_row(cx, room_id, event_id, receipts_map);
         }
@@ -186,33 +212,58 @@ impl AvatarRowRef {
 }
 
 /// Populate the read receipts avatar row in a message item
-/// 
+///
 /// Given a reference to item widget (typically a MessageEventMarker), a Cx2d, a
 /// room ID, and an EventTimelineItem, this will populate the avatar
 /// row of the item with the read receipts of the event.
 ///
-pub fn populate_read_receipts(item: &WidgetRef, cx: &mut Cx, room_id: &RoomId, event_tl_item: &EventTimelineItem) {
-    item.avatar_row(id!(avatar_row)).set_avatar_row(cx, room_id, event_tl_item.event_id(), event_tl_item.read_receipts());
+pub fn populate_read_receipts(
+    item: &WidgetRef,
+    cx: &mut Cx,
+    room_id: &RoomId,
+    event_tl_item: &EventTimelineItem,
+) {
+    item.avatar_row(id!(avatar_row)).set_avatar_row(
+        cx,
+        room_id,
+        event_tl_item.event_id(),
+        event_tl_item.read_receipts(),
+    );
 }
 
 /// Populate the tooltip text for a read receipts avatar row.
-/// 
+///
 /// Given a Cx2d, an IndexMap of read receipts, and a room ID, this
 /// will populate the tooltip text for the read receipts avatar row.
-/// 
+///
 /// The tooltip will contain up to the first `MAX_VISIBLE_AVATARS_IN_READ_RECEIPT` displayable names of the users
 /// who have seen this event. If there are more than `MAX_VISIBLE_AVATARS_IN_READ_RECEIPT` users, the tooltip
 /// will contain the string "and N others".
-pub fn populate_tooltip(cx: &mut Cx, read_receipts: IndexMap<OwnedUserId, Receipt>, room_id: &RoomId) -> String {
-    let mut display_names: Vec<String> = read_receipts.iter().rev().take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT).map(|(user_id, _)| {
-        if let (Some(profile), _ ) = get_user_profile_and_room_member(cx, user_id.clone(), room_id, true) {
-            profile.displayable_name().to_owned()
-        } else {
-            user_id.to_string()
-        }
-    }).collect();
+pub fn populate_tooltip(
+    cx: &mut Cx,
+    read_receipts: IndexMap<OwnedUserId, Receipt>,
+    room_id: &RoomId,
+) -> String {
+    let mut display_names: Vec<String> = read_receipts
+        .iter()
+        .rev()
+        .take(MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
+        .map(|(user_id, _)| {
+            if let (Some(profile), _) =
+                get_user_profile_and_room_member(cx, user_id.clone(), room_id, true)
+            {
+                profile.displayable_name().to_owned()
+            } else {
+                user_id.to_string()
+            }
+        })
+        .collect();
     for _ in display_names.len()..read_receipts.len() {
         display_names.push(String::from(""));
     }
-    format!("Seen by {}:\n{}", read_receipts.len(), human_readable_list(&display_names, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT))
+    format!(
+        "Seen by {}:\n{}",
+        read_receipts.len(),
+        human_readable_list(&display_names, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT)
+    )
 }
