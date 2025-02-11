@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -986,15 +986,12 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let mut tooltip = self.tooltip(id!(room_screen_tooltip));
+            let mut tooltip = self.callout_tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
-                    tooltip_pos,
+                    widget_rect,
                     tooltip_width,
-                    callout_offset,
-                    callout_angle,
-                    too_close_to_bottom,
                     color,
                     reaction_data,
                 } = reaction_list.hover_in(actions) {
@@ -1005,64 +1002,29 @@ impl Widget for RoomScreen {
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
-                    crate::shared::callout_tooltip::draw_helper(&mut tooltip, 
-                        cx, 
-                        tooltip_pos, 
-                        tooltip_width, 
-                        callout_offset, 
-                        callout_angle, 
-                        too_close_to_bottom
-                    );
-                    if let Some(color) = color {
-                        tooltip.apply_over(cx, live!(
-                            content: {
-                                rounded_view = {
-                                    draw_bg: {
-                                        background_color: (color)
-                                    }
-                                }
-                            }
-                        ));
-                    }
-                    tooltip.set_text(cx, &tooltip_text);
-                    tooltip.show(cx);
+                    tooltip.show_with_options(cx, &tooltip_text, CalloutTooltipOptions{
+                        widget_rect,
+                        tooltip_width,
+                        color
+                    });
                 }
                 if reaction_list.hover_out(actions) {
                     tooltip.hide(cx);
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
-                    tooltip_pos,
+                    widget_rect,
                     tooltip_width,
-                    callout_offset,
-                    callout_angle,
-                    too_close_to_bottom,
                     color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
                     let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
-                    crate::shared::callout_tooltip::draw_helper(&mut tooltip, 
-                        cx, 
-                        tooltip_pos, 
-                        tooltip_width, 
-                        callout_offset, 
-                        callout_angle, 
-                        too_close_to_bottom
-                    );
-                    if let Some(color) = color {
-                        tooltip.apply_over(cx, live!(
-                            content: {
-                                rounded_view = {
-                                    draw_bg: {
-                                        background_color: (color)
-                                    }
-                                }
-                            }
-                        ));
-                    }
-                    tooltip.set_text(cx, &tooltip_text);
-                    tooltip.show(cx);
+                    tooltip.show_with_options(cx, &tooltip_text, CalloutTooltipOptions{
+                        widget_rect,
+                        tooltip_width,
+                        color
+                    });
                 }
                 if avatar_row_ref.hover_out(actions) {
                     tooltip.hide(cx);
@@ -2343,15 +2305,8 @@ impl RoomScreenRef {
 pub enum RoomScreenTooltipActions {
     /// Mouse over event when the mouse is over the read receipt.
     HoverInReadReceipt {
-        tooltip_pos: DVec2,
+        widget_rect: Rect,
         tooltip_width: f64,
-        // Pointed arrow position relative to the tooltip
-        ///
-        /// It is calculated from the right corner of tooltip to position arrow
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        callout_angle: f64,
-        too_close_to_bottom: bool,
         /// Color of the background, default is black
         color: Option<Vec4>,
         /// Includes the list of users who have seen this event
@@ -2359,15 +2314,8 @@ pub enum RoomScreenTooltipActions {
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
-        tooltip_pos: DVec2,
+        widget_rect: Rect,
         tooltip_width: f64,
-        // Pointed arrow position relative to the tooltip
-        ///
-        /// It is calculated from the right corner of tooltip to position arrow
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        callout_angle: f64,
-        too_close_to_bottom: bool,
         /// Color of the background, default is black
         color: Option<Vec4>,
         /// Includes the list of users who have reacted to the emoji

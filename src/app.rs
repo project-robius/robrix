@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction, spaces_dock::ProfileTooltipAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, room_screen::MessageAction, rooms_list::RoomsListAction, spaces_dock::ProfileTooltipAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -272,39 +272,20 @@ impl MatchEvent for App {
 
             match action.as_widget_action().cast() {
                 ProfileTooltipAction::HoverIn {
-                    tooltip_pos,
+                    widget_rect,
                     tooltip_width,
-                    callout_offset,
-                    callout_angle,
-                    too_close_to_bottom,
                     text, 
                     color
                 } => {
-                    let mut tooltip = self.ui.tooltip(id!(profile_tooltip));
-                    crate::shared::callout_tooltip::draw_helper(&mut tooltip, 
-                        cx, 
-                        tooltip_pos, 
-                        tooltip_width, 
-                        callout_offset, 
-                        callout_angle, 
-                        too_close_to_bottom
-                    );
-                    if let Some(color) = color {
-                        tooltip.apply_over(cx, live!(
-                            content: {
-                                rounded_view = {
-                                    draw_bg: {
-                                        background_color: (color)
-                                    }
-                                }
-                            }
-                        ));
-                    }
-                    tooltip.set_text(cx, &text);
-                    tooltip.show(cx);
+                    let mut tooltip = self.ui.callout_tooltip(id!(profile_tooltip));
+                    tooltip.show_with_options(cx, &text, CalloutTooltipOptions {
+                        widget_rect,
+                        tooltip_width,
+                        color
+                    });
                 }
                 ProfileTooltipAction::HoverOut => {
-                    let tooltip = self.ui.tooltip(id!(profile_tooltip));
+                    let tooltip = self.ui.callout_tooltip(id!(profile_tooltip));
                     tooltip.hide(cx);
                 }
                 _ => {}

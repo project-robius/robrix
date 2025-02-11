@@ -1,4 +1,3 @@
-use crate::shared;
 use crate::sliding_sync::{current_user_id, submit_async_request, MatrixRequest};
 use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
@@ -121,23 +120,13 @@ impl Widget for ReactionList {
     }
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid: WidgetUid = self.widget_uid();
-        let app_state = scope.data.get::<crate::app::AppState>().unwrap();
-        let Some(window_geom) = &app_state.window_geom else { return };
         for (widget_ref, reaction_data) in self.children.iter() {
             match event.hits(cx, widget_ref.area()) {
                 Hit::FingerHoverIn(_) => {
                     let widget_rect = widget_ref.area().rect(cx);
-                    let (tooltip_pos, callout_offset, callout_angle, too_close_to_bottom) = shared::callout_tooltip::position_helper(
-                        widget_rect, 
-                        window_geom.inner_size, 
-                        TOOLTIP_WIDTH
-                    );
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReactionButton { 
-                        tooltip_pos,
+                        widget_rect,
                         tooltip_width: TOOLTIP_WIDTH,
-                        callout_offset,
-                        callout_angle,
-                        too_close_to_bottom,
                         color: None, 
                         reaction_data: reaction_data.clone() 
                     });

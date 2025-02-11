@@ -169,15 +169,8 @@ live_design! {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ProfileTooltipAction {
     HoverIn {
-        tooltip_pos: DVec2,
+        widget_rect: Rect,
         tooltip_width: f64,
-        // Pointed arrow position relative to the tooltip
-        ///
-        /// It is calculated from the right corner of tooltip to position arrow
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        callout_angle: f64,
-        too_close_to_bottom: bool,
         /// Color of the background
         color: Option<Vec4>,
         /// Tooltip text

@@ -1,6 +1,4 @@
-use crate::app::AppState;
 use crate::profile::user_profile_cache::get_user_profile_and_room_member;
-use crate::shared;
 use crate::shared::avatar::{AvatarRef, AvatarWidgetRefExt};
 use crate::home::room_screen::RoomScreenTooltipActions;
 use crate::utils::human_readable_list;
@@ -91,23 +89,13 @@ impl Widget for AvatarRow {
         let Some(read_receipts) = &self.read_receipts else { return };
         if read_receipts.is_empty() { return; }
         let uid: WidgetUid = self.widget_uid();
-        let app_state = scope.data.get_mut::<AppState>().unwrap();
-        let Some(window_geom) = &app_state.window_geom else { return };
         let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
             Hit::FingerHoverIn(_) => {
                 if let Some(read_receipts) = &self.read_receipts {
-                    let (tooltip_pos, callout_offset, callout_angle, too_close_to_bottom) = shared::callout_tooltip::position_helper(
-                        widget_rect, 
-                        window_geom.inner_size, 
-                        TOOLTIP_WIDTH
-                    );
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverInReadReceipt { 
-                        tooltip_pos,
+                        widget_rect,
                         tooltip_width: TOOLTIP_WIDTH,
-                        callout_offset,
-                        callout_angle,
-                        too_close_to_bottom,
                         color: None, 
                         read_receipts: read_receipts.clone()
                     });
