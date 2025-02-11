@@ -113,6 +113,7 @@ impl LiveHook for VerificationBadge {
 impl Widget for VerificationBadge {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+
         if let Event::Actions(actions) = event {
             for action in actions {
                 if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {

@@ -2455,7 +2455,9 @@ impl RoomScreenRef {
 pub enum RoomScreenTooltipActions {
     /// Mouse over event when the mouse is over the read receipt.
     HoverInReadReceipt {
+        /// The rect of the moused over widget
         widget_rect: Rect,
+        /// Width of the tooltip
         tooltip_width: f64,
         /// Color of the background, default is black
         color: Option<Vec4>,
@@ -2464,7 +2466,9 @@ pub enum RoomScreenTooltipActions {
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
+        /// The rect of the moused over widget
         widget_rect: Rect,
+        /// Width of the tooltip
         tooltip_width: f64,
         /// Color of the background, default is black
         color: Option<Vec4>,

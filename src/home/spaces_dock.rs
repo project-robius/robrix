@@ -58,8 +58,6 @@ live_design! {
             verification_badge = <VerificationBadge> {}
         }
 
-        
-
     }
 
     Separator = <LineH> {

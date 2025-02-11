@@ -16,6 +16,7 @@ live_design! {
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
+    use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
 
     ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
@@ -111,6 +112,7 @@ live_design! {
                 <View> {
                     width: Fill, height: Fill,
                     flow: Overlay,
+
                     home_screen_view = <View> {
                         visible: false
                         home_screen = <HomeScreen> {}
@@ -417,4 +419,3 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
-
