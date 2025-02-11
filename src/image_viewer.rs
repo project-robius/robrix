@@ -66,7 +66,7 @@ live_design! {
                 draw_icon: {
                     svg_file: (SPIN_LOADER)
                 }
-                icon_walk: {width: 400, height: Fit}
+                icon_walk: {width: 300, height: Fit}
             }
         }
     }
