@@ -1,11 +1,11 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{room_preview::RoomPreview, ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomOrAliasId, RoomOrAliasId}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomOrAliasId}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::{user_profile::AvatarState, user_profile_cache}, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::user_profile_cache, sliding_sync::current_user_id, utils};
 
-use super::avatar::{self, AvatarWidgetExt};
+use super::avatar::AvatarWidgetExt;
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -178,19 +178,13 @@ struct RobrixHtmlLink {
 
 impl LiveHook for RobrixHtmlLink {
     fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
-        match apply.from {
-            ApplyFrom::NewFromDoc { .. } => {
-                let scope = apply.scope.as_ref().unwrap();
-                let doc = scope.props.get::<HtmlDoc>().unwrap();
-                let mut walker = doc.new_walker_with_index(scope.index + 1);
-                if let Some((lc, attr)) = walker.while_attr_lc() {
-                    match lc {
-                        live_id!(href) => self.url = attr.into(),
-                        _ => ()
-                    }
-                }
+        if let ApplyFrom::NewFromDoc { .. } = apply.from {
+            let scope = apply.scope.as_ref().unwrap();
+            let doc = scope.props.get::<HtmlDoc>().unwrap();
+            let mut walker = doc.new_walker_with_index(scope.index + 1);
+            if let Some((live_id!(href), attr)) = walker.while_attr_lc() {
+                self.url = attr.into();
             }
-            _ => ()
         }
     }
 }
@@ -268,24 +262,20 @@ impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
         if self.visible {
-            match event.hits(cx, self.area()) {
-                Hit::FingerUp(fe) => {
-                    if fe.is_over {
-                        if let Some(matrix_id) = self.matrix_id.take() {
-                            log!("MatrixLinkPill: clicked matrix link: {:?}", matrix_id);
-                            cx.widget_action(
-                                uid,
-                                &scope.path,
-                                RobrixHtmlLinkAction::ClickedMatrixLink {
-                                    matrix_id,
-                                    via: self.via.clone(),
-                                    key_modifiers: fe.modifiers
-                                }
-                            );
-                        }
+            if let Hit::FingerUp(fe) = event.hits(cx, self.area()) {
+                if fe.is_over {
+                    if let Some(matrix_id) = self.matrix_id.take() {
+                        cx.widget_action(
+                            uid,
+                            &scope.path,
+                            RobrixHtmlLinkAction::ClickedMatrixLink {
+                                matrix_id,
+                                via: self.via.clone(),
+                                key_modifiers: fe.modifiers
+                            }
+                        );
                     }
                 }
-                _ => ()
             }
         }
     }
@@ -308,13 +298,13 @@ impl MatrixLinkPill {
                     let room_or_alias_id: OwnedRoomOrAliasId = room_id.into();
                     let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(cx, &room_or_alias_id);
                     self.set_pill_avatar(cx, avatar_url);
-                    self.set_pill_title(cx, &format!("{}", room_name));
+                    self.set_pill_title(cx, &room_name);
                 }
                 MatrixId::RoomAlias(room_alias) => {
                     let room_or_alias_id: OwnedRoomOrAliasId = room_alias.into();
                     let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(cx, &room_or_alias_id);
                     self.set_pill_avatar(cx, avatar_url);
-                    self.set_pill_title(cx, &format!("{}", room_name));
+                    self.set_pill_title(cx, &room_name);
                 }
                 MatrixId::Event(room_or_alias_id, _event_id) => {
                     let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(cx, &room_or_alias_id);
@@ -355,7 +345,7 @@ impl MatrixLinkPill {
     }
 
     pub fn set_pill_title(&mut self, cx: &mut Cx, title: &str) {
-        self.label(id!(title)).set_text(cx, &title);
+        self.label(id!(title)).set_text(cx, title);
     }
 
     pub fn set_pill_avatar(&mut self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
