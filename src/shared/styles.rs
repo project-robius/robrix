@@ -195,7 +195,8 @@ live_design! {
         }
     }
 
-    pub SpinLoader = <View> {
+    // A generic spinner widget styled for Robrix.
+    pub RobrixSpinLoader = <View> {
         width: Fill, height: Fill
         show_bg: true,
         draw_bg: {

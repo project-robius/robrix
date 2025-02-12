@@ -62,7 +62,7 @@ live_design! {
             }
         }
 
-        spin_loader = <SpinLoader> { }
+        spin_loader = <RobrixSpinLoader> { }
     }
 }
 
