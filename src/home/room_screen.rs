@@ -1001,7 +1001,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    #[rust] image_uid_width_map: HashMap<WidgetUid, f64>
+    #[rust] image_uid_width_map: HashMap<WidgetUid, f64>,
+    #[rust] width_without_avator_area: f64
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1022,6 +1023,27 @@ impl Widget for RoomScreen {
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
+
+        let image_message_id = id!(ImageMessage)[0];
+
+        portal_list.find_widgets_with_template(image_message_id).into_iter().for_each(|w|{
+            let image = w.text_or_image(id!(message)).image(id!(image_view.image));
+            if let Some(image_width) = self.image_uid_width_map.get(&image.widget_uid()) {
+                if image_width > &self.width_without_avator_area {
+                    log!("width_without_avator_area: {} image_width: {image_width} | Smallest", self.width_without_avator_area);
+                    image.apply_over(cx, live! {
+                        fit: Smallest
+                    });
+                } else {
+                    log!("width_without_avator_area: {} image_width: {image_width} | Size", self.width_without_avator_area);
+                    image.apply_over(cx, live! {
+                        fit: Size
+                    });
+                }
+                self.view.redraw(cx);
+            // image.redraw(cx);
+            }
+        });
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
@@ -1470,41 +1492,11 @@ impl Widget for RoomScreen {
                 };
                 item.draw_all(cx, &mut Scope::empty());
             }
-        }
 
-        let room_screen_width = self.view.area().rect(cx).size.x - 150.;
-
-        let id = id!(ImageMessage)[0];
-        if id.is_empty() {
-            log!("Empty Live ID");
-        };
-        if id.is_unique() {
-            log!("Unique Live ID");
         }
-        log!("room_screen_width: {}", room_screen_width);
+        self.width_without_avator_area = self.view.area().rect(cx).size.x - 150.;
 
-        let portal_list = self.portal_list(id!(timeline.list));
-        let vec = portal_list.find_widgets_with_template(id);
-        vec.into_iter().for_each(|w|{
-        let image = w.text_or_image(id!(message)).image(id!(image_view.image));
-        let image_uid = image.widget_uid();
-        if let Some(image_width) = self.image_uid_width_map.get(&image_uid) {
-            log!("image_width: {image_width} roomscreen_width: {room_screen_width} ");
-            if image_width > &room_screen_width {
-                log!("Smallest");
-                image.apply_over(cx, live! {
-                    fit: Smallest
-                });
-            } else {
-                log!("Size");
-                image.apply_over(cx, live! {
-                    fit: Size
-                });
-            }
-            image.redraw(cx);
-        }
-    });
-    DrawStep::done()
+        DrawStep::done()
     }
 }
 

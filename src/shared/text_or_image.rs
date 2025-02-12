@@ -47,8 +47,6 @@ live_design! {
 #[derive(Debug, Clone, DefaultNone)]
 pub enum TextOrImageAction {
     Post(WidgetUid, f64),
-    ImageFitSize,
-    ImageFitSmallest,
     None,
 }
 
