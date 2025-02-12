@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_preview_cache, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -1031,6 +1031,7 @@ impl Widget for RoomScreen {
             // but it doesn't hurt to do it here.
             // TODO: move this up a layer to something higher in the UI tree,
             //       and wrap it in a `if let Event::Signal` conditional.
+            room_preview_cache::process_room_preview_updates(cx);
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
         }
