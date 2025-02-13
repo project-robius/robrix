@@ -247,7 +247,7 @@ impl CalloutTooltip {
         };
 
         let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
-        if too_close_to_bottom && area.size.y > TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM {
+        if too_close_to_bottom && area.size.y + 10.0 > TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM {
             tooltip.apply_over(
                 cx,
                 live!(
