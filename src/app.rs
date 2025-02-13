@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
@@ -253,6 +255,7 @@ impl MatchEvent for App {
                     self.app_state.rooms_panel.selected_room = None;
                 }
                 RoomsPanelAction::None => { }
+                _ => {}
             }
 
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
@@ -375,6 +378,12 @@ pub struct AppState {
 #[derive(Default, Debug)]
 pub struct RoomsPanelState {
     pub selected_room: Option<SelectedRoom>,
+    /// The current dock state
+    pub dock_state: Option<HashMap<LiveId, DockItem>>,
+    /// The rooms that are currently open, keyed by the LiveId of their tab.
+    pub open_rooms: HashMap<LiveId, SelectedRoom>,
+    /// The order in which the rooms were opened
+    pub room_order: Vec<SelectedRoom>,
 }
 
 /// Represents a room currently or previously selected by the user.
