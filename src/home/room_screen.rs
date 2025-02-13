@@ -3553,7 +3553,7 @@ fn populate_image_message_content(
                                 if let Some(img_buff) = RgbImage::from_vec(width, height, data) {
                                     let mut bytes = Vec::new();
                                     let encoder = PngEncoder::new(&mut bytes);
-                                    if let Ok(_) = encoder.write_image(&img_buff, img_buff.width(), img_buff.height(), ColorType::Rgba8.into()) {
+                                    if encoder.write_image(&img_buff, img_buff.width(), img_buff.height(), ColorType::Rgba8.into()).is_ok() {
                                         *is_blur_image = true;
                                     }
                                     utils::load_png_or_jpg(&img, cx, &bytes)
