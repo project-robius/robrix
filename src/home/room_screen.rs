@@ -359,7 +359,16 @@ live_design! {
                     }
                 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> {
+                    html_view = {
+                        html = {
+                            padding: { top: 5.0 }
+                            a = {
+                                margin: { top: (-5.0) }
+                            }
+                        }
+                    }
+                }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -401,7 +410,16 @@ live_design! {
                 flow: Down,
                 padding: { left: 10.0 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> {
+                    html_view = {
+                        html = {
+                            padding: { top: 6.0 }
+                            a = {
+                                margin: { top: (-6.0) }
+                            }
+                        }
+                    }
+                }
                 <View> {
                     width: Fill,
                     height: Fit

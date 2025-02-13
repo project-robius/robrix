@@ -54,7 +54,6 @@ live_design! {
 
     pub RobrixHtmlLink = {{RobrixHtmlLink}} {
         width: Fit, height: Fit,
-        align: {x: 0., y: 0.}
 
         link = <HtmlLink> {
             hover_color: #21b070
@@ -284,8 +283,6 @@ impl Widget for MatrixLinkPill {
         if !self.visible {
             return DrawStep::done();
         }
-        // PROBLEM: redraw so many times
-        // log!("MatrixLinkPill: drawing matrix link pill");
         self.view.draw_walk(cx, scope, walk)
     }
 }
