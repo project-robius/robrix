@@ -5,7 +5,7 @@ use crate::{
     shared::callout_tooltip::TooltipAction, sliding_sync::get_client,
     verification::VerificationStateAction,
 };
-
+const TOOLTIP_WIDTH: f64 = 120.0;
 // First, define the verification icons component layout
 live_design! {
     use link::theme::*;
@@ -142,7 +142,7 @@ impl Widget for VerificationBadge {
                     &scope.path,
                     TooltipAction::HoverIn {
                         widget_rect: badge_rect,
-                        tooltip_width: 230.0,
+                        tooltip_width: TOOLTIP_WIDTH,
                         text: verification_state_str(self.verification_state).to_string(),
                         color: Some(verification_state_color(self.verification_state)),
                     },

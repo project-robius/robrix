@@ -55,7 +55,7 @@ live_design! {
                             sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
                             sdf.line_to(0.0, self.callout_triangle_height * 1.0);
                             sdf.line_to(self.callout_triangle_height, 0.0);
-                        } else if self.callout_angle < 90.5 || self.callout_angle > 180.5{ // By right, it should
+                        } else if self.callout_angle < 90.5 || self.callout_angle > 180.5 {
                             sdf.box(
                                 // Minus 2.0 to overlap the triangle and rectangle
                                 (self.callout_triangle_height - 2.0) + self.border_width,
@@ -157,6 +157,7 @@ impl CalloutTooltip {
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let mut too_close_to_right = false;
         let mut too_close_to_bottom = false;
+        let mut too_close_to_left = false;
         let window_size = cx.display_context.screen_size;
         let CalloutTooltipOptions {
             widget_rect,
@@ -173,7 +174,12 @@ impl CalloutTooltip {
         }
         let mut pos = if too_close_to_right {
             DVec2 {
-                x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
+                x: if widget_rect.pos.x + (widget_rect.size.x - tooltip_width) < 0.0 {
+                    too_close_to_left = true;
+                    0.0
+                } else {
+                    widget_rect.pos.x + (widget_rect.size.x - tooltip_width)
+                },
                 y: widget_rect.pos.y + widget_rect.size.y,
             }
         } else {
@@ -183,16 +189,18 @@ impl CalloutTooltip {
             }
         };
         if too_close_to_bottom && !too_close_to_right {
-            pos.x = widget_rect.pos.x + (widget_rect.size.x - 10.0) / 2.0;
+            pos.x = widget_rect.pos.x + widget_rect.size.x / 2.0 - 10.0;
             pos.y = widget_rect.pos.y - TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM + 10.0;
         }
-        let callout_offset = if too_close_to_right {
+        let callout_offset = if too_close_to_left {
+            widget_rect.pos.x + widget_rect.size.x / 2.0
+        } else if too_close_to_right {
             tooltip_width - (widget_rect.size.x - 10.0) / 2.0
         } else {
             10.0
         };
         let callout_angle = match (too_close_to_right, too_close_to_bottom) {
-            (true, true) => 0.0,     //point up
+            (true, true) => 180.0,     //point down
             (true, false) => 0.0,    // point up
             (false, true) => 180.0,  //point down
             (false, false) => 270.0, //point left
@@ -224,28 +232,31 @@ impl CalloutTooltip {
                             } else {
                                 10.0
                             }
-                        )}
+                        ), bottom: (if callout_angle == 180.0 {
+                            10.0 + 7.5 // 7.5 is the height of the isoceles triangle
+                        } else {
+                            10.0
+                        })}
                     }
                 }
             ),
         );
-        if too_close_to_bottom {
+
+        if let Some(mut tooltip) = tooltip.borrow_mut() {
+            tooltip.set_text(cx, text);
+        };
+        
+        let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
+        if too_close_to_bottom && area.size.y > TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM {
             tooltip.apply_over(
                 cx,
                 live!(
                     content: {
-                        height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM),
-                        width: Fill
-                        rounded_view = {
-                            height: (TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM - 10.0),
-                        }
+                        margin: { top: (widget_rect.pos.y - area.size.y )},
                     }
                 ),
             );
         }
-        if let Some(mut tooltip) = tooltip.borrow_mut() {
-            tooltip.set_text(cx, text);
-        };
         tooltip.show(cx);
     }
 
