@@ -192,6 +192,10 @@ impl CalloutTooltip {
             pos.x = widget_rect.pos.x + widget_rect.size.x / 2.0 - 10.0;
             pos.y = widget_rect.pos.y - TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM + 10.0;
         }
+        if too_close_to_bottom && too_close_to_right {
+            pos.x = widget_rect.pos.x + (widget_rect.size.x / 2.0 - tooltip_width);
+            pos.y = widget_rect.pos.y - TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM;
+        }
         let callout_offset = if too_close_to_left {
             widget_rect.pos.x + widget_rect.size.x / 2.0
         } else if too_close_to_right {
@@ -219,24 +223,30 @@ impl CalloutTooltip {
                             callout_offset: (callout_offset)
                             // callout angle in clockwise direction
                             callout_angle: (callout_angle)
-                            background_color: (if let Some(color) = color {
-                                color
-                            } else {
-                                //#3b444b
-                                vec4(0.26, 0.30, 0.333, 1.0)
-                            })
+                            background_color: (
+                                if let Some(color) = color {
+                                    color
+                                } else {
+                                    //#3b444b
+                                    vec4(0.26, 0.30, 0.333, 1.0)
+                                }
+                            )
                         }
-                        padding: { left: (
-                            if callout_angle == 270.0 {
-                                10.0 + 7.5 // 7.5 is the height of the isoceles triangle
-                            } else {
-                                10.0
-                            }
-                        ), bottom: (if callout_angle == 180.0 {
-                            10.0 + 7.5 // 7.5 is the height of the isoceles triangle
-                        } else {
-                            10.0
-                        })}
+                        padding: {
+                            left: (
+                                if callout_angle == 270.0 {
+                                    10.0 + 7.5 // 7.5 is the height of the isoceles triangle
+                                } else {
+                                    10.0
+                                }
+                            ), bottom: (
+                                if callout_angle == 180.0 {
+                                    10.0 + 7.5 // 7.5 is the height of the isoceles triangle
+                                } else {
+                                    10.0
+                                }
+                            )
+                        }
                     }
                 }
             ),
@@ -247,6 +257,7 @@ impl CalloutTooltip {
         };
 
         let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
+        println!("area: {:?}", area);
         if too_close_to_bottom && area.size.y + 10.0 > TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM {
             tooltip.apply_over(
                 cx,
