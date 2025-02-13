@@ -2442,7 +2442,13 @@ impl RoomScreen {
                     // Get event_id and timestamp for the last visible event
                     let Some((last_event_id, last_timestamp)) = tl_state
                         .items
-                        .get(first_index + portal_list.visible_items())
+                        .get(
+                            if first_index + portal_list.visible_items() >= tl_state.items.len() {
+                                tl_state.items.len() - 1
+                            } else {
+                                first_index + portal_list.visible_items()
+                            },
+                        )
                         .and_then(|f| f.as_event())
                         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
                     else {
