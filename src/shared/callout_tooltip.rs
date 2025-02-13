@@ -200,7 +200,7 @@ impl CalloutTooltip {
             10.0
         };
         let callout_angle = match (too_close_to_right, too_close_to_bottom) {
-            (true, true) => 180.0,     //point down
+            (true, true) => 180.0,   //point down
             (true, false) => 0.0,    // point up
             (false, true) => 180.0,  //point down
             (false, false) => 270.0, //point left
@@ -245,7 +245,7 @@ impl CalloutTooltip {
         if let Some(mut tooltip) = tooltip.borrow_mut() {
             tooltip.set_text(cx, text);
         };
-        
+
         let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
         if too_close_to_bottom && area.size.y > TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM {
             tooltip.apply_over(
