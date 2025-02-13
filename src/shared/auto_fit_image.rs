@@ -14,12 +14,16 @@ live_design! {
     }
 }
 
+/// If View's width is larger than the image's width, we use `Size` to apply over the image.
+///
+/// Other conditions, we use `Smallest` to apply over the image.
 #[derive(Live, LiveHook, Widget)]
 struct RobrixAutoFitImage {
     #[deref] view: View,
     #[rust(true)] current_is_size: bool,
     #[rust] original_image_size: DVec2,
-    #[rust(false)] finished: bool,
+    /// Whether we get the true origin size of the image.
+    #[rust(false)] inisialized: bool,
 }
 
 
@@ -28,16 +32,15 @@ impl Widget for RobrixAutoFitImage {
         let image = self.view.image(id!(image));
         let self_rect_size = self.view.area().rect(cx).size;
 
-        if image.area().rect(cx).size.x > 0. && !self.finished && image.has_texture() {
+        if image.area().rect(cx).size.x > 0. && !self.inisialized && image.has_texture() {
             self.original_image_size = image.area().rect(cx).size;
-            self.finished = true;
+            self.inisialized = true;
         }
 
         let new_should_be_size = self_rect_size.x > self.original_image_size.x;
 
         if self.current_is_size != new_should_be_size {
             self.current_is_size = new_should_be_size;
-
             if new_should_be_size {
                 image.apply_over(cx, live! {
                     width: Fill, height: Fill
@@ -49,8 +52,8 @@ impl Widget for RobrixAutoFitImage {
                     fit: Smallest
                 });
             }
-            self.redraw(cx);
         }
+
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
