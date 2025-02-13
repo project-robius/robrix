@@ -31,16 +31,14 @@ impl Widget for RobrixAutoFitImage {
         if image.area().rect(cx).size.x > 0. && !self.finished && image.has_texture() {
             self.original_image_size = image.area().rect(cx).size;
             self.finished = true;
-
-            return;
         }
 
-        let new_is_size = self_rect_size.x > self.original_image_size.x;
+        let new_should_be_size = self_rect_size.x > self.original_image_size.x;
 
-        if self.current_is_size != new_is_size {
-            self.current_is_size = new_is_size;
+        if self.current_is_size != new_should_be_size {
+            self.current_is_size = new_should_be_size;
 
-            if new_is_size {
+            if new_should_be_size {
                 image.apply_over(cx, live! {
                     width: Fill, height: Fill
                     fit: Size
