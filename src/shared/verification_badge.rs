@@ -5,7 +5,7 @@ use crate::{
     shared::callout_tooltip::TooltipAction, sliding_sync::get_client,
     verification::VerificationStateAction,
 };
-const TOOLTIP_WIDTH: f64 = 120.0;
+const TOOLTIP_WIDTH: f64 = 230.0;
 // First, define the verification icons component layout
 live_design! {
     use link::theme::*;
