@@ -5,12 +5,15 @@
 
 use makepad_widgets::*;
 
+use super::auto_fit_image::RobrixAutoFitImageWidgetExt;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
 
     use crate::shared::styles::*;
+    use crate::shared::auto_fit_image::RobrixAutoFitImage;
 
     pub TextOrImage = {{TextOrImage}} {
         width: Fill, height: Fit,
@@ -32,22 +35,11 @@ live_design! {
                 }
             }
         }
-        image_view = <View> {
+        image_view = <RobrixAutoFitImage> {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
-            width: Fill, height: Fit,
-            image = <Image> {
-                width: Fill, height: Fill,
-                fit: Size,
-            }
+            cursor: Hand,
         }
     }
-}
-
-#[derive(Debug, Clone, DefaultNone)]
-pub enum TextOrImageAction {
-    Post(WidgetUid, f64),
-    None,
 }
 
 /// A view that holds an image or text content, and can switch between the two.
@@ -60,7 +52,6 @@ pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
-    #[rust(false)] posted: bool,
 }
 
 impl Widget for TextOrImage {
@@ -69,21 +60,6 @@ impl Widget for TextOrImage {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let TextOrImageStatus::Image = self.status {
-            if !self.posted {
-                let image = self.view.image(id!(image_view.image));
-                image.draw_all(cx, scope);
-                let width = image.area().rect(cx).size.x;
-                let image_uid = image.widget_uid();
-
-                log!("width: {}, image_uid: {:?}", width, image_uid);
-                Cx::post_action(TextOrImageAction::Post(image_uid, width));
-                self.posted = true;
-                return DrawStep::done();
-            }
-        } else {
-            self.posted = true;
-        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
@@ -94,7 +70,7 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.view(id!(image_view)).set_visible(cx, false);
+        self.robrix_auto_fit_image(id!(image_view)).set_visible(cx, false);
         self.view(id!(text_view)).set_visible(cx, true);
         self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
         self.status = TextOrImageStatus::Text;
@@ -113,11 +89,12 @@ impl TextOrImage {
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
+
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.view(id!(image_view)).set_visible(cx, true);
+                self.robrix_auto_fit_image(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
                 Ok(())
             }
