@@ -37,7 +37,7 @@ live_design! {
         }
         image_view = <RobrixAutoFitImage> {
             visible: false,
-            cursor: Hand,
+            cursor: Default, // Use `Hand` once we support clicking on the image
         }
     }
 }
