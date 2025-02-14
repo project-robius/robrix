@@ -9,7 +9,7 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 
 /// The default width of the room screen tooltip for read receipts.
-const TOOLTIP_WIDTH: f64 = 180.0;
+const TOOLTIP_WIDTH: f64 = 230.0;
 
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
