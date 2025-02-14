@@ -36,7 +36,6 @@ impl Widget for RobrixAutoFitImage {
         }
         match event {
             Event::Draw(_) | Event::WindowGeomChange(_) =>{
-                log!("Runned");
                 let self_rect_size = self.view.area().rect(cx).size;
 
                 let new_should_be_size = self_rect_size.x > self.threshold_image_size.x;
