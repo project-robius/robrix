@@ -2,7 +2,6 @@ use std::sync::Mutex;
 use std::{
     collections::{btree_map::Entry, HashMap},
     sync::Arc,
-    time::Instant,
 };
 
 use makepad_widgets::*;
@@ -141,14 +140,12 @@ impl MatchEvent for ImageViewer {
                             self.load_with_data(cx, &data);
                         }
                         MediaCacheEntry::Requested => {
-                            log!("MediaCacheEntry::Requested");
                             let image_uid_thumbnail_data_map =
                                 self.image_uid_thumbnail_data_map.clone();
+
                             let Some(thumbnail_data) =
-                                image_uid_thumbnail_data_map.get(text_or_image_uid)
-                            else {
-                                return;
-                            };
+                                image_uid_thumbnail_data_map.get(text_or_image_uid) else { return };
+
                             self.view.view(id!(spin_loader)).set_visible(cx, true);
                             self.load_with_data(cx, thumbnail_data);
                         }
@@ -189,7 +186,6 @@ impl ImageViewer {
             .insert(*text_or_image_uid, mxc_uri.clone());
         self.image_uid_thumbnail_data_map
             .insert(*text_or_image_uid, thumbnail_data.clone());
-        log!("Inserted");
     }
     /// We find mx_uid via the given `text_or_image_uid`.
     fn image_viewer_try_get_or_fetch(
@@ -224,16 +220,11 @@ impl ImageViewer {
     fn load_with_data(&mut self, cx: &mut Cx, data: &[u8]) {
         let image = self.view.image(id!(image_view.image));
 
-        let start = Instant::now();
-
         if let Err(e) = utils::load_png_or_jpg(&image, cx, data) {
             log!("Error to load image: {e}");
         } else {
-            log!("Success loaded");
             self.view.redraw(cx);
         }
-        let duration = start.elapsed();
-        println!("time coust: {:?}", duration);
     }
 }
 
