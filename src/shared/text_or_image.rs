@@ -73,6 +73,7 @@ impl Widget for TextOrImage {
                 if fe.was_tap() {
                     // Once Clicked, We post an action.
                     Cx::post_action(ImageViewerAction::ImageClicked(self.widget_uid()));
+                    SignalToUI::set_ui_signal();
                 }
             }
             _ => (),
