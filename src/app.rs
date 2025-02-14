@@ -19,11 +19,6 @@ live_design! {
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
 
-    ICON_CHAT = dep("crate://self/resources/icons/chat.svg")
-    ICON_CONTACTS = dep("crate://self/resources/icons/contacts.svg")
-    ICON_DISCOVER = dep("crate://self/resources/icons/discover.svg")
-    ICON_ME = dep("crate://self/resources/icons/me.svg")
-
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
