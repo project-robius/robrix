@@ -1,8 +1,11 @@
 use makepad_widgets::*;
 use matrix_sdk::encryption::VerificationState;
 
-use crate::{home::spaces_dock::ProfileTooltipAction, sliding_sync::get_client, verification::VerificationStateAction};
-
+use crate::{
+    shared::callout_tooltip::TooltipAction, sliding_sync::get_client,
+    verification::VerificationStateAction,
+};
+const TOOLTIP_WIDTH: f64 = 230.0;
 // First, define the verification icons component layout
 live_design! {
     use link::theme::*;
@@ -75,7 +78,6 @@ live_design! {
     }
 }
 
-
 pub fn verification_state_str(state: VerificationState) -> &'static str {
     match state {
         VerificationState::Verified => "This device is fully verified.",
@@ -94,10 +96,12 @@ pub fn verification_state_color(state: VerificationState) -> Vec4 {
 
 #[derive(Live, Widget)]
 pub struct VerificationBadge {
-    #[deref] view: View,
-    #[rust(VerificationState::Unknown)] verification_state: VerificationState,
-} 
- 
+    #[deref]
+    view: View,
+    #[rust(VerificationState::Unknown)]
+    verification_state: VerificationState,
+}
+
 impl LiveHook for VerificationBadge {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         if let Some(client) = get_client() {
@@ -133,36 +137,21 @@ impl Widget for VerificationBadge {
             | Hit::FingerHoverIn(_)
             | Hit::FingerHoverOver(_) => {
                 let badge_rect = badge_area.rect(cx);
-                let tooltip_pos = if cx.display_context.is_desktop() {
-                    DVec2 {
-                        x: badge_rect.pos.x + badge_rect.size.x + 1.,
-                        y: badge_rect.pos.y - 10.,
-                    }
-                } else {
-                    DVec2 {
-                        x: badge_rect.pos.x,
-                        y: badge_rect.pos.y - 10.,
-                    }
-                };
-    
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    ProfileTooltipAction::Show {
-                        pos: tooltip_pos,
-                        text: verification_state_str(self.verification_state),
-                        color: verification_state_color(self.verification_state),
+                    TooltipAction::HoverIn {
+                        widget_rect: badge_rect,
+                        tooltip_width: TOOLTIP_WIDTH,
+                        text: verification_state_str(self.verification_state).to_string(),
+                        color: Some(verification_state_color(self.verification_state)),
                     },
                 );
             }
             Hit::FingerHoverOut(_) => {
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    ProfileTooltipAction::Hide,
-                );
+                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
             }
-            _ => { }
+            _ => {}
         }
     }
 
