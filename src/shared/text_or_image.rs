@@ -5,6 +5,8 @@
 
 use makepad_widgets::*;
 
+use crate::image_viewer::ImageViewerAction;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -34,16 +36,15 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Smallest,
+                fit: Size,
             }
         }
     }
 }
-
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
@@ -54,12 +55,30 @@ live_design! {
 pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
-    // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
 }
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // We only handle events if the status is `Image`.
+        if TextOrImageStatus::Image != self.status() { return };
+
+        let image_area = self.view.image(id!(image_view.image)).area();
+
+        match event.hits(cx, image_area) {
+            Hit::FingerDown(_fe) => {
+                cx.set_key_focus(image_area);
+            }
+            Hit::FingerUp(fe) => {
+                if fe.was_tap() {
+                    // Once Clicked, We post an action.
+                    Cx::post_action(ImageViewerAction::ImageClicked(self.widget_uid()));
+                    SignalToUI::set_ui_signal();
+                }
+            }
+            _ => (),
+        }
+
         self.view.handle_event(cx, event, scope);
     }
 
