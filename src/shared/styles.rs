@@ -196,20 +196,22 @@ live_design! {
         width: Fill, height: Fill
         show_bg: true,
         draw_bg: {
-            color: #000000AF
+            color: #00000000
+
+            instance rotation_speed: 1.
+            instance num_segments: 5.
             fn pixel(self) -> vec4 {
                 // Normalize and adjust for aspect ratio to ensure circular shape.
                 let aspect = self.rect_size.x / self.rect_size.y;
-
-                let pos = vec2(
-                    (self.pos.x - 0.5) * max(aspect, 1.),
-                    (self.pos.y - 0.5) * max(1. / aspect, 1.)
-                ) * 2.8;
+                let normalized_pos_x = (self.pos.x - 0.5) * max(aspect, 1.);
+                let normalized_pos_y = (self.pos.y - 0.5) * max(1. / aspect, 1.);
+                let pos = vec2(normalized_pos_x, normalized_pos_y) * 2.8;
 
                 let radius = length(pos);
 
                 // Rotate over time
-                let angle = atan(pos.y, pos.x) + self.time * PI * 2.0;
+                let angle_offset = self.time * self.rotation_speed * PI * 2.0;
+                let angle = atan(pos.y, pos.x) + angle_offset;
 
                 // Create a circular shape with thickness
                 let inner_radius = 0.5;
@@ -221,9 +223,9 @@ live_design! {
 
                 // 5 segments for the spinner.
                 // Use sin to create an effect where parts of the circle fade in and out.
-                let alpha = sin(angle * 5.0) * 0.5 + 0.5;
+                let alpha = (sin(angle * self.num_segments) * 0.5 + 0.5) * d;
 
-                return vec4(self.color.rgb, d * alpha);
+                return vec4(self.color.rgb, alpha);
             }
         }
     }
