@@ -78,6 +78,15 @@ impl Widget for ColorTooltip {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if self.opened {
             self.content.handle_event(cx, event, scope);
+
+            // Hide the tooltip upon any press/click.
+            match event.hits(cx, self.draw_bg.area()) {
+                h @ Hit::FingerDown(_) | h @ Hit::FingerUp(_) => {
+                    log!("Got hit on ColorTooltip: {h:?}");
+                    self.hide(cx);
+                }
+                _ => (),
+            }
         }
     }
 
@@ -171,6 +180,10 @@ impl ColorTooltipRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.hide(cx);
         }
+    }
+
+    pub fn is_currently_shown(&self) -> bool {
+        self.borrow().is_some_and(|inner| inner.opened)
     }
 
     pub fn show_with_options(&self, cx: &mut Cx, pos: DVec2, text: &str, color: Vec4) {
