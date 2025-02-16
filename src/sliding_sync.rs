@@ -10,12 +10,14 @@ use matrix_sdk::{
     media::MediaRequest,
     room::{Receipts, RoomMember},
     ruma::{
-        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType},
+        api::client::{receipt::create_receipt::v3::ReceiptType, session::get_login_types::v3::LoginType,
+        search::search_events::v3::{Criteria, Categories, Request,}
+        },
         events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent},
                 MediaSource,
-            }, FullStateEventContent
+            }, FullStateEventContent, AnyTimelineEvent,
         },
         OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomId, UserId
     },
@@ -26,12 +28,12 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState},
     sync_service::{self, SyncService},
-    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItemContent},
+    timeline::{AnyOtherFullStateEventContent, EventTimelineItem, LiveBackPaginationStatus, RepliedToInfo, TimelineDetails, TimelineItem, TimelineItemContent},
     Timeline,
 };
 use tokio::{
     runtime::Handle,
-    sync::mpsc::{UnboundedSender, UnboundedReceiver},
+    sync::mpsc::{UnboundedSender, UnboundedReceiver, unbounded_channel},
     task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
@@ -43,7 +45,7 @@ use crate::{
     }, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
+    }, shared::search::SearchUpdate, utils::MEDIA_THUMBNAIL_FORMAT, verification::add_verification_event_handlers_and_sync_client
 };
 
 
@@ -264,8 +266,27 @@ pub enum MatrixRequest {
     FullyReadReceipt{
         room_id: OwnedRoomId,
         event_id: OwnedEventId,
-    }
+    },
+
+    /// Request to search for messages in a room.
+    SearchRoomMessages {
+        room_id: OwnedRoomId,
+        search_term: String,
+        next_batch: Option<String>,
+    },
 }
+
+// Create a global sender/receiver pair for search results
+pub static SEARCH_RESULTS_SENDER: OnceLock<crossbeam_channel::Sender<SearchUpdate>> = OnceLock::new();
+pub static SEARCH_RESULTS_RECEIVER: OnceLock<crossbeam_channel::Receiver<SearchUpdate>> = OnceLock::new();
+
+// Initialize the search channel
+pub fn init_search_channel() {
+    let (sender, receiver) = crossbeam_channel::unbounded();
+    SEARCH_RESULTS_SENDER.set(sender).unwrap();
+    SEARCH_RESULTS_RECEIVER.set(receiver).unwrap();
+}
+
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
@@ -671,7 +692,66 @@ async fn async_worker(mut receiver: UnboundedReceiver<MatrixRequest>) -> Result<
                         Err(_e) => error!("Failed to send fully read receipt to room {room_id}, event {event_id}; error: {_e:?}"),
                     }
                 });
-            }    
+            },
+            
+            MatrixRequest::SearchRoomMessages { room_id, search_term, next_batch } => {
+                let mut categories = Categories::new();
+                categories.room_events = Some(Criteria::new(search_term));
+
+                let mut search_request = Request::new(categories);
+                search_request.next_batch = next_batch;
+
+                let client = get_client().unwrap();
+
+                match client.send(search_request, None).await {
+                    Ok(response) => {
+                        let room_events = response.search_categories.room_events;
+
+                        let event_ids: Vec<OwnedEventId> = room_events
+                            .results
+                            .into_iter()
+                            .filter_map(|search_result| {
+                                search_result.result
+                                    .and_then(|raw_event| raw_event.deserialize().ok()) 
+                                    .and_then(|event| match event {
+                                        AnyTimelineEvent::MessageLike(msg) => Some(msg.event_id().to_owned()),
+                                        AnyTimelineEvent::State(state) => Some(state.event_id().to_owned()),
+                                        _ => None,
+                                    })
+                            })
+                            .collect();
+
+                        if event_ids.is_empty() {
+                            log!("Search found no events.");
+                            return Ok(());
+                        }
+
+                        // Now that we have event IDs, request pagination of those events.
+                        let timeline = {
+                            let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                            let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                                log!("Skipping search request for not-yet-known room {room_id}");
+                                return Ok(());
+                            };
+                            room_info.timeline.clone()
+                        };
+
+                        // Fetch events by requesting timeline pagination for each found event.
+                        let _fetch_events_task = Handle::current().spawn(async move {
+                            log!("Fetching {} events for search results in room {}", event_ids.len(), room_id);
+                            
+                            for event_id in event_ids {
+                                let _ = timeline.fetch_details_for_event(&event_id).await;
+                            }
+
+                            log!("Finished fetching search results.");
+                        });
+                    }
+                    Err(e) => {
+                        error!("Search request failed: {:?}", e);
+                    }
+                }
+            }                                                                                     
         }
     }
 

@@ -29,12 +29,9 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::{AvatarRef, AvatarWidgetRefExt},
-        html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
-        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
-        typing_animation::TypingAnimationWidgetExt,
+        avatar::{AvatarRef, AvatarWidgetRefExt}, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, search::SearchUpdate, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     },
-    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
+    sliding_sync::{get_client, submit_async_request, take_timeline_update_receiver, MatrixRequest, SEARCH_RESULTS_RECEIVER}, utils::{self, unix_time_millis_to_datetime, MediaFormatConst}
 };
 use rangemap::RangeSet;
 
@@ -940,9 +937,71 @@ struct RoomScreen {
     #[rust] tl_state: Option<TimelineUiState>,
     /// 5 secs timer when scroll ends
     #[rust] fully_read_timer: Timer,
+    /// The current search state for the room.
+    #[rust] search_state: Option<SearchUiState>,
+    /// The last search term used in the room.
+    #[rust] last_search_term: String,
 }
 
 impl RoomScreen{
+
+    fn start_message_search(&mut self, room_id: OwnedRoomId, search_term: String) {
+        let (update_sender, update_receiver) = crossbeam_channel::unbounded();
+        let search_state = SearchUiState {
+            room_id: room_id.clone(),
+            fully_paginated: false,
+            items: Vector::new(),
+            next_batch: None,
+            update_receiver,
+        };
+        self.search_state = Some(search_state);
+        
+        submit_async_request(MatrixRequest::SearchRoomMessages {
+            room_id,
+            search_term,
+            next_batch: None,
+        });
+    }
+
+    fn process_search_updates(&mut self, cx: &mut Cx) {
+        let Some(search_state) = self.search_state.as_mut() else { return };
+    
+        let Some(receiver) = SEARCH_RESULTS_RECEIVER.get() else { return };
+    
+        while let Ok(update) = receiver.try_recv() {
+            match update {
+                SearchUpdate::NewResults { room_id, results, next_batch } => {
+                    if search_state.room_id == room_id {
+                        search_state.items.extend(results);
+                        search_state.next_batch = next_batch.clone();
+    
+                        // Stop pagination if no more results
+                        if next_batch.is_none() {
+                            search_state.fully_paginated = true;
+                        }
+                    }
+                }
+            }
+        }
+        self.redraw(cx);
+    }    
+    
+
+    fn paginate_search_results(&mut self) {
+        let Some(search_state) = self.search_state.as_mut() else { return };
+        if search_state.fully_paginated {
+            return;
+        }
+    
+        if let Some(next_batch) = search_state.next_batch.clone() {
+            submit_async_request(MatrixRequest::SearchRoomMessages {
+                room_id: search_state.room_id.clone(),
+                search_term: self.last_search_term.clone(),
+                next_batch: Some(next_batch),
+            });
+        }
+    }
+
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
         cx: &mut Cx,
@@ -1917,6 +1976,14 @@ struct TimelineUiState {
     prev_first_index: Option<usize>,
     read_event_hashmap: HashMap<String, (OwnedRoomId, OwnedEventId, Instant, bool)>,
     marked_fully_read_queue: HashMap<String, (OwnedRoomId, OwnedEventId)>,
+}
+
+struct SearchUiState {
+    room_id: OwnedRoomId,
+    fully_paginated: bool,
+    items: Vector<Arc<TimelineItem>>,
+    next_batch: Option<String>,
+    update_receiver: crossbeam_channel::Receiver<SearchUpdate>,
 }
 
 /// The item index, scroll position, and optional unique IDs of the first `N` events

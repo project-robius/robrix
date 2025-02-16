@@ -11,6 +11,7 @@ pub mod search_bar;
 pub mod styles;
 pub mod text_or_image;
 pub mod typing_animation;
+pub mod search;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
