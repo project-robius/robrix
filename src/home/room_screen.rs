@@ -3242,6 +3242,7 @@ fn populate_message_view(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
                     audio,
+                    media_cache
                 );
                 (item, false)
             }
@@ -3602,7 +3603,9 @@ fn populate_audio_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     audio: &AudioMessageEventContent,
+    media_cache: &mut MediaCache
 ) -> bool {
+    let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = audio.filename();
     let (duration, mime, size) = audio
@@ -3625,14 +3628,30 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
-
-    // TODO: add an audio to play the audio file
-
     message_content_widget.show_html(
         cx,
         format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> →"),
     );
-    true
+    match audio.source.clone() {
+        MediaSource::Plain(mxc_uri) => {
+            match media_cache.try_get_media_or_fetch(mxc_uri, None) {
+                MediaCacheEntry::Requested => {
+
+                },
+                MediaCacheEntry::Loaded(data) => {
+
+                },
+                MediaCacheEntry::Failed => {
+
+                }
+            }
+        }
+        MediaSource::Encrypted(e) => {
+
+        }
+    }
+
+    fully_drawn
 }
 
 
