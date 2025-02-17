@@ -3630,7 +3630,7 @@ fn populate_audio_message_content(
 
     message_content_widget.show_html(
         cx,
-        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"),
+        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> →"),
     );
     true
 }
@@ -4319,7 +4319,7 @@ impl Widget for Message {
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,
