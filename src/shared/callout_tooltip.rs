@@ -29,16 +29,18 @@ live_design! {
                     radius: 2.,
                     instance background_color: (#3b444b),
                     // Height of isoceles triangle
-                    instance callout_triangle_height: 7.5,
-                    instance callout_offset: 15.0,
+                    // instance callout_triangle_height: 7.5,
+                    // instance callout_offset: 15.0,
                     // callout angle in clockwise direction
                     // 0.0 is pointing up,
                     // 90.0 is pointing left, pointing right is not supported
                     // 180.0 is pointing down,
                     // 270.0 is pointing left
-                    instance diff_x: 0.0,
-                    instance diff_y: 0.0,
-                    instance callout_angle: 0.0,
+                    //instance target_x: 33.0,
+                    instance target_x: 80.0,
+                    instance target_y: 40.0,
+                    instance rect_top_left_x: 33.0,
+                    instance rect_top_left_y: 71.0,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let rect_size = self.rect_size;
@@ -51,11 +53,42 @@ live_design! {
                             max(1.0, self.radius)
                         )
                         sdf.fill(self.background_color);
-                        sdf.move_to(self.border_width, self.border_width);
-                        sdf.line_to(self.diff_x, self.diff_y);
-                        sdf.line_to(self.border_width * 2.0, self.border_width * 2.0);
+                        let diff_x = self.target_x - self.rect_top_left_x;
+                        let diff_y = self.target_y - self.rect_top_left_y;
+                        let mut angle = 0.0;
+                        if diff_x >= 0.0 && diff_y <= 0.0 {
+                            angle = 45.0;
+                        } else if diff_x >= 0.0 && diff_y > 0.0 {
+                            angle = 135.0;
+                        }  else if diff_x <= 0.0 && diff_y <= 0.0 {
+                            angle = 225.0;
+                        }   else {
+                            angle = 315.0;
+                        }
+                        let triangle_height = 7.5;
+                        let mut vertex1 = vec2(0.0, 0.0);
+                        let mut vertex2 = vec2(0.0, 0.0);
+                        let mut vertex3 = vec2(0.0, 0.0);
+                        if angle == 45.0 || angle == 225.0 {
+                            vertex1 = vec2(max(self.border_width + 2.0, diff_x), self.border_width + 2.0);
+                            vertex2 = vec2(vertex1.x + triangle_height, vertex1.y - triangle_height);
+                            vertex3 = vec2(vertex1.x + triangle_height * 2.0, vertex1.y);
+                        } else {
+                            vertex1 = vec2(max(self.border_width + 2.0, diff_x) + triangle_height * 2.0 , rect_size.y - triangle_height - 2.0);
+                            vertex2 = vec2(vertex1.x - triangle_height, vertex1.y + triangle_height);
+                            vertex3 = vec2(vertex1.x - triangle_height * 2.0, vertex1.y );
+                        }
+                        
+                        sdf.move_to(vertex1.x, vertex1.y);
+                        sdf.line_to(vertex2.x, vertex2.y);
+                        sdf.line_to(vertex3.x, vertex3.y);
                         sdf.close_path();
                         sdf.fill(self.background_color);
+                        // sdf.move_to(self.border_width, self.border_width);
+                        // sdf.line_to(self.diff_x, self.diff_y);
+                        // sdf.line_to(self.border_width * 2.0, self.border_width * 2.0);
+                        // sdf.close_path();
+                        // sdf.fill(self.background_color);
                         return sdf.result;
                         // let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         // let rect_size = self.rect_size;
@@ -317,16 +350,24 @@ impl CalloutTooltip {
         expected_dimensions.x = options.tooltip_width;
         //let rect = cx.display_context.screen_size;
         let rect = options.parent_rect.size;
-        println!("pos {:?} rect {:?} expected_dimensions {:?} options.tooltip_width  {:?}", pos, rect, expected_dimensions, options.tooltip_width );
+        // padding_y: 15
+        // padding_y: border 7.5
         let mut pos_x = min(pos.x, rect.x - expected_dimensions.x);
-        let pos_y = min(pos.y + options.widget_rect.size.y, rect.y - expected_dimensions.y);
+        let mut pos_y = min(pos.y + options.widget_rect.size.y, rect.y - expected_dimensions.y);
         if pos_y == rect.y - expected_dimensions.y {
-            pos_x +=  options.widget_rect.size.x;
+            pos_y -=  (options.widget_rect.size.y + 15.0 * 2.0 + 7.5 * 2.0);
         }
-        let mut diff = DVec2::new();
-        diff.x = (options.widget_rect.pos.x + options.widget_rect.size.x / 2.0 ) - pos_x - 15.0;
-        diff.y = options.widget_rect.pos.y + options.widget_rect.size.y / 2.0 - pos_y - 15.0;
-        println!("diff {:?}", diff);
+        let target = DVec2{
+            x: options.widget_rect.pos.x,
+            y: options.widget_rect.pos.y
+        };
+        let target_width = options.widget_rect.size.x;
+        let target_height = options.widget_rect.size.y;
+        let rect_top_left = DVec2{
+            x: pos_x,
+            y: pos_y
+        };
+        println!("target {:?} rect_top_left {:?}", target, rect_top_left);
         tooltip.apply_over(
             cx,
             live!(
@@ -334,8 +375,12 @@ impl CalloutTooltip {
                 rounded_view = {
                     height: Fit,
                     draw_bg: {
-                        diff_x: (diff.x),
-                        diff_y: (diff.y)
+                        rect_top_left_x: (rect_top_left.x),
+                        rect_top_left_y: (rect_top_left.y),
+                        target_x: (target.x),
+                        target_y: (target.y),
+                        target_height: (target_height),
+                        target_width: (target_width)
                     }
                 }
             }
