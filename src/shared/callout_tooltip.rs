@@ -39,6 +39,8 @@ live_design! {
                     //instance target_x: 33.0,
                     instance target_x: 80.0,
                     instance target_y: 40.0,
+                    instance target_width: 40.0,
+                    instance target_height: 40.0,
                     instance rect_top_left_x: 33.0,
                     instance rect_top_left_y: 71.0,
                     fn pixel(self) -> vec4 {
@@ -69,12 +71,13 @@ live_design! {
                         let mut vertex1 = vec2(0.0, 0.0);
                         let mut vertex2 = vec2(0.0, 0.0);
                         let mut vertex3 = vec2(0.0, 0.0);
+                        let diff_x_from_center = self.target_x + self.target_width / 2.0 - self.rect_top_left_x - triangle_height;
                         if angle == 45.0 || angle == 225.0 {
-                            vertex1 = vec2(max(self.border_width + 2.0, diff_x), self.border_width + 2.0);
+                            vertex1 = vec2(max(self.border_width + 2.0, diff_x_from_center), self.border_width + 2.0);
                             vertex2 = vec2(vertex1.x + triangle_height, vertex1.y - triangle_height);
                             vertex3 = vec2(vertex1.x + triangle_height * 2.0, vertex1.y);
                         } else {
-                            vertex1 = vec2(max(self.border_width + 2.0, diff_x) + triangle_height * 2.0 , rect_size.y - triangle_height - 2.0);
+                            vertex1 = vec2(max(self.border_width + 2.0, diff_x_from_center) + triangle_height * 2.0 , rect_size.y - triangle_height - 2.0);
                             vertex2 = vec2(vertex1.x - triangle_height, vertex1.y + triangle_height);
                             vertex3 = vec2(vertex1.x - triangle_height * 2.0, vertex1.y );
                         }
@@ -168,6 +171,7 @@ live_design! {
 }
 pub const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
 
+#[derive(Debug)]
 /// A struct that holds the options for a callout tooltip
 pub struct CalloutTooltipOptions {
     /// The rect of the widget that the tooltip is pointing to
@@ -185,6 +189,9 @@ pub struct CalloutTooltipOptions {
 pub struct CalloutTooltip {
     #[deref]
     view: View,
+    #[rust] expected_dimensions: Option<DVec2>,
+    #[redraw]
+    #[rust] area: Area
 }
 
 impl Widget for CalloutTooltip {
@@ -312,6 +319,7 @@ impl CalloutTooltip {
         };
 
         let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
+        let area: Rect = tooltip.view(id!(tooltip_label)).area().rect(cx);
         if too_close_to_bottom && area.size.y + 10.0 > TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM {
             tooltip.apply_over(
                 cx,
@@ -345,18 +353,30 @@ impl CalloutTooltip {
         if let Some(mut tooltip) = tooltip.borrow_mut() {
             tooltip.set_text(cx, text);
         };
+        //let area = self.area.rect(cx);
         let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
-        let mut  expected_dimensions = area.size;
+        let mut expected_dimensions = area.size;
         expected_dimensions.x = options.tooltip_width;
+        if expected_dimensions.y == 0.0 {
+            println!("expected_dimensions.y is zero");
+        } else {
+            println!("expected_dimensions.y {:?}", expected_dimensions.y);
+        }
+        // if expected_dimensions.y != 0.0 {
+        //     self.expected_dimensions = Some(expected_dimensions);
+        // }
         //let rect = cx.display_context.screen_size;
         let rect = options.parent_rect.size;
         // padding_y: 15
         // padding_y: border 7.5
         let mut pos_x = min(pos.x, rect.x - expected_dimensions.x);
         let mut pos_y = min(pos.y + options.widget_rect.size.y, rect.y - expected_dimensions.y);
-        if pos_y == rect.y - expected_dimensions.y {
-            pos_y -=  (options.widget_rect.size.y + 15.0 * 2.0 + 7.5 * 2.0);
-        }
+        //if let Some(expected_dimensions) = expected_dimensions {
+            if pos_y == rect.y - expected_dimensions.y {
+                pos_y -=  (options.widget_rect.size.y + 15.0 * 2.0 + 7.5 * 2.0); //padding *2 + border_width * 2
+            }
+        //}
+        
         let target = DVec2{
             x: options.widget_rect.pos.x,
             y: options.widget_rect.pos.y
@@ -367,7 +387,8 @@ impl CalloutTooltip {
             x: pos_x,
             y: pos_y
         };
-        println!("target {:?} rect_top_left {:?}", target, rect_top_left);
+        // println!("target {:?} rect_top_left {:?} pos.y + options.widget_rect.size.y {:?} rect.y - expected_dimensions.y {:?}", target, rect_top_left, pos.y + options.widget_rect.size.y, rect.y - expected_dimensions.y);
+        // println!("rect {:?} expected_dimensions {:?} options {:?}",rect, self.expected_dimensions, options);
         tooltip.apply_over(
             cx,
             live!(

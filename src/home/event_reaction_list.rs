@@ -140,9 +140,9 @@ impl Widget for ReactionList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid: WidgetUid = self.widget_uid();
         for (widget_ref, reaction_data) in self.children.iter() {
+            let widget_rect = widget_ref.area().rect(cx);
             match event.hits(cx, widget_ref.area()) {
-                Hit::FingerHoverIn(_) => {
-                    let widget_rect = widget_ref.area().rect(cx);
+                Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) | Hit::FingerUp(_)=> {
                     cx.widget_action(
                         uid,
                         &scope.path,
@@ -188,15 +188,20 @@ impl Widget for ReactionList {
                             draw_bg: { color: (bg_color) , border_color: (border_color) }
                         },
                     );
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                    cx.widget_action(
+                        uid,
+                        &scope.path,
+                        RoomScreenTooltipActions::HoverInReactionButton {
+                            widget_rect,
+                            tooltip_width: TOOLTIP_WIDTH,
+                            color: None,
+                            reaction_data: reaction_data.clone(),
+                        },
+                    );
                     cx.set_cursor(MouseCursor::Hand);
                     break;
                 }
-                Hit::FingerUp(_) => {
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
-                    cx.set_cursor(MouseCursor::Hand);
-                    break;
-                }
+                
                 Hit::FingerScroll(_) => {
                     cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
                     cx.set_cursor(MouseCursor::Default);

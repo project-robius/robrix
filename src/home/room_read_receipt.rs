@@ -9,7 +9,7 @@ use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 
 /// The default width of the room screen tooltip for read receipts.
-const TOOLTIP_WIDTH: f64 = 230.0;
+const TOOLTIP_WIDTH: f64 = 150.0;
 
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
@@ -94,7 +94,7 @@ impl Widget for AvatarRow {
         let uid: WidgetUid = self.widget_uid();
         let widget_rect = self.area.rect(cx);
         match event.hits(cx, self.area) {
-            Hit::FingerHoverIn(_) => {
+            Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) | Hit::FingerUp(_) => {
                 if let Some(read_receipts) = &self.read_receipts {
                     cx.widget_action(
                         uid,
