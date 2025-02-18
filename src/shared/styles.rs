@@ -19,6 +19,8 @@ live_design! {
     pub ICON_SEND         = dep("crate://self/resources/icon_send.svg")
     pub ICON_TRASH        = dep("crate://self/resources/icons/trash.svg")
     pub ICON_VIEW_SOURCE  = dep("crate://self/resources/icons/view_source.svg")
+    pub ICON_PLAY        = dep("crate://self/resources/icons/play.svg")
+    pub ICON_PAUSE        = dep("crate://self/resources/icons/pause.svg")
 
     pub TITLE_TEXT = <THEME_FONT_REGULAR>{
         font_size: (13),

@@ -50,6 +50,7 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::audio_player::AudioPlayer;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
@@ -433,6 +434,24 @@ live_design! {
         }
     }
 
+    AudioMessage = <Message> {
+        body = {
+            content = {
+                width: Fill,
+                height: Fit
+                padding: { left: 10.0 }
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                    audio_player = <AudioPlayer> {}
+                }
+            }
+        }
+    }
+
     // The view used for a condensed image message that came right after another message
     // from the same sender, and thus doesn't need to display the sender's profile again.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
@@ -600,6 +619,7 @@ live_design! {
             Message = <Message> {}
             CondensedMessage = <CondensedMessage> {}
             ImageMessage = <ImageMessage> {}
+            AudioMessage = <AudioMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
@@ -3605,7 +3625,7 @@ fn populate_audio_message_content(
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
 ) -> bool {
-    let mut fully_drawn = false;
+    let mut _fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = audio.filename();
     let (duration, mime, size) = audio
@@ -3638,7 +3658,7 @@ fn populate_audio_message_content(
                 MediaCacheEntry::Requested => {
 
                 },
-                MediaCacheEntry::Loaded(data) => {
+                MediaCacheEntry::Loaded(_data) => {
 
                 },
                 MediaCacheEntry::Failed => {
@@ -3646,12 +3666,12 @@ fn populate_audio_message_content(
                 }
             }
         }
-        MediaSource::Encrypted(e) => {
+        MediaSource::Encrypted(_e) => {
 
         }
     }
 
-    fully_drawn
+    _fully_drawn
 }
 
 
