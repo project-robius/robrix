@@ -371,7 +371,6 @@ live_design! {
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
             }
         }
     }
@@ -412,6 +411,37 @@ live_design! {
             }
         }
     }
+    AudioMessage = <Message> {
+        body = {
+            content = {
+                width: Fill,
+                height: Fit
+                padding: { left: 10.0 }
+                message = <AudioPlayer> { }
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+            }
+        }
+    }
+
+    CondensedAudioMessage = <CondensedMessage> {
+        body = {
+            content = {
+                message = <AudioPlayer> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+            }
+        }
+    }
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
@@ -430,27 +460,9 @@ live_design! {
                     avatar_row = <AvatarRow> {}
                 }
             }
-
         }
     }
 
-    AudioMessage = <Message> {
-        body = {
-            content = {
-                width: Fill,
-                height: Fit
-                padding: { left: 10.0 }
-                v = <View> {
-                    width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
-                    audio_player = <AudioPlayer> {}
-                }
-            }
-        }
-    }
 
     // The view used for a condensed image message that came right after another message
     // from the same sender, and thus doesn't need to display the sender's profile again.
@@ -618,9 +630,13 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
             CondensedMessage = <CondensedMessage> {}
+
             ImageMessage = <ImageMessage> {}
-            AudioMessage = <AudioMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
+
+            AudioMessage = <AudioMessage> {}
+            CondensedAudioMessage = <CondensedAudioMessage> {}
+
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
@@ -3249,14 +3265,20 @@ fn populate_message_view(
         }
         MessageOrStickerType::Audio(audio) => {
             has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = live_id!(AudioMessage);
+
+            let template = if use_compact_view {
+                live_id!(CondensedAudioMessage)
+            } else {
+                live_id!(AudioMessage)
+            };
+
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
-                    &item.audio_player(id!(content.audio_player)),
+                    &item.audio_player(id!(content.message)),
                     audio,
                     media_cache
                 );
@@ -3647,6 +3669,7 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
+
     audio_player.apply_over(cx, live! {});
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
@@ -3663,7 +3686,6 @@ fn populate_audio_message_content(
             }
         }
         MediaSource::Encrypted(_e) => {
-
         }
     }
 
