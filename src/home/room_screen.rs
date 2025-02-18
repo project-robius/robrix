@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        audio_player::{AudioPlayerRef, AudioPlayerWidgetRefExt}, avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -3249,18 +3249,14 @@ fn populate_message_view(
         }
         MessageOrStickerType::Audio(audio) => {
             has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
-            let template = if use_compact_view {
-                live_id!(CondensedMessage)
-            } else {
-                live_id!(Message)
-            };
+            let template = live_id!(AudioMessage);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
-                    &item.html_or_plaintext(id!(content.message)),
+                    &item.audio_player(id!(content.audio_player)),
                     audio,
                     media_cache
                 );
@@ -3621,11 +3617,14 @@ fn populate_file_message_content(
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
     cx: &mut Cx,
-    message_content_widget: &HtmlOrPlaintextRef,
+    audio_player: &AudioPlayerRef,
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
 ) -> bool {
-    let mut _fully_drawn = false;
+    if audio_player.is_empty() {
+        log!("Empty audio player");
+    }
+    let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = audio.filename();
     let (duration, mime, size) = audio
@@ -3648,10 +3647,7 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
-    message_content_widget.show_html(
-        cx,
-        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> →"),
-    );
+    audio_player.apply_over(cx, live! {});
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, None) {
@@ -3659,7 +3655,7 @@ fn populate_audio_message_content(
 
                 },
                 MediaCacheEntry::Loaded(_data) => {
-
+                    fully_drawn = true;
                 },
                 MediaCacheEntry::Failed => {
 
@@ -3671,7 +3667,7 @@ fn populate_audio_message_content(
         }
     }
 
-    _fully_drawn
+    fully_drawn
 }
 
 
