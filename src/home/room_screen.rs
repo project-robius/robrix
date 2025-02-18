@@ -595,6 +595,7 @@ live_design! {
             flow: Down
 
             auto_tail: true, // set to `true` to lock the view to the last item.
+            max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
