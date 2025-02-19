@@ -42,6 +42,7 @@ matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-fe
 matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
+rodio = "0.20.1"
 serde = "1.0"
 serde_json = "1.0"
 tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }

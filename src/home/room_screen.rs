@@ -3643,6 +3643,7 @@ fn populate_audio_message_content(
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
 ) -> bool {
+    let _audio_player_uid = audio_player.widget_uid();
     if audio_player.is_empty() {
         log!("Empty audio player");
     }
@@ -3670,14 +3671,14 @@ fn populate_audio_message_content(
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
 
-    audio_player.apply_over(cx, live! {});
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, None) {
                 MediaCacheEntry::Requested => {
 
                 },
-                MediaCacheEntry::Loaded(_data) => {
+                MediaCacheEntry::Loaded(data) => {
+                    audio_player.set_data(data);
                     fully_drawn = true;
                 },
                 MediaCacheEntry::Failed => {

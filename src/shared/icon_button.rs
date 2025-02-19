@@ -142,4 +142,24 @@ live_design! {
             }
         }
     }
+
+
+    pub RobrixButton = <Button> {
+        width: Fit, height: Fit,
+        spacing: 10,
+        padding: {top: 10, bottom: 10, left: 8, right: 15}
+        align: {x: 0.0, y: 0.5}
+
+        draw_bg: {
+            instance color: (COLOR_PRIMARY)
+        }
+
+        draw_text: {
+            text_style: <REGULAR_TEXT>{font_size: 10},
+            color: #000
+            fn get_color(self) -> vec4 {
+                return self.color;
+            }
+        }
+    }
 }
