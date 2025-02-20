@@ -27,15 +27,15 @@ live_design! {
                     border_color: #D0D5DD,
                     radius: 2.,
                     instance background_color: #3b444b,
-                    /// Absolute position of top left corner of the tooltip
+                    // Absolute position of top left corner of the tooltip
                     instance tooltip_pos: vec2(0.0, 0.0),
-                    /// Absolute position of the moused over widget
+                    // Absolute position of the moused over widget
                     instance target_pos: vec2(0.0, 0.0),
-                    /// Size of the moused over widget
+                    // Size of the moused over widget
                     instance target_size: vec2(0.0, 0.0),
-                    /// Expected Width of the the tooltip 
+                    // Expected Width of the the tooltip 
                     instance expected_dimension_x: 0.0,
-                    /// Determine height of the triangle in the callout pointer
+                    // Determine height of the triangle in the callout pointer
                     instance triangle_height: 7.5,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
