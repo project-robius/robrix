@@ -52,10 +52,8 @@ emojis = "0.6.1"
 bytesize = "1.3.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
-reqwest = { version = "0.12.12", features = ["blocking"] }
-scraper = "0.16.0"
-link-preview = { version = "0.1.1", features = ["fetch", "reqwest"] }
-base64 = "0.22.1"
+url-preview = { git = "https://github.com/ZhangHanDong/url-preview", version = "0.2.1" }
+reqwest = "0.12.12"
 
 
 [package.metadata.docs.rs]

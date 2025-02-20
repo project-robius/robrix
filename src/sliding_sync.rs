@@ -7,26 +7,95 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
-            receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+    config::RequestConfig,
+    event_handler::EventHandlerDropGuard,
+    media::MediaRequest,
+    room::RoomMember,
+    ruma::{
+        api::client::receipt::create_receipt::v3::ReceiptType,
+        events::{
+            receipt::ReceiptThread,
+            room::{
+                message::{
+                    ForwardThread,
+                    RoomMessageEventContent
+                },
+                power_levels::RoomPowerLevels,
+                MediaSource
+            },
+            FullStateEventContent,
+            MessageLikeEventType,
+            StateEventType
+        },
+        MilliSecondsSinceUnixEpoch,
+        OwnedEventId,
+        OwnedMxcUri,
+        OwnedRoomAliasId,
+        OwnedRoomId,
+        OwnedUserId,
+        UserId
+    },
+    sliding_sync::VersionBuilder,
+    Client,
+    ClientBuildError,
+    Error,
+    Room,
+    RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{
+        self,
+        RoomListLoadingState
+    },
+    sync_service::{
+        self,
+        SyncService
+    },
+    timeline::{
+        AnyOtherFullStateEventContent,
+        EventTimelineItem,
+        MembershipChange,
+        RepliedToInfo,
+        TimelineEventItemId,
+        TimelineItem,
+        TimelineItemContent
+    },
+    RoomListService,
+    Timeline
 };
+use reqwest;
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{
+        mpsc::{
+            Receiver,
+            Sender,
+            UnboundedReceiver,
+            UnboundedSender
+        },
+        watch,
+        Notify
+    },
+    task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, io::Read, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{
+    cmp::{ max, min},
+    collections::{ BTreeMap, BTreeSet },
+    ops::Not,
+    path:: Path,
+    sync::{
+        Arc,
+        LazyLock,
+        Mutex,
+        OnceLock
+    }
+};
 use std::io;
+
+use url_preview;
 
 use crate::{
     app_data_dir,
@@ -64,8 +133,6 @@ use crate::{
     },
     utils::{
         self,
-        fetch_link_preview_card,
-        MEDIA_THUMBNAIL_FORMAT,
         AVATAR_THUMBNAIL_FORMAT
     },
     verification::add_verification_event_handlers_and_sync_client
@@ -846,21 +913,51 @@ async fn async_worker(
                 log!("!!!!!!!Start Fetch link preview card for {}", url);   
                 let _fetch_task = Handle::current().spawn(async move {
 
-                    let (url, title, description, image) = fetch_link_preview_card(url).await;
+                    let preview_service = url_preview::PreviewService::new();
 
-                    let image = if let Some(m) = image {
-                        Some(Arc::from(m))
-                    } else {
-                        None
+                    match preview_service.generate_preview(&url).await {
+                        Ok(preview) => {
+                            log!("!!!!!!!! preview data: {:?}", preview);
+                            let image = if let Some(image_url) = preview.image_url {
+                                match reqwest::get(image_url.to_string()).await {
+                                    Ok(r) => {    
+                                        let data = r.bytes().await.unwrap().to_vec();
+                                        match imghdr::from_bytes(data.clone()) {
+                                            Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => {
+                                                Some(Arc::new(data))
+                                            },
+                                            _ => {
+                                                None
+                                            }
+                                        }
+                                    },
+                                    Err(e) => {
+                                        log!("Failed to fetch image for link preview card: {e}");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                                url: preview.url,
+                                title: preview.title,
+                                description: preview.description,
+                                raw_content,
+                                image,
+                            }), update_sender);
+                        },
+                        Err(e) => {
+                            log!("Failed to fetch link preview card for {url}: {e}");
+                            on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                                url,
+                                title: None,
+                                description: None,
+                                raw_content,
+                                image: None,
+                            }), update_sender);
+                        }
                     };
-
-                    on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
-                        url,
-                        title,
-                        description,
-                        raw_content,
-                        image,
-                    }), update_sender);
                 });
             }
 

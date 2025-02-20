@@ -1,38 +1,157 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    ops::{ DerefMut, Range },
+    sync::{ Arc, Mutex },
+    time::SystemTime
+};
 
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk::{
     ruma::{
-        events::{receipt::Receipt, room::{
-            message::{
-                AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-            }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
-    }, OwnedServerName
+        events::{
+            receipt::Receipt,
+            room::{
+                message::{
+                    AudioMessageEventContent,
+                    CustomEventContent,
+                    EmoteMessageEventContent,
+                    FileMessageEventContent,
+                    FormattedBody,
+                    ImageMessageEventContent,
+                    KeyVerificationRequestEventContent,
+                    LocationMessageEventContent,
+                    MessageFormat,
+                    MessageType,
+                    NoticeMessageEventContent,
+                    RoomMessageEventContent,
+                    ServerNoticeMessageEventContent,
+                    TextMessageEventContent,
+                    VideoMessageEventContent
+                },
+                ImageInfo,
+                MediaSource
+            },
+            sticker::StickerEventContent
+        },
+        matrix_uri::MatrixId,
+        uint,
+        EventId,
+        MatrixToUri,
+        MatrixUri,
+        MilliSecondsSinceUnixEpoch,
+        OwnedEventId,
+        OwnedMxcUri,
+        OwnedRoomId
+    },
+    OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self,
+    EventTimelineItem,
+    InReplyToDetails,
+    MemberProfileChange,
+    RepliedToInfo,
+    RoomMembershipChange,
+    TimelineDetails,
+    TimelineItem,
+    TimelineItemContent,
+    TimelineItemKind,
+    VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, card_cache::{CardCache, CardCacheEntry}, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
-        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
+    avatar_cache,
+    card_cache::{ CardCache, CardCacheEntry },
+    event_preview::{
+        body_of_timeline_item,
+        text_preview_of_member_profile_change,
+        text_preview_of_other_state,
+        text_preview_of_redacted_message,
+        text_preview_of_room_membership_change,
+        text_preview_of_timeline_item
+    },
+    home::loading_pane::{ LoadingPaneState, LoadingPaneWidgetExt },
+    location::{
+        get_latest_location,
+        init_location_subscriber,
+        request_location_update,
+        LocationAction,
+        LocationRequest,
+        LocationUpdate
+    },
+    media_cache::{
+        MediaCache,
+        MediaCacheEntry
+    },
+    profile::{
+        user_profile::{
+            AvatarState,
+            ShowUserProfileAction,
+            UserProfile,
+            UserProfileAndRoomId,
+            UserProfilePaneInfo,
+            UserProfileSlidingPaneRef,
+            UserProfileSlidingPaneWidgetExt
+        },
         user_profile_cache,
-    }, shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
+    },
+    shared::{
+        avatar::AvatarWidgetRefExt,
+        html_or_plaintext::{
+            HtmlOrPlaintextRef,
+            HtmlOrPlaintextWidgetRefExt
+        },
+        jump_to_bottom_button::{
+            JumpToBottomButtonWidgetExt,
+            UnreadMessageCount
+        },
+        popup_list::enqueue_popup_notification,
+        text_or_image::{
+            TextOrImageRef,
+            TextOrImageWidgetRefExt
+        },
+        typing_animation::TypingAnimationWidgetExt
+    },
+    sliding_sync::{
+        self,
+        get_client,
+        submit_async_request,
+        take_timeline_endpoints,
+        BackwardsPaginateUntilEventRequest,
+        MatrixRequest,
+        PaginationDirection,
+        TimelineRequestSender,
+        UserPowerLevels
+    },
+    utils::{
+        self,
+        unix_time_millis_to_datetime,
+        ImageFormat,
+        MediaFormatConst,
+        MEDIA_THUMBNAIL_FORMAT
+    },
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{
+    event_reaction_list::ReactionData,
+    loading_pane::LoadingPaneRef,
+    new_message_context_menu::{ MessageAbilities, MessageDetails },
+    room_read_receipt::{
+        self,
+        populate_read_receipts,
+        MAX_VISIBLE_AVATARS_IN_READ_RECEIPT
+    }
+};
 
 const GEO_URI_SCHEME: &str = "geo:";
 

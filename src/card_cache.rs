@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, btree_map::Entry},
     ops::{Deref, DerefMut}
 };
-use makepad_widgets::{error, log, SignalToUI};
+use makepad_widgets::{error, SignalToUI};
 
 use crate::{
     home::room_screen::TimelineUpdate,
