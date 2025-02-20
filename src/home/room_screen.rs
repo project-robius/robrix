@@ -714,6 +714,7 @@ live_design! {
             flow: Down
 
             auto_tail: true, // set to `true` to lock the view to the last item.
+            max_pull_down: 0.0, // set to `0.0` to disable the pulldown bounce animation.
 
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
@@ -2570,7 +2571,10 @@ impl RoomScreen {
                     // Get event_id and timestamp for the last visible event
                     let Some((last_event_id, last_timestamp)) = tl_state
                         .items
-                        .get(first_index + portal_list.visible_items())
+                        .get(std::cmp::min(
+                            first_index + portal_list.visible_items(),
+                            tl_state.items.len().saturating_sub(1)
+                        ))
                         .and_then(|f| f.as_event())
                         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
                     else {
