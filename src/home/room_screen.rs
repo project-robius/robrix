@@ -3466,7 +3466,7 @@ fn populate_text_message_content(
 
 /// Draws the given image message's content into the `message_content_widget`.
 ///
-/// Returns whether the image message content was fully drawn and whether is blur image.
+/// Returns whether the image message content was fully drawn.
 fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
@@ -3477,10 +3477,10 @@ fn populate_image_message_content(
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
     let (mimetype, _width, _height) = image_info_source.as_ref()
-        .and_then(|(info, _)| info.as_ref()
-            .map(|info| (info.mimetype.as_deref(), info.width, info.height))
-        )
-        .unwrap_or_default();
+    .and_then(|(info, _)| info.as_ref()
+        .map(|info| (info.mimetype.as_deref(), info.width, info.height))
+    )
+    .unwrap_or_default();
 
     // If we have a known mimetype and it's not a static image,
     // then show a message about it being unsupported (e.g., for animated gifs).
@@ -3495,10 +3495,10 @@ fn populate_image_message_content(
     }
 
     let mut fully_drawn = false;
-    let image_info_source_clone = image_info_source.clone();
+
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri| {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3515,8 +3515,8 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             MediaCacheEntry::Requested => {
-                if let Some((Some(image_info), _ )) = image_info_source_clone {
-                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash, image_info.width, image_info.height) {
+                if let Some(image_info) = image_info {
+                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                         let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                             let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
                             if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
@@ -3548,7 +3548,7 @@ fn populate_image_message_content(
         }
     };
 
-    let fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3558,7 +3558,7 @@ fn populate_image_message_content(
                 );
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri)
+                fetch_and_show_image_uri(cx, mxc_uri, image_info)
             }
         }
     };
@@ -3567,9 +3567,11 @@ fn populate_image_message_content(
         Some((image_info, original_source)) => {
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
             let media_source = image_info
-                .and_then(|image_info| image_info.thumbnail_source)
-                .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source);
+                .as_ref()
+                .and_then(|info| info.thumbnail_source.as_ref())
+                .unwrap_or(&original_source)
+                .clone();
+            fetch_and_show_media_source(cx, media_source, image_info.as_ref());
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
