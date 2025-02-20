@@ -75,12 +75,17 @@ live_design! {
                         let mut vertex3 = vec2(0.0, 0.0);
                         if angle == 45.0 || angle == 315.0 {
                             // Point upwards
-                            vertex1 = vec2(max(self.border_width + 2.0, diff_x), self.border_width + 2.0); // + 2.0 to overlap the triangle
+                            // + 2.0 to overlap the triangle
+                            vertex1 = vec2(max(self.border_width + 2.0, diff_x), self.border_width + 2.0);
                             vertex2 = vec2(vertex1.x + triangle_height, vertex1.y - triangle_height);
                             vertex3 = vec2(vertex1.x + triangle_height * 2.0, vertex1.y);
                         } else {
                             // Point downwards
-                            vertex1 = vec2(max(self.border_width + 2.0, diff_x) + triangle_height * 2.0 , rect_size.y - triangle_height - 2.0); // +/- 2.0 to overlap the triangle
+                            // +/- 2.0 to overlap the triangle
+                            vertex1 = vec2(
+                                max(self.border_width + 2.0, diff_x) + triangle_height * 2.0,
+                                rect_size.y - triangle_height - 2.0
+                            );
                             vertex2 = vec2(vertex1.x - triangle_height, vertex1.y + triangle_height);
                             vertex3 = vec2(vertex1.x - triangle_height * 2.0, vertex1.y);
                         }
