@@ -129,6 +129,7 @@ impl Widget for MainDesktopUI {
                         ref selected_room,
                     }) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        println!("app_state DockSaveSelectedRoom{:?}", app_state);
                         app_state
                             .rooms_panel
                             .open_rooms
@@ -141,6 +142,7 @@ impl Widget for MainDesktopUI {
                     }
                     Some(RoomsPanelAction::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        println!("app_state {:?}", app_state);
                         if let Some(dock_state) = dock.clone_state() {
                             app_state.rooms_panel.dock_state = Some(dock_state);
                         }
