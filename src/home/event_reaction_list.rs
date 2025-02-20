@@ -130,84 +130,120 @@ pub struct ReactionList {
 impl Widget for ReactionList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         cx.begin_turtle(walk, self.layout);
-        self.children.iter_mut().for_each(|(target, _)| {
-            let _ = target.draw(cx, scope);
-        });
+        for (button, _) in self.children.iter_mut() {
+            let _ = button.draw(cx, scope);
+        }
         cx.end_turtle();
         DrawStep::done()
     }
+
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let uid: WidgetUid = self.widget_uid();
-        for (widget_ref, reaction_data) in self.children.iter() {
-            let widget_rect = widget_ref.area().rect(cx);
-            match event.hits(cx, widget_ref.area()) {
-                Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) | Hit::FingerUp(_)=> {
-                    cx.widget_action(
-                        uid,
-                        &scope.path,
-                        RoomScreenTooltipActions::HoverInReactionButton {
-                            widget_rect,
-                            color: None,
-                            reaction_data: reaction_data.clone(),
-                        },
-                    );
-                    cx.set_cursor(MouseCursor::Hand);
-                    widget_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));
+        for (button_ref, reaction_data) in self.children.iter() {
+            let button_area = button_ref.area();
+            // Note: the `break` statements are used to break out of the loop over
+            // all reaction buttons, since a hit event can only occur on one button.
+            match event.hits(cx, button_area) {
+                Hit::FingerDown(_) => {
+                    cx.set_key_focus(button_area);
+                    break;
+                }
+                Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) => {
+                    self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
                     break;
                 }
                 Hit::FingerHoverOut(_) => {
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
-                    widget_ref.apply_over(cx, live!(draw_bg: {hover: 0.0}));
-                    cx.set_cursor(MouseCursor::Default);
+                    self.do_hover_out(cx, scope, button_ref);
                     break;
                 }
-                Hit::FingerDown(_) => {
-                    let Some(room_id) = &self.room_id else { return };
-                    let Some(timeline_event_id) = &self.timeline_event_id else {
-                        return;
-                    };
-                    submit_async_request(MatrixRequest::ToggleReaction {
-                        room_id: room_id.clone(),
-                        timeline_event_id: timeline_event_id.clone(),
-                        reaction: reaction_data.reaction_raw.clone(),
-                    });
-                    // update the reaction button before the timeline is updated
-                    let (bg_color, border_color) = if !reaction_data.includes_user {
-                        (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
-                    } else {
+                Hit::FingerUp(fue) => {
+                    // If the finger is not over the button, treat it as a hover-out.
+                    if !fue.is_over {
+                        self.do_hover_out(cx, scope, button_ref);
+                        break;
+                    }
+
+                    // A right-click or a long-press is treated as a hover-in.
+                    if fue.is_over &&
                         (
-                            EMOJI_BG_COLOR_NOT_INCLUDE_SELF,
-                            EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF,
+                            fue.mouse_button().is_some_and(|b| b.is_secondary())
+                            || (fue.is_primary_hit() && fue.was_long_press())
                         )
-                    };
-                    widget_ref.apply_over(
-                        cx,
-                        live! {
+                    {
+                        self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
+                        break;
+                    }
+
+                    // A primary click/press should toggle the reaction button.
+                    if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
+                        let Some(room_id) = &self.room_id else { return };
+                        let Some(timeline_event_id) = &self.timeline_event_id else {
+                            return;
+                        };
+                        submit_async_request(MatrixRequest::ToggleReaction {
+                            room_id: room_id.clone(),
+                            timeline_event_id: timeline_event_id.clone(),
+                            reaction: reaction_data.reaction_raw.clone(),
+                        });
+                        // update the reaction button before the timeline is updated
+                        let (bg_color, border_color) = if !reaction_data.includes_user {
+                            (EMOJI_BG_COLOR_INCLUDE_SELF, EMOJI_BORDER_COLOR_INCLUDE_SELF)
+                        } else {
+                            (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
+                        };
+                        button_ref.apply_over(cx, live! {
                             draw_bg: { color: (bg_color) , border_color: (border_color) }
-                        },
-                    );
-                    cx.widget_action(
-                        uid,
-                        &scope.path,
-                        RoomScreenTooltipActions::HoverInReactionButton {
-                            widget_rect,
-                            color: None,
-                            reaction_data: reaction_data.clone(),
-                        },
-                    );
-                    cx.set_cursor(MouseCursor::Hand);
-                    break;
+                        });
+                        self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
+                        break;
+                    }
+
+                    
                 }
-                
                 Hit::FingerScroll(_) => {
-                    cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
-                    cx.set_cursor(MouseCursor::Default);
+                    self.do_hover_out(cx, scope, button_ref);
+                    break;
                 }
                 _ => {}
             }
         }
     }
 }
+
+impl ReactionList {
+    /// Deals with to any event/hit that triggers a hover-in action.
+    fn do_hover_in(
+        &self,
+        cx: &mut Cx,
+        scope: &mut Scope,
+        button_ref: &ButtonRef,
+        reaction_data: ReactionData,
+    ) {
+        cx.widget_action(
+            self.widget_uid(),
+            &scope.path,
+            RoomScreenTooltipActions::HoverInReactionButton {
+                widget_rect: button_ref.area().rect(cx),
+                bg_color: None,
+                reaction_data,
+            },
+        );
+        button_ref.apply_over(cx, live!(draw_bg: {hover: 1.0}));
+        cx.set_cursor(MouseCursor::Hand);
+    }
+
+    /// Deals with to any event/hit that triggers a hover-out action.
+    fn do_hover_out(
+        &self,
+        cx: &mut Cx,
+        scope: &mut Scope,
+        button_ref: &ButtonRef,
+    ) {
+        cx.widget_action(self.widget_uid(), &scope.path, RoomScreenTooltipActions::HoverOut);
+        button_ref.apply_over(cx, live!(draw_bg: {hover: 0.0}));
+        cx.set_cursor(MouseCursor::Default);
+    }
+}
+
 
 impl ReactionListRef {
     /// Set the list of reactions and their counts to display in the ReactionList widget,

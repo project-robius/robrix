@@ -959,7 +959,7 @@ impl Widget for RoomScreen {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
-                    color,
+                    bg_color,
                     reaction_data,
                 } = reaction_list.hover_in(actions) {
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
@@ -974,8 +974,9 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverIn {
                             widget_rect,
-                            color,
-                            text: tooltip_text
+                            text: tooltip_text,
+                            text_color: None,
+                            bg_color,
                         }
                     );
                 }
@@ -989,7 +990,7 @@ impl Widget for RoomScreen {
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
                     widget_rect,
-                    color,
+                    bg_color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
@@ -999,8 +1000,9 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverIn {
                             widget_rect,
-                            color,
-                            text: tooltip_text
+                            text: tooltip_text,
+                            bg_color,
+                            text_color: None,
                         }
                     );
                 }
@@ -2454,7 +2456,7 @@ pub enum RoomScreenTooltipActions {
         /// The rect of the moused over widget
         widget_rect: Rect,
         /// Color of the background, default is black
-        color: Option<Vec4>,
+        bg_color: Option<Vec4>,
         /// Includes the list of users who have seen this event
         read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
     },
@@ -2463,7 +2465,7 @@ pub enum RoomScreenTooltipActions {
         /// The rect of the moused over widget
         widget_rect: Rect,
         /// Color of the background, default is black
-        color: Option<Vec4>,
+        bg_color: Option<Vec4>,
         /// Includes the list of users who have reacted to the emoji
         reaction_data: ReactionData,
     },

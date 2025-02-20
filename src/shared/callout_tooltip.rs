@@ -1,6 +1,6 @@
-//! A tooltip widget that a callout pointing towards the referenced widget.
+//! A tooltip widget with a callout arrow/triangle that points at the referenced widget.
 //!
-//! By default, the tooltip has a black background color
+//! By default, the tooltip has a black background color.
 
 use makepad_widgets::*;
 live_design! {
@@ -8,6 +8,7 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
     use crate::shared::styles::*;
+
     // A tooltip that appears when hovering over target's area
     pub CalloutTooltipInner = <Tooltip> {
         content: <View> {
@@ -15,6 +16,7 @@ live_design! {
             width: Fit,
             height: Fit,
             margin: { left: (0.0), top: (0.0) },
+
             rounded_view = <RoundedView> {
                 width: Fit,
                 height: Fit,
@@ -37,6 +39,7 @@ live_design! {
                     instance expected_dimension_x: 0.0,
                     // Determine height of the triangle in the callout pointer
                     instance triangle_height: 7.5,
+
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let rect_size = self.rect_size;
@@ -96,7 +99,6 @@ live_design! {
                         sdf.fill(self.background_color);
                         return sdf.result;
                     }
-
                 }
 
                 tooltip_label = <Label> {
@@ -105,16 +107,14 @@ live_design! {
                     draw_text: {
                         text_style: <THEME_FONT_REGULAR>{font_size: 9},
                         text_wrap: Line,
-                        color: (COLOR_PRIMARY)
+                        color: (COLOR_PRIMARY),
                     }
                 }
             }
         }
     }
     pub CalloutTooltip = {{CalloutTooltip}} {
-        tooltip = <CalloutTooltipInner> {
-
-        }
+        tooltip = <CalloutTooltipInner> { }
     }
 }
 
@@ -123,8 +123,10 @@ live_design! {
 pub struct CalloutTooltipOptions {
     /// The screen_size of the widget that the tooltip is pointing to
     pub widget_rect: Rect,
-    /// The background color of the tooltip
-    pub color: Option<Vec4>,
+    /// The color of the tooltip text.
+    pub text_color: Option<Vec4>,
+    /// The background color of the tooltip.
+    pub bg_color: Option<Vec4>,
 }
 
 /// A tooltip widget that a callout pointing towards the referenced widget.
@@ -156,15 +158,14 @@ impl CalloutTooltip {
     /// bottom of the widget, pointed at the center. If it is too close to bottom, the
     /// tooltip is positioned above the widget.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
-        let tooltip = self.view.tooltip(id!(tooltip));
+        let mut tooltip = self.view.tooltip(id!(tooltip));
 
         let pos = options.widget_rect.pos;
-        if let Some(mut tooltip) = tooltip.borrow_mut() {
-            // When there is line break in the text label, the label's width follows the length of the last line.
-            // When the previous lines is longer than the last line, text will be cut off.
-            // Hence we need to lengthen the last line to be the same length as the longest line.
-            tooltip.set_text(cx, &pad_last_line(text));
-        };
+        // When there is line break in the text label, the label's width follows the length of the last line.
+        // When the previous lines is longer than the last line, text will be cut off.
+        // Hence we need to lengthen the last line to be the same length as the longest line.
+        tooltip.set_text(cx, &pad_last_line(text));
+
         // Expected_dimension size is 0.0 when mouse first moved in and the tooltip may be cut off.
         // When the mouse is hover over, the expected_dimension is not 0.0 and will be used to re-position the tooltip to avoid cut off.
         let expected_dimension = tooltip.view(id!(rounded_view)).area().rect(cx).size;
@@ -200,10 +201,10 @@ impl CalloutTooltip {
             options.widget_rect.size.x as f32,
             options.widget_rect.size.y as f32,
         );
-        // Default dark gray color
-        let color = options
-            .color
-            .unwrap_or_else(|| vec4(0.26, 0.30, 0.333, 1.0));
+        // Default colors: white text on dark gray background.
+        let text_color = options.text_color.unwrap_or(vec4(1.0, 1.0, 1.0, 1.0));
+        let bg_color = options.bg_color.unwrap_or(vec4(0.26, 0.30, 0.333, 1.0));
+
         if fixed_width {
             tooltip.apply_over(
                 cx,
@@ -213,7 +214,7 @@ impl CalloutTooltip {
                     rounded_view = {
                         height: Fit,
                         draw_bg: {
-                            background_color: (color),
+                            background_color: (bg_color),
                             tooltip_pos: (tooltip_pos),
                             target_pos: (target),
                             target_size: (target_size),
@@ -221,6 +222,7 @@ impl CalloutTooltip {
                         }
                         tooltip_label = {
                             width: (screen_size.x - 15.0 * 2.0), // minus rounded_view's padding
+                            draw_text: { color: (text_color) }
                         }
                     }
                 }),
@@ -236,7 +238,7 @@ impl CalloutTooltip {
                     rounded_view = {
                         height: Fit,
                         draw_bg: {
-                            background_color: (color),
+                            background_color: (bg_color),
                             tooltip_pos: (tooltip_pos),
                             target_pos: (target),
                             target_size: (target_size),
@@ -244,6 +246,7 @@ impl CalloutTooltip {
                         }
                         tooltip_label = {
                             width: Fit,
+                            draw_text: { color: (text_color) }
                         }
                     }
                 }),
@@ -251,10 +254,12 @@ impl CalloutTooltip {
         }
         tooltip.show(cx);
     }
+
     /// Shows the tooltip.
     pub fn show(&mut self, cx: &mut Cx) {
         self.view.tooltip(id!(tooltip)).show(cx);
     }
+
     /// Hide the tooltip.
     pub fn hide(&mut self, cx: &mut Cx) {
         self.view.tooltip(id!(tooltip)).hide(cx);
@@ -287,8 +292,10 @@ impl CalloutTooltipRef {
 pub enum TooltipAction {
     HoverIn {
         widget_rect: Rect,
-        /// Color of the background
-        color: Option<Vec4>,
+        /// Color of the text.
+        text_color: Option<Vec4>,
+        /// Color of the background.
+        bg_color: Option<Vec4>,
         /// Tooltip text
         text: String,
     },

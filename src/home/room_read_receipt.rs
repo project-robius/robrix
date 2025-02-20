@@ -99,7 +99,7 @@ impl Widget for AvatarRow {
                         &scope.path,
                         RoomScreenTooltipActions::HoverInReadReceipt {
                             widget_rect,
-                            color: None,
+                            bg_color: None,
                             read_receipts: read_receipts.clone(),
                         },
                     );
@@ -128,7 +128,7 @@ impl Widget for AvatarRow {
                 label.set_text(
                     cx,
                     &format!(
-                        " + {:?}",
+                        " + {}",
                         read_receipts.len() - MAX_VISIBLE_AVATARS_IN_READ_RECEIPT
                     ),
                 );

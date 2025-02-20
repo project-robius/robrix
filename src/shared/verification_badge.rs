@@ -143,7 +143,8 @@ impl Widget for VerificationBadge {
                     TooltipAction::HoverIn {
                         widget_rect: badge_rect,
                         text: verification_state_str(self.verification_state).to_string(),
-                        color: Some(verification_state_color(self.verification_state)),
+                        bg_color: Some(verification_state_color(self.verification_state)),
+                        text_color: None,
                     },
                 );
             }

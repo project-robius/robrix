@@ -203,6 +203,7 @@ impl MatchEvent for App {
 
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
+                self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
                 let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
@@ -262,21 +263,27 @@ impl MatchEvent for App {
                 TooltipAction::HoverIn {
                     widget_rect,
                     text,
-                    color,
+                    text_color,
+                    bg_color,
                 } => {
-                    let mut tooltip = self.ui.callout_tooltip(id!(app_tooltip));
-                    tooltip.show_with_options(
-                        cx,
-                        &text,
-                        CalloutTooltipOptions {
-                            widget_rect,
-                            color,
-                        },
-                    );
+                    // Don't show any tooltips if the message context menu is currently shown.
+                    if self.ui.new_message_context_menu(id!(new_message_context_menu)).is_currently_shown(cx) {
+                        self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
+                    }
+                    else {
+                        self.ui.callout_tooltip(id!(app_tooltip)).show_with_options(
+                            cx,
+                            &text,
+                            CalloutTooltipOptions {
+                                widget_rect,
+                                text_color,
+                                bg_color,
+                            },
+                        );
+                    }
                 }
                 TooltipAction::HoverOut => {
-                    let tooltip = self.ui.callout_tooltip(id!(app_tooltip));
-                    tooltip.hide(cx);
+                    self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
                 }
                 _ => {}
             }
