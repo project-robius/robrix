@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 
 use bytesize::ByteSize;
 use imbl::Vector;
-use makepad_widgets::*;
+use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
     ruma::{
         events::{receipt::Receipt, room::{
@@ -34,8 +34,6 @@ use rangemap::RangeSet;
 
 use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
-extern crate image;
-use image::{codecs::png::PngEncoder, ColorType, ImageEncoder, RgbImage};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -3540,7 +3538,7 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             MediaCacheEntry::Requested => {
-                // // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
+                // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
                 if *is_blur_image {
                     // Skip loading of blurry image while loading the thumbnail
                     return
@@ -3550,17 +3548,11 @@ fn populate_image_message_content(
                         let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                             let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
                             if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
-                                if let Some(img_buff) = RgbImage::from_vec(width, height, data) {
-                                    let mut bytes = Vec::new();
-                                    let encoder = PngEncoder::new(&mut bytes);
-                                    if encoder.write_image(&img_buff, img_buff.width(), img_buff.height(), ColorType::Rgba8.into()).is_ok() {
-                                        *is_blur_image = true;
-                                    }
-                                    utils::load_png_or_jpg(&img, cx, &bytes)
-                                    .map(|()| img.size_in_pixels(cx).unwrap_or_default())
-                                } else {
-                                    Err(image_cache::ImageError::EmptyData)
-                                }
+                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
+                                    let texture = Some(img_buff.into_new_texture(cx));
+                                    img.set_texture(cx, texture);
+                                    img.size_in_pixels(cx).unwrap_or_default()
+                                })
                             } else {
                                 Err(image_cache::ImageError::EmptyData)
                             }
