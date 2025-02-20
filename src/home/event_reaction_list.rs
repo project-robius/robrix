@@ -6,7 +6,6 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use matrix_sdk_ui::timeline::{ReactionInfo, ReactionsByKeyBySender, TimelineEventItemId};
 
-const TOOLTIP_WIDTH: f64 = 230.0;
 const EMOJI_BORDER_COLOR_INCLUDE_SELF: Vec4 = Vec4 {
     x: 0.0,
     y: 0.6,
@@ -148,7 +147,6 @@ impl Widget for ReactionList {
                         &scope.path,
                         RoomScreenTooltipActions::HoverInReactionButton {
                             widget_rect,
-                            tooltip_width: TOOLTIP_WIDTH,
                             color: None,
                             reaction_data: reaction_data.clone(),
                         },
@@ -193,7 +191,6 @@ impl Widget for ReactionList {
                         &scope.path,
                         RoomScreenTooltipActions::HoverInReactionButton {
                             widget_rect,
-                            tooltip_width: TOOLTIP_WIDTH,
                             color: None,
                             reaction_data: reaction_data.clone(),
                         },

@@ -8,17 +8,14 @@ live_design! {
     use link::shaders::*;
     use link::widgets::*;
     use crate::shared::styles::*;
-    // A tooltip that appears when hovering over certain elements in the RoomScreen,
-    // such as reactions or read receipts.
+    // A tooltip that appears when hovering over target's area
     pub CalloutTooltipInner = <Tooltip> {
         content: <View> {
-            flow: Overlay
-            //width: Fit
+            flow: Overlay,
             width: Fit,
-            height: Fit
-
+            height: Fit,
+            margin: { left: (0.0), top: (0.0) },
             rounded_view = <RoundedView> {
-                //width: Fill,
                 width: Fit,
                 height: Fit,
 
@@ -30,19 +27,21 @@ live_design! {
                     border_color: #D0D5DD,
                     radius: 2.,
                     instance background_color: #3b444b,
-                    instance tooltip_pos: vec2(33.0, 71.0),
-                    instance target_pos: vec2(80.0, 40.0),
-                    instance target_size: vec2(40.0, 40.0),
-                    instance target_x: 80.0,
-                    instance target_y: 40.0,
-                    instance target_width: 40.0,
-                    instance target_height: 40.0,
-                    instance rect_top_left_x: 33.0,
-                    instance rect_top_left_y: 71.0,
+                    // Absolute position of top left corner of the tooltip
+                    instance tooltip_pos: vec2(0.0, 0.0),
+                    // Absolute position of the moused over widget
+                    instance target_pos: vec2(0.0, 0.0),
+                    // Size of the moused over widget
+                    instance target_size: vec2(0.0, 0.0),
+                    instance expected_dimension_x: 0.0,
                     instance triangle_height: 7.5,
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let rect_size = self.rect_size;
+                        // If there is not expected_dimension_x, it means the tooltip size is not calculated yet, do not draw anything
+                        if self.expected_dimension_x == 0.0 {
+                            return sdf.result;
+                        }
                         // Draw rounded box
                         sdf.box(
                             self.border_width,
@@ -53,8 +52,6 @@ live_design! {
                         )
                         sdf.fill(self.background_color);
                         let triangle_height = self.triangle_height;
-                        // let diff_x = self.target_x + self.target_width / 2.0 - self.rect_top_left_x - triangle_height;
-                        // let diff_y = self.target_y + self.target_height / 2.0 - self.rect_top_left_y - triangle_height;
                         let diff_x = self.target_pos.x + self.target_size.x / 2.0 - self.tooltip_pos.x - triangle_height;
                         let diff_y = self.target_pos.y + self.target_size.y / 2.0 - self.tooltip_pos.y - triangle_height;
                         // Quadrant angle to define the direction from target's center to the tooltip's center
@@ -66,9 +63,9 @@ live_design! {
                             angle = 45.0;
                         } else if diff_x >= 0.0 && diff_y > 0.0 {
                             angle = 135.0;
-                        }  else if diff_x < 0.0 && diff_y <= 0.0 {
+                        } else if diff_x < 0.0 && diff_y <= 0.0 {
                             angle = 225.0;
-                        }   else {
+                        } else {
                             angle = 315.0;
                         }
                         let mut vertex1 = vec2(0.0, 0.0);
@@ -83,7 +80,7 @@ live_design! {
                             // Point downwards
                             vertex1 = vec2(max(self.border_width + 2.0, diff_x) + triangle_height * 2.0 , rect_size.y - triangle_height - 2.0); // +/- 2.0 to overlap the triangle
                             vertex2 = vec2(vertex1.x - triangle_height, vertex1.y + triangle_height);
-                            vertex3 = vec2(vertex1.x - triangle_height * 2.0, vertex1.y );
+                            vertex3 = vec2(vertex1.x - triangle_height * 2.0, vertex1.y);
                         }
                         sdf.move_to(vertex1.x, vertex1.y);
                         sdf.line_to(vertex2.x, vertex2.y);
@@ -113,17 +110,12 @@ live_design! {
         }
     }
 }
-pub const TOOLTIP_HEIGHT_FOR_TOO_CLOSE_BOTTOM: f64 = 80.0;
 
 #[derive(Debug)]
 /// A struct that holds the options for a callout tooltip
 pub struct CalloutTooltipOptions {
-    /// The rect of the widget that the tooltip is pointing to
-    pub parent_rect: Rect,
-    /// The rect of the widget that the tooltip is pointing to
+    /// The screen_size of the widget that the tooltip is pointing to
     pub widget_rect: Rect,
-    /// Tooltip width
-    pub tooltip_width: f64,
     /// The background color of the tooltip
     pub color: Option<Vec4>,
 }
@@ -161,83 +153,73 @@ impl CalloutTooltip {
         
         let pos = options.widget_rect.pos;
         if let Some(mut tooltip) = tooltip.borrow_mut() {
+            // When there is line break in the text label, the label's width follows the length of the last line.
+            // When the previous lines is longer than the last line, text will be cut off.
+            // Hence we need to lengthen the last line to be the same length as the longest line.
             tooltip.set_text(cx, &lengthen_last_line(text));
         };
-        let area: Rect = tooltip.view(id!(rounded_view)).area().rect(cx);
-        let expected_dimensions = area.size;
-        let rect = options.parent_rect.size;
+        // Expected_dimension size is 0.0 when mouse first moved in and the tooltip may be cut off.
+        // When the mouse is hover over, the expected_dimension is not 0.0 and will be used to re-position the tooltip to avoid cut off.
+        let expected_dimension = tooltip.view(id!(rounded_view)).area().rect(cx).size;
+        
+        let screen_size = tooltip.area().rect(cx).size;
         let mut tooltip_pos = DVec2{
-            x: min(pos.x, rect.x - expected_dimensions.x),
-            y: min(pos.y + options.widget_rect.size.y, rect.y - expected_dimensions.y)
+            x: min(pos.x, screen_size.x - expected_dimension.x),
+            y: min(pos.y + options.widget_rect.size.y, screen_size.y - expected_dimension.y)
         };
         let mut fixed_width = false;
-        println!("tooltip_pos {:?} prev", tooltip_pos);
-        if tooltip_pos.y == rect.y - expected_dimensions.y {
+        if tooltip_pos.y == screen_size.y - expected_dimension.y {
             // If the tooltip is too close to the bottom, position it above the widget
-            tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimensions.y, options.widget_rect.size.y);
+            tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, options.widget_rect.size.y);
         }
-        // For explanation of expected_dimensions.x == rect.x - 10.0 condition, see below comments for the tooltip_label
-        // When pos_x is less than 0.0, reposition 
-        if tooltip_pos.x == rect.x - expected_dimensions.x && tooltip_pos.x < 0.0 || expected_dimensions.x == rect.x - 10.0 {
+        // When tooltip_pos.x is less than 0.0, reposition it
+        // If the expected_dimension's width is already the screen_size's width, fix the width of the tooltip.
+        if tooltip_pos.x == screen_size.x - expected_dimension.x && tooltip_pos.x < 0.0 || expected_dimension.x == screen_size.x {
             tooltip_pos.x = 0.0;
             fixed_width = true;
         }
         let target = vec2(options.widget_rect.pos.x as f32, options.widget_rect.pos.y as f32);
         let tooltip_pos = vec2(tooltip_pos.x as f32, tooltip_pos.y as f32);
-        let target_width = options.widget_rect.size.x;
-        let target_height = options.widget_rect.size.y;
         let target_size = vec2(options.widget_rect.size.x as f32, options.widget_rect.size.y as f32);
-        let rect_top_left = tooltip_pos;
+        // Default dark gray color
         let color = options.color.unwrap_or_else(|| vec4(0.26, 0.30, 0.333, 1.0));
         if fixed_width {
             tooltip.apply_over(
                 cx,
                 live!(
                     content: {
-                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y)},
+                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
                         rounded_view = {
                             height: Fit,
                             draw_bg: {
                                 background_color: (color),
                                 tooltip_pos: (tooltip_pos),
                                 target_pos: (target),
-                                rect_top_left_x: (rect_top_left.x as f64),
-                                rect_top_left_y: (rect_top_left.y as f64),
-                                target_x: (target.x as f64),
-                                target_y: (target.y as f64),
                                 target_size: (target_size),
-                                target_height: (target_height),
-                                target_width: (target_width)
+                                expected_dimension_x: (expected_dimension.x)
                             }
                             tooltip_label = {
-                                // After several testing, the optimal width for the tooltip is options.parent_rect.size.x - 40.0. 
-                                // Without substracting 40.0px, there is no padding for the right edge of the tooltip with the screen.
-                                // After setting this width, the expected_dimensions.x is always 10.0px smaller than the width of the screen.
-                                // If expected_dimensions.x is 10.0px smaller than the width of the screen, there is no need apply Fit for tooltip_label's width
-                                width: (options.parent_rect.size.x - 40.0),
+                                width: (screen_size.x - 15.0 * 2.0), // minus rounded_view's padding
                             }
                         }
                     })
             );
         } else {
+            // If width of the tooltip is not fixed, the tooltip label's width is set back to Fit so that
+            // the it will wrap the tooltip text properly
             tooltip.apply_over(
                 cx,
                 live!(
                     content: {
-                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y)},
+                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
                         rounded_view = {
                             height: Fit,
                             draw_bg: {
                                 background_color: (color),
                                 tooltip_pos: (tooltip_pos),
                                 target_pos: (target),
-                                rect_top_left_x: (rect_top_left.x as f64),
-                                rect_top_left_y: (rect_top_left.y as f64),
                                 target_size: (target_size),
-                                target_x: (target.x as f64),
-                                target_y: (target.y as f64),
-                                target_height: (target_height),
-                                target_width: (target_width)
+                                expected_dimension_x: (expected_dimension.x)
                             }
                             tooltip_label = {
                                 width: Fit,
@@ -284,7 +266,6 @@ impl CalloutTooltipRef {
 pub enum TooltipAction {
     HoverIn {
         widget_rect: Rect,
-        tooltip_width: f64,
         /// Color of the background
         color: Option<Vec4>,
         /// Tooltip text

@@ -959,7 +959,6 @@ impl Widget for RoomScreen {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
                     widget_rect,
-                    tooltip_width,
                     color,
                     reaction_data,
                 } = reaction_list.hover_in(actions) {
@@ -975,7 +974,6 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverIn {
                             widget_rect,
-                            tooltip_width,
                             color,
                             text: tooltip_text
                         }
@@ -991,7 +989,6 @@ impl Widget for RoomScreen {
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
                 if let RoomScreenTooltipActions::HoverInReadReceipt { 
                     widget_rect,
-                    tooltip_width,
                     color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
@@ -1002,7 +999,6 @@ impl Widget for RoomScreen {
                         &scope.path,
                         TooltipAction::HoverIn {
                             widget_rect,
-                            tooltip_width,
                             color,
                             text: tooltip_text
                         }
@@ -2457,8 +2453,6 @@ pub enum RoomScreenTooltipActions {
     HoverInReadReceipt {
         /// The rect of the moused over widget
         widget_rect: Rect,
-        /// Width of the tooltip
-        tooltip_width: f64,
         /// Color of the background, default is black
         color: Option<Vec4>,
         /// Includes the list of users who have seen this event
@@ -2468,8 +2462,6 @@ pub enum RoomScreenTooltipActions {
     HoverInReactionButton {
         /// The rect of the moused over widget
         widget_rect: Rect,
-        /// Width of the tooltip
-        tooltip_width: f64,
         /// Color of the background, default is black
         color: Option<Vec4>,
         /// Includes the list of users who have reacted to the emoji

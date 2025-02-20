@@ -261,19 +261,15 @@ impl MatchEvent for App {
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,
-                    tooltip_width,
                     text,
                     color,
                 } => {
                     let mut tooltip = self.ui.callout_tooltip(id!(app_tooltip));
-                    let parent_rect = self.ui.area().rect(cx);
                     tooltip.show_with_options(
                         cx,
                         &text,
                         CalloutTooltipOptions {
-                            parent_rect,
                             widget_rect,
-                            tooltip_width,
                             color,
                         },
                     );
