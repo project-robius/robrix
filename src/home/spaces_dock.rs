@@ -8,7 +8,6 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
-    use crate::shared::color_tooltip::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")

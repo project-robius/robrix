@@ -38,7 +38,7 @@ live_design! {
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                         let rect_size = self.rect_size;
-                        // If there is not expected_dimension_x, it means the tooltip size is not calculated yet, do not draw anything
+                        // If there is no expected_dimension_x, it means the tooltip size is not calculated yet, do not draw anything
                         if self.expected_dimension_x == 0.0 {
                             return sdf.result;
                         }
@@ -141,7 +141,7 @@ impl Widget for CalloutTooltip {
 impl CalloutTooltip {
     /// Shows a tooltip with the given text and options.
     ///
-    /// The tooltip comes with a callout pointing to it's target.
+    /// The tooltip comes with a callout pointing to its target.
     ///
     /// By default, the tooltip will be displayed to the widget's right.
     ///
@@ -156,7 +156,7 @@ impl CalloutTooltip {
             // When there is line break in the text label, the label's width follows the length of the last line.
             // When the previous lines is longer than the last line, text will be cut off.
             // Hence we need to lengthen the last line to be the same length as the longest line.
-            tooltip.set_text(cx, &lengthen_last_line(text));
+            tooltip.set_text(cx, &pad_last_line(text));
         };
         // Expected_dimension size is 0.0 when mouse first moved in and the tooltip may be cut off.
         // When the mouse is hover over, the expected_dimension is not 0.0 and will be used to re-position the tooltip to avoid cut off.
@@ -294,19 +294,19 @@ pub enum TooltipAction {
 ///
 /// This is useful for creating tooltips that line up with the text above
 /// them.
-fn lengthen_last_line(text: &str) -> String {
+fn pad_last_line(text: &str) -> String {
     let lines = text.split('\n');
     let longest_line = lines.clone().map(|s| s.len()).max().unwrap_or(0);
     let lines_len = lines.clone().count();
 
-    let mut full_text = String::with_capacity(text.len() + longest_line as usize + 4);
+    let mut full_text = String::with_capacity(text.len() + longest_line + 4);
     for (i, line) in lines.enumerate() {
         full_text.push_str(line);
         if i < lines_len - 1 {
             full_text.push('\n');
         } else {
             // Plus 4 is added to add more width to the last line otherwise the first line is still being cut off
-            full_text.push_str(&" ".repeat(longest_line as usize - line.len() + 4));
+            full_text.push_str(&" ".repeat(longest_line - line.len() + 4));
         }
     }
     full_text
