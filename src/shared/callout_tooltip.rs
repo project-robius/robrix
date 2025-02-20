@@ -57,7 +57,7 @@ live_design! {
                         // Quadrant angle to define the direction from target's center to the tooltip's center
                         // ___315___|___45_______
                         //    225   |   135
-                        // Callout only point upwards or downwards, towards left and right are omitted.  
+                        // Callout only point upwards or downwards, towards left and right are omitted.
                         let mut angle = 0.0;
                         if diff_x >= 0.0 && diff_y <= 0.0 {
                             angle = 45.0;
@@ -150,7 +150,7 @@ impl CalloutTooltip {
     /// tooltip is positioned above the widget.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
         let tooltip = self.view.tooltip(id!(tooltip));
-        
+
         let pos = options.widget_rect.pos;
         if let Some(mut tooltip) = tooltip.borrow_mut() {
             // When there is line break in the text label, the label's width follows the length of the last line.
@@ -161,48 +161,62 @@ impl CalloutTooltip {
         // Expected_dimension size is 0.0 when mouse first moved in and the tooltip may be cut off.
         // When the mouse is hover over, the expected_dimension is not 0.0 and will be used to re-position the tooltip to avoid cut off.
         let expected_dimension = tooltip.view(id!(rounded_view)).area().rect(cx).size;
-        
+
         let screen_size = tooltip.area().rect(cx).size;
-        let mut tooltip_pos = DVec2{
+        let mut tooltip_pos = DVec2 {
             x: min(pos.x, screen_size.x - expected_dimension.x),
-            y: min(pos.y + options.widget_rect.size.y, screen_size.y - expected_dimension.y)
+            y: min(
+                pos.y + options.widget_rect.size.y,
+                screen_size.y - expected_dimension.y,
+            ),
         };
         let mut fixed_width = false;
         if tooltip_pos.y == screen_size.y - expected_dimension.y {
             // If the tooltip is too close to the bottom, position it above the widget
-            tooltip_pos.y = options.widget_rect.pos.y - max(expected_dimension.y, options.widget_rect.size.y);
+            tooltip_pos.y =
+                options.widget_rect.pos.y - max(expected_dimension.y, options.widget_rect.size.y);
         }
         // When tooltip_pos.x is less than 0.0, reposition it
         // If the expected_dimension's width is already the screen_size's width, fix the width of the tooltip.
-        if tooltip_pos.x == screen_size.x - expected_dimension.x && tooltip_pos.x < 0.0 || expected_dimension.x == screen_size.x {
+        if tooltip_pos.x == screen_size.x - expected_dimension.x && tooltip_pos.x < 0.0
+            || expected_dimension.x == screen_size.x
+        {
             tooltip_pos.x = 0.0;
             fixed_width = true;
         }
-        let target = vec2(options.widget_rect.pos.x as f32, options.widget_rect.pos.y as f32);
+        let target = vec2(
+            options.widget_rect.pos.x as f32,
+            options.widget_rect.pos.y as f32,
+        );
         let tooltip_pos = vec2(tooltip_pos.x as f32, tooltip_pos.y as f32);
-        let target_size = vec2(options.widget_rect.size.x as f32, options.widget_rect.size.y as f32);
+        let target_size = vec2(
+            options.widget_rect.size.x as f32,
+            options.widget_rect.size.y as f32,
+        );
         // Default dark gray color
-        let color = options.color.unwrap_or_else(|| vec4(0.26, 0.30, 0.333, 1.0));
+        let color = options
+            .color
+            .unwrap_or_else(|| vec4(0.26, 0.30, 0.333, 1.0));
         if fixed_width {
             tooltip.apply_over(
                 cx,
                 live!(
-                    content: {
-                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                        rounded_view = {
-                            height: Fit,
-                            draw_bg: {
-                                background_color: (color),
-                                tooltip_pos: (tooltip_pos),
-                                target_pos: (target),
-                                target_size: (target_size),
-                                expected_dimension_x: (expected_dimension.x)
-                            }
-                            tooltip_label = {
-                                width: (screen_size.x - 15.0 * 2.0), // minus rounded_view's padding
-                            }
+                content: {
+                    margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
+                    rounded_view = {
+                        height: Fit,
+                        draw_bg: {
+                            background_color: (color),
+                            tooltip_pos: (tooltip_pos),
+                            target_pos: (target),
+                            target_size: (target_size),
+                            expected_dimension_x: (expected_dimension.x)
                         }
-                    })
+                        tooltip_label = {
+                            width: (screen_size.x - 15.0 * 2.0), // minus rounded_view's padding
+                        }
+                    }
+                }),
             );
         } else {
             // If width of the tooltip is not fixed, the tooltip label's width is set back to Fit so that
@@ -210,22 +224,22 @@ impl CalloutTooltip {
             tooltip.apply_over(
                 cx,
                 live!(
-                    content: {
-                        margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
-                        rounded_view = {
-                            height: Fit,
-                            draw_bg: {
-                                background_color: (color),
-                                tooltip_pos: (tooltip_pos),
-                                target_pos: (target),
-                                target_size: (target_size),
-                                expected_dimension_x: (expected_dimension.x)
-                            }
-                            tooltip_label = {
-                                width: Fit,
-                            }
+                content: {
+                    margin: { left: (tooltip_pos.x), top: (tooltip_pos.y) },
+                    rounded_view = {
+                        height: Fit,
+                        draw_bg: {
+                            background_color: (color),
+                            tooltip_pos: (tooltip_pos),
+                            target_pos: (target),
+                            target_size: (target_size),
+                            expected_dimension_x: (expected_dimension.x)
                         }
-                    })
+                        tooltip_label = {
+                            width: Fit,
+                        }
+                    }
+                }),
             );
         }
         tooltip.show(cx);
@@ -284,7 +298,7 @@ fn lengthen_last_line(text: &str) -> String {
     let lines = text.split('\n');
     let longest_line = lines.clone().map(|s| s.len()).max().unwrap_or(0);
     let lines_len = lines.clone().count();
-    
+
     let mut full_text = String::with_capacity(text.len() + longest_line as usize + 4);
     for (i, line) in lines.enumerate() {
         full_text.push_str(line);
