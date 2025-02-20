@@ -3477,10 +3477,10 @@ fn populate_image_message_content(
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
     let (mimetype, _width, _height) = image_info_source.as_ref()
-    .and_then(|(info, _)| info.as_ref()
-        .map(|info| (info.mimetype.as_deref(), info.width, info.height))
-    )
-    .unwrap_or_default();
+        .and_then(|(info, _)| info.as_ref()
+            .map(|info| (info.mimetype.as_deref(), info.width, info.height))
+        )
+        .unwrap_or_default();
 
     // If we have a known mimetype and it's not a static image,
     // then show a message about it being unsupported (e.g., for animated gifs).
@@ -3566,11 +3566,9 @@ fn populate_image_message_content(
     match image_info_source {
         Some((image_info, original_source)) => {
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info
-                .as_ref()
-                .and_then(|info| info.thumbnail_source.as_ref())
-                .unwrap_or(&original_source)
-                .clone();
+            let media_source = image_info.clone()
+                .and_then(|image_info| image_info.thumbnail_source)
+                .unwrap_or(original_source);
             fetch_and_show_media_source(cx, media_source, image_info.as_ref());
         }
         None => {
