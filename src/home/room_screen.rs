@@ -1362,7 +1362,6 @@ impl Widget for RoomScreen {
                     let item_drawn_status = ItemDrawnStatus {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
-                        is_blur_image: tl_state.is_blur_image_since_last_update.contains(&tl_idx)
                     };
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
@@ -1462,9 +1461,6 @@ impl Widget for RoomScreen {
                     if item_new_draw_status.profile_drawn {
                         tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
                     }
-                    if item_new_draw_status.is_blur_image {
-                        tl_state.is_blur_image_since_last_update.insert(tl_idx .. tl_idx + 1);
-                    }
                     item
                 };
                 item.draw_all(cx, &mut Scope::empty());
@@ -1496,7 +1492,6 @@ impl RoomScreen {
                 TimelineUpdate::FirstUpdate { initial_items } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
-                    tl.is_blur_image_since_last_update.clear();
                     tl.fully_paginated = false;
                     // Set the portal list to the very bottom of the timeline.
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
@@ -1580,7 +1575,6 @@ impl RoomScreen {
                     if clear_cache {
                         tl.content_drawn_since_last_update.clear();
                         tl.profile_drawn_since_last_update.clear();
-                        tl.is_blur_image_since_last_update.clear();
                         tl.fully_paginated = false;
 
                         // If this RoomScreen is showing the loading pane and has an ongoing backwards pagination request,
@@ -1606,7 +1600,6 @@ impl RoomScreen {
                     } else {
                         tl.content_drawn_since_last_update.remove(changed_indices.clone());
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
-                        tl.is_blur_image_since_last_update.remove(changed_indices.clone());
                         // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
@@ -2277,7 +2270,6 @@ impl RoomScreen {
                 items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
-                is_blur_image_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
@@ -2699,11 +2691,6 @@ struct TimelineUiState {
     /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
     profile_drawn_since_last_update: RangeSet<usize>,
 
-    /// Same as `content_drawn_since_last_update`, but for the loading blur image.
-    /// 
-    /// This prevents loading blur image multiple times while loading the thumbnail
-    is_blur_image_since_last_update: RangeSet<usize>,
-
     /// The channel receiver for timeline updates for this room.
     ///
     /// Here we use a synchronous (non-async) channel because the receiver runs
@@ -2850,10 +2837,6 @@ struct ItemDrawnStatus {
     profile_drawn: bool,
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
     content_drawn: bool,
-    /// Whether it has blur image and if it is loaded
-    /// 
-    /// If loaded, it will not try to load it again.
-    is_blur_image: bool,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
@@ -2861,7 +2844,6 @@ impl ItemDrawnStatus {
         Self {
             profile_drawn: false,
             content_drawn: false,
-            is_blur_image: false
         }
     }
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `true`.
@@ -2869,7 +2851,6 @@ impl ItemDrawnStatus {
         Self {
             profile_drawn: true,
             content_drawn: true,
-            is_blur_image: false,
         }
     }
 }
@@ -3192,7 +3173,6 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let mut is_blur_image = item_drawn_status.is_blur_image;
                 let image_info = mtype.get_image_info();
                 let is_image_fully_drawn = populate_image_message_content(
                     cx,
@@ -3200,10 +3180,8 @@ fn populate_message_view(
                     image_info,
                     message.body(),
                     media_cache,
-                    &mut is_blur_image,
                 );
                 new_drawn_status.content_drawn = is_image_fully_drawn;
-                new_drawn_status.is_blur_image = is_blur_image;
                 (item, false)
             }
         }
@@ -3495,7 +3473,6 @@ fn populate_image_message_content(
     image_info_source: Option<(Option<ImageInfo>, MediaSource)>,
     body: &str,
     media_cache: &mut MediaCache,
-    is_blur_image: &mut bool
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
@@ -3538,11 +3515,6 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             MediaCacheEntry::Requested => {
-                // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
-                if *is_blur_image {
-                    // Skip loading of blurry image while loading the thumbnail
-                    return
-                }
                 if let Some((Some(image_info), _ )) = image_info_source_clone {
                     if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash, image_info.width, image_info.height) {
                         let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
