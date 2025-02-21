@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::{Instant, SystemTime}};
+use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
