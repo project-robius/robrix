@@ -25,8 +25,8 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -863,87 +863,6 @@ live_design! {
             // The top space should be displayed as an overlay at the top of the timeline.
             top_space = <TopSpace> { }
 
-            // A tooltip that appears when hovering over certain elements in the RoomScreen,
-            // such as reactions or read receipts.
-            room_screen_tooltip = <Tooltip> {
-                content: <View> {
-                    flow: Overlay
-                    width: Fit
-                    height: Fit
-
-                    rounded_view = <RoundedView> {
-                        width: Fill,
-                        height: Fit,
-
-                        padding: 10,
-
-                        draw_bg: {
-                            color: #fff,
-                            border_width: 1.0,
-                            border_color: #D0D5DD,
-                            radius: 2.,
-                            instance background_color: (#3b444b),
-                            // Height of isoceles triangle
-                            instance callout_triangle_height: 7.5,
-                            instance callout_offset: 15.0,
-                            instance pointing_up: 0.0,
-                            fn pixel(self) -> vec4 {
-                                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                                let rect_size = self.rect_size;
-                                // Main rounded rectangle
-                                if self.pointing_up >= 0.5 {
-                                    sdf.box(
-                                        // Minus 2.0 to overlap the triangle and rectangle
-                                        self.border_width,
-                                        (self.callout_triangle_height - 2.0) + self.border_width,
-                                        rect_size.x - (self.border_width * 2.0) ,
-                                        rect_size.y - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
-                                        max(1.0, self.radius)
-                                    )
-                                    sdf.fill(self.background_color);
-                                    sdf.translate(self.callout_offset - 2.0 * self.callout_triangle_height, 1.0);
-                                     // Draw up-pointed arrow triangle
-                                    sdf.move_to(self.callout_triangle_height * 2.0, self.callout_triangle_height * 1.0);
-                                    sdf.line_to(0.0, self.callout_triangle_height * 1.0);
-                                    sdf.line_to(self.callout_triangle_height, 0.0);
-                                } else {
-                                    sdf.box(
-                                        // Minus 2.0 to overlap the triangle and rectangle
-                                        (self.callout_triangle_height - 2.0) + self.border_width,
-                                        0.0 + self.border_width,
-                                        rect_size.x - (self.border_width * 2.0) - (self.callout_triangle_height - 2.0),
-                                        rect_size.y - (self.border_width * 2.0),
-                                        max(1.0, self.radius)
-                                    )
-                                    sdf.fill(self.background_color);
-                                    sdf.translate(0.5, self.callout_offset);
-                                    // Draw left-pointed arrow triangle
-                                    sdf.move_to(self.callout_triangle_height, 0.0);
-                                    sdf.line_to(self.callout_triangle_height, self.callout_triangle_height * 2.0);
-                                    sdf.line_to(0.5, self.callout_triangle_height);
-                                }
-
-                                sdf.close_path();
-
-                                sdf.fill((self.background_color));
-                                return sdf.result;
-                            }
-
-                        }
-
-                        tooltip_label = <Label> {
-                            width: Fill,
-                            height: Fit,
-                            draw_text: {
-                                text_style: <THEME_FONT_REGULAR>{font_size: 9},
-                                text_wrap: Word,
-                                color: (COLOR_PRIMARY)
-                            }
-                        }
-                    }
-                }
-            }
-
             // The user profile sliding pane should be displayed on top of other "static" subviews
             // (on top of all other views that are always visible).
             user_profile_sliding_pane = <UserProfileSlidingPane> { }
@@ -1037,15 +956,12 @@ impl Widget for RoomScreen {
         }
 
         if let Event::Actions(actions) = event {
-            let tooltip = self.tooltip(id!(room_screen_tooltip));
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
                 if let RoomScreenTooltipActions::HoverInReactionButton {
-                    tooltip_pos,
-                    tooltip_width,
-                    callout_offset,
+                    widget_rect,
+                    bg_color,
                     reaction_data,
-                    pointing_up
                 } = reaction_list.hover_in(actions) {
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
@@ -1054,47 +970,49 @@ impl Widget for RoomScreen {
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
-                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
-                    tooltip.apply_over(cx, live!(
-                        content: {
-                            width: (tooltip_width)
-                            rounded_view = {
-                                draw_bg: {
-                                    callout_offset: (callout_offset)
-                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
-                                }
-                            }
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            widget_rect,
+                            text: tooltip_text,
+                            text_color: None,
+                            bg_color,
                         }
-                    ));
+                    );
                 }
                 if reaction_list.hover_out(actions) {
-                    tooltip.hide(cx);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverOut
+                    );
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt {
-                    tooltip_pos,
-                    tooltip_width ,
-                    callout_offset,
-                    pointing_up,
+                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                    widget_rect,
+                    bg_color,
                     read_receipts
                 } = avatar_row_ref.hover_in(actions) {
                     let Some(room_id) = &self.room_id else { return; };
-                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts.clone(), room_id);
-                    tooltip.show_with_options(cx, tooltip_pos, &tooltip_text);
-                    tooltip.apply_over(cx, live!(
-                        content: {
-                            width: (tooltip_width)
-                            rounded_view = {
-                                draw_bg: {
-                                    callout_offset: (callout_offset)
-                                    pointing_up: (if pointing_up { 1.0 } else { 0.0 })
-                                }
-                            }
+                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            widget_rect,
+                            text: tooltip_text,
+                            bg_color,
+                            text_color: None,
                         }
-                    ));
+                    );
                 }
                 if avatar_row_ref.hover_out(actions) {
-                    tooltip.hide(cx);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverOut
+                    );                
                 }
             }
 
@@ -2539,39 +2457,21 @@ impl RoomScreenRef {
 pub enum RoomScreenTooltipActions {
     /// Mouse over event when the mouse is over the read receipt.
     HoverInReadReceipt {
-        tooltip_pos: DVec2,
-        tooltip_width: f64,
-        /// Pointed arrow position relative to the tooltip.
-        ///
-        /// It is calculated from the right corner of tooltip to position arrow.
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        /// Data that is bound together the widget
-        ///
+        /// The rect of the moused over widget
+        widget_rect: Rect,
+        /// Color of the background, default is black
+        bg_color: Option<Vec4>,
         /// Includes the list of users who have seen this event
         read_receipts: indexmap::IndexMap<matrix_sdk::ruma::OwnedUserId, Receipt>,
-        /// Boolean indicating if the callout should be pointing up.
-        ///
-        /// If false, it is pointing left
-        pointing_up: bool
     },
     /// Mouse over event when the mouse is over the reaction button.
     HoverInReactionButton {
-        tooltip_pos: DVec2,
-        tooltip_width: f64,
-        /// Pointed arrow position relative to the tooltip
-        ///
-        /// It is calculated from the right corner of tooltip to position arrow
-        /// to point towards the center of the hovered widget.
-        callout_offset: f64,
-        /// Data that is bound together the widget
-        ///
+        /// The rect of the moused over widget
+        widget_rect: Rect,
+        /// Color of the background, default is black
+        bg_color: Option<Vec4>,
         /// Includes the list of users who have reacted to the emoji
         reaction_data: ReactionData,
-        /// Boolean indicating if the callout should be pointing up.
-        ///
-        /// If false, it is pointing left
-        pointing_up: bool
     },
     /// Mouse out event and clear tooltip.
     HoverOut,
@@ -4444,48 +4344,4 @@ impl MessageRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
     }
-}
-
-/// Calculates the optimal position for a tooltip based on the widget's rectangle and
-/// window geometry.
-///
-/// This function determines where to position a tooltip such that it remains
-/// visible within the window bounds. It calculates the tooltip's position and
-/// callout offset, and checks if the tooltip is too close to the right edge of
-/// the window.
-///
-/// # Arguments
-///
-/// * `widget_rect` - The rectangle of the widget the tooltip is associated with.
-/// * `window_geom` - The geometry of the window, used to ensure the tooltip fits within.
-/// * `tooltip_width` - The width of the tooltip to be positioned.
-///
-/// # Returns
-///
-/// A tuple containing:
-/// - `DVec2`: The position of the tooltip.
-/// - `f64`: The offset for the callout, relative to the tooltip.
-/// - `bool`: A flag indicating if the tooltip is too close to the right side of the window.
-pub fn room_screen_tooltip_position_helper(widget_rect: Rect, window_geom: &event::WindowGeom, tooltip_width:f64) -> (DVec2, f64, bool) {
-    let mut too_close_to_right = false;
-    if (widget_rect.pos.x + widget_rect.size.x) + tooltip_width > window_geom.inner_size.x {
-        too_close_to_right = true;
-    }
-    let tooltip_pos =  if too_close_to_right {
-        DVec2 {
-            x: widget_rect.pos.x + (widget_rect.size.x - tooltip_width),
-            y: widget_rect.pos.y + widget_rect.size.y
-        }
-    } else {
-        DVec2 {
-            x: widget_rect.pos.x + widget_rect.size.x,
-            y: widget_rect.pos.y - 5.0
-        }
-    };
-    let callout_offset = if too_close_to_right {
-        tooltip_width - (widget_rect.size.x - 10.0) / 2.0
-    } else {
-        10.0
-    };
-    (tooltip_pos, callout_offset, too_close_to_right)
 }
