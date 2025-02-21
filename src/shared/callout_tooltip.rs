@@ -202,7 +202,13 @@ impl CalloutTooltip {
             options.widget_rect.size.y as f32,
         );
         // Default colors: white text on dark gray background.
-        let text_color = options.text_color.unwrap_or(vec4(1.0, 1.0, 1.0, 1.0));
+        let mut text_color = options.text_color.unwrap_or(vec4(1.0, 1.0, 1.0, 1.0));
+        // If expected_dimension's width is 0.0, hide the text by setting it's color to be transparent
+        if expected_dimension.x == 0.0 {
+            text_color.w = 0.0;
+        } else {
+            text_color.w = 1.0;
+        }
         let bg_color = options.bg_color.unwrap_or(vec4(0.26, 0.30, 0.333, 1.0));
 
         if fixed_width {
