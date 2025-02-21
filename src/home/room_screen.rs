@@ -3638,7 +3638,7 @@ fn populate_file_message_content(
 ///
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
-    cx: &mut Cx,
+    _cx: &mut Cx,
     audio_player: &AudioPlayerRef,
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
@@ -3649,8 +3649,8 @@ fn populate_audio_message_content(
     }
     let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
-    let filename = audio.filename();
-    let (duration, mime, size) = audio
+    let _filename = audio.filename();
+    let (_duration, _mime, _size) = audio
         .info
         .as_ref()
         .map(|info| (
@@ -3666,7 +3666,7 @@ fn populate_audio_message_content(
                 .unwrap_or_default(),
         ))
         .unwrap_or_default();
-    let caption = audio.formatted_caption()
+    let _caption = audio.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
