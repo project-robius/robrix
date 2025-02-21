@@ -5,7 +5,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 
 use bytesize::ByteSize;
 use imbl::Vector;
-use makepad_widgets::*;
+use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
     ruma::{
         events::{receipt::Receipt, room::{
@@ -3502,7 +3502,7 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri| {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
         match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3519,8 +3519,27 @@ fn populate_image_message_content(
                 fully_drawn = true;
             }
             MediaCacheEntry::Requested => {
-                text_or_image_ref.show_text(cx, format!("{body}\n\nFetching image from {:?}", mxc_uri));
-                // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
+                if let Some(image_info) = image_info {
+                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
+                        let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                            let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
+                            if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
+                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
+                                    let texture = Some(img_buff.into_new_texture(cx));
+                                    img.set_texture(cx, texture);
+                                    img.size_in_pixels(cx).unwrap_or_default()
+                                })
+                            } else {
+                                Err(image_cache::ImageError::EmptyData)
+                            }
+                        });
+                        if let Err(e) = show_image_result {
+                            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                            error!("{err_str}");
+                            text_or_image_ref.show_text(cx, &err_str);
+                        }
+                    }
+                }
                 fully_drawn = false;
             }
             MediaCacheEntry::Failed => {
@@ -3533,7 +3552,7 @@ fn populate_image_message_content(
         }
     };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3543,7 +3562,7 @@ fn populate_image_message_content(
                 );
             },
             MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri)
+                fetch_and_show_image_uri(cx, mxc_uri, image_info)
             }
         }
     };
@@ -3551,10 +3570,10 @@ fn populate_image_message_content(
     match image_info_source {
         Some((image_info, original_source)) => {
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info
+            let media_source = image_info.clone()
                 .and_then(|image_info| image_info.thumbnail_source)
                 .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source);
+            fetch_and_show_media_source(cx, media_source, image_info.as_ref());
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
