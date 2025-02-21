@@ -78,14 +78,38 @@ live_design! {
     }
 }
 
-#[derive(Live, Widget, LiveHook)]
+// #[derive(Debug, Clone, Copy, DefaultNone)]
+// pub enum AudioPlayerAction {
+//     BeforeDrop(WidgetUid, )
+//     None,
+// }
+
+// #[derive(Clone)]
+// struct AudioPlayerData {
+//     audio_data: Option<Arc<[u8]>>,
+//     sink: Option<Arc<Sink>>,
+//     audio_existing: bool,
+//     inisialized: bool,
+// }
+
+#[derive(Live, Widget)]
 pub struct AudioPlayer {
     #[deref] view: View,
     #[rust] audio_data: Option<Arc<[u8]>>,
     #[rust] sink: Option<Arc<Sink>>,
-    #[rust(false)] existed_audio: bool,
+    #[rust(false)] audio_existing: bool,
     #[rust(false)] inisialized: bool,
 }
+
+impl Drop for AudioPlayer {
+    fn drop(&mut self) {
+        let audio_data = self.audio_data.take();
+        let sink = self.sink.take();
+        let audio_existing = self.audio_existing;
+        let inisialized = false;
+    }
+}
+
 
 impl Widget for AudioPlayer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -119,7 +143,7 @@ impl MatchEvent for AudioPlayer {
         if play_button.clicked(actions) {
             let audio_data = self.audio_data.clone();
 
-            if !self.existed_audio {
+            if !self.audio_existing {
                 submit_async_request(MatrixRequest::MediaHandle {
                     sender: None,
                     media_data: audio_data,
@@ -130,7 +154,7 @@ impl MatchEvent for AudioPlayer {
                         init_and_play_sink(audio_data, sink)
                     }
                 });
-                self.existed_audio = true
+                self.audio_existing = true
             } else {
                 submit_async_request(MatrixRequest::MediaHandle {
                     sender: None,
@@ -161,22 +185,24 @@ impl MatchEvent for AudioPlayer {
         if stop_button.clicked(actions) {
             let Some(sink) = self.sink.clone() else { return };
             stop_sink(sink);
-            self.existed_audio = false;
+            self.audio_existing = false;
         }
     }
-    // fn handle_startup(&mut self, _cx: &mut Cx) {
-    //     log!("handle_startup called");
-    //     let Ok((stream, stream_handle)) = OutputStream::try_default() else { return };
-    //     Box::leak(Box::new(stream));
-    //     let Ok(sink) = Sink::try_new(&stream_handle) else { return };
-    //     log!("Success Init");
-    //     self.sink = Some(Arc::new(sink));
-    // }
 }
+impl LiveHook for AudioPlayer {
+    fn after_new_from_doc(&mut self, _cx:&mut Cx) {
+        log!("handle_startup called");
+        let Ok((stream, stream_handle)) = OutputStream::try_default() else { return };
+        Box::leak(Box::new(stream));
+        let Ok(sink) = Sink::try_new(&stream_handle) else { return };
+        log!("Success Init");
+        self.sink = Some(Arc::new(sink));
+    }
+}
+
 
 impl AudioPlayer {
     fn set_data(&mut self, audio_data: Arc<[u8]>) {
-        log!("IIIIII");
         self.audio_data = Some(audio_data);
     }
 }
@@ -191,7 +217,7 @@ impl AudioPlayerRef {
 
 pub fn play_sink(sink: Arc<Sink>) {
     sink.as_ref().play();
-    sink.as_ref().sleep_until_end();
+    // sink.as_ref().sleep_until_end();
 }
 
 pub fn stop_sink(sink: Arc<Sink>) {
@@ -209,5 +235,5 @@ pub fn init_and_play_sink(audio_data: Option<Arc<[u8]>>, sink: Arc<Sink>) {
     let decoder = Decoder::new(cursor).unwrap();
     log!("Ready to play");
     sink.as_ref().append(decoder);
-    sink.as_ref().sleep_until_end();
+    sink.as_ref().play();
 }
