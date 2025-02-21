@@ -27,7 +27,6 @@ pub fn live_design(cx: &mut Cx) {
     jump_to_bottom_button::live_design(cx);
     popup_list::live_design(cx);
     verification_badge::live_design(cx);
-    color_tooltip::live_design(cx);
-    audio_player::live_design(cx);
     callout_tooltip::live_design(cx);
+    audio_player::live_design(cx);
 }

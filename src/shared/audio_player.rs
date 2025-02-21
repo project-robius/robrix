@@ -103,10 +103,10 @@ pub struct AudioPlayer {
 
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
-        let audio_data = self.audio_data.take();
-        let sink = self.sink.take();
-        let audio_existing = self.audio_existing;
-        let inisialized = false;
+        let _audio_data = self.audio_data.take();
+        let _sink = self.sink.take();
+        let _audio_existing = self.audio_existing;
+        let _inisialized = false;
     }
 }
 
