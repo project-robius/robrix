@@ -577,7 +577,7 @@ impl Widget for RoomsList {
         // Now, handle any actions on this widget, e.g., a user selecting a room.
         // We use Scope `props` to pass down the current scrolling state of the PortalList.
         let props = RoomsListScopeProps {
-            was_scrolling: self.view.portal_list(id!(list)).was_scrolling_on_latest_finger_down(),
+            was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
         };
         let list_actions = cx.capture_actions(
             |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))

@@ -1,7 +1,6 @@
 use makepad_widgets::Cx;
 
 pub mod avatar;
-pub mod color_tooltip;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
@@ -13,6 +12,7 @@ pub mod typing_animation;
 pub mod popup_list;
 pub mod verification_badge;
 pub mod audio_player;
+pub mod callout_tooltip;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
@@ -29,4 +29,5 @@ pub fn live_design(cx: &mut Cx) {
     verification_badge::live_design(cx);
     color_tooltip::live_design(cx);
     audio_player::live_design(cx);
+    callout_tooltip::live_design(cx);
 }
