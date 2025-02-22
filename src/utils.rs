@@ -74,16 +74,20 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         }
     };
     if let Err(err) = res.as_ref() {
-        // debugging: dump out the avatar image to disk
+        // debugging: dump out the bad image to disk
         let mut path = crate::temp_storage::get_temp_dir_path().clone();
-        let filename = format!("img_{}",
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+        let filename = format!(
+            "img_{}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_else(|_| rand::random::<u128>()),
         );
         path.push(filename);
         path.set_extension("unknown");
         error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
-        std::fs::write(path, data)
-            .expect("Failed to write user avatar image to disk");
+        let _ = std::fs::write(path, data)
+            .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
     }
     res
 }
