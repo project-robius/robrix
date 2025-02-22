@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_preview_cache, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -127,13 +127,14 @@ live_design! {
 
         reply_preview_body = <HtmlOrPlaintext> {
             html_view = { html = {
+                padding: { top: 6.0 }
                 font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
                     draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_italic:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_bold:        { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_bold_italic: { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_fixed:       { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    // a = { draw_text:  { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } } },
+                    a = { margin: { top: (-6.0) } }
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
@@ -359,7 +360,16 @@ live_design! {
                     }
                 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> {
+                    html_view = {
+                        html = {
+                            padding: { top: 6.0 }
+                            a = {
+                                margin: { top: (-6.0) }
+                            }
+                        }
+                    }
+                }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -401,7 +411,16 @@ live_design! {
                 flow: Down,
                 padding: { left: 10.0 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> {
+                    html_view = {
+                        html = {
+                            padding: { top: 6.0 }
+                            a = {
+                                margin: { top: (-6.0) }
+                            }
+                        }
+                    }
+                }
                 <View> {
                     width: Fill,
                     height: Fit
@@ -951,6 +970,7 @@ impl Widget for RoomScreen {
             // but it doesn't hurt to do it here.
             // TODO: move this up a layer to something higher in the UI tree,
             //       and wrap it in a `if let Event::Signal` conditional.
+            room_preview_cache::process_room_preview_updates(cx);
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
         }
@@ -2361,10 +2381,7 @@ impl RoomScreen {
                     // Get event_id and timestamp for the last visible event
                     let Some((last_event_id, last_timestamp)) = tl_state
                         .items
-                        .get(std::cmp::min(
-                            first_index + portal_list.visible_items(),
-                            tl_state.items.len().saturating_sub(1)
-                        ))
+                        .get(first_index + portal_list.visible_items())
                         .and_then(|f| f.as_event())
                         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
                     else {
