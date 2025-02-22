@@ -11,6 +11,7 @@ pub mod text_or_image;
 pub mod typing_animation;
 pub mod popup_list;
 pub mod verification_badge;
+pub mod audio_player;
 pub mod callout_tooltip;
 
 pub fn live_design(cx: &mut Cx) {
@@ -27,4 +28,5 @@ pub fn live_design(cx: &mut Cx) {
     popup_list::live_design(cx);
     verification_badge::live_design(cx);
     callout_tooltip::live_design(cx);
+    audio_player::live_design(cx);
 }

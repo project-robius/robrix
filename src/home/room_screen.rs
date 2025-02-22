@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        audio_player::{AudioPlayerRef, AudioPlayerWidgetRefExt}, avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -50,6 +50,7 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
+    use crate::shared::audio_player::AudioPlayer;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
@@ -370,7 +371,6 @@ live_design! {
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
             }
         }
     }
@@ -411,6 +411,37 @@ live_design! {
             }
         }
     }
+    AudioMessage = <Message> {
+        body = {
+            content = {
+                width: Fill,
+                height: Fit
+                padding: { left: 10.0 }
+                message = <AudioPlayer> { }
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+            }
+        }
+    }
+
+    CondensedAudioMessage = <CondensedMessage> {
+        body = {
+            content = {
+                message = <AudioPlayer> { }
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+            }
+        }
+    }
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
@@ -429,9 +460,9 @@ live_design! {
                     avatar_row = <AvatarRow> {}
                 }
             }
-
         }
     }
+
 
     // The view used for a condensed image message that came right after another message
     // from the same sender, and thus doesn't need to display the sender's profile again.
@@ -600,8 +631,13 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
             CondensedMessage = <CondensedMessage> {}
+
             ImageMessage = <ImageMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
+
+            AudioMessage = <AudioMessage> {}
+            CondensedAudioMessage = <CondensedAudioMessage> {}
+
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DayDivider = <DayDivider> {}
@@ -989,7 +1025,7 @@ impl Widget for RoomScreen {
                     );
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     bg_color,
                     read_receipts
@@ -1012,7 +1048,7 @@ impl Widget for RoomScreen {
                         self.widget_uid(),
                         &scope.path,
                         TooltipAction::HoverOut
-                    );                
+                    );
                 }
             }
 
@@ -3130,19 +3166,22 @@ fn populate_message_view(
         }
         MessageOrStickerType::Audio(audio) => {
             has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+
             let template = if use_compact_view {
-                live_id!(CondensedMessage)
+                live_id!(CondensedAudioMessage)
             } else {
-                live_id!(Message)
+                live_id!(AudioMessage)
             };
+
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
-                    &item.html_or_plaintext(id!(content.message)),
+                    &item.audio_player(id!(content.message)),
                     audio,
+                    media_cache
                 );
                 (item, false)
             }
@@ -3519,13 +3558,19 @@ fn populate_file_message_content(
 ///
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
-    cx: &mut Cx,
-    message_content_widget: &HtmlOrPlaintextRef,
+    _cx: &mut Cx,
+    audio_player: &AudioPlayerRef,
     audio: &AudioMessageEventContent,
+    media_cache: &mut MediaCache
 ) -> bool {
+    let _audio_player_uid = audio_player.widget_uid();
+    if audio_player.is_empty() {
+        log!("Empty audio player");
+    }
+    let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
-    let filename = audio.filename();
-    let (duration, mime, size) = audio
+    let _filename = audio.filename();
+    let (_duration, _mime, _size) = audio
         .info
         .as_ref()
         .map(|info| (
@@ -3541,18 +3586,31 @@ fn populate_audio_message_content(
                 .unwrap_or_default(),
         ))
         .unwrap_or_default();
-    let caption = audio.formatted_caption()
+    let _caption = audio.formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
 
-    // TODO: add an audio to play the audio file
+    match audio.source.clone() {
+        MediaSource::Plain(mxc_uri) => {
+            match media_cache.try_get_media_or_fetch(mxc_uri, None) {
+                MediaCacheEntry::Requested => {
 
-    message_content_widget.show_html(
-        cx,
-        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"),
-    );
-    true
+                },
+                MediaCacheEntry::Loaded(data) => {
+                    audio_player.set_data(data);
+                    fully_drawn = true;
+                },
+                MediaCacheEntry::Failed => {
+
+                }
+            }
+        }
+        MediaSource::Encrypted(_e) => {
+        }
+    }
+
+    fully_drawn
 }
 
 
@@ -4239,7 +4297,7 @@ impl Widget for Message {
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,

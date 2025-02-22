@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -19,6 +19,7 @@ use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
+use rodio::Sink;
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
@@ -215,6 +216,12 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+pub type OnMediaHandleFn = fn(
+    Option<Arc<[u8]>>, // media data
+    Option<crossbeam_channel::Sender<TimelineUpdate>>, // the sender to update timeline
+    Option<Arc<Sink>> // any sink if exist
+);
+
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
@@ -350,6 +357,14 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+
+    MediaHandle {
+        sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+        media_data: Option<Arc<[u8]>>,
+        widget_uid: WidgetUid,
+        sink: Option<Arc<Sink>>,
+        on_handle: OnMediaHandleFn
     },
 }
 
@@ -942,6 +957,14 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::MediaHandle {sender, media_data, widget_uid: _widget_uid, sink, on_handle} => {
+                Handle::current().spawn(async move {
+                    on_handle(media_data, sender, sink);
+                })
+                .await.unwrap_or_else(|e|{
+                    log!("Fail executing media joinhandle: {e}")
+                });
+            },
         }
     }
 
@@ -981,7 +1004,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1280,7 +1303,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -2198,7 +2221,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
