@@ -282,10 +282,6 @@ pub enum MatrixRequest {
         destination: Arc<Mutex<MediaCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
-    FetchOriginalMedia {
-        destination: Arc<Mutex<MediaCacheEntry>>,
-        mxc_uri: OwnedMxcUri,
-    },
     /// Request to send a message to the given room.
     SendMessage {
         room_id: OwnedRoomId,
