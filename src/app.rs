@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::popup_list::PopupNotificationAction, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -18,6 +18,7 @@ live_design! {
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
+    use crate::shared::callout_tooltip::CalloutTooltip;
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
@@ -98,7 +99,7 @@ live_design! {
 
     App = {{App}} {
         ui: <Window> {
-            window: {inner_size: vec2(1280, 800)},
+            window: {inner_size: vec2(1280, 800), title: "Robrix"},
             pass: {clear_color: #2A}
 
             body = {
@@ -115,6 +116,7 @@ live_design! {
                         visible: true
                         login_screen = <LoginScreen> {}
                     }
+                    app_tooltip = <CalloutTooltip> {}
                     popup = <PopupNotification> {
                         margin: {top: 45, right: 13},
                         content: {
@@ -204,6 +206,7 @@ impl MatchEvent for App {
 
             // Handle an action requesting to open the new message context menu.
             if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
+                self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
                 let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
@@ -258,7 +261,35 @@ impl MatchEvent for App {
                 }
                 RoomsPanelAction::None => { }
             }
-
+            
+            match action.as_widget_action().cast() {
+                TooltipAction::HoverIn {
+                    widget_rect,
+                    text,
+                    text_color,
+                    bg_color,
+                } => {
+                    // Don't show any tooltips if the message context menu is currently shown.
+                    if self.ui.new_message_context_menu(id!(new_message_context_menu)).is_currently_shown(cx) {
+                        self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
+                    }
+                    else {
+                        self.ui.callout_tooltip(id!(app_tooltip)).show_with_options(
+                            cx,
+                            &text,
+                            CalloutTooltipOptions {
+                                widget_rect,
+                                text_color,
+                                bg_color,
+                            },
+                        );
+                    }
+                }
+                TooltipAction::HoverOut => {
+                    self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
+                }
+                _ => {}
+            }
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //
