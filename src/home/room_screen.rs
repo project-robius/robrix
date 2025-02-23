@@ -2261,9 +2261,10 @@ impl RoomScreen {
         //   because the location might change by the next time the user opens this same room.
         self.location_preview(id!(location_preview)).clear();
         submit_async_request(MatrixRequest::SubscribeToTypingNotices {
-            room_id,
+            room_id: room_id.clone(),
             subscribe: false,
         });
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe: false });
     }
 
     /// Removes the current room's visual UI state from this widget
@@ -2339,7 +2340,7 @@ impl RoomScreen {
         self.room_id = Some(room_id);
         self.show_timeline(cx);
     }
-
+    
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,

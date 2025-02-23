@@ -714,10 +714,17 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                if !subscribe {
+                    // Handle::current().spawn(async move {
+                    //     timeline.clear().await;
+                    // });
+                    
+                    continue;
+                }
                 let subscribe_to_current_user_read_receipt_changed = subscribe_to_current_user_read_receipt_changed.clone();
 
                 let _to_updates_task = Handle::current().spawn(async move {
+                    println!("subscribe _room_id {:?}",room_id);
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     let read_receipt_change_mutex = subscribe_to_current_user_read_receipt_changed.clone();
                     let mut read_receipt_change_mutex_guard = read_receipt_change_mutex.lock().await;
@@ -736,19 +743,42 @@ async fn async_worker(
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
-                        while (update_receiver.next().await).is_some() {
-                            let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
-                            let read_receipt_change = read_receipt_change.lock().await;
-                            let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
-                            if !subscribed_to_user_read_receipt {
-                                break;
-                            }
-                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                    error!("Failed to get own user read receipt: {e:?}");
+                        loop {
+                            if update_receiver.next().await.is_some() {
+                                println!("update_receiver {:?} time {:?}", room_id, std::time::Instant::now());
+                                let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
+                                let read_receipt_change = read_receipt_change.lock().await;
+                                let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
+                                if !subscribed_to_user_read_receipt {
+                                    break;
                                 }
+                                if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                    if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                        error!("Failed to get own user read receipt: {e:?}");
+                                    }
+                                }
+                            } else {
+                                println!("there is none");
                             }
                         }
+                        println!("update_receiver end-- {:?} time now {:?}", room_id, std::time::Instant::now());
+                    //     while (update_receiver.next().await).is_some() {
+                    //         println!("update_receiver {:?}", room_id);
+                    //         let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
+                    //         let read_receipt_change = read_receipt_change.lock().await;
+                    //         let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
+                    //         if !subscribed_to_user_read_receipt {
+                    //             break;
+                    //         }
+                    //         if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                    //             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                    //                 error!("Failed to get own user read receipt: {e:?}");
+                    //             }
+                    //         }
+                    //     } else {
+
+                    //     }
+                    // }
                     }
                 });
             }
