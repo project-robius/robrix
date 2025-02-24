@@ -127,14 +127,13 @@ live_design! {
 
         reply_preview_body = <HtmlOrPlaintext> {
             html_view = { html = {
-                padding: { top: 6.0 }
                 font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
                     draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_italic:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_bold:        { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_bold_italic: { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
                     draw_fixed:       { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
-                    a = { margin: { top: (-6.0) } }
+                    // a = { draw_text:  { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } } },
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
@@ -360,16 +359,7 @@ live_design! {
                     }
                 }
 
-                message = <HtmlOrPlaintext> {
-                    html_view = {
-                        html = {
-                            padding: { top: 6.0 }
-                            a = {
-                                margin: { top: (-6.0) }
-                            }
-                        }
-                    }
-                }
+                message = <HtmlOrPlaintext> { }
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -411,16 +401,7 @@ live_design! {
                 flow: Down,
                 padding: { left: 10.0 }
 
-                message = <HtmlOrPlaintext> {
-                    html_view = {
-                        html = {
-                            padding: { top: 6.0 }
-                            a = {
-                                margin: { top: (-6.0) }
-                            }
-                        }
-                    }
-                }
+                message = <HtmlOrPlaintext> { }
                 <View> {
                     width: Fill,
                     height: Fit
@@ -2381,7 +2362,10 @@ impl RoomScreen {
                     // Get event_id and timestamp for the last visible event
                     let Some((last_event_id, last_timestamp)) = tl_state
                         .items
-                        .get(first_index + portal_list.visible_items())
+                        .get(std::cmp::min(
+                            first_index + portal_list.visible_items(),
+                            tl_state.items.len().saturating_sub(1)
+                        ))
                         .and_then(|f| f.as_event())
                         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
                     else {

@@ -3,7 +3,7 @@
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomOrAliasId}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, home::{room_preview_cache, rooms_list}, profile::user_profile_cache, sliding_sync::current_user_id, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::user_profile_cache, sliding_sync::current_user_id, utils};
 
 use super::avatar::AvatarWidgetExt;
 
