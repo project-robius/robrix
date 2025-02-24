@@ -1027,6 +1027,10 @@ impl Widget for RoomScreen {
                         .and_then(|thumbnail_uri|{tl.media_cache.try_get_media(thumbnail_uri)})
                     {
                         Cx::post_action(ImageViewerAction::Fetched(data.clone()));
+                    } else {
+                        if let Some(MediaCacheEntry::Loaded(data)) = tl.media_cache.try_get_media(&thumbnail_original_image_uri.original_uri) {
+                            Cx::post_action(ImageViewerAction::Fetched(data.clone()));
+                        }
                     }
                     tl.media_cache.try_get_media_or_fetch(thumbnail_original_image_uri.original_uri.clone(), None, image_viewer_insert_into_cache);
                 }
