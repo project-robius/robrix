@@ -192,40 +192,39 @@ live_design! {
     }
 
     // A generic spinner widget styled for Robrix.
-    pub RobrixSpinLoader = <View> {
+    pub SpinLoader = <View> {
         width: Fill, height: Fill
         show_bg: true,
         draw_bg: {
-            color: #00000000
-
+            color: #FFFFFF00
             instance rotation_speed: 1.
             instance num_segments: 5.
             fn pixel(self) -> vec4 {
-                // Normalize and adjust for aspect ratio to ensure circular shape.
+                // Normalization and aspect ratio adjustment to ensure circular display
                 let aspect = self.rect_size.x / self.rect_size.y;
                 let normalized_pos_x = (self.pos.x - 0.5) * max(aspect, 1.);
                 let normalized_pos_y = (self.pos.y - 0.5) * max(1. / aspect, 1.);
-                let pos = vec2(normalized_pos_x, normalized_pos_y) * 2.8;
+                let pos = vec2(normalized_pos_x, normalized_pos_y) * 1.5;
 
+                // Calculate the distance from the pixel point to the center.
                 let radius = length(pos);
 
-                // Rotate over time
+                // Calculate the angle of rotation over time
                 let angle_offset = self.time * self.rotation_speed * PI * 2.0;
                 let angle = atan(pos.y, pos.x) + angle_offset;
 
-                // Create a circular shape with thickness
-                let inner_radius = 0.5;
+                let inner_radius = 0.6;
                 let outer_radius = 0.7;
                 let thickness = outer_radius - inner_radius;
-
                 let edge = abs(radius - (inner_radius + thickness * 0.5)) - thickness * 0.5;
-                let d = smoothstep(0.01, -0.01, edge);
+                let d = smoothstep(0.005, -0.005, edge);
 
-                // 5 segments for the spinner.
-                // Use sin to create an effect where parts of the circle fade in and out.
-                let alpha = (sin(angle * self.num_segments) * 0.5 + 0.5) * d;
+                // Creating distinct paragraph effects.
+                let segment = fract(angle / (2.0 * PI) * self.num_segments);
+                let segment_alpha = smoothstep(0.0, 0.2, segment) * smoothstep(0.8, 0.6, segment);
+                let alpha = segment_alpha * d;
 
-                return vec4(self.color.rgb, alpha);
+                return vec4(self.color.rgb * alpha, alpha);
             }
         }
     }
