@@ -1,9 +1,11 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
-use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomOrAliasId}, OwnedServerName};
+use std::str::FromStr;
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::user_profile_cache, sliding_sync::current_user_id, utils};
+use makepad_widgets::{makepad_html::HtmlDoc, *};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId}, OwnedServerName};
+
+use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::user_profile_cache, sliding_sync::{current_user_id, get_client}, utils};
 
 use super::avatar::AvatarWidgetExt;
 
@@ -364,10 +366,40 @@ impl MatrixLinkPill {
         let mut room_name = room_or_alias_id.to_owned().to_string();
         let mut avatar_url = None;
 
-        // we need to get room name and avatar from cache.
-        // ALL_ROOMS.get(&room_id)
+        // First, try to get the known room name and avatar from the client.
+        if let Some(client) = get_client() {
+            let room_id_result = if room_or_alias_id.is_room_id() {
+                OwnedRoomId::from_str(room_or_alias_id.as_str()).ok()
+            } else {
+                None
+            };
+            let room_alias_id_result = if room_or_alias_id.is_room_alias_id() {
+                OwnedRoomAliasId::from_str(room_or_alias_id.as_str()).ok()
+            } else {
+                None
+            };
 
-        
+            for room in client.rooms() {
+                let is_matching_room = match (&room_id_result, &room_alias_id_result) {
+                    (Some(room_id), _) if room.room_id() == *room_id => true,
+                    (_, Some(room_alias_id)) => room.canonical_alias()
+                        .map_or(false, |alias_id| alias_id == *room_alias_id),
+                    _ => false,
+                };
+
+                if is_matching_room {
+                    if let Some(display_name) = room.cached_display_name() {
+                        self.name = room_name.clone();
+                        room_name = display_name.to_string();
+                    }
+                    self.avatar_url = avatar_url.clone();
+                    avatar_url = room.avatar_url();
+                    return (room_name, avatar_url);
+                }
+            }
+        }
+
+        // If the room name and avatar are not found in the client, try to get them from the cache or fetch them.
         match room_preview_cache::with_room_preview(
             cx,
             room_or_alias_id.to_owned(),
