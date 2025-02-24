@@ -386,7 +386,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-    let subscribe_to_current_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, bool>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+    let subscribe_to_current_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, JoinHandle<()>>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -705,7 +705,13 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
-
+                let mut read_receipt_change_mutex_guard = subscribe_to_current_user_read_receipt_changed.lock().await;
+                if !subscribe {
+                    if let Some(task_handler) = (*read_receipt_change_mutex_guard).remove(&room_id) {
+                        task_handler.abort();
+                    }
+                    continue;
+                }
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -714,73 +720,28 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-                if !subscribe {
-                    // Handle::current().spawn(async move {
-                    //     timeline.clear().await;
-                    // });
-                    
-                    continue;
-                }
-                let subscribe_to_current_user_read_receipt_changed = subscribe_to_current_user_read_receipt_changed.clone();
-
-                let _to_updates_task = Handle::current().spawn(async move {
-                    println!("subscribe _room_id {:?}",room_id);
+                
+                let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
-                    let read_receipt_change_mutex = subscribe_to_current_user_read_receipt_changed.clone();
-                    let mut read_receipt_change_mutex_guard = read_receipt_change_mutex.lock().await;
-                    if let Some(subscription) = read_receipt_change_mutex_guard.get(&room_id) {
-                        if *subscription && subscribe {
-                            return
-                        }
-                    } else if subscribe {
-                        read_receipt_change_mutex_guard.insert(room_id.clone(), true);
-                    }
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
-                        if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                            log!("Received own user read receipt: {receipt:?} {event_id:?}");
+                        if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
-                        loop {
-                            if update_receiver.next().await.is_some() {
-                                println!("update_receiver {:?} time {:?}", room_id, std::time::Instant::now());
-                                let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
-                                let read_receipt_change = read_receipt_change.lock().await;
-                                let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
-                                if !subscribed_to_user_read_receipt {
-                                    break;
+                        
+                        while (update_receiver.next().await).is_some() {
+                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                    error!("Failed to get own user read receipt: {e:?}");
                                 }
-                                if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                    if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                        error!("Failed to get own user read receipt: {e:?}");
-                                    }
-                                }
-                            } else {
-                                println!("there is none");
                             }
                         }
-                        println!("update_receiver end-- {:?} time now {:?}", room_id, std::time::Instant::now());
-                    //     while (update_receiver.next().await).is_some() {
-                    //         println!("update_receiver {:?}", room_id);
-                    //         let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
-                    //         let read_receipt_change = read_receipt_change.lock().await;
-                    //         let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
-                    //         if !subscribed_to_user_read_receipt {
-                    //             break;
-                    //         }
-                    //         if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                    //             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                    //                 error!("Failed to get own user read receipt: {e:?}");
-                    //             }
-                    //         }
-                    //     } else {
-
-                    //     }
-                    // }
                     }
                 });
+                read_receipt_change_mutex_guard.insert(room_id.clone(), subscribe_own_read_receipt_task);
+
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
