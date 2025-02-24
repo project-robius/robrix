@@ -382,8 +382,7 @@ impl MatrixLinkPill {
             for room in client.rooms() {
                 let is_matching_room = match (&room_id_result, &room_alias_id_result) {
                     (Some(room_id), _) if room.room_id() == *room_id => true,
-                    (_, Some(room_alias_id)) => room.canonical_alias()
-                        .map_or(false, |alias_id| alias_id == *room_alias_id),
+                    (_, Some(room_alias_id)) => room.canonical_alias() == Some(*room_alias_id),
                     _ => false,
                 };
 
