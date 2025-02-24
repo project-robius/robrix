@@ -504,8 +504,7 @@ impl MentionInputBar {
 
             if after_trigger
                 .chars()
-                .nth(1)
-                .map_or(false, |c| c.is_whitespace())
+                .nth(1).is_some_and(|c| c.is_whitespace())
             {
                 return false;
             }
