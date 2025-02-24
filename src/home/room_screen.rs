@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -1023,16 +1023,16 @@ impl Widget for RoomScreen {
                 let Some(tl) = self.tl_state.as_mut() else { return };
 
                 if let Some(ImageViewerAction::Get(thumbnail_original_image_uri)) = action.downcast_ref() {
-                    if let Some(MediaCacheEntry::Loaded(data)) = thumbnail_original_image_uri.thumbnail_uri.as_ref()
+                    if let Some(MediaCacheEntry::Loaded(data)) = thumbnail_original_image_uri.thumbnail.as_ref()
                         .and_then(|thumbnail_uri|{tl.media_cache.try_get_media(thumbnail_uri)})
                     {
                         Cx::post_action(ImageViewerAction::Fetched(data.clone()));
                     } else {
-                        if let Some(MediaCacheEntry::Loaded(data)) = tl.media_cache.try_get_media(&thumbnail_original_image_uri.original_uri) {
+                        if let Some(MediaCacheEntry::Loaded(data)) = tl.media_cache.try_get_media(&thumbnail_original_image_uri.original) {
                             Cx::post_action(ImageViewerAction::Fetched(data.clone()));
                         }
                     }
-                    tl.media_cache.try_get_media_or_fetch(thumbnail_original_image_uri.original_uri.clone(), None, image_viewer_insert_into_cache);
+                    tl.media_cache.try_get_media_or_fetch(thumbnail_original_image_uri.original.clone(), Some(MediaFormat::File), image_viewer_insert_into_cache);
                 }
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {

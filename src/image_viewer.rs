@@ -90,13 +90,13 @@ pub struct ImageViewer {
 
 #[derive(Clone, Debug)]
 pub struct ThumbnailAndOriginalImageUri {
-    pub original_uri: OwnedMxcUri,
-    pub thumbnail_uri: Option<OwnedMxcUri>,
+    pub original: OwnedMxcUri,
+    pub thumbnail: Option<OwnedMxcUri>,
 }
 
 impl ThumbnailAndOriginalImageUri {
-    pub const fn new(original_uri: OwnedMxcUri, thumbnail_uri: Option<OwnedMxcUri>) -> Self {
-        Self {original_uri, thumbnail_uri }
+    pub const fn new(original: OwnedMxcUri, thumbnail: Option<OwnedMxcUri>) -> Self {
+        Self {original, thumbnail }
     }
 }
 
