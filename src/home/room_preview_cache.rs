@@ -20,7 +20,7 @@ pub struct RoomPreviewUpdate {
     pub room_preview: RoomPreview,
 }
 
-static PENDING_AVATAR_UPDATES: SegQueue<RoomPreviewUpdate> = SegQueue::new();
+static PENDING_ROOM_PREVIEWS: SegQueue<RoomPreviewUpdate> = SegQueue::new();
 
 pub fn enqueue_room_preview_update(update: RoomPreviewUpdate) {
     PENDING_AVATAR_UPDATES.push(update);
