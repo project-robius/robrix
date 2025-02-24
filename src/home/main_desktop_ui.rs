@@ -147,11 +147,7 @@ impl MainDesktopUI {
         let dock = self.view.dock(id!(dock));
 
         // Do nothing if the room to select is already created and focused.
-        if self
-            .most_recently_selected_room
-            .as_ref()
-            .is_some_and(|r| r == &room)
-        {
+        if self.most_recently_selected_room.as_ref().is_some_and(|r| r == &room) {
             return;
         }
 
@@ -165,9 +161,7 @@ impl MainDesktopUI {
 
         self.open_rooms.insert(room_id_as_live_id, room.clone());
 
-        let displayed_room_name = room
-            .room_name
-            .clone()
+        let displayed_room_name = room.room_name.clone()
             .unwrap_or_else(|| format!("Room ID {}", &room.room_id));
 
         // create a new tab for the room
@@ -195,10 +189,7 @@ impl MainDesktopUI {
             );
             Cx::post_action(RoomsPanelAction::DockSave);
         } else {
-            error!(
-                "Failed to create tab for room {}, {:?}",
-                room.room_id, room.room_name
-            );
+            error!("Failed to create tab for room {}, {:?}", room.room_id, room.room_name);
         }
 
         self.most_recently_selected_room = Some(room);
@@ -302,8 +293,7 @@ impl MatchEvent for MainDesktopUI {
                     if let DragItem::FilePath {
                         internal_id: Some(internal_id),
                         ..
-                    } = &drop_event.items[0]
-                    {
+                    } = &drop_event.items[0] {
                         dock.drop_move(cx, drop_event.abs, *internal_id);
                     }
                     should_save_dock_action = true;
@@ -318,8 +308,7 @@ impl MatchEvent for MainDesktopUI {
                 room_id,
                 room_index: _,
                 room_name,
-            } = action.cast()
-            {
+            } = action.cast() {
                 // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                 // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                 // a redraw to be happening in order to draw the tab content.
