@@ -6,13 +6,14 @@
 //!   2. Implement scrolling functionality for the user list.
 //!   3. Enable sorting for the user list to show currently online users.
 //!   4. Optimize performance and add a loading animation for the user list.
+use crate::avatar_cache::*;
+use crate::shared::avatar::AvatarWidgetRefExt;
+use crate::shared::styles::KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR;
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::utils;
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
-use crate::shared::avatar::AvatarWidgetRefExt;
 use matrix_sdk::ruma::OwnedRoomId;
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
-use crate::avatar_cache::*;
-use crate::utils;
 
 live_design! {
     use link::theme::*;
@@ -44,9 +45,9 @@ live_design! {
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
 
                 if self.selected > 0.0 {
-                    sdf.fill(#eaecf0)
+                    sdf.fill(KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
                 } else if self.hover > 0.0 {
-                    sdf.fill(#f5f5f5)
+                    sdf.fill(KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
                 } else {
                     sdf.fill(self.color)
                 }
@@ -126,6 +127,14 @@ live_design! {
                     border_width: 1.0,
                     border_color: #e5e5e5
                 }
+
+                header_view = {
+                    visible: true,
+                    header_label = {
+                        text: "Users List"
+                    }
+                }
+
                 list = {
                     height: Fill
                     clip_y: true
@@ -279,7 +288,9 @@ impl Widget for MentionInputBar {
                 self.update_user_list(cx, &mut message_input, &search_text);
             }
 
-            if let Some(action) = actions.find_widget_action(message_input.text_input_ref().widget_uid()) {
+            if let Some(action) =
+                actions.find_widget_action(message_input.text_input_ref().widget_uid())
+            {
                 if let TextInputAction::Change(text) = action.cast() {
                     self.handle_text_change(cx, &mut message_input, scope, text);
                 }
@@ -297,7 +308,9 @@ impl MentionInputBar {
 
         if let Some(start_idx) = self.mention_start_index {
             let current_text = message_input.text();
-            let head = message_input.text_input_ref().borrow()
+            let head = message_input
+                .text_input_ref()
+                .borrow()
                 .map_or(0, |p| p.get_cursor().head.index);
 
             let before = &current_text[..start_idx];
@@ -320,9 +333,17 @@ impl MentionInputBar {
 
     // Core text change handler that manages mention context
     // Controls popup visibility and search state
-    fn handle_text_change(&mut self, cx: &mut Cx, message_input: &mut CommandTextInputRef, scope: &mut Scope, text: String) {
+    fn handle_text_change(
+        &mut self,
+        cx: &mut Cx,
+        message_input: &mut CommandTextInputRef,
+        scope: &mut Scope,
+        text: String,
+    ) {
         self.current_input = text.clone();
-        let cursor_pos = message_input.text_input_ref().borrow()
+        let cursor_pos = message_input
+            .text_input_ref()
+            .borrow()
             .map_or(0, |p| p.get_cursor().head.index);
 
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
@@ -346,7 +367,12 @@ impl MentionInputBar {
 
     // Updates the mention suggestion list based on search
     // Handles member filtering, popup sizing, and layout adaptation
-    fn update_user_list(&mut self, cx: &mut Cx, message_input: &mut CommandTextInputRef, search_text: &str) {
+    fn update_user_list(
+        &mut self,
+        cx: &mut Cx,
+        message_input: &mut CommandTextInputRef,
+        search_text: &str,
+    ) {
         message_input.clear_items();
 
         if self.is_searching {
@@ -354,7 +380,8 @@ impl MentionInputBar {
             let mut matched_members = Vec::new();
 
             for member in self.room_members.iter() {
-                let display_name = member.display_name()
+                let display_name = member
+                    .display_name()
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| member.user_id().to_string());
 
@@ -394,28 +421,37 @@ impl MentionInputBar {
 
                 item.label(id!(user_info.label)).set_text(cx, &display_name);
 
-                let safe_matrix_id = format!("{}:matrix.org", member.user_id().localpart());
+                let safe_matrix_id = format!("@{}:matrix.org", member.user_id().localpart());
                 item.label(id!(matrix_url)).set_text(cx, &safe_matrix_id);
 
-                item.apply_over(cx, live! {
-                    show_bg: true,
-                    cursor: Hand,
-                    padding: {left: 8., right: 8., top: 4., bottom: 4.}
-                });
+                item.apply_over(
+                    cx,
+                    live! {
+                        show_bg: true,
+                        cursor: Hand,
+                        padding: {left: 8., right: 8., top: 4., bottom: 4.}
+                    },
+                );
 
                 if is_desktop {
-                    item.apply_over(cx, live!(
-                        flow: Right,
-                        height: 32.0,
-                        align: {y: 0.5}
-                    ));
+                    item.apply_over(
+                        cx,
+                        live!(
+                            flow: Right,
+                            height: 32.0,
+                            align: {y: 0.5}
+                        ),
+                    );
                     item.view(id!(user_info.filler)).set_visible(cx, true);
                 } else {
-                    item.apply_over(cx, live!(
-                        flow: Down,
-                        height: 64.0,
-                        spacing: 4.0
-                    ));
+                    item.apply_over(
+                        cx,
+                        live!(
+                            flow: Down,
+                            height: 64.0,
+                            spacing: 4.0
+                        ),
+                    );
                     item.view(id!(user_info.filler)).set_visible(cx, false);
                 }
 
@@ -459,32 +495,34 @@ impl MentionInputBar {
             return Some(cursor_pos - 1);
         }
 
-        text[..cursor_pos]
-            .rfind('@')
-            .filter(|&idx| {
-                let after_trigger = &text[idx..cursor_pos];
+        text[..cursor_pos].rfind('@').filter(|&idx| {
+            let after_trigger = &text[idx..cursor_pos];
 
-                if after_trigger.len() == 1 {
-                    return true;
-                }
+            if after_trigger.len() == 1 {
+                return true;
+            }
 
-                if after_trigger.chars().nth(1).map_or(false, |c| c.is_whitespace()) {
+            if after_trigger
+                .chars()
+                .nth(1)
+                .map_or(false, |c| c.is_whitespace())
+            {
+                return false;
+            }
+
+            let chars: Vec<char> = after_trigger.chars().collect();
+            for i in 0..chars.len().saturating_sub(1) {
+                if chars[i].is_whitespace() && chars[i + 1].is_whitespace() {
                     return false;
                 }
+            }
 
-                let chars: Vec<char> = after_trigger.chars().collect();
-                for i in 0..chars.len().saturating_sub(1) {
-                    if chars[i].is_whitespace() && chars[i + 1].is_whitespace() {
-                        return false;
-                    }
-                }
+            if after_trigger.contains('\n') {
+                return false;
+            }
 
-                if after_trigger.contains('\n') {
-                    return false;
-                }
-
-                true
-            })
+            true
+        })
     }
 
     // Cleanup helper for closing mention popup
@@ -524,9 +562,7 @@ impl MentionInputBar {
     /// * `room_id` - The Matrix room identifier
     pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
         self.room_id = Some(room_id.clone());
-        submit_async_request(MatrixRequest::FetchRoomMembers {
-            room_id
-        });
+        submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
     }
 
     /// Updates the list of available room members for mentions
@@ -536,17 +572,20 @@ impl MentionInputBar {
     /// * `members` - Vector of room members to process
     pub fn set_room_members(&mut self, mut members: Vec<RoomMember>) {
         members.retain(|member| {
-            let display_name = member.display_name()
+            let display_name = member
+                .display_name()
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| member.user_id().to_string());
             !display_name.trim().is_empty()
         });
 
         members.sort_by(|a, b| {
-            let a_name = a.display_name()
+            let a_name = a
+                .display_name()
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| a.user_id().to_string());
-            let b_name = b.display_name()
+            let b_name = b
+                .display_name()
                 .map(|n| n.to_string())
                 .unwrap_or_else(|| b.user_id().to_string());
             a_name.cmp(&b_name)
@@ -560,12 +599,15 @@ impl LiveHook for MentionInputBar {
     fn after_new_from_doc(&mut self, cx: &mut Cx) {
         let message_input = self.command_text_input(id!(message_input));
 
-        message_input.apply_over(cx, live! {
-            trigger: "@",
-            inline_search: true,
-            keyboard_focus_color: #eaecf0,
-            pointer_hover_color: #f5f5f5
-        });
+        message_input.apply_over(
+            cx,
+            live! {
+                trigger: "@",
+                inline_search: true,
+                keyboard_focus_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR),
+                pointer_hover_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
+            },
+        );
 
         message_input.request_text_input_focus();
     }
