@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::ImageViewerAction, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{ MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::{ImageViewerAction, OriginalAndThumbnail}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{ insert_into_cache, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -989,7 +989,7 @@ impl Widget for RoomScreen {
                     );
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     bg_color,
                     read_receipts
@@ -1012,7 +1012,7 @@ impl Widget for RoomScreen {
                         self.widget_uid(),
                         &scope.path,
                         TooltipAction::HoverOut
-                    );                
+                    );
                 }
             }
 
@@ -3404,11 +3404,11 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
 
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
-            MediaCacheEntry::Loaded(data) => {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, original_source: MediaSource, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into()), insert_into_cache) {
+            MediaCacheEntry::Loaded(thumbnail_data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &data)
+                    utils::load_png_or_jpg(&img, cx, &thumbnail_data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
@@ -3420,8 +3420,9 @@ fn populate_image_message_content(
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
 
-                if let MediaSource::Plain(mxc_uri) = original_source {
-                    Cx::post_action(ImageViewerAction::SetData {text_or_image_uid, mxc_uri, thumbnail_data: data});
+                if let MediaSource::Plain(original_uri) = original_source {
+                    let original_thumbnail = OriginalAndThumbnail::new(original_uri, thumbnail_data);
+                    Cx::post_action(ImageViewerAction::SetData {text_or_image_uid, original_thumbnail});
                 }
             }
             MediaCacheEntry::Requested => {
@@ -3459,7 +3460,9 @@ fn populate_image_message_content(
     };
 
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
+    let mut fetch_and_show_media_source = |cx: &mut Cx2d, original_source: MediaSource, thumbnail_source: Option<MediaSource>, image_info: Option<&ImageInfo>| {
+        let media_source = thumbnail_source.clone().unwrap_or(original_source.clone());
+
         match media_source {
             MediaSource::Encrypted(encrypted) => {
                 // We consider this as "fully drawn" since we don't yet support encryption.
@@ -3469,8 +3472,7 @@ fn populate_image_message_content(
                 );
             },
             MediaSource::Plain(mxc_uri) => {
-
-                fetch_and_show_image_uri(cx, mxc_uri, image_info)
+                fetch_and_show_image_uri(cx, original_source, mxc_uri, image_info)
             }
         }
     };
@@ -3478,10 +3480,9 @@ fn populate_image_message_content(
     match image_info_source {
         Some((image_info, original_source)) => {
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info.clone()
-                .and_then(|image_info| image_info.thumbnail_source)
-                .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source, image_info.as_ref());
+            let thumbnail_source = image_info.clone()
+                .and_then(|image_info| image_info.thumbnail_source);
+            fetch_and_show_media_source(cx, original_source, thumbnail_source, image_info.as_ref());
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
