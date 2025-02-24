@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::{MediaFormat, MediaRequest}, room::RoomMember, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, image_viewer::image_viewer_insert_into_media_cache, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -786,23 +786,6 @@ async fn async_worker(
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
-                });
-            }
-            MatrixRequest::FetchOriginalMedia { destination , mxc_uri } => {
-                log!("Received...");
-                let Some(client) = CLIENT.get() else { continue };
-                let media = client.media();
-
-                let media_request = MediaRequest {
-                    source: MediaSource::Plain(mxc_uri.clone()),
-                    format: MediaFormat::File
-                };
-
-                let _fetch_task = Handle::current().spawn(async move {
-                    // log!("Sending fetch media request for {media_request:?}...");
-                    let res = media.get_media_content(&media_request, true).await;
-
-                    image_viewer_insert_into_media_cache(&destination, res, mxc_uri);
                 });
             }
 

@@ -1,21 +1,17 @@
-use std::ops::Deref;
 use std::sync::Mutex;
-use std::time::SystemTime;
 use std::{
-    collections::{btree_map::Entry, HashMap},
+    collections::HashMap,
     sync::Arc,
 };
 
 use makepad_widgets::*;
 use matrix_sdk::media::MediaRequest;
-use matrix_sdk::ruma::events::room::MediaSource;
 use matrix_sdk::ruma::OwnedMxcUri;
 
 use crate::home::room_screen::TimelineUpdate;
 use crate::shared::text_or_image::TextOrImageAction;
 use crate::{
     media_cache::MediaCacheEntry,
-    sliding_sync::{self, MatrixRequest},
     utils,
 };
 
@@ -75,9 +71,11 @@ pub enum ImageViewerAction {
         text_or_image_uid: WidgetUid,
         thumbnail_and_original_image_uri: ThumbnailAndOriginalImageUri,
     },
+
     ///We post this action on fetching the image
     ///which is clicked by user first time (not in `media_cache` currently) in timeline.
     Fetched(Arc<[u8]>),
+    Get(ThumbnailAndOriginalImageUri),
     None,
 }
 
@@ -87,15 +85,13 @@ pub struct ImageViewer {
     view: View,
     /// Key is uid of `TextOrImage`, val is the corresponded image uri and its thumbnail data.
     #[rust]
-    image_uid_mxc_uri_map: HashMap<WidgetUid, ThumbnailAndOriginalImageUri>,
-    #[rust]
-    image_uid_thumbnail_data_map: HashMap<WidgetUid, Arc<[u8]>>,
+    text_or_image_uid_mxc_uri_map: HashMap<WidgetUid, ThumbnailAndOriginalImageUri>,
 }
 
 #[derive(Clone, Debug)]
 pub struct ThumbnailAndOriginalImageUri {
-    original_uri: OwnedMxcUri,
-    thumbnail_uri: Option<OwnedMxcUri>,
+    pub original_uri: OwnedMxcUri,
+    pub thumbnail_uri: Option<OwnedMxcUri>,
 }
 
 impl ThumbnailAndOriginalImageUri {
@@ -131,7 +127,6 @@ impl Widget for ImageViewer {
 impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(id!(close_button)).clicked(actions) {
-            // Clear the image cache once the modal is closed.
             self.close(cx);
         }
 
@@ -143,8 +138,9 @@ impl MatchEvent for ImageViewer {
                 }) => {
                     self.set_data(text_or_image_uid, thumbnail_and_original_image_uri);
                 }
-                Some(ImageViewerAction::Fetched(mxc_uri)) => {
-                    self.find_to_load(cx, mxc_uri);
+                Some(ImageViewerAction::Fetched(data)) => {
+                    self.view.image(id!(image)).set_texture(cx, None);
+                    self.load_with_data(cx, data);
                 }
                 _ => {}
             }
@@ -152,23 +148,8 @@ impl MatchEvent for ImageViewer {
             if let Some(TextOrImageAction::ImageClicked(text_or_image_uid)) = action.downcast_ref() {
                 self.open(cx);
                 //Todo: show a spin loader before the image is loaded.
-                match self.image_viewer_try_get_or_fetch(text_or_image_uid) {
-                    MediaCacheEntry::Loaded(data) => {
-                        self.load_with_data(cx, &data);
-                    }
-                    MediaCacheEntry::Requested => {
-                        let image_uid_thumbnail_data_map =
-                            self.image_uid_thumbnail_data_map.clone();
-
-                        let Some(thumbnail_data) =
-                            image_uid_thumbnail_data_map.get(text_or_image_uid) else { return };
-
-                        self.load_with_data(cx, thumbnail_data);
-                    }
-                    MediaCacheEntry::Failed => {
-                        // TODO
-                    }
-                }
+                let Some(thumbnail_original_image_uri) = self.text_or_image_uid_mxc_uri_map.get(text_or_image_uid) else { return };
+                Cx::post_action(ImageViewerAction::Get(thumbnail_original_image_uri.clone()));
             }
         }
     }
@@ -191,42 +172,12 @@ impl ImageViewer {
         text_or_image_uid: &WidgetUid,
         thumbnail_and_original_image_uri: &ThumbnailAndOriginalImageUri,
     ) {
-        self.image_uid_mxc_uri_map
-            .insert(*text_or_image_uid, thumbnail_and_original_image_uri.clone());
-    }
-    /// We find mx_uid via the given `text_or_image_uid`.
-    fn image_viewer_try_get_or_fetch(
-        &mut self,
-        text_or_image_uid: &WidgetUid,
-    ) -> MediaCacheEntry {
-        let Some(mxc_uri) = self.image_uid_mxc_uri_map.get(text_or_image_uid) else {
-            return MediaCacheEntry::Failed;
-        };
-
-        match self.media_cache.entry(mxc_uri.clone()) {
-            Entry::Vacant(vacant) => {
-                let destination = vacant.insert(Arc::new(Mutex::new(MediaCacheEntry::Requested)));
-                sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
-                    media_request: (),
-                    on_fetched: (),
-                    destination: (),
-                    update_sender: ()
-                });
-
-                MediaCacheEntry::Requested
-            }
-            Entry::Occupied(occupied) => occupied.get().lock().unwrap().clone(),
-        }
-    }
-    fn find_to_load(&mut self, cx: &mut Cx, mxc_uri: &OwnedMxcUri) {
-        if let Some(MediaCacheEntry::Loaded(data)) = self.media_cache.try_get_media(mxc_uri) {
-            self.load_with_data(cx, &data);
-        }
+        self.text_or_image_uid_mxc_uri_map.insert(*text_or_image_uid, thumbnail_and_original_image_uri.clone());
     }
     fn load_with_data(&mut self, cx: &mut Cx, data: &[u8]) {
         let image = self.view.image(id!(image_view.image));
         if let Err(e) = utils::load_png_or_jpg(&image, cx, data) {
-            log!("Error to load image: {e}");
+            log!("Error loading image: {e}");
         } else {
             self.view.redraw(cx);
         }
@@ -234,41 +185,23 @@ impl ImageViewer {
 }
 
 /// Insert data into a previously-requested media cache entry.
-pub fn f1<D: Into<Arc<[u8]>>>(
+pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
     _request: MediaRequest,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
-    let new_value = match data {
+    match data {
         Ok(data) => {
-            let data = data.into();
-
-            // debugging: dump out the media image to disk
-            if false {
-                if let MediaSource::Plain(mxc_uri) = _request.source {
-                    log!("Fetched media for {mxc_uri}");
-                    let mut path = crate::temp_storage::get_temp_dir_path().clone();
-                    let filename = format!("{}_{}_{}",
-                        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
-                        mxc_uri.server_name().unwrap(), mxc_uri.media_id().unwrap(),
-                    );
-                    path.push(filename);
-                    path.set_extension("png");
-                    log!("Writing user media image to disk: {:?}", path);
-                    std::fs::write(path, &data)
-                        .expect("Failed to write user media image to disk");
-                }
-            }
-            Cx::post_action(ImageViewerAction::Fetched(data.clone()));
-            MediaCacheEntry::Loaded(data)
+            let data: Arc<[u8]> = data.into();
+            *value_ref.lock().unwrap() = MediaCacheEntry::Loaded(data.clone());
+            Cx::post_action(ImageViewerAction::Fetched(data));
         }
         Err(e) => {
+            *value_ref.lock().unwrap() = MediaCacheEntry::Failed;
             error!("Failed to fetch media for {:?}: {e:?}", _request.source);
-            MediaCacheEntry::Failed
         }
     };
-    *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
         let _ = sender.send(TimelineUpdate::MediaFetched);

@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::{ImageViewerAction, ThumbnailAndOriginalImageUri}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{ MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::{image_viewer_insert_into_cache, ImageViewerAction, ThumbnailAndOriginalImageUri}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{ insert_into_cache, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1021,6 +1021,15 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
+
+                if let Some(ImageViewerAction::Get(thumbnail_original_image_uri)) = action.downcast_ref() {
+                    if let Some(MediaCacheEntry::Loaded(data)) = thumbnail_original_image_uri.thumbnail_uri.as_ref()
+                        .and_then(|thumbnail_uri|{tl.media_cache.try_get_media(thumbnail_uri)})
+                    {
+                        Cx::post_action(ImageViewerAction::Fetched(data.clone()));
+                    }
+                    tl.media_cache.try_get_media_or_fetch(thumbnail_original_image_uri.original_uri.clone(), None, image_viewer_insert_into_cache);
+                }
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -3405,7 +3414,7 @@ fn populate_image_message_content(
     // marking it as fully drawn if the image was available.
 
     let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into()), insert_into_cache) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
