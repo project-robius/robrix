@@ -5,6 +5,8 @@
 
 use makepad_widgets::*;
 
+use crate::image_viewer::ImageViewerAction;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -44,12 +46,6 @@ live_design! {
     }
 }
 
-#[derive(Debug, Clone, Copy, DefaultNone)]
-pub enum TextOrImageAction {
-    ImageClicked(WidgetUid),
-    None,
-}
-
 /// A view that holds an image or text content, and can switch between the two.
 ///
 /// This is useful for displaying alternate text when an image is not (yet) available
@@ -76,7 +72,7 @@ impl Widget for TextOrImage {
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
                     // Once Clicked, We post an action.
-                    Cx::post_action(TextOrImageAction::ImageClicked(self.widget_uid()));
+                    Cx::post_action(ImageViewerAction::ImageClicked(self.widget_uid()));
                     SignalToUI::set_ui_signal();
                 }
             }

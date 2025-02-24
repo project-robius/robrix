@@ -194,4 +194,41 @@ live_design! {
             }
         }
     }
+
+    // A generic spinner widget styled for Robrix.
+    pub RobrixSpinLoader = <View> {
+        width: Fill, height: Fill
+        show_bg: true,
+        draw_bg: {
+            color: #000000AF
+            fn pixel(self) -> vec4 {
+                // Normalize and adjust for aspect ratio to ensure circular shape.
+                let aspect = self.rect_size.x / self.rect_size.y;
+
+                let pos = vec2(
+                    (self.pos.x - 0.5) * max(aspect, 1.),
+                    (self.pos.y - 0.5) * max(1. / aspect, 1.)
+                ) * 2.8;
+
+                let radius = length(pos);
+
+                // Rotate over time
+                let angle = atan(pos.y, pos.x) + self.time * PI * 2.0;
+
+                // Create a circular shape with thickness
+                let inner_radius = 0.5;
+                let outer_radius = 0.7;
+                let thickness = outer_radius - inner_radius;
+
+                let edge = abs(radius - (inner_radius + thickness * 0.5)) - thickness * 0.5;
+                let d = smoothstep(0.01, -0.01, edge);
+
+                // 5 segments for the spinner.
+                // Use sin to create an effect where parts of the circle fade in and out.
+                let alpha = sin(angle * 5.0) * 0.5 + 0.5;
+
+                return vec4(self.color.rgb, d * alpha);
+            }
+        }
+    }
 }

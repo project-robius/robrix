@@ -1,7 +1,7 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest, OnMediaFetchedFn}, utils::MediaFormatConst};
+use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
 
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 
@@ -17,6 +17,7 @@ pub enum MediaCacheEntry {
 }
 
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
+#[derive(Default)]
 pub struct MediaCache {
     /// The actual cached data.
     cache: BTreeMap<OwnedMxcUri, MediaCacheEntryRef>,
@@ -70,7 +71,6 @@ impl MediaCache {
         &mut self,
         mxc_uri: OwnedMxcUri,
         media_format: Option<MediaFormat>,
-        on_fetched: OnMediaFetchedFn,
     ) -> MediaCacheEntry {
         let value_ref = match self.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => vacant.insert(
@@ -89,7 +89,7 @@ impl MediaCache {
                     source: MediaSource::Plain(mxc_uri),
                     format,
                 },
-                on_fetched,
+                on_fetched: insert_into_cache,
                 destination,
                 update_sender: self.timeline_update_sender.clone(),
             }
@@ -99,7 +99,7 @@ impl MediaCache {
 }
 
 /// Insert data into a previously-requested media cache entry.
-pub fn insert_into_cache<D: Into<Arc<[u8]>>>(
+fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
     _request: MediaRequest,
     data: matrix_sdk::Result<D>,
