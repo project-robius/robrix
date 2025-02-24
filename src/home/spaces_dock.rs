@@ -1,7 +1,5 @@
 use makepad_widgets::*;
 
-use crate::shared::color_tooltip::*;
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -10,7 +8,6 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
-    use crate::shared::color_tooltip::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -59,8 +56,6 @@ live_design! {
             align: { x: 1.0, y: 0.0 }
             verification_badge = <VerificationBadge> {}
         }
-
-        profile_tooltip = <ColorTooltip> {}
 
     }
 
@@ -167,18 +162,6 @@ live_design! {
     }
 }
 
-/// An action emitted to show or hide the `profile_tooltip`.
-#[derive(Clone, Debug, DefaultNone)]
-pub enum ProfileTooltipAction {
-    Show {
-        pos: DVec2,
-        text: &'static str,
-        color: Vec4,
-    },
-    Hide,
-    None,
-}
-
 #[derive(Live, LiveHook, Widget)]
 pub struct Profile {
     #[deref] view: View,
@@ -187,21 +170,6 @@ pub struct Profile {
 impl Widget for Profile {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-                match action.as_widget_action().cast() {
-                    ProfileTooltipAction::Show { pos, text, color } => {
-                        self.view.color_tooltip(id!(profile_tooltip))
-                            .show_with_options(cx, pos, text, color);
-                    }
-                    ProfileTooltipAction::Hide => {
-                        self.view.color_tooltip(id!(profile_tooltip)).hide(cx);
-                    }
-                    _ => { }
-                }
-            }
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
