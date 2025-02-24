@@ -575,8 +575,14 @@ impl Widget for RoomsList {
         }
 
         // Now, handle any actions on this widget, e.g., a user selecting a room.
-        let widget_uid = self.widget_uid();
-        for list_action in cx.capture_actions(|cx| self.view.handle_event(cx, event, scope)) {
+        // We use Scope `props` to pass down the current scrolling state of the PortalList.
+        let props = RoomsListScopeProps {
+            was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
+        };
+        let list_actions = cx.capture_actions(
+            |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
+        );
+        for list_action in list_actions {
             if let RoomPreviewAction::Click = list_action.as_widget_action().cast() {
                 let widget_action = list_action.as_widget_action();
 
@@ -598,7 +604,7 @@ impl Widget for RoomsList {
 
                 self.current_active_room_index = Some(displayed_room_index);
                 cx.widget_action(
-                    widget_uid,
+                    self.widget_uid(),
                     &scope.path,
                     RoomsListAction::Selected {
                         room_index: displayed_room_index,
@@ -735,4 +741,10 @@ impl WidgetMatchEvent for RoomsList {
             }
         }
     }
+}
+
+pub struct RoomsListScopeProps {
+    /// Whether the RoomsList's inner PortalList was scrolling
+    /// when the latest finger down event occurred.
+    pub was_scrolling: bool,
 }
