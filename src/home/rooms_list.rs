@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ops::Deref};
 use crossbeam_queue::SegQueue;
 use imbl::HashSet;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
+use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, RoomOrAliasId};
 use bitflags::bitflags;
 use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 

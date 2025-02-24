@@ -3,7 +3,7 @@
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomOrAliasId}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::user_profile_cache, sliding_sync::current_user_id, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, home::{room_preview_cache, rooms_list}, profile::user_profile_cache, sliding_sync::current_user_id, utils};
 
 use super::avatar::AvatarWidgetExt;
 
@@ -364,6 +364,10 @@ impl MatrixLinkPill {
         let mut room_name = room_or_alias_id.to_owned().to_string();
         let mut avatar_url = None;
 
+        // we need to get room name and avatar from cache.
+        // ALL_ROOMS.get(&room_id)
+
+        
         match room_preview_cache::with_room_preview(
             cx,
             room_or_alias_id.to_owned(),

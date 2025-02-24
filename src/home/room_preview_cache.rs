@@ -23,12 +23,12 @@ pub struct RoomPreviewUpdate {
 static PENDING_ROOM_PREVIEWS: SegQueue<RoomPreviewUpdate> = SegQueue::new();
 
 pub fn enqueue_room_preview_update(update: RoomPreviewUpdate) {
-    PENDING_AVATAR_UPDATES.push(update);
+    PENDING_ROOM_PREVIEWS.push(update);
 }
 
 pub fn process_room_preview_updates(_cx: &mut Cx) {
     ROOM_PREVIEW_CACHE.with_borrow_mut(|cache| {
-        while let Some(update) = PENDING_AVATAR_UPDATES.pop() {
+        while let Some(update) = PENDING_ROOM_PREVIEWS.pop() {
             cache.insert(
                 update.room_id.clone(),
                 RoomPreviewCacheEntry::Loaded(update.room_preview),
