@@ -707,10 +707,10 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
-                let mut read_receipt_change_mutex_guard =
+                let mut read_receipt_changed_mutex_guard =
                     subscribe_to_current_user_read_receipt_changed.lock().await;
                 if !subscribe {
-                    if let Some(task_handler) = (*read_receipt_change_mutex_guard).remove(&room_id)
+                    if let Some(task_handler) = (*read_receipt_changed_mutex_guard).remove(&room_id)
                     {
                         task_handler.abort();
                     }
@@ -729,7 +729,8 @@ async fn async_worker(
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
-                        if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                        if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                            log!("Received own user read receipt: {receipt:?} {event_id:?}");
                             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
@@ -744,7 +745,7 @@ async fn async_worker(
                         }
                     }
                 });
-                read_receipt_change_mutex_guard
+                read_receipt_changed_mutex_guard
                     .insert(room_id.clone(), subscribe_own_read_receipt_task);
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
