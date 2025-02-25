@@ -350,7 +350,7 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
-    }
+    },
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -941,7 +941,7 @@ async fn async_worker(
                         }
                     }
                 });
-            }
+            },
         }
     }
 
