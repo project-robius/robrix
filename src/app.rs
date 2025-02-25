@@ -411,7 +411,7 @@ pub struct AppState {
 pub struct RoomsPanelState {
     pub selected_room: Option<SelectedRoom>,
     /// The saved dock state
-    pub dock_state: Option<HashMap<LiveId, DockItem>>,
+    pub dock_state: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened

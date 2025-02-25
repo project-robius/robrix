@@ -50,6 +50,11 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone)]
+enum DrawState {
+    DrawBody
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct MainDesktopUI {
     #[deref]
@@ -72,52 +77,51 @@ pub struct MainDesktopUI {
     #[rust]
     most_recently_selected_room: Option<SelectedRoom>,
 
-    /// Boolean to indicate if we've loaded the rooms panel once in the desktop view.
-    ///
-    /// When switching mobile view to desktop, we need to restore the rooms panel state.
-    /// If it is false, we will post an action to load the dock from the saved dock state.
-    /// If it is true, we will do nothing.
-    #[rust]
-    loaded_once: bool,
+    #[rust] 
+    draw_state: DrawStateWrap<DrawState>,
 }
 
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let dock = self.view.dock(id!(dock));
+        
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
                     Some(RoomsPanelAction::DockLoad) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
                         let dock = self.view.dock(id!(dock));
-                        if let Some(ref dock_state) = app_state.rooms_panel.dock_state {
-                            if let Some(mut dock) = dock.borrow_mut() {
-                                dock.load_state(cx, dock_state.clone());
-                                dock.items().iter().for_each(|(head_liveid, (_, widget))| {
-                                    if let Some(room) =
-                                        app_state.rooms_panel.open_rooms.get(head_liveid)
-                                    {
-                                        widget.as_room_screen().set_displayed_room(
-                                            cx,
-                                            room.room_id.clone(),
-                                            room.room_name.clone().unwrap_or(String::from("")),
-                                        );
-                                    }
-                                });
-                            } else {
-                                return;
-                            }
+                        self.room_order = app_state.rooms_panel.room_order.clone();
+                        self.open_rooms = app_state.rooms_panel.open_rooms.clone();
+                        if app_state.rooms_panel.dock_state.len() == 0 {
+                            return;
                         }
+
+                        if let Some(mut dock) = dock.borrow_mut() {
+                            dock.load_state(cx, app_state.rooms_panel.dock_state.clone());
+                            dock.items().iter().for_each(|(head_liveid, (_, widget))| {
+                                if let Some(room) =
+                                    app_state.rooms_panel.open_rooms.get(head_liveid)
+                                {
+                                    widget.as_room_screen().set_displayed_room(
+                                        cx,
+                                        room.room_id.clone(),
+                                        room.room_name.clone().unwrap_or_default(),
+                                    );
+                                }
+                            });
+                        } else {
+                            return;
+                        }
+
                         if let Some(ref selected_room) = &app_state.rooms_panel.selected_room {
                             self.focus_or_create_tab(cx, selected_room.clone());
                         }
-                        self.room_order = app_state.rooms_panel.room_order.clone();
-                        self.open_rooms = app_state.rooms_panel.open_rooms.clone();
                     }
                     Some(RoomsPanelAction::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        let dock = self.view.dock(id!(dock));
                         if let Some(dock_state) = dock.clone_state() {
-                            app_state.rooms_panel.dock_state = Some(dock_state);
+                            app_state.rooms_panel.dock_state = dock_state;
                         }
                         app_state.rooms_panel.open_rooms = self.open_rooms.clone();
                         app_state.rooms_panel.room_order = self.room_order.clone();
@@ -132,9 +136,9 @@ impl Widget for MainDesktopUI {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
-        if !self.loaded_once {
-            Cx::post_action(RoomsPanelAction::DockLoad);
-            self.loaded_once = true;
+        if self.draw_state.get().is_none() {
+            cx.action(RoomsPanelAction::DockLoad);
+            self.draw_state.set(DrawState::DrawBody);
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -187,7 +191,7 @@ impl MainDesktopUI {
                 room.room_id.clone(),
                 displayed_room_name,
             );
-            Cx::post_action(RoomsPanelAction::DockSave);
+            cx.action(RoomsPanelAction::DockSave);
         } else {
             error!("Failed to create tab for room {}, {:?}", room.room_id, room.room_name);
         }
@@ -228,6 +232,7 @@ impl MainDesktopUI {
                 );
 
                 dock.select_tab(cx, live_id!(home_tab));
+                self.most_recently_selected_room = None;
             }
         }
 
@@ -262,6 +267,7 @@ impl MatchEvent for MainDesktopUI {
                         );
                         self.most_recently_selected_room = Some(selected_room.clone());
                     }
+                    should_save_dock_action = true;
                 }
                 DockAction::TabCloseWasPressed(tab_id) => {
                     self.tab_to_close = Some(tab_id);
@@ -279,7 +285,6 @@ impl MatchEvent for MainDesktopUI {
                             internal_id: Some(tab_id),
                         },
                     );
-                    should_save_dock_action = true;
                 }
                 // When dragging a tab, allow it to be dragged
                 DockAction::Drag(drag_event) => {
