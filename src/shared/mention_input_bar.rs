@@ -315,7 +315,7 @@ impl MentionInputBar {
 
             let before = &current_text[..start_idx];
             let after = &current_text[head..];
-            let mention = format!("{before} @{username} {after}");
+            let mention = format!("{before}@{username} {after}");
 
             message_input.set_text(cx, &mention);
             let new_pos = start_idx + username.len() + 2;
