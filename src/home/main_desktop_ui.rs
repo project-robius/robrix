@@ -92,7 +92,7 @@ impl Widget for MainDesktopUI {
                         let dock = self.view.dock(id!(dock));
                         self.room_order = app_state.rooms_panel.room_order.clone();
                         self.open_rooms = app_state.rooms_panel.open_rooms.clone();
-                        if app_state.rooms_panel.dock_state.len() == 0 {
+                        if app_state.rooms_panel.dock_state.is_empty() {
                             return;
                         }
 
