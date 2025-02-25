@@ -1,5 +1,8 @@
 use makepad_widgets::*;
 
+// #eaecf0
+pub(crate) const KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR: Vec4 = vec4(0.92, 0.93, 0.94, 1.0);
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -99,6 +102,8 @@ live_design! {
     pub COLOR_TEXT = #1C274C
 
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
+
+    pub KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR = #eaecf0
 
 
     // A text input widget styled for Robrix.

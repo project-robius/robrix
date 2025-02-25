@@ -34,6 +34,9 @@ use rangemap::RangeSet;
 
 use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
+use crate::shared::mention_input_bar::MentionInputBarWidgetExt;
+use crate::room::room_members_cache::{get_room_members, process_room_members_updates};
+
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -59,6 +62,7 @@ live_design! {
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
+    use crate::shared::mention_input_bar::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -803,38 +807,9 @@ live_design! {
 
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
-
                 // Below that, display a view that holds the message input bar and send button.
-                input_bar = <View> {
-                    width: Fill, height: Fit
-                    flow: Right,
-                    // Bottom-align everything to ensure that buttons always stick to the bottom
-                    // even when the message_input box is very tall.
-                    align: {y: 1.0},
-                    padding: 8.
-                    show_bg: true,
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                    }
-
-                    location_button = <IconButton> {
-                        draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
-                        text: "",
-                    }
-
-                    message_input = <RobrixTextInput> {
-                        width: Fill, height: Fit,
-                        margin: { bottom: 7 }
-                        align: {y: 0.5}
-                        empty_message: "Write a message (in Markdown) ..."
-                    }
-
-                    send_message_button = <IconButton> {
-                        draw_icon: {svg_file: (ICON_SEND)},
-                        icon_walk: {width: Fit, height: 25, margin: {left: -3} },
-                    }
-                }
+                input_bar = <MentionInputBar> {}
+                
                 can_not_send_message_notice = <View> {
                     visible: false
                     show_bg: true
@@ -1106,47 +1081,45 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send message button being clicked and enter key being pressed.
-            let message_input = self.text_input(id!(message_input));
-            let send_message_shortcut_pressed = message_input
-                .key_down_unhandled(actions)
-                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
-            if send_message_shortcut_pressed
-                || self.button(id!(send_message_button)).clicked(actions)
-            {
-                let entered_text = message_input.text().trim().to_string();
-                if !entered_text.is_empty() {
-                    let room_id = self.room_id.clone().unwrap();
-                    log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        RoomMessageEventContent::text_html(html_text, html_text)
-                    } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        RoomMessageEventContent::text_plain(plain_text)
-                    } else {
-                        RoomMessageEventContent::text_markdown(entered_text)
-                    };
-                    submit_async_request(MatrixRequest::SendMessage {
-                        room_id,
-                        message,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
-                        ),
-                        // TODO: support attaching mentions, etc.
-                    });
+            let input_bar = self.mention_input_bar(id!(input_bar));
+            let message_input = input_bar.command_text_input(id!(message_input));
 
-                    self.clear_replying_to(cx);
-                    message_input.set_text(cx, "");
+            let mut should_send = false;
+
+            if let Some(ke) = message_input.text_input_ref().key_down_unhandled(actions) {
+                if ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary() {
+                    should_send = true;
                 }
             }
 
-            // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
-                cx,
-                &portal_list,
-                actions,
-            );
+            if should_send || self.button(id!(send_message_button)).clicked(actions) {
+                if let Some(text) = input_bar.text() {
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        let room_id = self.room_id.clone().unwrap();
+                        let message = if let Some(html_text) = text.strip_prefix("/html") {
+                            RoomMessageEventContent::text_html(html_text, html_text)
+                        } else if let Some(plain_text) = text.strip_prefix("/plain") {
+                            RoomMessageEventContent::text_plain(plain_text)
+                        } else {
+                            RoomMessageEventContent::text_markdown(text)
+                        };
 
-            // Handle a typing action on the message input box.
-            if let Some(new_text) = message_input.changed(actions) {
+                        submit_async_request(MatrixRequest::SendMessage {
+                            room_id,
+                            message,
+                            replied_to: self.tl_state.as_mut().and_then(
+                                |tl| tl.replying_to.take().map(|(_, rep)| rep)
+                            ),
+                        });
+
+                        self.clear_replying_to(cx);
+                        input_bar.set_text(cx, "");
+                    }
+                }
+            }
+
+            if let Some(new_text) = message_input.text_input_ref().changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),
@@ -1614,6 +1587,14 @@ impl RoomScreen {
                     // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    process_room_members_updates(cx);
+
+                    if let Some(members) = get_room_members(cx, tl.room_id.clone(), false) {
+                        log!("Retrieved {} members from cache for room {}",
+                                members.len(), tl.room_id);
+                        let input_bar = self.view.mention_input_bar(id!(input_bar));
+                        input_bar.set_room_members(members);
+                    }
                 }
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
@@ -2336,7 +2317,12 @@ impl RoomScreen {
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
-        self.room_id = Some(room_id);
+        self.room_id = Some(room_id.clone());
+
+        // Clear any mention input state
+        let input_bar = self.view.mention_input_bar(id!(input_bar));
+        input_bar.set_room_id(room_id);
+
         self.show_timeline(cx);
     }
 
