@@ -14,7 +14,6 @@ pub mod spaces_dock;
 pub mod welcome_screen;
 pub mod event_reaction_list;
 pub mod new_message_context_menu;
-pub mod room_preview_cache;
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);

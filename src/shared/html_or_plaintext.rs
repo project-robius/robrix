@@ -5,7 +5,7 @@ use std::str::FromStr;
 use makepad_widgets::{makepad_html::HtmlDoc, *};
 use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, home::room_preview_cache, profile::user_profile_cache, sliding_sync::{current_user_id, get_client}, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, get_client}, utils};
 
 use super::avatar::AvatarWidgetExt;
 
@@ -295,18 +295,18 @@ impl MatrixLinkPill {
             match matrix_id {
                 MatrixId::Room(room_id) => {
                     let room_or_alias_id: OwnedRoomOrAliasId = room_id.into();
-                    let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(cx, &room_or_alias_id);
+                    let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(&room_or_alias_id);
                     self.set_pill_avatar(cx, avatar_url);
                     self.set_pill_title(cx, &room_name);
                 }
                 MatrixId::RoomAlias(room_alias) => {
                     let room_or_alias_id: OwnedRoomOrAliasId = room_alias.into();
-                    let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(cx, &room_or_alias_id);
+                    let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(&room_or_alias_id);
                     self.set_pill_avatar(cx, avatar_url);
                     self.set_pill_title(cx, &room_name);
                 }
                 MatrixId::Event(room_or_alias_id, _event_id) => {
-                    let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(cx, &room_or_alias_id);
+                    let (room_name, avatar_url) = self.get_room_displayname_and_avatar_url(&room_or_alias_id);
                     self.set_pill_avatar(cx, avatar_url);
                     self.set_pill_title(cx, &format!("Message in {}", room_name));
                 }
@@ -362,11 +362,10 @@ impl MatrixLinkPill {
         }
     }
 
-    pub fn get_room_displayname_and_avatar_url(&mut self, cx: &mut Cx, room_or_alias_id: &OwnedRoomOrAliasId) -> (String, Option<OwnedMxcUri>) {
+    pub fn get_room_displayname_and_avatar_url(&mut self, room_or_alias_id: &OwnedRoomOrAliasId) -> (String, Option<OwnedMxcUri>) {
         let mut room_name = room_or_alias_id.to_owned().to_string();
         let mut avatar_url = None;
 
-        // First, try to get the known room name and avatar from the client.
         if let Some(client) = get_client() {
             let room_id_result = if room_or_alias_id.is_room_id() {
                 OwnedRoomId::from_str(room_or_alias_id.as_str()).ok()
@@ -397,31 +396,7 @@ impl MatrixLinkPill {
                 }
             }
         }
-
-        // If the room name and avatar are not found in the client, try to get them from the cache or fetch them.
-        match room_preview_cache::with_room_preview(
-            cx,
-            room_or_alias_id.to_owned(),
-            self.via.clone(),
-            true,
-            |preview| preview.clone()
-        ) {
-            Some(preview) => {
-                if let Some(name) = preview.name {
-                    self.name = name.clone();
-                    room_name = name;
-                }
-                if let Some(url) = preview.avatar_url {
-                    self.avatar_url = Some(url.clone());
-                    avatar_url = Some(url);
-                };
-                (room_name, avatar_url)
-            }
-            None => {
-                self.name = room_name.clone();
-                (room_name, avatar_url)
-            }
-        }
+        (room_name, avatar_url)
     }
 }
 

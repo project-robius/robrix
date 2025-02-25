@@ -12,8 +12,8 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_preview_cache::{enqueue_room_preview_update, RoomPreviewUpdate}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -350,10 +350,6 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
-    },
-    GetRoomPreview {
-        room_or_alias_id: OwnedRoomOrAliasId,
-        via: Vec<OwnedServerName>,
     }
 }
 
@@ -942,21 +938,6 @@ async fn async_worker(
                         Err(e) => {
                             error!("Failed to redact message in {room_id}; error: {e:?}");
                             enqueue_popup_notification(format!("Failed to redact message. Error: {e}"));
-                        }
-                    }
-                });
-            },
-            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
-                let Some(client) = CLIENT.get() else { continue };
-                let _fetch_task = Handle::current().spawn(async move {
-                    let res = client.get_room_preview(&room_or_alias_id, via).await;
-                    match res {
-                        Ok(room_preview) => enqueue_room_preview_update(RoomPreviewUpdate {
-                            room_id: room_or_alias_id.clone(),
-                            room_preview,
-                        }),
-                        Err(e) => {
-                            error!("Failed to fetch room preview for {room_or_alias_id}: {e:?}");
                         }
                     }
                 });
