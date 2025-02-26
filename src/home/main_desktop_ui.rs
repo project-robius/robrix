@@ -50,11 +50,6 @@ live_design! {
     }
 }
 
-#[derive(Debug, Clone)]
-enum DrawState {
-    DrawBody
-}
-
 #[derive(Live, LiveHook, Widget)]
 pub struct MainDesktopUI {
     #[deref]
@@ -77,8 +72,13 @@ pub struct MainDesktopUI {
     #[rust]
     most_recently_selected_room: Option<SelectedRoom>,
 
-    #[rust] 
-    draw_state: DrawStateWrap<DrawState>,
+    /// Boolean to indicate if we've drawn the MainDesktopUi previously in the desktop view.
+    ///
+    /// When switching mobile view to desktop, we need to restore the rooms panel state.
+    /// If it is false, we will post an action to load the dock from the saved dock state.
+    /// If it is true, we will do nothing.
+    #[rust]
+    drawn_previously: bool,
 }
 
 impl Widget for MainDesktopUI {
@@ -136,11 +136,10 @@ impl Widget for MainDesktopUI {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
-        if self.draw_state.get().is_none() {
-            cx.action(RoomsPanelAction::DockLoad);
-            self.draw_state.set(DrawState::DrawBody);
+        if !self.drawn_previously {
+            Cx::post_action(RoomsPanelAction::DockLoad);
+            self.drawn_previously = true;
         }
-
         self.view.draw_walk(cx, scope, walk)
     }
 }
