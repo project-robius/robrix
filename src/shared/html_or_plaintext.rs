@@ -264,7 +264,7 @@ impl Widget for MatrixLinkPill {
         let uid = self.widget_uid();
         if self.visible {
             if let Hit::FingerUp(fe) = event.hits(cx, self.area()) {
-                if fe.is_over {
+                if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                     if let Some(matrix_id) = self.matrix_id.take() {
                         cx.widget_action(
                             uid,
