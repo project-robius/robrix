@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -26,7 +26,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -989,7 +989,7 @@ impl Widget for RoomScreen {
                     );
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     bg_color,
                     read_receipts
@@ -1012,7 +1012,7 @@ impl Widget for RoomScreen {
                         self.widget_uid(),
                         &scope.path,
                         TooltipAction::HoverOut
-                    );                
+                    );
                 }
             }
 
@@ -2191,7 +2191,7 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                media_cache: MediaCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -3403,51 +3403,61 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
-            MediaCacheEntry::Loaded(data) => {
-                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &data)
-                        .map(|()| img.size_in_pixels(cx).unwrap_or_default())
-                });
-                if let Err(e) = show_image_result {
-                    let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                    error!("{err_str}");
-                    text_or_image_ref.show_text(cx, &err_str);
-                }
-
-                // We're done drawing the image, so mark it as fully drawn.
-                fully_drawn = true;
-            }
-            MediaCacheEntry::Requested => {
-                if let Some(image_info) = image_info {
-                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                        let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                            let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
-                            if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
-                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
-                                    let texture = Some(img_buff.into_new_texture(cx));
-                                    img.set_texture(cx, texture);
-                                    img.size_in_pixels(cx).unwrap_or_default()
-                                })
-                            } else {
-                                Err(image_cache::ImageError::EmptyData)
+        if let Some(v) = media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
+            for i in v {
+                if let MediaFormat::Thumbnail(_) = i.format.clone() {
+                    match i.entry {
+                        MediaCacheEntry::Loaded(data) => {
+                            log!("Loaded thumbnail data");
+                            let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                                utils::load_png_or_jpg(&img, cx, &data)
+                                    .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+                            });
+                            if let Err(e) = show_image_result {
+                                let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                                error!("{err_str}");
+                                text_or_image_ref.show_text(cx, &err_str);
                             }
-                        });
-                        if let Err(e) = show_image_result {
-                            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                            error!("{err_str}");
-                            text_or_image_ref.show_text(cx, &err_str);
+
+                            // We're done drawing the image, so mark it as fully drawn.
+                            fully_drawn = true;
+                        }
+                        MediaCacheEntry::Requested => {
+                            if let Some(image_info) = image_info {
+                                if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
+                                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                                        let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
+                                        if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
+                                            ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
+                                                let texture = Some(img_buff.into_new_texture(cx));
+                                                img.set_texture(cx, texture);
+                                                img.size_in_pixels(cx).unwrap_or_default()
+                                            })
+                                        } else {
+                                            Err(image_cache::ImageError::EmptyData)
+                                        }
+                                    });
+                                    if let Err(e) = show_image_result {
+                                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                                        error!("{err_str}");
+                                        text_or_image_ref.show_text(cx, &err_str);
+                                    }
+                                }
+                            }
+                            fully_drawn = false;
+                        }
+                        MediaCacheEntry::Failed => {
+                            text_or_image_ref
+                                .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                            // For now, we consider this as being "complete". In the future, we could support
+                            // retrying to fetch thumbnail of the image on a user click/tap.
+                            fully_drawn = true;
                         }
                     }
+                    break;
+                } else {
+                    continue;
                 }
-                fully_drawn = false;
-            }
-            MediaCacheEntry::Failed => {
-                text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
-                // For now, we consider this as being "complete". In the future, we could support
-                // retrying to fetch thumbnail of the image on a user click/tap.
-                fully_drawn = true;
             }
         }
     };
@@ -4239,7 +4249,7 @@ impl Widget for Message {
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,

@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::EntryAndFormat, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -209,7 +209,7 @@ impl std::fmt::Display for PaginationDirection {
 
 /// The function signature for the callback that gets invoked when media is fetched.
 pub type OnMediaFetchedFn = fn(
-    &Mutex<MediaCacheEntry>,
+    &Mutex<Vec<EntryAndFormat>>,
     MediaRequest,
     matrix_sdk::Result<Vec<u8>>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -279,7 +279,7 @@ pub enum MatrixRequest {
     FetchMedia {
         media_request: MediaRequest,
         on_fetched: OnMediaFetchedFn,
-        destination: Arc<Mutex<MediaCacheEntry>>,
+        destination: Arc<Mutex<Vec<EntryAndFormat>>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -981,7 +981,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1280,7 +1280,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -2198,7 +2198,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.

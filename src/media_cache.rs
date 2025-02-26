@@ -1,11 +1,23 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
+use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
-pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
+pub type Caches = Arc<Mutex<Vec<EntryAndFormat>>>;
 
-/// An entry in the media cache. 
+#[derive(Debug, Clone)]
+pub struct EntryAndFormat {
+    pub entry: MediaCacheEntry,
+    pub format: MediaFormat,
+}
+
+
+impl EntryAndFormat {
+    pub const fn new(entry: MediaCacheEntry, format: MediaFormat) -> Self {
+        Self {entry, format}
+    }
+}
+/// An entry in the media cache.
 #[derive(Debug, Clone)]
 pub enum MediaCacheEntry {
     /// A request has been issued and we're waiting for it to complete.
@@ -19,14 +31,12 @@ pub enum MediaCacheEntry {
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
 pub struct MediaCache {
     /// The actual cached data.
-    cache: BTreeMap<OwnedMxcUri, MediaCacheEntryRef>,
-    /// The default format to use when fetching media.
-    default_format: MediaFormatConst,
+    cache: BTreeMap<OwnedMxcUri, Caches>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
-    type Target = BTreeMap<OwnedMxcUri, MediaCacheEntryRef>;
+    type Target = BTreeMap<OwnedMxcUri, Caches>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
@@ -44,12 +54,10 @@ impl MediaCache {
     /// It will also optionally send updates to the given timeline update sender
     /// when a media request has completed.
     pub const fn new(
-        default_format: MediaFormatConst,
         timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     ) -> Self {
         Self {
             cache: BTreeMap::new(),
-            default_format,
             timeline_update_sender,
         }
     }
@@ -57,8 +65,11 @@ impl MediaCache {
     /// Gets media from the cache without sending a fetch request if the media is absent.
     ///
     /// This is suitable for use in a latency-sensitive context, such as a UI draw routine.
-    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri) -> Option<MediaCacheEntry> {
-        self.get(mxc_uri).map(|v| v.lock().unwrap().deref().clone())
+    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri) -> Option<Vec<EntryAndFormat>> {
+        self.get(mxc_uri).map(|v|{
+            log!("Locked?");
+            v.lock().unwrap().deref().clone()
+        })
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.
@@ -70,18 +81,23 @@ impl MediaCache {
         &mut self,
         mxc_uri: OwnedMxcUri,
         media_format: Option<MediaFormat>,
-    ) -> MediaCacheEntry {
+    ) -> Option<Vec<EntryAndFormat>> {
+        let format = media_format.unwrap_or(MediaFormat::File);
         let value_ref = match self.entry(mxc_uri.clone()) {
-            Entry::Vacant(vacant) => vacant.insert(
-                Arc::new(Mutex::new(MediaCacheEntry::Requested))
-            ),
-            Entry::Occupied(occupied) => return occupied.get().lock().unwrap().deref().clone(),
+            Entry::Vacant(vacant) => {
+                let entry_and_format = EntryAndFormat::new(
+                    MediaCacheEntry::Requested,
+                    format.clone()
+                );
+                vacant.insert(
+                    Arc::new(Mutex::new(vec![entry_and_format]))
+                )
+            },
+            Entry::Occupied(occupied) => return Some(occupied.get().lock().unwrap().deref().clone()),
         };
 
-        let destination = Arc::clone(value_ref);
-        let format = media_format.unwrap_or_else(||
-            self.default_format.clone().into()
-        );
+        let destination = value_ref.clone();
+
         sliding_sync::submit_async_request(
             MatrixRequest::FetchMedia {
                 media_request: MediaRequest {
@@ -93,24 +109,25 @@ impl MediaCache {
                 update_sender: self.timeline_update_sender.clone(),
             }
         );
-        MediaCacheEntry::Requested
+        None
     }
 }
 
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
-    value_ref: &Mutex<MediaCacheEntry>,
-    _request: MediaRequest,
+    value_ref: &Mutex<Vec<EntryAndFormat>>,
+    request: MediaRequest,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
-    let new_value = match data {
+    let format = request.format.clone();
+    let entry = match data {
         Ok(data) => {
             let data = data.into();
-            
+
             // debugging: dump out the media image to disk
             if false {
-                if let MediaSource::Plain(mxc_uri) = _request.source {
+                if let MediaSource::Plain(mxc_uri) = request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
@@ -128,11 +145,15 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
+            error!("Failed to fetch media for {:?}: {e:?}", request.source);
             MediaCacheEntry::Failed
         }
     };
-    *value_ref.lock().unwrap() = new_value;
+
+    let entry_and_format = EntryAndFormat::new(entry, format);
+
+    value_ref.lock().unwrap().push(entry_and_format);
+    log!("Locked?");
 
     if let Some(sender) = update_sender {
         let _ = sender.send(TimelineUpdate::MediaFetched);
