@@ -386,9 +386,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-    let subscribe_to_current_user_read_receipt_changed: Arc<
-        tokio::sync::Mutex<BTreeMap<OwnedRoomId, JoinHandle<()>>>,
-    > = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+    let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -707,11 +705,8 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
-                let mut read_receipt_changed_mutex_guard =
-                    subscribe_to_current_user_read_receipt_changed.lock().await;
                 if !subscribe {
-                    if let Some(task_handler) = (*read_receipt_changed_mutex_guard).remove(&room_id)
-                    {
+                    if let Some(task_handler) = tasks_list.remove(&room_id) {
                         task_handler.abort();
                     }
                     continue;
@@ -745,8 +740,7 @@ async fn async_worker(
                         }
                     }
                 });
-                read_receipt_changed_mutex_guard
-                    .insert(room_id.clone(), subscribe_own_read_receipt_task);
+                tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;

@@ -2343,7 +2343,7 @@ impl RoomScreen {
         self.room_id = Some(room_id);
         self.show_timeline(cx);
     }
-    
+
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
