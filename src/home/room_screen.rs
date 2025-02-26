@@ -2264,7 +2264,10 @@ impl RoomScreen {
             room_id: room_id.clone(),
             subscribe: false,
         });
-        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe: false });
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+            room_id,
+            subscribe: false,
+        });
     }
 
     /// Removes the current room's visual UI state from this widget
