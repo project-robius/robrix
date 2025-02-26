@@ -910,14 +910,14 @@ async fn async_worker(
 
             MatrixRequest::FetchLinkPreviewCard { url, raw_content, on_fetched, destination, update_sender } => {
 
-                log!("!!!!!!!Start Fetch link preview card for {}", url);   
+                log!("Start Fetch link preview card for {}", url);
                 let _fetch_task = Handle::current().spawn(async move {
 
-                    let preview_service = url_preview::PreviewService::new();
+                    let preview_service = url_preview::PreviewService::with_no_cache();
 
                     match preview_service.generate_preview(&url).await {
                         Ok(preview) => {
-                            log!("!!!!!!!! preview data: {:?}", preview);
+                            log!("preview data: {:?}", preview);
                             let image = if let Some(image_url) = preview.image_url {
                                 match reqwest::get(image_url.to_string()).await {
                                     Ok(r) => {    

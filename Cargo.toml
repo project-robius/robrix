@@ -54,8 +54,8 @@ bitflags = "2.6.0"
 indexmap = "2.6.0"
 
 blurhash = { version = "0.2.3", default-features = false }
-url-preview = { git = "https://github.com/ZhangHanDong/url-preview", version = "0.2.1" }
 reqwest = "0.12.12"
+url-preview = "0.3.0"
 
 
 [package.metadata.docs.rs]

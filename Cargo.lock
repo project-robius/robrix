@@ -5241,8 +5241,9 @@ dependencies = [
 
 [[package]]
 name = "url-preview"
-version = "0.2.1"
-source = "git+https://github.com/ZhangHanDong/url-preview#edd8b34e320d05002ce2d0a8aee86019b777eee8"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14668c4b62153c327eaaea45a5b26b3bd6d37cd5afc0cf1d1505470f494f6340"
 dependencies = [
  "async-trait",
  "dashmap",
