@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::EntryAndFormat, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{EntryAndFormat, EntryAndFormatRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -209,7 +209,7 @@ impl std::fmt::Display for PaginationDirection {
 
 /// The function signature for the callback that gets invoked when media is fetched.
 pub type OnMediaFetchedFn = fn(
-    &Mutex<Vec<EntryAndFormat>>,
+    &Mutex<EntryAndFormat>,
     MediaRequest,
     matrix_sdk::Result<Vec<u8>>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -279,7 +279,7 @@ pub enum MatrixRequest {
     FetchMedia {
         media_request: MediaRequest,
         on_fetched: OnMediaFetchedFn,
-        destination: Arc<Mutex<Vec<EntryAndFormat>>>,
+        destination: EntryAndFormatRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
