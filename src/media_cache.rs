@@ -9,13 +9,13 @@ use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRe
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 pub type EntryAndFormatRef = Arc<Mutex<EntryAndFormat>>;
+pub type Caches = Vec<EntryAndFormatRef>;
 
 #[derive(Debug, Clone)]
 pub struct EntryAndFormat {
     pub entry: MediaCacheEntry,
     pub format: MediaFormat,
 }
-
 
 impl EntryAndFormat {
     pub const fn new(entry: MediaCacheEntry, format: MediaFormat) -> Self {
@@ -117,7 +117,6 @@ impl MediaCache {
 
         let value_ref = match self.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => {
-                log!("vacant");
                 let entry_and_format = EntryAndFormat::new(
                     MediaCacheEntry::Requested,
                     thumbnail_format.clone()
@@ -125,7 +124,6 @@ impl MediaCache {
                 vacant.insert(vec![Arc::new(Mutex::new(entry_and_format))])[0].clone()
             },
             Entry::Occupied(mut occupied) => {
-                log!("Occpupied");
                 for entry_and_format in occupied.get() {
                     let mutex_guard = entry_and_format.lock().unwrap();
                     let entry_and_format = mutex_guard.deref();
