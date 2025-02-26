@@ -7,11 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-<<<<<<< HEAD
-    deserialized_responses::TimelineEvent, ruma::{
-=======
     media::MediaFormat, ruma::{
->>>>>>> 0e17569 (Dead lock)
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -3593,61 +3589,51 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        if let Some(v) = media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
-            for i in v {
-                if let MediaFormat::Thumbnail(_) = i.format.clone() {
-                    match i.entry {
-                        MediaCacheEntry::Loaded(data) => {
-                            log!("Loaded thumbnail data");
-                            let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                                utils::load_png_or_jpg(&img, cx, &data)
-                                    .map(|()| img.size_in_pixels(cx).unwrap_or_default())
-                            });
-                            if let Err(e) = show_image_result {
-                                let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                                error!("{err_str}");
-                                text_or_image_ref.show_text(cx, &err_str);
-                            }
+        match media_cache.try_get_thumbnail_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+            MediaCacheEntry::Loaded(data) => {
+                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                    utils::load_png_or_jpg(&img, cx, &data)
+                        .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+                });
+                if let Err(e) = show_image_result {
+                    let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                    error!("{err_str}");
+                    text_or_image_ref.show_text(cx, &err_str);
+                }
 
-                            // We're done drawing the image, so mark it as fully drawn.
-                            fully_drawn = true;
-                        }
-                        MediaCacheEntry::Requested => {
-                            if let Some(image_info) = image_info {
-                                if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                                        let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
-                                        if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
-                                            ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
-                                                let texture = Some(img_buff.into_new_texture(cx));
-                                                img.set_texture(cx, texture);
-                                                img.size_in_pixels(cx).unwrap_or_default()
-                                            })
-                                        } else {
-                                            Err(image_cache::ImageError::EmptyData)
-                                        }
-                                    });
-                                    if let Err(e) = show_image_result {
-                                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                                        error!("{err_str}");
-                                        text_or_image_ref.show_text(cx, &err_str);
-                                    }
-                                }
+                // We're done drawing the image, so mark it as fully drawn.
+                fully_drawn = true;
+            }
+            MediaCacheEntry::Requested => {
+                if let Some(image_info) = image_info {
+                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
+                        let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                            let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
+                            if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
+                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
+                                    let texture = Some(img_buff.into_new_texture(cx));
+                                    img.set_texture(cx, texture);
+                                    img.size_in_pixels(cx).unwrap_or_default()
+                                })
+                            } else {
+                                Err(image_cache::ImageError::EmptyData)
                             }
-                            fully_drawn = false;
-                        }
-                        MediaCacheEntry::Failed => {
-                            text_or_image_ref
-                                .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
-                            // For now, we consider this as being "complete". In the future, we could support
-                            // retrying to fetch thumbnail of the image on a user click/tap.
-                            fully_drawn = true;
+                        });
+                        if let Err(e) = show_image_result {
+                            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                            error!("{err_str}");
+                            text_or_image_ref.show_text(cx, &err_str);
                         }
                     }
-                    break;
-                } else {
-                    continue;
                 }
+                fully_drawn = false;
+            }
+            MediaCacheEntry::Failed => {
+                text_or_image_ref
+                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                // For now, we consider this as being "complete". In the future, we could support
+                // retrying to fetch thumbnail of the image on a user click/tap.
+                fully_drawn = true;
             }
         }
     };
