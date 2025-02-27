@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -226,6 +226,12 @@ pub enum MatrixRequest {
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
+    },
+    /// Request to edit the content of an event in the given room's timeline.
+    EditMessage {
+        room_id: OwnedRoomId,
+        timeline_event_item_id: TimelineEventItemId,
+        edited_content: EditedContent,
     },
     /// Request to fetch the full details of the given event in the given room's timeline.
     FetchDetailsForEvent {
@@ -446,11 +452,37 @@ async fn async_worker(
                 });
             }
 
+            MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        error!("BUG: room info not found for edit request, room {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                // Spawn a new async task that will make the actual edit request.
+                let _edit_task = Handle::current().spawn(async move {
+                    log!("Sending request to edit message {timeline_event_id:?} in room {room_id}...");
+                    let result = timeline.edit(&timeline_event_id, edited_content).await;
+                    match result {
+                        Ok(_) => log!("Successfully edited message {timeline_event_id:?} in room {room_id}."),
+                        Err(ref e) => error!("Error editing message {timeline_event_id:?} in room {room_id}: {e:?}"),
+                    }
+                    sender.send(TimelineUpdate::MessageEdited {
+                        timeline_event_id,
+                        result,
+                    }).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
             MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for fetch details for event request {room_id}");
+                        error!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
                     };
 
@@ -481,7 +513,7 @@ async fn async_worker(
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
-                        log!("BUG: room info not found for fetch members request {room_id}");
+                        error!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
 

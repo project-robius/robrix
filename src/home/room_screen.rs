@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::EditingPaneWidgetExt, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -698,6 +698,7 @@ live_design! {
         }
     }
 
+
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
@@ -723,6 +724,37 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
+
+                // Below that, display a typing notice when other users in the room are typing.
+                typing_notice = <View> {
+                    visible: false
+                    width: Fill
+                    height: 30
+                    flow: Right
+                    padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
+                    show_bg: true,
+                    draw_bg: {
+                        color: #e8f4ff,
+                    }
+
+                    typing_label = <Label> {
+                        align: {x: 0.0, y: 0.5},
+                        padding: {left: 5.0, right: 0.0}
+                        draw_text: {
+                            color: (TYPING_NOTICE_TEXT_COLOR),
+                            text_style: <REGULAR_TEXT>{font_size: 9}
+                        }
+                        text: "Someone is typing"
+                    }
+
+                    typing_animation = <TypingAnimation> {
+                        margin: {top: 1.1, left: -4 }
+                        padding: 0.0,
+                        draw_bg: {
+                            color: (TYPING_NOTICE_TEXT_COLOR),
+                        }
+                    }
+                }
 
                 // Below that, display an optional preview of the message that the user
                 // is currently drafting a replied to.
@@ -770,90 +802,71 @@ live_design! {
                     reply_preview_content = <ReplyPreviewContent> { }
                 }
 
-                // Below that, display a typing notice when other users in the room are typing.
-                typing_notice = <View> {
-                    visible: false
-                    width: Fill
-                    height: 30
-                    flow: Right
-                    padding: {left: 12.0, top: 8.0, bottom: 8.0, right: 10.0}
-                    show_bg: true,
-                    draw_bg: {
-                        color: #e8f4ff,
-                    }
-
-                    typing_label = <Label> {
-                        align: {x: 0.0, y: 0.5},
-                        padding: {left: 5.0, right: 0.0}
-                        draw_text: {
-                            color: (TYPING_NOTICE_TEXT_COLOR),
-                            text_style: <REGULAR_TEXT>{font_size: 9}
-                        }
-                        text: "Someone is typing"
-                    }
-
-                    typing_animation = <TypingAnimation> {
-                        margin: {top: 1.1, left: -4 }
-                        padding: 0.0,
-                        draw_bg: {
-                            color: (TYPING_NOTICE_TEXT_COLOR),
-                        }
-                    }
-                }
-
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
 
-                // Below that, display a view that holds the message input bar and send button.
-                input_bar = <View> {
-                    width: Fill, height: Fit
-                    flow: Right,
-                    // Bottom-align everything to ensure that buttons always stick to the bottom
-                    // even when the message_input box is very tall.
-                    align: {y: 1.0},
-                    padding: 8.
-                    show_bg: true,
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                    }
+                // Below that, display one of multiple possible views:
+                // * the message input bar
+                // * the slide-up editing pane
+                // * a notice that the user can't send messages to this room
+                <View> {
+                    width: Fill, height: Fill,
+                    flow: Overlay,
 
-                    location_button = <IconButton> {
-                        draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
-                        text: "",
-                    }
-
-                    message_input = <RobrixTextInput> {
-                        width: Fill, height: Fit,
-                        margin: { bottom: 7 }
-                        align: {y: 0.5}
-                        empty_message: "Write a message (in Markdown) ..."
-                    }
-
-                    send_message_button = <IconButton> {
-                        draw_icon: {svg_file: (ICON_SEND)},
-                        icon_walk: {width: Fit, height: 25, margin: {left: -3} },
-                    }
-                }
-                can_not_send_message_notice = <View> {
-                    visible: false
-                    show_bg: true
-                    draw_bg: {
-                        color: (COLOR_SECONDARY)
-                    }
-                    padding: {left: 50, right: 50, top: 20, bottom: 20}
-                    align: {y: 0.5}
-                    width: Fill, height: Fit
-
-                    text = <Label> {
-                        width: Fill,
-                        draw_text: {
-                            color: (COLOR_TEXT)
-                            text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
-                            wrap: Word,
+                    // Below that, display a view that holds the message input bar and send button.
+                    input_bar = <View> {
+                        width: Fill, height: Fit
+                        flow: Right,
+                        // Bottom-align everything to ensure that buttons always stick to the bottom
+                        // even when the message_input box is very tall.
+                        align: {y: 1.0},
+                        padding: 8.
+                        show_bg: true,
+                        draw_bg: {
+                            color: (COLOR_PRIMARY)
                         }
-                        text: (CAN_NOT_SEND_NOTICE)
+
+                        location_button = <IconButton> {
+                            draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
+                            icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
+                            text: "",
+                        }
+
+                        message_input = <RobrixTextInput> {
+                            width: Fill, height: Fit,
+                            margin: { bottom: 7 }
+                            align: {y: 0.5}
+                            empty_message: "Write a message (in Markdown) ..."
+                        }
+
+                        send_message_button = <IconButton> {
+                            draw_icon: {svg_file: (ICON_SEND)},
+                            icon_walk: {width: Fit, height: 25, margin: {left: -3} },
+                        }
                     }
+
+                    can_not_send_message_notice = <View> {
+                        visible: false
+                        show_bg: true
+                        draw_bg: {
+                            color: (COLOR_SECONDARY)
+                        }
+                        padding: {left: 50, right: 50, top: 20, bottom: 20}
+                        align: {y: 0.5}
+                        width: Fill, height: Fit
+
+                        text = <Label> {
+                            width: Fill,
+                            draw_text: {
+                                color: (COLOR_TEXT)
+                                text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                                wrap: Word,
+                            }
+                            text: (CAN_NOT_SEND_NOTICE)
+                        }
+                    }
+
+                    editing_pane = <EditingPane> { }
                 }
             }
 
@@ -1620,7 +1633,10 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-
+                TimelineUpdate::MessageEdited { timeline_event_id, result } => {
+                    self.view.editing_pane(id!(editing_pane))
+                        .handle_edit_result(cx, timeline_event_id, result);
+                }
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -1857,9 +1873,22 @@ impl RoomScreen {
                         );
                     }
                 }
-                MessageAction::Edit(_details) => {
-                    // TODO
-                    enqueue_popup_notification("Editing messages is not yet implemented.".to_string());
+                MessageAction::Edit(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_tl_item) = tl.items.get(details.item_id)
+                        .and_then(|tl_item| tl_item.as_event().cloned())
+                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    {
+                        self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                    }
+                    else {
+                        enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
+                        error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            self.room_id,
+                        );
+                    }
                 }
                 MessageAction::Pin(_details) => {
                     // TODO
@@ -2102,6 +2131,21 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
+    /// Shows the editing pane to allow the user to edit the given event.
+    fn show_editing_pane(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        room_id: OwnedRoomId,
+    ) {
+        self.editing_pane(id!(replying_preview)).show(
+            cx,
+            event_tl_item,
+            room_id,
+        );
+    }
+
+
     /// Shows a preview of the given event that the user is currently replying to
     /// above the message input bar.
     fn show_replying_to(
@@ -2110,14 +2154,15 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar))
-        .set_avatar_and_get_username(
-            cx,
-            self.room_id.as_ref().unwrap(),
-            replying_to.0.sender(),
-            Some(replying_to.0.sender_profile()),
-            replying_to.0.event_id(),
-        );
+        let (replying_preview_username, _) = replying_preview_view
+            .avatar(id!(reply_preview_content.reply_preview_avatar))
+            .set_avatar_and_get_username(
+                cx,
+                self.room_id.as_ref().unwrap(),
+                replying_to.0.sender(),
+                Some(replying_to.0.sender_profile()),
+                replying_to.0.event_id(),
+            );
 
         replying_preview_view
             .label(id!(reply_preview_content.reply_preview_username))
@@ -2531,6 +2576,11 @@ pub enum TimelineUpdate {
     /// including a `result` that indicates whether the request was successful.
     EventDetailsFetched {
         event_id: OwnedEventId,
+        result: Result<(), matrix_sdk_ui::timeline::Error>,
+    },
+    /// The result of a request to edit a message in this timeline.
+    MessageEdited {
+        timeline_event_id: TimelineEventItemId,
         result: Result<(), matrix_sdk_ui::timeline::Error>,
     },
     /// A notice that the room's members have been fetched from the server,
