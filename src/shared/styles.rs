@@ -198,31 +198,57 @@ live_design! {
         draw_bg: {
             color: #FFFFFF00
             instance rotation_speed: 1.
-            instance num_segments: 5.
             fn pixel(self) -> vec4 {
-                // Normalization and aspect ratio adjustment to ensure circular display
+                // Position normalization and adjusting the aspect ratio
                 let aspect = self.rect_size.x / self.rect_size.y;
                 let normalized_pos_x = (self.pos.x - 0.5) * max(aspect, 1.);
                 let normalized_pos_y = (self.pos.y - 0.5) * max(1. / aspect, 1.);
                 let pos = vec2(normalized_pos_x, normalized_pos_y) * 1.5;
 
-                // Calculate the distance from the pixel point to the center.
+                // Calculate pixel-to-center distance and angle
                 let radius = length(pos);
+                let angle = atan(pos.y, pos.x);
 
-                // Calculate the angle of rotation over time
-                let angle_offset = self.time * self.rotation_speed * PI * 2.0;
-                let angle = atan(pos.y, pos.x) + angle_offset;
+                // Define inner and outer radii of the circle
+                let inner_radius = 0.6; // r
+                let outer_radius = 0.7; // R
+                let ring_thickness = outer_radius - inner_radius; // R - r
+                let cap_radius = ring_thickness / 2.0;
 
-                let inner_radius = 0.6;
-                let outer_radius = 0.7;
-                let thickness = outer_radius - inner_radius;
-                let edge = abs(radius - (inner_radius + thickness * 0.5)) - thickness * 0.5;
+                // Calculate the transparency of the circle
+                let ring_center = (inner_radius + outer_radius) / 2.0;
+                let edge = abs(radius - ring_center) - ring_thickness / 2.0;
                 let d = smoothstep(0.005, -0.005, edge);
 
-                // Creating distinct paragraph effects.
-                let segment = fract(angle / (2.0 * PI) * self.num_segments);
-                let segment_alpha = smoothstep(0.0, 0.2, segment) * smoothstep(0.8, 0.6, segment);
-                let alpha = segment_alpha * d;
+                // Calculate the head-tail angle
+                let tail_speed = self.rotation_speed;
+                let head_speed = self.rotation_speed * 1.5;
+                let tail_angle = mod(self.time * tail_speed * 2.0 * PI, 2.0 * PI);
+                let head_angle = mod(self.time * head_speed * 2.0 * PI, 2.0 * PI);
+
+                // Calculate the pixel angle relative to the tail
+                let relative_angle = mod(angle - tail_angle, 2.0 * PI);
+                let head_relative = mod(head_angle - tail_angle, 2.0 * PI);
+
+                // Calculate the center of the semicircle (at the center of the circle at the head and tail)
+                let cap_center_tail = vec2(cos(tail_angle), sin(tail_angle)) * ring_center;
+                let cap_center_head = vec2(cos(head_angle), sin(head_angle)) * ring_center;
+
+                // Calculate the distance from the pixel to the center of the head and tail semicircles
+                let dist_to_tail_cap = length(pos - cap_center_tail);
+                let dist_to_head_cap = length(pos - cap_center_head);
+
+                // Determine if the pixel is inside the head and tail semicircles
+                let in_tail_cap = dist_to_tail_cap < cap_radius;
+                let in_head_cap = dist_to_head_cap < cap_radius;
+
+                // Calculate the transparency of the body of the circle
+                let arc_alpha = step(0.0, relative_angle) * step(relative_angle, head_relative);
+
+                // Merging the transparency of arcs and semicircles
+                let alpha = (arc_alpha + float(in_tail_cap) + float(in_head_cap)) * d;
+
+                alpha = min(alpha, 1.0);
 
                 return vec4(self.color.rgb * alpha, alpha);
             }
