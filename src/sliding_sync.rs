@@ -7,33 +7,135 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
-            receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+    config::RequestConfig,
+    event_handler::EventHandlerDropGuard,
+    media::MediaRequest,
+    room::RoomMember,
+    ruma::{
+        api::client::receipt::create_receipt::v3::ReceiptType,
+        events::{
+            receipt::ReceiptThread,
+            room::{
+                message::{
+                    ForwardThread,
+                    RoomMessageEventContent
+                },
+                power_levels::RoomPowerLevels,
+                MediaSource
+            },
+            FullStateEventContent,
+            MessageLikeEventType,
+            StateEventType
+        },
+        MilliSecondsSinceUnixEpoch,
+        OwnedEventId,
+        OwnedMxcUri,
+        OwnedRoomAliasId,
+        OwnedRoomId,
+        OwnedUserId,
+        UserId
+    },
+    sliding_sync::VersionBuilder,
+    Client,
+    ClientBuildError,
+    Error,
+    Room,
+    RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{
+        self,
+        RoomListLoadingState
+    },
+    sync_service::{
+        self,
+        SyncService
+    },
+    timeline::{
+        AnyOtherFullStateEventContent,
+        EventTimelineItem,
+        MembershipChange,
+        RepliedToInfo,
+        TimelineEventItemId,
+        TimelineItem,
+        TimelineItemContent
+    },
+    RoomListService,
+    Timeline
 };
+use reqwest;
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{
+        mpsc::{
+            Receiver,
+            Sender,
+            UnboundedReceiver,
+            UnboundedSender
+        },
+        watch,
+        Notify
+    },
+    task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{
+    cmp::{ max, min},
+    collections::{ BTreeMap, BTreeSet },
+    ops::Not,
+    path:: Path,
+    sync::{
+        Arc,
+        LazyLock,
+        Mutex,
+        OnceLock
+    }
+};
 use std::io;
+
+use url_preview;
+
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    app_data_dir,
+    avatar_cache::AvatarUpdate,
+    card_cache::{
+        CardCacheEntry,
+        LinkPreviewCard,
+    },
+    event_preview::text_preview_of_timeline_item,
+    home::{
+        room_screen::TimelineUpdate,
+        rooms_list::{
+            self,
+            enqueue_rooms_list_update,
+            RoomPreviewAvatar,
+            RoomsListEntry,
+            RoomsListUpdate
+        }
+    },
+    login::login_screen::LoginAction,
+    media_cache::MediaCacheEntry,
+    persistent_state::{
+        self, ClientSessionPersisted
+    },
+    profile::{
         user_profile::{AvatarState, UserProfile},
-        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+        user_profile_cache::{
+            enqueue_user_profile_update,
+            UserProfileUpdate
+        },
+    },
+    shared::{
+        jump_to_bottom_button::UnreadMessageCount,
+        popup_list::enqueue_popup_notification
+    },
+    utils::{
+        self,
+        AVATAR_THUMBNAIL_FORMAT
+    },
+    verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -215,6 +317,15 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+/// The function signature for the callback that gets invoked when LinkPreviewCard data is fetched.
+pub type OnLinkPreviewCardFetchedFn = fn(
+    &Mutex<CardCacheEntry>,
+    String,
+    matrix_sdk::Result<LinkPreviewCard>,
+    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+);
+
+
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
@@ -280,6 +391,14 @@ pub enum MatrixRequest {
         media_request: MediaRequest,
         on_fetched: OnMediaFetchedFn,
         destination: Arc<Mutex<MediaCacheEntry>>,
+        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Request to fetch a url and return the card style preview data
+    FetchLinkPreviewCard {
+        url: String,
+        raw_content: String,
+        on_fetched: OnLinkPreviewCardFetchedFn,
+        destination: Arc<Mutex<CardCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -786,6 +905,59 @@ async fn async_worker(
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
+                });
+            }
+
+            MatrixRequest::FetchLinkPreviewCard { url, raw_content, on_fetched, destination, update_sender } => {
+
+                log!("Start Fetch link preview card for {}", url);
+                let _fetch_task = Handle::current().spawn(async move {
+
+                    let preview_service = url_preview::PreviewService::with_no_cache();
+
+                    match preview_service.generate_preview(&url).await {
+                        Ok(preview) => {
+                            log!("preview data: {:?}", preview);
+                            let image = if let Some(image_url) = preview.image_url {
+                                match reqwest::get(image_url.to_string()).await {
+                                    Ok(r) => {    
+                                        let data = r.bytes().await.unwrap().to_vec();
+                                        match imghdr::from_bytes(data.clone()) {
+                                            Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => {
+                                                Some(Arc::new(data))
+                                            },
+                                            _ => {
+                                                None
+                                            }
+                                        }
+                                    },
+                                    Err(e) => {
+                                        log!("Failed to fetch image for link preview card: {e}");
+                                        None
+                                    }
+                                }
+                            } else {
+                                None
+                            };
+                            on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                                url: preview.url,
+                                title: preview.title,
+                                description: preview.description,
+                                raw_content,
+                                image,
+                            }), update_sender);
+                        },
+                        Err(e) => {
+                            log!("Failed to fetch link preview card for {url}: {e}");
+                            on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                                url,
+                                title: None,
+                                description: None,
+                                raw_content,
+                                image: None,
+                            }), update_sender);
+                        }
+                    };
                 });
             }
 
