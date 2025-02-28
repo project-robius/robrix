@@ -2,17 +2,17 @@
 
 use std::path::PathBuf;
 use anyhow::{anyhow, bail};
-use makepad_widgets::log;
+use makepad_widgets::{log, Cx};
 use matrix_sdk::{
     matrix_auth::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
 };
 use serde::{Deserialize, Serialize};
 use tokio::fs;
 
-use crate::app_data_dir;
+use crate::{app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
@@ -88,7 +88,7 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
 pub async fn restore_session(
     user_id: Option<OwnedUserId>
 ) -> anyhow::Result<(Client, Option<String>)> {
-    let Some(user_id) = user_id.or_else(|| most_recent_user_id()) else {
+    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
         log!("Could not find previous latest User ID");
         bail!("Could not find previous latest User ID");
     };
@@ -97,12 +97,27 @@ pub async fn restore_session(
         log!("Could not find previous session file for user {user_id}");
         bail!("Could not find previous session file");
     }
-    log!("Found existing session at '{}'", session_file.display());
+    let status_str = format!("Loading previous session file for {user_id}...");
+    log!("{status_str}: '{}'", session_file.display());
+    Cx::post_action(LoginAction::Status {
+        title: "Restoring session".into(),
+        status: status_str,
+    });
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
     let FullSessionPersisted { client_session, user_session, sync_token } =
         serde_json::from_str(&serialized_session)?;
+
+    let status_str = format!(
+        "Loaded session file for {user_id}. Trying to connect to homeserver ({})...",
+        client_session.homeserver,
+    );
+    log!("{status_str}");
+    Cx::post_action(LoginAction::Status {
+        title: "Connecting to homeserver".into(),
+        status: status_str,
+    });
 
     // Build the client with the previous settings from the session.
     let client = Client::builder()
@@ -113,7 +128,12 @@ pub async fn restore_session(
         .build()
         .await?;
 
-    log!("Restoring previous session for {}", user_session.meta.user_id);
+    let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
+    log!("{status_str}");
+    Cx::post_action(LoginAction::Status {
+        title: "Authenticating session".into(),
+        status: status_str,
+    });
 
     // Restore the Matrix user session.
     client.restore_session(user_session).await?;

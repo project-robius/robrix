@@ -1,8 +1,31 @@
 use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
+use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
+
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
+
+
+/// Returns true if the given event is an interactive hit-related event
+/// that should require a view/widget to be visible in order to handle/receive it.
+pub fn is_interactive_hit_event(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::MouseDown(..)
+        | Event::MouseUp(..)
+        | Event::MouseMove(..)
+        | Event::MouseLeave(..)
+        | Event::TouchUpdate(..)
+        | Event::Scroll(..)
+        | Event::KeyDown(..)
+        | Event::KeyUp(..)
+        | Event::TextInput(..)
+        | Event::TextCopy(..)
+        | Event::TextCut(..)
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
@@ -49,16 +72,20 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         }
     };
     if let Err(err) = res.as_ref() {
-        // debugging: dump out the avatar image to disk
+        // debugging: dump out the bad image to disk
         let mut path = crate::temp_storage::get_temp_dir_path().clone();
-        let filename = format!("img_{}",
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+        let filename = format!(
+            "img_{}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_else(|_| rand::random::<u128>()),
         );
         path.push(filename);
         path.set_extension("unknown");
         error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
-        std::fs::write(path, &data)
-            .expect("Failed to write user avatar image to disk");
+        let _ = std::fs::write(path, data)
+            .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
     }
     res
 }
@@ -119,8 +146,7 @@ pub fn user_name_first_letter(user_name: &str) -> Option<&str> {
     use unicode_segmentation::UnicodeSegmentation;
     user_name
         .graphemes(true)
-        .filter(|&g| g != "@")
-        .next()
+        .find(|&g| g != "@")
 }
 
 
@@ -178,8 +204,8 @@ impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
     }
 }
 
-/// The default media format to use for thumbnail requests.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+/// The thumbnail format to use for user and room avatars.
+pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
         size: MediaThumbnailSizeConst {
             method: Method::Scale,
@@ -190,9 +216,39 @@ pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail
     }
 );
 
+/// The thumbnail format to use for regular media images.
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst {
+        size: MediaThumbnailSizeConst {
+            method: Method::Scale,
+            width: 400,
+            height: 400,
+        },
+        animated: false,
+    }
+);
+
+/// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
+pub fn trim_start_html_whitespace(mut text: &str) -> &str {
+    let mut prev_text_len = text.len();
+    loop {
+        text = text
+            .trim_start_matches("<p>")
+            .trim_start_matches("<br>")
+            .trim_start_matches("<br/>")
+            .trim_start_matches("<br />")
+            .trim_start();
+
+        if text.len() == prev_text_len {
+            break;
+        }
+        prev_text_len = text.len();
+    }
+    text
+}
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
+pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
     use linkify::{LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
@@ -201,15 +257,24 @@ pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
         return Cow::Borrowed(text);
     }
 
+    // A closure to escape text if it's not HTML.
+    let escaped = |text| {
+        if is_html {
+            Cow::from(text)
+        } else {
+            htmlize::escape_text(text)
+        }
+    };
+
     let mut linkified_text = String::new();
     let mut last_end_index = 0;
     for link in links {
         let link_txt = link.as_str();
         // Only linkify the URL if it's not already part of an HTML href attribute.
         let is_link_within_href_attr = text.get(..link.start())
-            .map_or(false, ends_with_href);
+            .is_some_and(ends_with_href);
         let is_link_within_html_tag = text.get(link.end() ..)
-            .map_or(false, |after| after.trim_end().starts_with("</a>"));
+            .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
         if is_link_within_href_attr || is_link_within_html_tag {
             linkified_text = format!(
@@ -218,24 +283,31 @@ pub fn linkify<'s>(text: &'s str) -> Cow<'s, str> {
             );
         } else {
             match link.kind() {
-                &LinkKind::Url => {
+                LinkKind::Url => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{link_txt}\">{link_txt}</a>",
-                        text.get(last_end_index..link.start()).unwrap_or_default(),
+                        "{linkified_text}{}<a href=\"{}\">{}</a>",
+                        escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
+                        htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
-                &LinkKind::Email => {
+                LinkKind::Email => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{link_txt}\">{link_txt}</a>",
-                        text.get(last_end_index..link.start()).unwrap_or_default(),
+                        "{linkified_text}{}<a href=\"mailto:{}\">{}</a>",
+                        escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
+                        htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 _ => return Cow::Borrowed(text), // unreachable
             }
-        }        
+        }
         last_end_index = link.end();
     }
-    linkified_text.push_str(text.get(last_end_index..).unwrap_or_default());
+    linkified_text.push_str(
+        &escaped(text.get(last_end_index..).unwrap_or_default())
+    );
+    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
     Cow::Owned(linkified_text)
 }
 
@@ -253,7 +325,7 @@ pub fn ends_with_href(text: &str) -> bool {
     let mut substr = text.trim_end();
     // Search backwards for a single quote, double quote, or an equals sign.
     match substr.as_bytes().last() {
-        Some(b'\'') | Some(b'"') => {
+        Some(b'\'' | b'"') => {
             if substr
                 .get(.. substr.len().saturating_sub(1))
                 .map(|s| {
@@ -277,7 +349,125 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
+/// Converts a list of names into a human-readable string with a limit parameter.
+///
+/// # Examples
+/// ```
+/// assert_eq!(human_readable_list(&vec!["Alice"], 3), String::from("Alice"));
+/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")], 3), String::from("Alice and Bob"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"], 3), String::from("Alice, Bob and Charlie"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"], 3), String::from("Alice, Bob, Charlie, and 3 others"));
+/// ```
+pub fn human_readable_list<S>(names: &[S], limit: usize) -> String
+where
+    S: AsRef<str>
+{
+    let mut result = String::new();
+    match names.len() {
+        0 => return result, // early return if no names provided
+        1 => {
+            result.push_str(names[0].as_ref());
+        },
+        2 => {
+            result.push_str(names[0].as_ref());
+            result.push_str(" and ");
+            result.push_str(names[1].as_ref());
+        },
+        _ => {
+            let display_count = names.len().min(limit);
+            for (i, name) in names.iter().take(display_count - 1).enumerate() {
+                if i > 0 {
+                    result.push_str(", ");
+                }
+                result.push_str(name.as_ref());
+            }
+            if names.len() > limit {
+                let remaining = names.len() - limit;
+                result.push_str(", ");
+                result.push_str(names[display_count - 1].as_ref());
+                result.push_str(", and ");
+                if remaining == 1 {
+                    result.push_str("1 other");
+                } else {
+                    result.push_str(&format!("{} others", remaining));
+                }
+            } else {
+                result.push_str(" and ");
+                result.push_str(names[display_count - 1].as_ref());
+            }
+        }
+    };
+    result
+}
 
+
+/// Returns the sender's display name if available.
+///
+/// If not available, and if the `room_id` is provided, this function will
+/// submit an async request to fetch the event details.
+/// In this case, this will return the event sender's user ID as a string.
+pub fn get_or_fetch_event_sender(
+    event_tl_item: &EventTimelineItem,
+    room_id: Option<&OwnedRoomId>,
+) -> String {
+    let sender_username = match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+        TimelineDetails::Unavailable => {
+            if let Some(room_id) = room_id {
+                if let Some(event_id) = event_tl_item.event_id() {
+                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                        room_id: room_id.clone(),
+                        event_id: event_id.to_owned(),
+                    });
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+    .unwrap_or_else(|| event_tl_item.sender().as_str());
+    sender_username.to_owned()
+}
+
+
+#[cfg(test)]
+mod tests_human_readable_list {
+    use super::*;
+    #[test]
+    fn test_human_readable_list_empty() {
+        let names: Vec<&str> = Vec::new();
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_human_readable_list_single() {
+        let names: Vec<&str> = vec!["Alice"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice");
+    }
+
+    #[test]
+    fn test_human_readable_list_two() {
+        let names: Vec<&str> = vec!["Alice", "Bob"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice and Bob");
+    }
+
+    #[test]
+    fn test_human_readable_list_many() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "David"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice, Bob, Charlie, and 1 other");
+    }
+
+    #[test]
+    fn test_human_readable_list_long() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice, Bob, Charlie, and 23 others");
+    }
+}
 
 #[cfg(test)]
 mod tests_linkify {
@@ -286,14 +476,14 @@ mod tests_linkify {
     #[test]
     fn test_linkify0() {
         let text = "Hello, world!";
-        assert_eq!(linkify(text).as_ref(), text);
+        assert_eq!(linkify(text, false).as_ref(), text);
     }
 
     #[test]
     fn test_linkify1() {
         let text = "Check out this website: https://example.com";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -302,7 +492,7 @@ mod tests_linkify {
     fn test_linkify2() {
         let text = "Send an email to john@example.com";
         let expected = "Send an email to <a href=\"mailto:john@example.com\">john@example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -310,14 +500,14 @@ mod tests_linkify {
     #[test]
     fn test_linkify3() {
         let text = "Visit our website at www.example.com";
-        assert_eq!(linkify(text).as_ref(), text);
+        assert_eq!(linkify(text, false).as_ref(), text);
     }
 
     #[test]
     fn test_linkify4() {
         let text = "Link 1 http://google.com Link 2 https://example.com";
         let expected = "Link 1 <a href=\"http://google.com\">http://google.com</a> Link 2 <a href=\"https://example.com\">https://example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, false);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -327,7 +517,7 @@ mod tests_linkify {
     fn test_linkify5() {
         let text = "html test <a href=http://google.com>Link title</a> Link 2 https://example.com";
         let expected = "html test <a href=http://google.com>Link title</a> Link 2 <a href=\"https://example.com\">https://example.com</a>";
-        let actual = linkify(text);
+        let actual = linkify(text, true);
         println!("{:?}", actual.as_ref());
         assert_eq!(actual.as_ref(), expected);
     }
@@ -335,21 +525,21 @@ mod tests_linkify {
     #[test]
     fn test_linkify6() {
         let text = "<a href=http://google.com>link title</a>";
-        assert_eq!(linkify(text).as_ref(), text);
+        assert_eq!(linkify(text, true).as_ref(), text);
     }
 
     #[test]
     fn test_linkify7() {
         let text = "https://example.com";
         let expected = "<a href=\"https://example.com\">https://example.com</a>";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify8() {
         let text = "test test https://crates.io/crates/cargo-packager test test";
         let expected = "test test <a href=\"https://crates.io/crates/cargo-packager\">https://crates.io/crates/cargo-packager</a> test test";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, false).as_ref(), expected);
     }
 
     #[test]
@@ -357,14 +547,14 @@ mod tests_linkify {
         let text = "<mx-reply><blockquote><a href=\"https://matrix.to/#/!ifW4td0it0scmZpEM6:computer.surgery/$GwDzIlPzNgxhJ2QCIsmcPMC-sHdoKNsb0g2MS1psyyM?via=matrix.org&via=mozilla.org&via=gitter.im\">In reply to</a> <a href=\"https://matrix.to/#/@spore:mozilla.org\">@spore:mozilla.org</a><br />So I asked if there's a crate for it (bc I don't have the time to test and debug it) or if there's simply a better way that involves less states and invariants</blockquote></mx-reply>https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasick.html#method.stream_find_iter";
 
         let expected = "<mx-reply><blockquote><a href=\"https://matrix.to/#/!ifW4td0it0scmZpEM6:computer.surgery/$GwDzIlPzNgxhJ2QCIsmcPMC-sHdoKNsb0g2MS1psyyM?via=matrix.org&via=mozilla.org&via=gitter.im\">In reply to</a> <a href=\"https://matrix.to/#/@spore:mozilla.org\">@spore:mozilla.org</a><br />So I asked if there's a crate for it (bc I don't have the time to test and debug it) or if there's simply a better way that involves less states and invariants</blockquote></mx-reply><a href=\"https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasick.html#method.stream_find_iter\">https://docs.rs/aho-corasick/latest/aho_corasick/struct.AhoCorasick.html#method.stream_find_iter</a>";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify10() {
         let text = "And then call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
         let expected = "And then call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
 
@@ -372,21 +562,21 @@ mod tests_linkify {
     fn test_linkify11() {
         let text = "And then https://google.com call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
         let expected = "And then <a href=\"https://google.com\">https://google.com</a> call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead</code> methods.";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify12() {
         let text = "And then https://google.com call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead http://another-link.http.com </code> methods.";
         let expected = "And then <a href=\"https://google.com\">https://google.com</a> call <a href=\"https://doc.rust-lang.org/std/io/trait.BufRead.html#method.read_until\"><code>read_until</code></a> or other <code>BufRead <a href=\"http://another-link.http.com\">http://another-link.http.com</a> </code> methods.";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 
     #[test]
     fn test_linkify13() {
         let text = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
         let expected = "Check out this website: <a href=\"https://example.com\">https://example.com</a>";
-        assert_eq!(linkify(text).as_ref(), expected);
+        assert_eq!(linkify(text, true).as_ref(), expected);
     }
 }
 

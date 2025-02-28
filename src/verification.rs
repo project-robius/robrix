@@ -1,70 +1,73 @@
 use std::sync::Arc;
 use futures_util::StreamExt;
-use makepad_widgets::{Cx, DefaultNone, log};
+use makepad_widgets::{log, warning, ActionDefaultRef, Cx, DefaultNone};
 use matrix_sdk::{
-    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::verification::{
+    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::{verification::{
         SasState, SasVerification, Verification, VerificationRequest,
         VerificationRequestState,
-    }, ruma::{
+    }, VerificationState}, ruma::{
         events::{
-            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
-            room::message::{MessageType, OriginalSyncRoomMessageEvent},
+            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod}, room::message::{MessageType, OriginalSyncRoomMessageEvent}
         },
         UserId,
     }, Client
 };
 use tokio::{runtime::Handle, sync::mpsc::{UnboundedReceiver, UnboundedSender}};
 
-
+#[derive(Clone, Debug, DefaultNone)]
+pub enum VerificationStateAction {
+    Update(VerificationState),
+    None,
+}
 
 pub fn add_verification_event_handlers_and_sync_client(client: Client) {
-    let mut verficiation_state_subscriber = client.encryption().verification_state();
-    log!("Initial verification state is {:?}", verficiation_state_subscriber.get());
+    let mut verification_state_subscriber = client.encryption().verification_state();
+    log!("Initial verification state is {:?}", verification_state_subscriber.get());
     Handle::current().spawn(async move {
-        while let Some(state) = verficiation_state_subscriber.next().await {
+        while let Some(state) = verification_state_subscriber.next().await {
             log!("Received a verification state update: {state:?}");
-            // TODO: send an update to the main top-level app instance
-            //       such that we can display the verification state as an icon badge
-            //       atop the user's profile avatar.
+            Cx::post_action(VerificationStateAction::Update(state));
+            if let VerificationState::Verified = state {
+                break;
+            }
         }
     });
 
     client.add_event_handler(
         |ev: ToDeviceKeyVerificationRequestEvent, client: Client| async move {
-            let request = client
+            if let Some(request) = client
                 .encryption()
                 .get_verification_request(&ev.sender, &ev.content.transaction_id)
                 .await
-                .expect("Request object wasn't created");
-
-            Handle::current().spawn(request_verification_handler(client, request));
+            {
+                Handle::current().spawn(request_verification_handler(client, request));
+            }
+            else {
+                warning!("Skipping invalid verification request from {}, transaction ID: {}\n   Content: {:?}",
+                    ev.sender, ev.content.transaction_id, ev.content,
+                );
+            }
         },
     );
 
     client.add_event_handler(
         |ev: OriginalSyncRoomMessageEvent, client: Client| async move {
             if let MessageType::VerificationRequest(_) = &ev.content.msgtype {
-                let request = client
+                if let Some(request) = client
                     .encryption()
                     .get_verification_request(&ev.sender, &ev.event_id)
                     .await
-                    .expect("Request object wasn't created");
-
-                Handle::current().spawn(request_verification_handler(client, request));
+                {
+                    Handle::current().spawn(request_verification_handler(client, request));
+                }
+                else {
+                    warning!("Skipping invalid verification request from {}, event ID: {}\n   Content: {:?}",
+                        ev.sender, ev.event_id, ev.content,
+                    );
+                }
             }
         }
     );
-
-    // This doesn't seem to be necessary, as we do receive verification requests
-    // without this block. 
-    // The sliding sync service must be handling the synchronization already.
-    //
-    /*
-    Handle::current().spawn(async move {
-        client.sync(SyncSettings::new()).await
-            .expect("Client sync loop failed");
-    });
-    */
 }
 
 
@@ -144,7 +147,7 @@ async fn sas_verification_handler(
                     // confirmed their keys match the ones we have *before* we confirmed them.
                     log!("The other side confirmed that the displayed keys matched.");
                 };
-                
+
             }
 
             SasState::Confirmed => Cx::post_action(VerificationAction::SasConfirmed),
@@ -163,7 +166,7 @@ async fn sas_verification_handler(
                 );
                 log!("[Post-verification] {}", dump_devices(sas.other_device().user_id(), &client).await);
                 // We go ahead and send the RequestCompleted action here,
-                // because it is not guaranteed that the VerificationRequestState stream loop 
+                // because it is not guaranteed that the VerificationRequestState stream loop
                 // will receive an update an enter the `Done` state.
                 Cx::post_action(VerificationAction::RequestCompleted);
                 break;
@@ -171,7 +174,7 @@ async fn sas_verification_handler(
             SasState::Cancelled(cancel_info) => {
                 log!("SAS verification has been cancelled, reason: {}", cancel_info.reason());
                 // We go ahead and send the RequestCancelled action here,
-                // because it is not guaranteed that the VerificationRequestState stream loop 
+                // because it is not guaranteed that the VerificationRequestState stream loop
                 // will receive an update an enter the `Cancelled` state.
                 Cx::post_action(VerificationAction::RequestCancelled(cancel_info));
                 break;
@@ -289,7 +292,7 @@ pub enum VerificationAction {
 }
 
 /// The state included in a verification request action.
-/// 
+///
 /// This is passed from the background async task to the main UI thread,
 /// where it is extracted from the `VerificationAction` and then stored
 /// in the `VerificationModal`` widget.

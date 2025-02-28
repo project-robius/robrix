@@ -10,7 +10,7 @@ thread_local! {
     /// A cache of Avatar images, indexed by Matrix URI.
     ///
     /// To be of any use, this cache must only be accessed by the main UI thread.
-    static AVATAR_NEW_CACHE: RefCell<BTreeMap<OwnedMxcUri, AvatarCacheEntry>> = RefCell::new(BTreeMap::new());
+    static AVATAR_NEW_CACHE: RefCell<BTreeMap<OwnedMxcUri, AvatarCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 /// An entry in the avatar cache.
@@ -75,7 +75,6 @@ pub fn get_or_fetch_avatar(
             },
             Entry::Occupied(occupied) => return occupied.get().clone(),
         }
-        
         submit_async_request(MatrixRequest::FetchAvatar {
             mxc_uri,
             on_fetched: enqueue_avatar_update,

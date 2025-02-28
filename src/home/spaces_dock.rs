@@ -1,13 +1,13 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::adaptive_view::AdaptiveView;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::verification_badge::*;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -16,21 +16,26 @@ live_design! {
         height: Fill, width: Fill
     }
 
-    Profile = <View> {
+    Profile = {{Profile}} {
+        flow: Overlay
         width: Fit, height: Fit
         align: { x: 0.5, y: 0.5 }
 
         text_view = <View> {
-            width: 45., height: 45.,
+            flow: Overlay
+            width: 60, height: 60,
             align: { x: 0.5, y: 0.5 }
             show_bg: true,
-
             draw_bg: {
                 instance background_color: (COLOR_AVATAR_BG_IDLE),
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+
                     let c = self.rect_size * 0.5;
-                    sdf.circle(c.x, c.x, c.x)
+
+                    let r = self.rect_size * 0.38;
+
+                    sdf.circle(c.x, c.x, r.x);
                     sdf.fill_keep(self.background_color);
                     return sdf.result
                 }
@@ -46,6 +51,12 @@ live_design! {
                 text: "U"
             }
         }
+
+        <View> {
+            align: { x: 1.0, y: 0.0 }
+            verification_badge = <VerificationBadge> {}
+        }
+
     }
 
     Separator = <LineH> {
@@ -54,7 +65,7 @@ live_design! {
 
     Home = <RoundedView> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is becase the icon is not correctly centered
+        // FIXME: the extra padding on the right is because the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         show_bg: true
@@ -79,7 +90,7 @@ live_design! {
 
     Settings = <View> {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is becase the icon is not correctly centered
+        // FIXME: the extra padding on the right is because the icon is not correctly centered
         // within its parent
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
@@ -102,7 +113,7 @@ live_design! {
         }
     }
 
-    SpacesDock = <AdaptiveView> {
+    pub SpacesDock = <AdaptiveView> {
         Desktop = {
             flow: Down, spacing: 15
             align: {x: 0.5}
@@ -118,7 +129,7 @@ live_design! {
             <Separator> {}
 
             <Home> {}
-            
+
             <Filler> {}
 
             <Settings> {}
@@ -137,16 +148,31 @@ live_design! {
             <Filler> {}
 
             <Profile> {}
-    
+
             <Filler> {}
-    
+
             <Home> {}
-            
+
             <Filler> {}
-    
+
             <Settings> {}
-    
+
             <Filler> {}
         }
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct Profile {
+    #[deref] view: View,
+}
+
+impl Widget for Profile {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
     }
 }

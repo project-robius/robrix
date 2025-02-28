@@ -1,21 +1,22 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::home::main_content::MainContent;
-    import crate::home::rooms_sidebar::RoomsSideBar;
-    import crate::home::spaces_dock::SpacesDock;
-    import crate::shared::styles::*;
-    import crate::shared::adaptive_view::AdaptiveView;
+    use crate::home::main_mobile_ui::MainMobileUI;
+    use crate::home::rooms_sidebar::RoomsSideBar;
+    use crate::home::spaces_dock::SpacesDock;
+    use crate::shared::styles::*;
+    use crate::shared::search_bar::SearchBar;
+    use crate::home::main_desktop_ui::MainDesktopUI;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
     }
 
-    HomeScreen = <AdaptiveView> {
+    pub HomeScreen = <AdaptiveView> {
         Desktop = {
             show_bg: true
             draw_bg: {
@@ -24,10 +25,15 @@ live_design! {
             width: Fill, height: Fill
             padding: 0, margin: 0, align: {x: 0.0, y: 0.0}
             flow: Right
-            
+
             spaces = <SpacesDock> {}
-            rooms_sidebar = <RoomsSideBar> {}
-            main_content = <MainContent> {}
+
+            <View> {
+                flow: Down
+                width: Fill, height: Fill
+                <SearchBar> {}
+                <MainDesktopUI> {}
+            }
         }
 
         Mobile = {
@@ -47,11 +53,25 @@ live_design! {
                         sidebar = <RoomsSideBar> {}
                         spaces = <SpacesDock> {}
                     }
-    
+
                     main_content_view = <StackNavigationView> {
                         width: Fill, height: Fill
+                        header = {
+                            content = {
+                                button_container = {
+                                    padding: {left: 14}
+                                }
+                                title_container = {
+                                    title = {
+                                        draw_text: {
+                                            color: (ROOM_NAME_TEXT_COLOR)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         body = {
-                            main_content = <MainContent> {}
+                            main_content = <MainMobileUI> {}
                         }
                     }
                 }
@@ -63,7 +83,7 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct NavigationWrapper {
     #[deref]
-    view: View
+    view: View,
 }
 
 impl Widget for NavigationWrapper {
@@ -77,7 +97,8 @@ impl Widget for NavigationWrapper {
 }
 
 impl MatchEvent for NavigationWrapper {
-    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
-        self.stack_navigation(id!(view_stack)).handle_stack_view_actions(cx, actions);
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        self.stack_navigation(id!(view_stack))
+            .handle_stack_view_actions(cx, actions);
     }
 }
