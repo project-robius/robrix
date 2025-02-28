@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{editing_pane::EditingPaneWidgetExt, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -59,6 +59,7 @@ live_design! {
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
+    use crate::home::editing_pane::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -810,7 +811,7 @@ live_design! {
                 // * the slide-up editing pane
                 // * a notice that the user can't send messages to this room
                 <View> {
-                    width: Fill, height: Fill,
+                    width: Fill, height: Fit,
                     flow: Overlay,
 
                     // Below that, display a view that holds the message input bar and send button.
@@ -1031,6 +1032,8 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
+            let message_input = self.text_input(id!(message_input));
+
             for action in actions {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1077,8 +1080,11 @@ impl Widget for RoomScreen {
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
-            // Handle the cancel reply button being clicked.
-            if self.button(id!(cancel_reply_button)).clicked(actions) {
+            // Clear the replying-to preview pane if the "cancel reply" button was clicked
+            // or if the `Escape` key was pressed within the message input box.
+            if self.button(id!(cancel_reply_button)).clicked(actions)
+                || message_input.escape(actions) 
+            {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
             }
@@ -1119,7 +1125,6 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send message button being clicked and enter key being pressed.
-            let message_input = self.text_input(id!(message_input));
             let send_message_shortcut_pressed = message_input
                 .key_down_unhandled(actions)
                 .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
@@ -1206,6 +1211,12 @@ impl Widget for RoomScreen {
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
                 if self.handle_link_clicked(cx, action, &user_profile_sliding_pane) {
+                    return false;
+                }
+
+                // When the EditingPane has been hidden, re-show the input bar.
+                if let EditingPaneAction::Hide = action.as_widget_action().cast() {
+                    self.on_hide_editing_pane(cx);
                     return false;
                 }
 
@@ -2138,13 +2149,27 @@ impl RoomScreen {
         event_tl_item: EventTimelineItem,
         room_id: OwnedRoomId,
     ) {
-        self.editing_pane(id!(replying_preview)).show(
+        // We must hide the input_bar while the editing pane is shown,
+        // otherwise a very-tall input bar might show up underneath a shorter editing pane.
+        self.view(id!(input_bar)).set_visible(cx, false);
+
+        self.editing_pane(id!(editing_pane)).show(
             cx,
             event_tl_item,
             room_id,
         );
+        self.redraw(cx);
     }
 
+    /// Handles the EditingPane in this RoomScreen being fully hidden.
+    fn on_hide_editing_pane(&mut self, cx: &mut Cx) {
+        // In `show_editing_pane()` above, we hid the input_bar while the editing pane
+        // is being shown, so here we need to make it visible again.
+        self.view(id!(input_bar)).set_visible(cx, true);
+        self.redraw(cx);
+        // We don't need to do anything with the editing pane itself here,
+        // because it has already been hidden by the time this function gets called.
+    }
 
     /// Shows a preview of the given event that the user is currently replying to
     /// above the message input bar.
@@ -2322,12 +2347,13 @@ impl RoomScreen {
         };
 
         let portal_list = self.portal_list(id!(list));
-        let first_index = portal_list.first_id();
         let message_input_box = self.text_input(id!(message_input));
+        let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
         let state = SavedState {
-            first_index_and_scroll: Some((first_index, portal_list.scroll_position())),
+            first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
             message_input_state: message_input_box.save_state(),
             replying_to: tl.replying_to.clone(),
+            editing_event,
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
@@ -2343,7 +2369,9 @@ impl RoomScreen {
             first_index_and_scroll,
             message_input_state,
             replying_to,
+            editing_event,
         } = &mut tl_state.saved_state;
+        // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
             self.portal_list(id!(timeline.list))
                 .set_first_id_and_scroll(*first_index, *scroll_from_first_id);
@@ -2353,13 +2381,24 @@ impl RoomScreen {
             self.portal_list(id!(timeline.list)).set_tail_range(true);
         }
 
+        // 2. Restore the state of the message input box.
         let saved_message_input_state = std::mem::take(message_input_state);
         self.text_input(id!(message_input))
             .restore_state(saved_message_input_state);
+        
+        // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
         } else {
             self.clear_replying_to(cx);
+        }
+
+        // 4. Restore the state of the editing pane.
+        if let Some(editing_event) = editing_event.take() {
+            self.show_editing_pane(cx, editing_event, tl_state.room_id.clone());
+        } else {
+            self.editing_pane(id!(editing_pane)).force_hide(cx);
+            self.on_hide_editing_pane(cx);
         }
     }
 
@@ -2721,11 +2760,12 @@ struct SavedState {
     /// If this is `None`, then the timeline has not yet been scrolled by the user
     /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
-
     /// The content of the message input box.
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
+    /// The event that the user is currently editing, if any.
+    editing_event: Option<EventTimelineItem>,
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID

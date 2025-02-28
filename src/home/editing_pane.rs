@@ -27,13 +27,12 @@ live_design! {
         }
     }
 
-    ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
-
     EditingContent = <View> {
         width: Fill,
-        height: Fill,
+        height: Fit,
         align: {x: 0.5, y: 1.0}, // centered horizontally, bottom-aligned
-        spacing: 20,
+        padding: { left: 20, right: 20, top: 10, bottom: 10 }
+        spacing: 10,
         flow: Down,
 
         show_bg: true,
@@ -42,57 +41,71 @@ live_design! {
         }
 
         <View> {
-            padding: {right: 12.0, left: 12.0}
             width: Fill
             height: Fit
             flow: Right
             align: {y: 0.5}
+            padding: {left: 5, right: 5}
 
             <Label> {
+                width: Fill,
                 draw_text: {
-                    text_style: <TEXT_SUB> {},
-                    color: (COLOR_META)
+                    text_style: <USERNAME_TEXT_STYLE> {},
+                    color: #222,
+                    wrap: Ellipsis,
                 }
                 text: "Editing message:"
             }
 
-            filler = <View> {width: Fill, height: Fill}
+            // filler = <View> {width: Fill, height: Fill}
 
             cancel_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
-                
+                padding: 13,
+                margin: {left: 5, right: 5},
+
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),
                     color: #fff0f0 // light red
+                    radius: 5
                 }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
                     color: (COLOR_DANGER_RED)
                 }
-                icon_walk: {width: 14, height: 14}
+                icon_walk: {width: 16, height: 16, margin: 0}
             }
 
             accept_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
+                padding: 13,
+                margin: {left: 5, right: 5},
 
                 draw_bg: {
                     border_color: (COLOR_ACCEPT_GREEN),
                     color: #f0fff0 // light green
+                    radius: 5
                 }
                 draw_icon: {
                     svg_file: (ICON_CHECKMARK)
                     color: (COLOR_ACCEPT_GREEN),
                 }
-                icon_walk: {width: 14, height: 14}
+                icon_walk: {width: 16, height: 16, margin: 0}
             }
+        }
+
+        <LineH> {
+            draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
         
         edit_text_input = <RobrixTextInput> {
             width: Fill, height: Fit,
-            margin: { bottom: 7 }
+            margin: { bottom: 5 }
+            padding: { top: 3 }
             align: {y: 0.5}
+            empty_message: "Enter edited message..."
         }
     }
 
@@ -102,6 +115,10 @@ live_design! {
         width: Fill,
         height: Fit,
         align: {x: 0.5, y: 1.0}
+        // TODO: FIXME: this is a hack to make the editing pane
+        //              able to slide out of the bottom of the screen.
+        //              (Waiting on a Makepad-level fix for this.)
+        margin: {top: 1000}
 
         editing_content = <EditingContent> { }
 
@@ -110,15 +127,18 @@ live_design! {
                 default: hide,
                 show = {
                     redraw: true,
-                    from: {all: Forward {duration: 0.4}}
+                    from: {all: Forward {duration: 0.8}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: { height: 200.0 } // TODO: should be `Fit` instead of `200.0`
+                    apply: { margin: {top: 0} }
                 }
                 hide = {
                     redraw: true,
-                    from: {all: Forward {duration: 0.5}}
+                    from: {all: Forward {duration: 0.8}}
                     ease: ExpDecay {d1: 0.80, d2: 0.97}
-                    apply: { height: 0.0 }
+                    // TODO: FIXME: this is a hack to make the editing pane
+                    //              able to slide out of the bottom of the screen.
+                    //              (Waiting on a Makepad-level fix for this.)
+                    apply: { margin: {top: 1000} }
                 }
             }
         }
@@ -126,13 +146,21 @@ live_design! {
 }
 
 
-
-pub struct EditingPaneInfo {
-    pub event_tl_item: EventTimelineItem,
-    pub room_id: OwnedRoomId,
+/// Action emitted by the EditingPane widget.
+#[derive(Clone, DefaultNone, Debug)]
+pub enum EditingPaneAction {
+    /// The editing pane has been closed/hidden.
+    Hide,
+    None,
 }
 
+/// The information maintained by the EditingPane widget.
+struct EditingPaneInfo {
+    event_tl_item: EventTimelineItem,
+    room_id: OwnedRoomId,
+}
 
+/// A view that slides in from the bottom of the screen to allow editing a message.
 #[derive(Live, LiveHook, Widget)]
 pub struct EditingPane {
     #[deref] view: View,
@@ -158,6 +186,11 @@ impl Widget for EditingPane {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        EditingPaneAction::Hide,
+                    );
                     cx.revert_key_focus();
                     self.redraw(cx);
                     return;
@@ -171,7 +204,13 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-            if self.button(id!(cancel_button)).clicked(actions) {
+            let edit_text_input = self.text_input(id!(edit_text_input));
+
+            // Hide the editing pane if the cancel button was clicked
+            // or if the `Escape` key was pressed within the edit text input.
+            if self.button(id!(cancel_button)).clicked(actions)
+                || edit_text_input.escape(actions)
+            {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
                 return;
@@ -179,8 +218,12 @@ impl Widget for EditingPane {
 
             let Some(info) = self.info.as_ref() else { return };
 
-            if self.button(id!(accept_button)).clicked(actions) {
-                let edited_text = self.text_input(id!(edit_text_input)).text();
+            if self.button(id!(accept_button)).clicked(actions) ||
+                edit_text_input
+                    .key_down_unhandled(actions)
+                    .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary())
+            {
+                let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
                     TimelineItemContent::Message(message) => {
                         // Only these types of messages can be edited.
@@ -188,11 +231,13 @@ impl Widget for EditingPane {
                             // TODO: try to distinguish between plaintext, markdown, and html messages,
                             //       For now, we just assume that all messages are markdown.
                             //       But this is a problem, since the body of the text/emote message might not be markdown.
+
+                            // TODO: also handle "/html" or "/plain" prefixes, just like when sending new messages.
                             MessageType::Text(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::text_markdown(edited_text)
+                                RoomMessageEventContentWithoutRelation::text_markdown(&edited_text)
                             ),
                             MessageType::Emote(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::emote_markdown(edited_text)
+                                RoomMessageEventContentWithoutRelation::emote_markdown(&edited_text)
                             ),
                             // TODO: support adding/removing attachments.
                             //       For now, we just support modifying the body/formatted body of the message.
@@ -201,9 +246,9 @@ impl Widget for EditingPane {
                             MessageType::Image(image) => {
                                 let mut new_image_msg = image.clone();
                                 if image.formatted.is_some() {
-                                    new_image_msg.formatted = FormattedBody::markdown(edited_text.clone());
+                                    new_image_msg.formatted = FormattedBody::markdown(&edited_text);
                                 }
-                                new_image_msg.body = edited_text;
+                                new_image_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
                                         MessageType::Image(new_image_msg)
@@ -213,9 +258,9 @@ impl Widget for EditingPane {
                             MessageType::Audio(audio) => {
                                 let mut new_audio_msg = audio.clone();
                                 if audio.formatted.is_some() {
-                                    new_audio_msg.formatted = FormattedBody::markdown(edited_text.clone());
+                                    new_audio_msg.formatted = FormattedBody::markdown(&edited_text);
                                 }
-                                new_audio_msg.body = edited_text;
+                                new_audio_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
                                         MessageType::Audio(new_audio_msg)
@@ -225,9 +270,9 @@ impl Widget for EditingPane {
                             MessageType::File(file) => {
                                 let mut new_file_msg = file.clone();
                                 if file.formatted.is_some() {
-                                    new_file_msg.formatted = FormattedBody::markdown(edited_text.clone());
+                                    new_file_msg.formatted = FormattedBody::markdown(&edited_text);
                                 }
-                                new_file_msg.body = edited_text;
+                                new_file_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
                                         MessageType::File(new_file_msg)
@@ -237,9 +282,9 @@ impl Widget for EditingPane {
                             MessageType::Video(video) => {
                                 let mut new_video_msg = video.clone();
                                 if video.formatted.is_some() {
-                                    new_video_msg.formatted = FormattedBody::markdown(edited_text.clone());
+                                    new_video_msg.formatted = FormattedBody::markdown(&edited_text);
                                 }
-                                new_video_msg.body = edited_text;
+                                new_video_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
                                         MessageType::Video(new_video_msg)
@@ -348,7 +393,6 @@ impl EditingPane {
         }
         match edit_result {
             Ok(()) => {
-                enqueue_popup_notification("Message edited successfully.".into());
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
             }
@@ -382,8 +426,16 @@ impl EditingPane {
             event_tl_item,
             room_id,
         });
+
         self.visible = true;
+        self.button(id!(accept_button)).reset_hover(cx);
+        self.button(id!(cancel_button)).reset_hover(cx);
+
+        // Set the text input's cursor to the end and give it key focus.
+        let text_len = text_input.text().len();
+        text_input.set_cursor(text_len, text_len);
         text_input.set_key_focus(cx);
+
         self.animator_play(cx, id!(panel.show));
         self.redraw(cx);
     }
@@ -411,5 +463,20 @@ impl EditingPaneRef {
     pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx, event_tl_item, room_id);
+    }
+
+    /// Returns the event that is currently being edited, if any.
+    pub fn get_event_being_edited(&self) -> Option<EventTimelineItem> {
+        self.borrow()?
+            .info
+            .as_ref()
+            .map(|info| info.event_tl_item.clone())
+    }
+
+    /// Hides the editing pane immediately without animating it out.
+    pub fn force_hide(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.visible = false;
+        inner.redraw(cx);
     }
 }
