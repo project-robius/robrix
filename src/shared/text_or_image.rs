@@ -38,7 +38,7 @@ live_design! {
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Size,
+                fit: Smallest,
             }
         }
     }
