@@ -266,22 +266,20 @@ bitflags! {
     /// This is used to determine which buttons to show in the message context menu.
     #[derive(Copy, Clone, Debug)]
     pub struct MessageAbilities: u8 {
-        /// Whether this message was sent by the current logged-in user.
-        const IsOwn = 1 << 0;
-        /// Whether the user can edit this message.
-        const CanEdit = 1 << 1;
+        /// Whether the user can react to this message.
+        const CanReact = 1 << 0;
         /// Whether the user can reply to this message.
-        const CanReplyTo = 1 << 2;
+        const CanReplyTo = 1 << 1;
+        /// Whether the user can edit this message.
+        const CanEdit = 1 << 2;
         /// Whether the user can pin this message.
         const CanPin = 1 << 3;
         /// Whether the user can unpin this message.
         const CanUnpin = 1 << 4;
         /// Whether the user can delete/redact this message.
         const CanDelete = 1 << 5;
-        /// Whether the user can react to this message.
-        const CanReact = 1 << 6;
         /// Whether this message contains HTML content that the user can copy.
-        const HasHtml = 1 << 7;
+        const HasHtml = 1 << 6;
     }
 }
 impl MessageAbilities {
@@ -292,11 +290,9 @@ impl MessageAbilities {
         has_html: bool,
     ) -> Self {
         let mut abilities = Self::empty();
-        let is_own = event_tl_item.is_own();
-        abilities.set(Self::IsOwn, is_own);
-        // Currently we only support deleting and editing one's own messages.
-        if is_own {
-            abilities.set(Self::CanEdit, true);
+        abilities.set(Self::CanEdit, event_tl_item.is_editable());
+        // Currently we only support deleting one's own messages.
+        if event_tl_item.is_own() {
             abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
         }
         abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
