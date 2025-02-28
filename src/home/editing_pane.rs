@@ -397,7 +397,7 @@ impl EditingPane {
                 self.redraw(cx);
             }
             Err(e) => {
-                enqueue_popup_notification(format!("Failed to edit message: {}", e).into());
+                enqueue_popup_notification(format!("Failed to edit message: {}", e));
             }
         }
     }
