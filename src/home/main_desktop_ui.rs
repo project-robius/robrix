@@ -137,7 +137,7 @@ impl Widget for MainDesktopUI {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
         if !self.drawn_previously {
-            Cx::post_action(RoomsPanelAction::DockLoad);
+            cx.action(RoomsPanelAction::DockLoad);
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
@@ -305,7 +305,7 @@ impl MatchEvent for MainDesktopUI {
                 _ => (),
             }
             if should_save_dock_action {
-                Cx::post_action(RoomsPanelAction::DockSave);
+                cx.action(RoomsPanelAction::DockSave);
             }
             // Handle RoomsList actions
             if let super::rooms_list::RoomsListAction::Selected {
@@ -322,15 +322,17 @@ impl MatchEvent for MainDesktopUI {
     }
 }
 
+/// Actions sent to/from the rooms panel that affect the RoomsList
+/// or one of the RoomScreen widgets.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomsPanelAction {
     None,
-    /// Notifies that a room was focused
+    /// Notifies that a room was focused.
     RoomFocused(SelectedRoom),
-    /// Resets the focus on the rooms panel
+    /// Resets the focus to none, meaning that no room has focus.
     FocusNone,
-    /// Save the dock state
+    /// Save the dock state from the dock to the AppState.
     DockSave,
-    /// Load the room panel state
+    /// Load the room panel state from the AppState to the dock.
     DockLoad,
 }
