@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt, search::SearchUpdate
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels, SEARCH_RESULTS_RECEIVER}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -2813,29 +2813,6 @@ struct SearchUiState {
     items: Vector<Arc<TimelineItem>>,
     next_batch: Option<String>,
     update_receiver: crossbeam_channel::Receiver<SearchUpdate>,
-}
-
-/// The item index, scroll position, and optional unique IDs of the first `N` events
-/// that have been drawn in the most recent draw pass of a timeline's PortalList.
-#[derive(Debug)]
-struct FirstDrawnEvents<const N: usize> {
-    index_and_scroll: [ItemIndexScroll; N],
-    event_ids: [Option<OwnedEventId>; N],
-}
-impl<const N: usize> Default for FirstDrawnEvents<N> {
-    fn default() -> Self {
-        Self {
-            index_and_scroll: std::array::from_fn(|_| ItemIndexScroll::default()),
-            event_ids: std::array::from_fn(|_| None),
-        }
-    }
-}
-
-///
-#[derive(Clone, Copy, Debug, Default)]
-struct ItemIndexScroll {
-    index: usize,
-    scroll: f64,
 }
 
 #[derive(Default, Debug)]

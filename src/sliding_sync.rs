@@ -7,11 +7,13 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{editL::EditedContent, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, search::search_events::v3::{Criteria, Categories, Request}, events::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{edit::EditedContent, RoomMember}, ruma::{
+        api::client::{
+            receipt::create_receipt::v3::ReceiptType, search::search_events::v3::{Criteria, Categories, Request}
+        }, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
-            }, FullStateEventContent, MessageLikeEventType, StateEventType
+            }, FullStateEventContent, MessageLikeEventType, StateEventType, AnyTimelineEvent
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
@@ -21,7 +23,7 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, unbounded_channel, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
@@ -33,7 +35,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{search::SearchUpdate, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
