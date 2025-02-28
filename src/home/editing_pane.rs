@@ -343,7 +343,10 @@ impl Widget for EditingPane {
                             new_content: new_content_block,
                         }
                     }
-                    _ => return,
+                    _ => {
+                        enqueue_popup_notification("That event type cannot be edited.".into());
+                        return;
+                    }
                 };
 
                 submit_async_request(MatrixRequest::EditMessage {
