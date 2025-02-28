@@ -3645,33 +3645,29 @@ fn populate_link_preview_card(
     card_cache: &mut CardCache,
 ) -> bool {
 
-    let mut fully_drawn = false;
-
     match card_cache.try_get_card_or_fetch(url.clone(), body.to_string()) {
         CardCacheEntry::Loaded(card) => {
 
             card_ref.show_card(cx, &card);
 
             // We're done drawing the card, so mark it as fully drawn.
-            fully_drawn = true;
+            true
         },
         CardCacheEntry::Requested => {
-            card_ref.show_plaintext(cx, format!("{body}"));
+            card_ref.show_plaintext(cx, body);
             log!("Link Preview Card Requested: {body}; Fetching {:?}", url);
             // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
-            fully_drawn = false;
+            false
         },
         CardCacheEntry::Failed => {
             card_ref
-                .show_plaintext(cx, format!("{body}"));
+                .show_plaintext(cx, body);
             log!("Link Preview Card Failed: {body}; Fetching {:?}", url);
             // For now, we consider this as being "complete". In the future, we could support
             // retrying to fetch thumbnail of the image on a user click/tap.
-            fully_drawn = true;
+            true
         }
-    };
-
-    fully_drawn
+    }
 }
 
 

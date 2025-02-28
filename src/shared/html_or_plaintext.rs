@@ -457,18 +457,15 @@ impl HtmlOrPlaintext {
         self.view(id!(card_view.card.title)).set_text(cx, title.as_ref());
 
         if let Some(d) = card.description.as_ref(){
-            self.view(id!(card_view.card.description)).set_text(cx, &d);
+            self.view(id!(card_view.card.description)).set_text(cx, d);
         };
 
         let image_ref = self.view.image(id!(card_view.card.image));
-        match &card.image {
-            Some(image_data) => {
-                let _ = utils::load_png_or_jpg(&image_ref, cx, &image_data)
-                        .map(|()| image_ref.size_in_pixels(cx).unwrap_or_default());
-            },
-            None => {}
-        };
 
+        if let Some(image_data) = &card.image {
+            let _ = utils::load_png_or_jpg(&image_ref, cx, image_data)
+                    .map(|()| image_ref.size_in_pixels(cx).unwrap_or_default());
+        };
     }
 }
 
