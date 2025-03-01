@@ -23,7 +23,6 @@ live_design! {
         flow: Right,
         align: { y: 0.5 }
         padding: { left: 7, right: 7, bottom: 5, top: 5 }
-        margin: { bottom: 10 }
         spacing: 5.0,
 
         show_bg: true,
@@ -329,7 +328,7 @@ impl MatrixLinkPill {
                 // TODO: also apply the red bg color for `@room` tags.
                 if current_user_id().is_some_and(|u| &u == user_id) {
                     self.apply_over(cx, live! {
-                        draw_bg: { color: #ba162f }
+                        draw_bg: { color: #d91b38 }
                     });
                 }
                 match user_profile_cache::with_user_profile(cx, user_id.clone(), true, |profile, _| {
