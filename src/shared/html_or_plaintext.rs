@@ -320,7 +320,7 @@ impl MatrixLinkPill {
                 self.set_pill_title(cx, &room_name);
             }
             MatrixId::Event(room_or_alias_id, _event_id) => {
-                let (room_name, avatar_url) = self.set_room_displayname_and_avatar_url(&room_or_alias_id);
+                let (room_name, avatar_url) = self.set_room_displayname_and_avatar_url(room_or_alias_id);
                 self.set_pill_avatar(cx, avatar_url);
                 self.set_pill_title(cx, &format!("Message in {}", room_name));
             }
