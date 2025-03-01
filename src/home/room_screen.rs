@@ -2335,6 +2335,10 @@ impl RoomScreen {
         //   because the location might change by the next time the user opens this same room.
         self.location_preview(id!(location_preview)).clear();
         submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+            room_id: room_id.clone(),
+            subscribe: false,
+        });
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
             room_id,
             subscribe: false,
         });
