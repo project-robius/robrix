@@ -26,37 +26,39 @@ pub enum ImageStatus {
 struct RobrixAutoFitImage {
     #[deref] view: View,
     #[rust] status: ImageStatus,
-    #[rust] target_size: DVec2,
+    #[rust] target_size: Option<DVec2>,
 }
 
 
 impl Widget for RobrixAutoFitImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let image = self.view.image(id!(image));
-        if image.area().rect(cx).size.x <= 0. || !image.has_texture() {
-            self.target_size = image.area().rect(cx).size;
-        }
+        if !image.has_texture() { return }
 
-        if let Event::Actions(_actions) = event {
-            let self_rect_size = self.view.area().rect(cx).size;
-            let new_status = if self_rect_size.x > self.target_size.x { ImageStatus::Size } else { ImageStatus::Smallest };
-            if self.status != new_status {
-                match new_status {
-                    ImageStatus::Size => {
-                        image.apply_over(cx, live! {
-                            width: Fill, height: Fill
-                            fit: Size
-                        });
-                    },
-                    ImageStatus::Smallest => {
-                        image.apply_over(cx, live! {
-                            width: Fill, height: Fit
-                            fit: Smallest
-                        });
+        if let Some(target_size) = self.target_size {
+            if let Event::Actions(_) | Event::WindowGeomChange(_) = event {
+                let current_size = self.view.area().rect(cx).size;
+                let new_status = if current_size.x > target_size.x { ImageStatus::Size } else { ImageStatus::Smallest };
+                if self.status != new_status {
+                    match new_status {
+                        ImageStatus::Size => {
+                            image.apply_over(cx, live! {
+                                width: Fill, height: Fill
+                                fit: Size
+                            });
+                        },
+                        ImageStatus::Smallest => {
+                            image.apply_over(cx, live! {
+                                width: Fill, height: Fit
+                                fit: Smallest
+                            });
+                        }
                     }
+                    self.status = new_status;
                 }
-                self.status = new_status;
             }
+        } else {
+            self.target_size = Some(image.area().rect(cx).size);
         }
 
         self.view.handle_event(cx, event, scope);
@@ -77,6 +79,8 @@ impl RobrixAutoFitImageRef {
     /// The max width and height will be the original size of the image if this function is not called.
     pub fn set_target_size(&self, target_size: DVec2) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.target_size = target_size;
+        if self.image(id!(image)).has_texture() {
+            inner.target_size = Some(target_size);
+        }
     }
 }
