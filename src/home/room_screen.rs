@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1083,7 +1083,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.escape(actions) 
+                || message_input.escape(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -2393,7 +2393,7 @@ impl RoomScreen {
         let saved_message_input_state = std::mem::take(message_input_state);
         self.text_input(id!(message_input))
             .restore_state(saved_message_input_state);
-        
+
         // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
