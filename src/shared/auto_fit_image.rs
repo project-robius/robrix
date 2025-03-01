@@ -13,6 +13,11 @@ live_design! {
         }
     }
 }
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ImageStatus {
+    #[default] Size,
+    Smallest
+}
 
 /// If View's width is larger than the image's width, we use `Size` to apply over the image.
 ///
@@ -20,10 +25,10 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 struct RobrixAutoFitImage {
     #[deref] view: View,
-    #[rust(true)] current_is_size: bool,
-    #[rust] threshold_image_size: DVec2,
     /// Whether we get the true origin size of the image.
     #[rust(false)] inisialized: bool,
+    #[rust] status: ImageStatus,
+    #[rust] target_size: DVec2,
 }
 
 
@@ -31,32 +36,32 @@ impl Widget for RobrixAutoFitImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let image = self.view.image(id!(image));
         if image.area().rect(cx).size.x > 0. && !self.inisialized && image.has_texture() {
-            self.threshold_image_size = image.area().rect(cx).size;
+            self.target_size = image.area().rect(cx).size;
             self.inisialized = true;
         }
-        match event {
-            Event::Draw(_) | Event::WindowGeomChange(_) =>{
-                let self_rect_size = self.view.area().rect(cx).size;
 
-                let new_should_be_size = self_rect_size.x > self.threshold_image_size.x;
-
-                if self.current_is_size != new_should_be_size {
-                    self.current_is_size = new_should_be_size;
-                    if new_should_be_size {
+        if let Event::Actions(_actions) = event {
+            let self_rect_size = self.view.area().rect(cx).size;
+            let new_status = if self_rect_size.x > self.target_size.x { ImageStatus::Size } else { ImageStatus::Smallest };
+            if self.status != new_status {
+                match new_status {
+                    ImageStatus::Size => {
                         image.apply_over(cx, live! {
                             width: Fill, height: Fill
                             fit: Size
                         });
-                    } else {
+                    },
+                    ImageStatus::Smallest => {
                         image.apply_over(cx, live! {
                             width: Fill, height: Fit
                             fit: Smallest
                         });
                     }
                 }
+                self.status = new_status;
             }
-            _ => {}
         }
+
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -70,12 +75,12 @@ impl RobrixAutoFitImageRef {
         inner.visible = visible;
         inner.redraw(cx);
     }
-    /// USer can set the max width and height of the image.
+    /// Feel free to call this method, which can set the max width and height of the image.
     ///
-    /// If this function is not called, the max width and height will be the original size of the image.
-    pub fn set_max_width_height(&self, width: f64, height: f64) {
+    /// The max width and height will be the original size of the image if this function is not called.
+    pub fn set_target_size(&self, target_size: DVec2) {
         let Some(mut inner) = self.borrow_mut() else { return };
+        inner.target_size = target_size;
         inner.inisialized = true;
-        inner.threshold_image_size = DVec2 {x: width, y: height};
     }
 }
