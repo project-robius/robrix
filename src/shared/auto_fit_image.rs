@@ -25,8 +25,6 @@ pub enum ImageStatus {
 #[derive(Live, LiveHook, Widget)]
 struct RobrixAutoFitImage {
     #[deref] view: View,
-    /// Whether we get the true origin size of the image.
-    #[rust(false)] inisialized: bool,
     #[rust] status: ImageStatus,
     #[rust] target_size: DVec2,
 }
@@ -35,9 +33,8 @@ struct RobrixAutoFitImage {
 impl Widget for RobrixAutoFitImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let image = self.view.image(id!(image));
-        if image.area().rect(cx).size.x > 0. && !self.inisialized && image.has_texture() {
+        if image.area().rect(cx).size.x <= 0. || !image.has_texture() {
             self.target_size = image.area().rect(cx).size;
-            self.inisialized = true;
         }
 
         if let Event::Actions(_actions) = event {
@@ -81,6 +78,5 @@ impl RobrixAutoFitImageRef {
     pub fn set_target_size(&self, target_size: DVec2) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.target_size = target_size;
-        inner.inisialized = true;
     }
 }
