@@ -6,30 +6,28 @@ pub use makepad_widgets;
 pub mod app;
 pub mod persistent_state;
 
-/// Login screen
-pub mod login;
-/// Core UI content: the main home screen (rooms list), room screen.
-pub mod home;
-/// User profile info and a user profile sliding pane.
-mod profile;
-/// A modal/dialog popup for interactive verification of users/devices.
-mod verification_modal;
-/// Shared UI components.
-pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
-
+/// Core UI content: the main home screen (rooms list), room screen.
+pub mod home;
+/// Login screen
+pub mod login;
+/// User profile info and a user profile sliding pane.
+mod profile;
+/// Shared UI components.
+pub mod shared;
+/// A modal/dialog popup for interactive verification of users/devices.
+mod verification_modal;
 
 // Matrix stuff
-pub mod sliding_sync;
 pub mod avatar_cache;
 pub mod media_cache;
+pub mod sliding_sync;
 pub mod verification;
 
-pub mod utils;
-pub mod temp_storage;
 pub mod location;
-
+pub mod temp_storage;
+pub mod utils;
 
 pub const APP_QUALIFIER: &str = "org";
 pub const APP_ORGANIZATION: &str = "robius";

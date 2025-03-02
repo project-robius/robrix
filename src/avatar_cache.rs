@@ -1,10 +1,13 @@
-use std::{cell::RefCell, collections::{btree_map::Entry, BTreeMap}, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::{Cx, SignalToUI};
 use matrix_sdk::ruma::{MxcUri, OwnedMxcUri};
+use std::{
+    cell::RefCell,
+    collections::{btree_map::Entry, BTreeMap},
+    sync::Arc,
+};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
-
 
 thread_local! {
     /// A cache of Avatar images, indexed by Matrix URI.
@@ -64,15 +67,12 @@ pub fn process_avatar_updates(_cx: &mut Cx) {
 /// This function requires passing in a reference to `Cx`,
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
-pub fn get_or_fetch_avatar(
-    _cx: &mut Cx,
-    mxc_uri: OwnedMxcUri,
-) -> AvatarCacheEntry {
+pub fn get_or_fetch_avatar(_cx: &mut Cx, mxc_uri: OwnedMxcUri) -> AvatarCacheEntry {
     AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
         match cache.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => {
                 vacant.insert(AvatarCacheEntry::Requested);
-            },
+            }
             Entry::Occupied(occupied) => return occupied.get().clone(),
         }
         submit_async_request(MatrixRequest::FetchAvatar {
@@ -90,10 +90,8 @@ pub fn get_or_fetch_avatar(
 /// must only be called by the main UI thread.
 #[allow(unused)]
 pub fn get_avatar(_cx: &mut Cx, mxc_uri: &MxcUri) -> Option<Arc<[u8]>> {
-    AVATAR_NEW_CACHE.with_borrow(|cache|
-        match cache.get(mxc_uri) {
-            Some(AvatarCacheEntry::Loaded(data)) => Some(data.clone()),
-            _ => None,
-        }
-    )
+    AVATAR_NEW_CACHE.with_borrow(|cache| match cache.get(mxc_uri) {
+        Some(AvatarCacheEntry::Loaded(data)) => Some(data.clone()),
+        _ => None,
+    })
 }

@@ -1,17 +1,17 @@
 use makepad_widgets::Cx;
 
 pub mod avatar;
+pub mod callout_tooltip;
 pub mod helpers;
 pub mod html_or_plaintext;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
+pub mod popup_list;
 pub mod search_bar;
 pub mod styles;
 pub mod text_or_image;
 pub mod typing_animation;
-pub mod popup_list;
 pub mod verification_badge;
-pub mod callout_tooltip;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.

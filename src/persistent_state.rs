@@ -1,12 +1,15 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
-use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{log, Cx};
 use matrix_sdk::{
-    matrix_auth::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
+    matrix_auth::MatrixSession,
+    ruma::{OwnedUserId, UserId},
+    sliding_sync::VersionBuilder,
+    Client,
 };
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tokio::fs;
 
 use crate::{app_data_dir, login::login_screen::LoginAction};
@@ -43,9 +46,7 @@ pub struct FullSessionPersisted {
 }
 
 fn user_id_to_file_name(user_id: &UserId) -> String {
-    user_id.as_str()
-        .replace(":", "_")
-        .replace("@", "")
+    user_id.as_str().replace(":", "_").replace("@", "")
 }
 
 pub fn persistent_state_dir(user_id: &UserId) -> PathBuf {
@@ -62,13 +63,11 @@ const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
-    std::fs::read_to_string(
-        app_data_dir().join(LATEST_USER_ID_FILE_NAME)
-    )
-    .ok()?
-    .trim()
-    .try_into()
-    .ok()
+    std::fs::read_to_string(app_data_dir().join(LATEST_USER_ID_FILE_NAME))
+        .ok()?
+        .trim()
+        .try_into()
+        .ok()
 }
 
 /// Save which user was the most recently logged in.
@@ -76,17 +75,17 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
     fs::write(
         app_data_dir().join(LATEST_USER_ID_FILE_NAME),
         user_id.as_str(),
-    ).await?;
+    )
+    .await?;
     Ok(())
 }
-
 
 /// Restores the given user's previous session from the filesystem.
 ///
 /// If no User ID is specified, the ID of the most recently-logged in user
 /// is retrieved from the filesystem.
 pub async fn restore_session(
-    user_id: Option<OwnedUserId>
+    user_id: Option<OwnedUserId>,
 ) -> anyhow::Result<(Client, Option<String>)> {
     let Some(user_id) = user_id.or_else(most_recent_user_id) else {
         log!("Could not find previous latest User ID");
@@ -106,8 +105,11 @@ pub async fn restore_session(
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
-    let FullSessionPersisted { client_session, user_session, sync_token } =
-        serde_json::from_str(&serialized_session)?;
+    let FullSessionPersisted {
+        client_session,
+        user_session,
+        sync_token,
+    } = serde_json::from_str(&serialized_session)?;
 
     let status_str = format!(
         "Loaded session file for {user_id}. Trying to connect to homeserver ({})...",
@@ -128,7 +130,10 @@ pub async fn restore_session(
         .build()
         .await?;
 
-    let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
+    let status_str = format!(
+        "Authenticating previous login session for {}...",
+        user_session.meta.user_id
+    );
     log!("{status_str}");
     Cx::post_action(LoginAction::Status {
         title: "Authenticating session".into(),
@@ -141,7 +146,6 @@ pub async fn restore_session(
 
     Ok((client, sync_token))
 }
-
 
 /// Persist a logged-in client session to the filesystem for later use.
 ///

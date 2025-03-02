@@ -1,5 +1,4 @@
-use std::{sync::OnceLock, path::PathBuf};
-
+use std::{path::PathBuf, sync::OnceLock};
 
 /// Creates and returns the path to a temp directory for storage.
 ///
@@ -16,4 +15,3 @@ pub fn get_temp_dir_path() -> &'static PathBuf {
         path
     })
 }
-

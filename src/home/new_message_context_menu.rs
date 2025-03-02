@@ -11,7 +11,7 @@ use crate::sliding_sync::UserPowerLevels;
 use super::room_screen::{MessageAction, MessageOrSticker};
 
 const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
-const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
+const MENU_WIDTH: f64 = 215.0; // KEEP IN SYNC WITH MENU_WIDTH BELOW
 
 live_design! {
     use link::theme::*;
@@ -145,7 +145,7 @@ live_design! {
 
             // TODO: change text to "Unpin Message" if the message is already pinned,
             //       using https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk/struct.RoomInfo.html#method.is_pinned_event.
-            //       The caller of `show()` will also need to check if the current user is allowed to 
+            //       The caller of `show()` will also need to check if the current user is allowed to
             //       pin/unpin messages using: https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event
             pin_button = <RobrixIconButton> {
                 height: (BUTTON_HEIGHT)
@@ -259,7 +259,6 @@ live_design! {
     }
 }
 
-
 bitflags! {
     /// Possible actions that the user can perform on a message.
     ///
@@ -305,7 +304,6 @@ impl MessageAbilities {
         abilities.set(Self::HasHtml, has_html);
         abilities
     }
-
 }
 
 /// Details about the message that define its context menu content.
@@ -328,8 +326,10 @@ pub struct MessageDetails {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct NewMessageContextMenu {
-    #[deref] view: View,
-    #[rust] details: Option<MessageDetails>,
+    #[deref]
+    view: View,
+    #[rust]
+    details: Option<MessageDetails>,
 }
 
 impl Widget for NewMessageContextMenu {
@@ -342,7 +342,9 @@ impl Widget for NewMessageContextMenu {
     }
 
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.visible { return; }
+        if !self.visible {
+            return;
+        }
         self.view.handle_event(cx, event, scope);
 
         let area = self.view.area();
@@ -375,19 +377,24 @@ impl Widget for NewMessageContextMenu {
             return;
         }
 
-        self.widget_match_event(cx, event, scope); 
+        self.widget_match_event(cx, event, scope);
     }
 }
 
 impl WidgetMatchEvent for NewMessageContextMenu {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
-        let Some(details) = self.details.as_ref() else { return };
+        let Some(details) = self.details.as_ref() else {
+            return;
+        };
         let mut close_menu = false;
 
-        let reaction_text_input = self.view.text_input(id!(reaction_input_view.reaction_text_input));
-        let reaction_send_button = self.view.button(id!(reaction_input_view.reaction_send_button));
-        if reaction_send_button.clicked(actions)
-            || reaction_text_input.returned(actions).is_some()
+        let reaction_text_input = self
+            .view
+            .text_input(id!(reaction_input_view.reaction_text_input));
+        let reaction_send_button = self
+            .view
+            .button(id!(reaction_input_view.reaction_send_button));
+        if reaction_send_button.clicked(actions) || reaction_text_input.returned(actions).is_some()
         {
             cx.widget_action(
                 details.room_screen_widget_uid,
@@ -398,36 +405,34 @@ impl WidgetMatchEvent for NewMessageContextMenu {
                 },
             );
             close_menu = true;
-        }
-        else if reaction_text_input.escape(actions) {
+        } else if reaction_text_input.escape(actions) {
             close_menu = true;
-        }
-        else if self.button(id!(react_button)).clicked(actions) {
+        } else if self.button(id!(react_button)).clicked(actions) {
             // Show a box to allow the user to input the reaction.
             // In the future, we'll show an emoji chooser.
             self.view.button(id!(react_button)).set_visible(cx, false);
-            self.view.view(id!(reaction_input_view)).set_visible(cx, true);
-            self.text_input(id!(reaction_input_view.reaction_text_input)).set_key_focus(cx);
+            self.view
+                .view(id!(reaction_input_view))
+                .set_visible(cx, true);
+            self.text_input(id!(reaction_input_view.reaction_text_input))
+                .set_key_focus(cx);
             self.redraw(cx);
             close_menu = false;
-        }
-        else if self.button(id!(reply_button)).clicked(actions) {
+        } else if self.button(id!(reply_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::Reply(details.clone()),
             );
             close_menu = true;
-        }
-        else if self.button(id!(edit_message_button)).clicked(actions) {
+        } else if self.button(id!(edit_message_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::Edit(details.clone()),
             );
             close_menu = true;
-        }
-        else if self.button(id!(pin_button)).clicked(actions) {
+        } else if self.button(id!(pin_button)).clicked(actions) {
             if details.abilities.contains(MessageAbilities::CanPin) {
                 cx.widget_action(
                     details.room_screen_widget_uid,
@@ -442,40 +447,38 @@ impl WidgetMatchEvent for NewMessageContextMenu {
                 );
             }
             close_menu = true;
-        }
-        else if self.button(id!(copy_text_button)).clicked(actions) {
+        } else if self.button(id!(copy_text_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::CopyText(details.clone()),
             );
             close_menu = true;
-        }
-        else if self.button(id!(copy_html_button)).clicked(actions) {
+        } else if self.button(id!(copy_html_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::CopyHtml(details.clone()),
             );
             close_menu = true;
-        }
-        else if self.button(id!(copy_link_to_message_button)).clicked(actions) {
+        } else if self
+            .button(id!(copy_link_to_message_button))
+            .clicked(actions)
+        {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::CopyLink(details.clone()),
             );
             close_menu = true;
-        }
-        else if self.button(id!(view_source_button)).clicked(actions) {
+        } else if self.button(id!(view_source_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
                 MessageAction::ViewSource(details.clone()),
             );
             close_menu = true;
-        }
-        else if self.button(id!(jump_to_related_button)).clicked(actions) {
+        } else if self.button(id!(jump_to_related_button)).clicked(actions) {
             cx.widget_action(
                 details.room_screen_widget_uid,
                 &scope.path,
@@ -539,7 +542,9 @@ impl NewMessageContextMenu {
     ///
     /// Returns the total height of all visible items.
     fn set_button_visibility(&mut self, cx: &mut Cx) -> f64 {
-        let Some(details) = self.details.as_ref() else { return 0.0 };
+        let Some(details) = self.details.as_ref() else {
+            return 0.0;
+        };
 
         let react_button = self.view.button(id!(react_button));
         let reply_button = self.view.button(id!(reply_button));
@@ -574,7 +579,9 @@ impl NewMessageContextMenu {
         self.view.view(id!(react_view)).set_visible(cx, show_react);
         react_button.set_visible(cx, show_react);
         reply_button.set_visible(cx, show_reply_to);
-        self.view.view(id!(divider_after_react_reply)).set_visible(cx, show_divider_after_react_reply);
+        self.view
+            .view(id!(divider_after_react_reply))
+            .set_visible(cx, show_divider_after_react_reply);
         edit_button.set_visible(cx, show_edit);
         if details.abilities.contains(MessageAbilities::CanPin) {
             pin_button.set_text(cx, "Pin Message");
@@ -588,7 +595,9 @@ impl NewMessageContextMenu {
         pin_button.set_visible(cx, show_pin);
         copy_html_button.set_visible(cx, show_copy_html);
         jump_to_related_button.set_visible(cx, show_jump_to_related);
-        self.view.view(id!(divider_before_report_delete)).set_visible(cx, show_divider_before_report_delete);
+        self.view
+            .view(id!(divider_before_report_delete))
+            .set_visible(cx, show_divider_before_report_delete);
         // report_button.set_visible(cx, show_report);
         delete_button.set_visible(cx, show_delete);
 
@@ -606,13 +615,15 @@ impl NewMessageContextMenu {
         delete_button.reset_hover(cx);
 
         // Reset reaction input view stuff.
-        self.view.view(id!(reaction_input_view)).set_visible(cx, false); // hide until the react_button is clicked
-        self.text_input(id!(reaction_input_view.reaction_text_input)).set_text(cx, "");
+        self.view
+            .view(id!(reaction_input_view))
+            .set_visible(cx, false); // hide until the react_button is clicked
+        self.text_input(id!(reaction_input_view.reaction_text_input))
+            .set_text(cx, "");
 
         self.redraw(cx);
 
-        let num_visible_buttons = 
-            show_react as u8
+        let num_visible_buttons = show_react as u8
             + show_reply_to as u8
             + show_edit as u8
             + show_pin as u8
@@ -630,7 +641,7 @@ impl NewMessageContextMenu {
             + if show_divider_before_report_delete { 10.0 } else { 0.0 }
             + 20.0  // top and bottom padding
             + 1.0   // top and bottom border
-            - 4.0   // no 2.0 spacers at the top and bottom
+            - 4.0 // no 2.0 spacers at the top and bottom
     }
 
     fn close(&mut self, cx: &mut Cx) {
@@ -644,13 +655,17 @@ impl NewMessageContextMenu {
 impl NewMessageContextMenuRef {
     /// See [`NewMessageContextMenu::is_currently_shown()`].
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        let Some(inner) = self.borrow() else { return false };
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
         inner.is_currently_shown(cx)
     }
 
     /// See [`NewMessageContextMenu::show()`].
     pub fn show(&self, cx: &mut Cx, details: MessageDetails) -> DVec2 {
-        let Some(mut inner) = self.borrow_mut() else { return DVec2::default()};
+        let Some(mut inner) = self.borrow_mut() else {
+            return DVec2::default();
+        };
         inner.show(cx, details)
     }
 }

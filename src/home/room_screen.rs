@@ -1,44 +1,109 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{
+    borrow::Cow,
+    collections::BTreeMap,
+    ops::{DerefMut, Range},
+    sync::{Arc, Mutex},
+    time::SystemTime,
+};
 
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
     ruma::{
-        events::{receipt::Receipt, room::{
-            message::{
-                AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-            }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
-    }, OwnedServerName
+        events::{
+            receipt::Receipt,
+            room::{
+                message::{
+                    AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent,
+                    FileMessageEventContent, FormattedBody, ImageMessageEventContent,
+                    KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat,
+                    MessageType, NoticeMessageEventContent, RoomMessageEventContent,
+                    ServerNoticeMessageEventContent, TextMessageEventContent,
+                    VideoMessageEventContent,
+                },
+                ImageInfo, MediaSource,
+            },
+            sticker::StickerEventContent,
+        },
+        matrix_uri::MatrixId,
+        uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId,
+        OwnedMxcUri, OwnedRoomId,
+    },
+    OwnedServerName,
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo,
+    RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent,
+    TimelineItemKind, VirtualTimelineItem,
 };
 use robius_location::Coordinates;
 
-use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
-        user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
-        user_profile_cache,
-    }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
-};
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::{
+    avatar_cache,
+    event_preview::{
+        body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state,
+        text_preview_of_redacted_message, text_preview_of_room_membership_change,
+        text_preview_of_timeline_item,
+    },
+    home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt},
+    location::{
+        get_latest_location, init_location_subscriber, request_location_update, LocationAction,
+        LocationRequest, LocationUpdate,
+    },
+    media_cache::{MediaCache, MediaCacheEntry},
+    profile::{
+        user_profile::{
+            AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId,
+            UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt,
+        },
+        user_profile_cache,
+    },
+    shared::{
+        avatar::AvatarWidgetRefExt,
+        callout_tooltip::TooltipAction,
+        html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt},
+        jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount},
+        popup_list::enqueue_popup_notification,
+        text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt},
+        typing_animation::TypingAnimationWidgetExt,
+    },
+    sliding_sync::{
+        self, get_client, submit_async_request, take_timeline_endpoints,
+        BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection,
+        TimelineRequestSender, UserPowerLevels,
+    },
+    utils::{
+        self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT,
+    },
+};
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{
+    editing_pane::{EditingPaneAction, EditingPaneWidgetExt},
+    event_reaction_list::ReactionData,
+    loading_pane::LoadingPaneRef,
+    new_message_context_menu::{MessageAbilities, MessageDetails},
+    room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT},
+};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
-const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
-const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
-
+const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 {
+    x: 0.5,
+    y: 0.5,
+    z: 0.5,
+};
+const COLOR_DANGER_RED: Vec3 = Vec3 {
+    x: 0.862,
+    y: 0.0,
+    z: 0.02,
+};
 
 live_design! {
     use link::theme::*;
@@ -927,15 +992,20 @@ live_design! {
 /// The main widget that displays a single Matrix room.
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomScreen {
-    #[deref] view: View,
-    #[animator] animator: Animator,
+    #[deref]
+    view: View,
+    #[animator]
+    animator: Animator,
 
     /// The room ID of the currently-shown room.
-    #[rust] room_id: Option<OwnedRoomId>,
+    #[rust]
+    room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room.
-    #[rust] room_name: String,
+    #[rust]
+    room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
-    #[rust] tl_state: Option<TimelineUiState>,
+    #[rust]
+    tl_state: Option<TimelineUiState>,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -953,7 +1023,8 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
-        let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
+        let user_profile_sliding_pane =
+            self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
         // Currently, a Signal event is only used to tell this widget
@@ -976,14 +1047,29 @@ impl Widget for RoomScreen {
                     widget_rect,
                     bg_color,
                     reaction_data,
-                } = reaction_list.hover_in(actions) {
-                    let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
-                        user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
+                } = reaction_list.hover_in(actions)
+                {
+                    let tooltip_text_arr: Vec<String> = reaction_data
+                        .reaction_senders
+                        .iter()
+                        .map(|(sender, _react_info)| {
+                            user_profile_cache::get_user_profile_and_room_member(
+                                cx,
+                                sender.clone(),
+                                &reaction_data.room_id,
+                                true,
+                            )
+                            .0
                             .map(|user_profile| user_profile.displayable_name().to_string())
                             .unwrap_or(sender.to_string())
-                    }).collect();
-                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
-                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
+                        })
+                        .collect();
+                    let mut tooltip_text = utils::human_readable_list(
+                        &tooltip_text_arr,
+                        MAX_VISIBLE_AVATARS_IN_READ_RECEIPT,
+                    );
+                    tooltip_text
+                        .push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -992,24 +1078,24 @@ impl Widget for RoomScreen {
                             text: tooltip_text,
                             text_color: None,
                             bg_color,
-                        }
+                        },
                     );
                 }
                 if reaction_list.hover_out(actions) {
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        TooltipAction::HoverOut
-                    );
+                    cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     bg_color,
-                    read_receipts
-                } = avatar_row_ref.hover_in(actions) {
-                    let Some(room_id) = &self.room_id else { return; };
-                    let tooltip_text= room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
+                    read_receipts,
+                } = avatar_row_ref.hover_in(actions)
+                {
+                    let Some(room_id) = &self.room_id else {
+                        return;
+                    };
+                    let tooltip_text =
+                        room_read_receipt::populate_tooltip(cx, read_receipts, room_id);
                     cx.widget_action(
                         self.widget_uid(),
                         &scope.path,
@@ -1018,15 +1104,11 @@ impl Widget for RoomScreen {
                             text: tooltip_text,
                             bg_color,
                             text_color: None,
-                        }
+                        },
                     );
                 }
                 if avatar_row_ref.hover_out(actions) {
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        TooltipAction::HoverOut
-                    );                
+                    cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
                 }
             }
 
@@ -1036,8 +1118,12 @@ impl Widget for RoomScreen {
 
             for action in actions {
                 // Handle the highlight animation.
-                let Some(tl) = self.tl_state.as_mut() else { return };
-                if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
+                let Some(tl) = self.tl_state.as_mut() else {
+                    return;
+                };
+                if let MessageHighlightAnimationState::Pending { item_id } =
+                    tl.message_highlight_animation_state
+                {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
                             room_screen_widget_uid,
@@ -1051,9 +1137,15 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle the action that requests to show the user profile sliding pane.
-                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) = action.as_widget_action().cast() {
+                if let ShowUserProfileAction::ShowUserProfile(profile_and_room_id) =
+                    action.as_widget_action().cast()
+                {
                     // Only show the user profile in room that this avatar belongs to
-                    if self.room_id.as_ref().is_some_and(|r| r == &profile_and_room_id.room_id) {
+                    if self
+                        .room_id
+                        .as_ref()
+                        .is_some_and(|r| r == &profile_and_room_id.room_id)
+                    {
                         self.show_user_profile(
                             cx,
                             &user_profile_sliding_pane,
@@ -1083,7 +1175,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.escape(actions) 
+                || message_input.escape(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -1094,27 +1186,32 @@ impl Widget for RoomScreen {
                 log!("Add location button clicked; requesting current location...");
                 if let Err(_e) = init_location_subscriber(cx) {
                     error!("Failed to initialize location subscriber");
-                    enqueue_popup_notification(String::from("Failed to initialize location services."));
+                    enqueue_popup_notification(String::from(
+                        "Failed to initialize location services.",
+                    ));
                 }
                 self.show_location_preview(cx);
             }
 
             // Handle the send location button being clicked.
-            if self.button(id!(location_preview.send_location_button)).clicked(actions) {
+            if self
+                .button(id!(location_preview.send_location_button))
+                .clicked(actions)
+            {
                 let location_preview = self.location_preview(id!(location_preview));
                 if let Some((coords, _system_time_opt)) = location_preview.get_current_data() {
-                    let geo_uri = format!("{}{},{}", GEO_URI_SCHEME, coords.latitude, coords.longitude);
-                    let message = RoomMessageEventContent::new(
-                        MessageType::Location(
-                            LocationMessageEventContent::new(geo_uri.clone(), geo_uri)
-                        )
-                    );
+                    let geo_uri =
+                        format!("{}{},{}", GEO_URI_SCHEME, coords.latitude, coords.longitude);
+                    let message = RoomMessageEventContent::new(MessageType::Location(
+                        LocationMessageEventContent::new(geo_uri.clone(), geo_uri),
+                    ));
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id: self.room_id.clone().unwrap(),
                         message,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
-                        ),
+                        replied_to: self
+                            .tl_state
+                            .as_mut()
+                            .and_then(|tl| tl.replying_to.take().map(|(_, rep)| rep)),
                         // TODO: support attaching mentions, etc.
                     });
 
@@ -1145,9 +1242,10 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
-                        replied_to: self.tl_state.as_mut().and_then(
-                            |tl| tl.replying_to.take().map(|(_, rep)| rep)
-                        ),
+                        replied_to: self
+                            .tl_state
+                            .as_mut()
+                            .and_then(|tl| tl.replying_to.take().map(|(_, rep)| rep)),
                         // TODO: support attaching mentions, etc.
                     });
 
@@ -1157,11 +1255,8 @@ impl Widget for RoomScreen {
             }
 
             // Handle the jump to bottom button: update its visibility, and handle clicks.
-            self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
-                cx,
-                &portal_list,
-                actions,
-            );
+            self.jump_to_bottom_button(id!(jump_to_bottom))
+                .update_from_actions(cx, &portal_list, actions);
 
             // Handle a typing action on the message input box.
             if let Some(new_text) = message_input.changed(actions) {
@@ -1187,12 +1282,10 @@ impl Widget for RoomScreen {
         if loading_pane.is_currently_shown(cx) {
             is_pane_shown = true;
             loading_pane.handle_event(cx, event, scope);
-        }
-        else if user_profile_sliding_pane.is_currently_shown(cx) {
+        } else if user_profile_sliding_pane.is_currently_shown(cx) {
             is_pane_shown = true;
             user_profile_sliding_pane.handle_event(cx, event, scope);
-        }
-        else {
+        } else {
             is_pane_shown = false;
         }
 
@@ -1204,9 +1297,8 @@ impl Widget for RoomScreen {
             // Forward the event to the inner timeline view, but capture any actions it produces
             // such that we can handle the ones relevant to only THIS RoomScreen widget right here and now,
             // ensuring they are not mistakenly handled by other RoomScreen widget instances.
-            let mut actions_generated_within_this_room_screen = cx.capture_actions(|cx|
-                self.view.handle_event(cx, event, scope)
-            );
+            let mut actions_generated_within_this_room_screen =
+                cx.capture_actions(|cx| self.view.handle_event(cx, event, scope));
             // Here, we handle and remove any general actions that are relevant to only this RoomScreen.
             // Removing the handled actions ensures they are not mistakenly handled by other RoomScreen widget instances.
             actions_generated_within_this_room_screen.retain(|action| {
@@ -1314,7 +1406,8 @@ impl Widget for RoomScreen {
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                let prev_event =
+                                    tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                 populate_message_view(
                                     cx,
                                     list,
@@ -1330,7 +1423,8 @@ impl Widget for RoomScreen {
                                 )
                             }
                             TimelineItemContent::Sticker(sticker) => {
-                                let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                let prev_event =
+                                    tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                 populate_message_view(
                                     cx,
                                     list,
@@ -1354,24 +1448,28 @@ impl Widget for RoomScreen {
                                 &RedactedMessageEventMarker,
                                 item_drawn_status,
                             ),
-                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                membership_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                profile_change,
-                                item_drawn_status,
-                            ),
+                            TimelineItemContent::MembershipChange(membership_change) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    membership_change,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::ProfileChange(profile_change) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    profile_change,
+                                    item_drawn_status,
+                                )
+                            }
                             TimelineItemContent::OtherState(other) => populate_small_state_event(
                                 cx,
                                 list,
@@ -1383,10 +1481,11 @@ impl Widget for RoomScreen {
                             ),
                             unhandled => {
                                 let item = list.item(cx, item_id, live_id!(SmallStateEvent));
-                                item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
+                                item.label(id!(content))
+                                    .set_text(cx, &format!("[Unsupported] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
                             }
-                        }
+                        },
                         TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
                             let item = list.item(cx, item_id, live_id!(DayDivider));
                             let text = unix_time_millis_to_datetime(millis)
@@ -1404,10 +1503,14 @@ impl Widget for RoomScreen {
 
                     // Now that we've drawn the item, add its index to the set of drawn items.
                     if item_new_draw_status.content_drawn {
-                        tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+                        tl_state
+                            .content_drawn_since_last_update
+                            .insert(tl_idx..tl_idx + 1);
                     }
                     if item_new_draw_status.profile_drawn {
-                        tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+                        tl_state
+                            .profile_drawn_since_last_update
+                            .insert(tl_idx..tl_idx + 1);
                     }
                     item
                 };
@@ -1427,7 +1530,9 @@ impl RoomScreen {
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
-        let Some(tl) = self.tl_state.as_mut() else { return };
+        let Some(tl) = self.tl_state.as_mut() else {
+            return;
+        };
 
         let mut done_loading = false;
         let mut should_continue_backwards_pagination = false;
@@ -1448,7 +1553,12 @@ impl RoomScreen {
                     tl.items = initial_items;
                     done_loading = true;
                 }
-                TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                TimelineUpdate::NewItems {
+                    new_items,
+                    changed_indices,
+                    is_append,
+                    clear_cache,
+                } => {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1482,15 +1592,19 @@ impl RoomScreen {
 
                     if new_items.len() == tl.items.len() {
                         // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
-                    }
-                    else if curr_first_id > new_items.len() {
+                    } else if curr_first_id > new_items.len() {
                         log!("Timeline::handle_event(): jumping to bottom: curr_first_id {} is out of bounds for {} new items", curr_first_id, new_items.len());
                         portal_list.set_first_id_and_scroll(new_items.len().saturating_sub(1), 0.0);
                         portal_list.set_tail_range(true);
                         jump_to_bottom.update_visibility(cx, true);
-                    }
-                    else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                    } else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
+                        find_new_item_matching_current_item(
+                            cx,
+                            portal_list,
+                            curr_first_id,
+                            &tl.items,
+                            &new_items,
+                        )
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
@@ -1499,8 +1613,11 @@ impl RoomScreen {
                             // Set scrolled_past_read_marker false when we jump to a new event
                             tl.scrolled_past_read_marker = false;
                             // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
-                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
-
+                            cx.widget_action(
+                                ui,
+                                &Scope::empty().path,
+                                RoomScreenTooltipActions::HoverOut,
+                            );
                         }
                     }
                     //
@@ -1514,8 +1631,11 @@ impl RoomScreen {
                     if is_append && !portal_list.is_at_end() {
                         if let Some(room_id) = &self.room_id {
                             // Immediately show the unread badge with no count while we fetch the actual count in the background.
-                            jump_to_bottom.show_unread_message_badge(cx, UnreadMessageCount::Unknown);
-                            submit_async_request(MatrixRequest::GetNumberUnreadMessages{ room_id: room_id.clone() });
+                            jump_to_bottom
+                                .show_unread_message_badge(cx, UnreadMessageCount::Unknown);
+                            submit_async_request(MatrixRequest::GetNumberUnreadMessages {
+                                room_id: room_id.clone(),
+                            });
                         }
                     }
 
@@ -1531,8 +1651,11 @@ impl RoomScreen {
                         let loading_pane = self.view.loading_pane(id!(loading_pane));
                         let mut loading_pane_state = loading_pane.take_state();
                         if let LoadingPaneState::BackwardsPaginateUntilEvent {
-                            ref mut events_paginated, target_event_id, ..
-                        } = &mut loading_pane_state {
+                            ref mut events_paginated,
+                            target_event_id,
+                            ..
+                        } = &mut loading_pane_state
+                        {
                             *events_paginated += new_items.len().saturating_sub(tl.items.len());
                             log!("While finding target event {target_event_id}, loaded {events_paginated} messages...");
                             // Here, we assume that we have not yet found the target event,
@@ -1545,8 +1668,10 @@ impl RoomScreen {
                         }
                         loading_pane.set_state(cx, loading_pane_state);
                     } else {
-                        tl.content_drawn_since_last_update.remove(changed_indices.clone());
-                        tl.profile_drawn_since_last_update.remove(changed_indices.clone());
+                        tl.content_drawn_since_last_update
+                            .remove(changed_indices.clone());
+                        tl.profile_drawn_since_last_update
+                            .remove(changed_indices.clone());
                         // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
                     tl.items = new_items;
@@ -1555,7 +1680,10 @@ impl RoomScreen {
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
                     jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                 }
-                TimelineUpdate::TargetEventFound { target_event_id, index } => {
+                TimelineUpdate::TargetEventFound {
+                    target_event_id,
+                    index,
+                } => {
                     // log!("Target event found in room {}: {target_event_id}, index: {index}", tl.room_id);
                     tl.request_sender.send_if_modified(|requests| {
                         requests.retain(|r| r.room_id != tl.room_id);
@@ -1565,10 +1693,10 @@ impl RoomScreen {
 
                     // sanity check: ensure the target event is in the timeline at the given `index`.
                     let item = tl.items.get(index);
-                    let is_valid = item.is_some_and(|item|
+                    let is_valid = item.is_some_and(|item| {
                         item.as_event()
                             .is_some_and(|ev| ev.event_id() == Some(&target_event_id))
-                    );
+                    });
                     let loading_pane = self.view.loading_pane(id!(loading_pane));
 
                     // log!("TargetEventFound: is_valid? {is_valid}. room {}, event {target_event_id}, index {index} of {}\n  --> item: {item:?}", tl.room_id, tl.items.len());
@@ -1587,19 +1715,24 @@ impl RoomScreen {
                         //       appear beneath the top of the viewport.
                         portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
                         // start highlight animation.
-                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                            item_id: index
-                        };
-                    }
-                    else {
+                        tl.message_highlight_animation_state =
+                            MessageHighlightAnimationState::Pending { item_id: index };
+                    } else {
                         // Here, the target event was not found in the current timeline,
                         // or we found it previously but it is no longer in the timeline (or has moved),
                         // which means we encountered an error and are unable to jump to the target event.
-                        error!("Target event index {index} of {} is out of bounds for room {}", tl.items.len(), tl.room_id);
+                        error!(
+                            "Target event index {index} of {} is out of bounds for room {}",
+                            tl.items.len(),
+                            tl.room_id
+                        );
                         // Show this error in the loading pane, which should already be open.
-                        loading_pane.set_state(cx, LoadingPaneState::Error(
-                            String::from("Unable to find related message; it may have been deleted.")
-                        ));
+                        loading_pane.set_state(
+                            cx,
+                            LoadingPaneState::Error(String::from(
+                                "Unable to find related message; it may have been deleted.",
+                            )),
+                        );
                     }
 
                     should_continue_backwards_pagination = false;
@@ -1616,10 +1749,16 @@ impl RoomScreen {
                     }
                 }
                 TimelineUpdate::PaginationError { error, direction } => {
-                    error!("Pagination error ({direction}) in room {}: {error:?}", tl.room_id);
+                    error!(
+                        "Pagination error ({direction}) in room {}: {error:?}",
+                        tl.room_id
+                    );
                     done_loading = true;
                 }
-                TimelineUpdate::PaginationIdle { fully_paginated, direction } => {
+                TimelineUpdate::PaginationIdle {
+                    fully_paginated,
+                    direction,
+                } => {
                     if direction == PaginationDirection::Backwards {
                         // Don't set `done_loading` to `true`` here, because we want to keep the top space visible
                         // (with the "loading" message) until the corresponding `NewItems` update is received.
@@ -1631,7 +1770,7 @@ impl RoomScreen {
                         error!("Unexpected PaginationIdle update in the Forwards direction");
                     }
                 }
-                TimelineUpdate::EventDetailsFetched {event_id, result } => {
+                TimelineUpdate::EventDetailsFetched { event_id, result } => {
                     if let Err(_e) = result {
                         error!("Failed to fetch details fetched for event {event_id} in room {}. Error: {_e:?}", tl.room_id);
                     }
@@ -1644,12 +1783,19 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::MediaFetched => {
-                    log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
+                    log!(
+                        "Timeline::handle_event(): media fetched for room {}",
+                        tl.room_id
+                    );
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-                TimelineUpdate::MessageEdited { timeline_event_id, result } => {
-                    self.view.editing_pane(id!(editing_pane))
+                TimelineUpdate::MessageEdited {
+                    timeline_event_id,
+                    result,
+                } => {
+                    self.view
+                        .editing_pane(id!(editing_pane))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
                 TimelineUpdate::TypingUsers { users } => {
@@ -1666,9 +1812,11 @@ impl RoomScreen {
 
                     // Update the visibility of the message input bar based on the new power levels.
                     let can_send_message = user_power_level.can_send_message();
-                    self.view.view(id!(input_bar))
+                    self.view
+                        .view(id!(input_bar))
                         .set_visible(cx, can_send_message);
-                    self.view.view(id!(can_not_send_message_notice))
+                    self.view
+                        .view(id!(can_not_send_message_notice))
                         .set_visible(cx, !can_send_message);
                 }
 
@@ -1699,15 +1847,14 @@ impl RoomScreen {
                     if others.len() > 1 {
                         format!("{user1}, {user2}, and {} are typing ", &others[0])
                     } else {
-                        format!(
-                            "{user1}, {user2}, and {} others are typing ",
-                            others.len()
-                        )
+                        format!("{user1}, {user2}, and {} others are typing ", others.len())
                     }
                 }
             };
             // Set the typing notice text and make its view visible.
-            self.view.label(id!(typing_label)).set_text(cx, &typing_notice_text);
+            self.view
+                .label(id!(typing_label))
+                .set_text(cx, &typing_notice_text);
             self.view.view(id!(typing_notice)).set_visible(cx, true);
             // Animate in the typing notice view (sliding it up from the bottom).
             self.animator_play(cx, id!(typing_notice_animator.show));
@@ -1726,7 +1873,6 @@ impl RoomScreen {
             self.redraw(cx);
         }
     }
-
 
     /// Handles a link being clicked in any child widgets of this RoomScreen.
     ///
@@ -1841,9 +1987,15 @@ impl RoomScreen {
     ) {
         let room_screen_widget_uid = self.widget_uid();
         for action in actions {
-            match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
+            match action
+                .as_widget_action()
+                .widget_uid_eq(room_screen_widget_uid)
+                .cast()
+            {
                 MessageAction::React { details, reaction } => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_mut() else {
+                        return;
+                    };
                     let mut success = false;
                     if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
@@ -1859,7 +2011,9 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Couldn't find message in timeline to react to.".to_string());
+                        enqueue_popup_notification(
+                            "Couldn't find message in timeline to react to.".to_string(),
+                        );
                         error!("MessageAction::React: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1869,7 +2023,9 @@ impl RoomScreen {
                 }
                 MessageAction::Reply(details) => {
                     let mut success = false;
-                    if let Some(event_tl_item) = self.tl_state.as_ref()
+                    if let Some(event_tl_item) = self
+                        .tl_state
+                        .as_ref()
                         .and_then(|tl| tl.items.get(details.item_id))
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
@@ -1880,7 +2036,9 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Could not find message in timeline to reply to.".to_string());
+                        enqueue_popup_notification(
+                            "Could not find message in timeline to reply to.".to_string(),
+                        );
                         error!("MessageAction::Reply: couldn't find event [{}] {:?} to reply to in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1889,15 +2047,20 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::Edit(details) => {
-                    let Some(tl) = self.tl_state.as_ref() else { return };
-                    if let Some(event_tl_item) = tl.items.get(details.item_id)
+                    let Some(tl) = self.tl_state.as_ref() else {
+                        return;
+                    };
+                    if let Some(event_tl_item) = tl
+                        .items
+                        .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().cloned())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
                         self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
-                    }
-                    else {
-                        enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
+                    } else {
+                        enqueue_popup_notification(
+                            "Could not find message in timeline to edit.".to_string(),
+                        );
                         error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1907,22 +2070,30 @@ impl RoomScreen {
                 }
                 MessageAction::Pin(_details) => {
                     // TODO
-                    enqueue_popup_notification("Pinning messages is not yet implemented.".to_string());
+                    enqueue_popup_notification(
+                        "Pinning messages is not yet implemented.".to_string(),
+                    );
                 }
                 MessageAction::Unpin(_details) => {
                     // TODO
-                    enqueue_popup_notification("Unpinning messages is not yet implemented.".to_string());
+                    enqueue_popup_notification(
+                        "Unpinning messages is not yet implemented.".to_string(),
+                    );
                 }
                 MessageAction::CopyText(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
-                    if let Some(text) = tl.items
+                    let Some(tl) = self.tl_state.as_mut() else {
+                        return;
+                    };
+                    if let Some(text) = tl
+                        .items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().map(body_of_timeline_item))
                     {
                         cx.copy_to_clipboard(&text);
-                    }
-                    else {
-                        enqueue_popup_notification("Could not find message in timeline to copy text from.".to_string());
+                    } else {
+                        enqueue_popup_notification(
+                            "Could not find message in timeline to copy text from.".to_string(),
+                        );
                         error!("MessageAction::CopyText: couldn't find event [{}] {:?} to copy text from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1931,26 +2102,54 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::CopyHtml(details) => {
-                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    let Some(tl) = self.tl_state.as_ref() else {
+                        return;
+                    };
                     // The logic for getting the formatted body of a message is the same
                     // as the logic used in `populate_message_view()`.
                     let mut success = false;
-                    if let Some(event_tl_item) = tl.items
+                    if let Some(event_tl_item) = tl
+                        .items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event())
                         .filter(|ev| ev.event_id() == details.event_id.as_deref())
                     {
                         if let TimelineItemContent::Message(message) = event_tl_item.content() {
                             match message.msgtype() {
-                                MessageType::Text(TextMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::Notice(NoticeMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::Emote(EmoteMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::Image(ImageMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::File(FileMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::Audio(AudioMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::Video(VideoMessageEventContent { formatted: Some(FormattedBody { body, .. }), .. })
-                                | MessageType::VerificationRequest(KeyVerificationRequestEventContent { formatted: Some(FormattedBody { body, .. }), .. }) =>
-                                {
+                                MessageType::Text(TextMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::Notice(NoticeMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::Emote(EmoteMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::Image(ImageMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::File(FileMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::Audio(AudioMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::Video(VideoMessageEventContent {
+                                    formatted: Some(FormattedBody { body, .. }),
+                                    ..
+                                })
+                                | MessageType::VerificationRequest(
+                                    KeyVerificationRequestEventContent {
+                                        formatted: Some(FormattedBody { body, .. }),
+                                        ..
+                                    },
+                                ) => {
                                     cx.copy_to_clipboard(body);
                                     success = true;
                                 }
@@ -1959,7 +2158,9 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Could not find message in timeline to copy HTML from.".to_string());
+                        enqueue_popup_notification(
+                            "Could not find message in timeline to copy HTML from.".to_string(),
+                        );
                         error!("MessageAction::CopyHtml: couldn't find event [{}] {:?} to copy HTML from in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -1968,13 +2169,18 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::CopyLink(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_mut() else {
+                        return;
+                    };
                     if let Some(event_id) = details.event_id {
                         let matrix_to_uri = tl.room_id.matrix_to_event_uri(event_id);
                         cx.copy_to_clipboard(&matrix_to_uri.to_string());
                     } else {
-                        enqueue_popup_notification("Couldn't create permalink to message.".to_string());
-                        error!("MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
+                        enqueue_popup_notification(
+                            "Couldn't create permalink to message.".to_string(),
+                        );
+                        error!(
+                            "MessageAction::CopyLink: no `event_id`: [{}] {:?} in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
                             tl.room_id,
@@ -1982,7 +2188,9 @@ impl RoomScreen {
                     }
                 }
                 MessageAction::ViewSource(_details) => {
-                    enqueue_popup_notification("Viewing an event's source is not yet implemented.".to_string());
+                    enqueue_popup_notification(
+                        "Viewing an event's source is not yet implemented.".to_string(),
+                    );
                     // TODO: re-use Franco's implementation below:
 
                     // let Some(tl) = self.tl_state.as_mut() else { continue };
@@ -2011,7 +2219,9 @@ impl RoomScreen {
                     // );
                 }
                 MessageAction::JumpToRelated(details) => {
-                    let Some(tl) = self.tl_state.as_mut() else { continue };
+                    let Some(tl) = self.tl_state.as_mut() else {
+                        continue;
+                    };
                     let Some(related_event_id) = details.related_event_id.as_ref() else {
                         error!("BUG: MessageAction::JumpToRelated had not related event ID.");
                         continue;
@@ -2027,7 +2237,8 @@ impl RoomScreen {
                     // Start from the current item's index (`tl_idx`)and search backwards,
                     // since we know the related message must come before the current item.
                     let mut num_items_searched = 0;
-                    let related_msg_tl_index = tl.items
+                    let related_msg_tl_index = tl
+                        .items
                         .focus()
                         .narrow(..tl_idx)
                         .into_iter()
@@ -2050,9 +2261,8 @@ impl RoomScreen {
                         //       appear beneath the top of the viewport.
                         portal_list.smooth_scroll_to(cx, index.saturating_sub(1), speed, None);
                         // start highlight animation.
-                        tl.message_highlight_animation_state = MessageHighlightAnimationState::Pending {
-                            item_id: index
-                        };
+                        tl.message_highlight_animation_state =
+                            MessageHighlightAnimationState::Pending { item_id: index };
                     } else {
                         // log!("The replied-to message {replied_to_event} wasn't immediately available in room {}, searching for it in the background...", tl.room_id);
                         // Here, we set the state of the loading pane and display it to the user.
@@ -2092,7 +2302,9 @@ impl RoomScreen {
                     self.redraw(cx);
                 }
                 MessageAction::Redact { details, reason } => {
-                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    let Some(tl) = self.tl_state.as_mut() else {
+                        return;
+                    };
                     let mut success = false;
                     if let Some(timeline_item) = tl.items.get(details.item_id) {
                         if let Some(event_tl_item) = timeline_item.as_event() {
@@ -2108,7 +2320,9 @@ impl RoomScreen {
                         }
                     }
                     if !success {
-                        enqueue_popup_notification("Couldn't find message in timeline to delete.".to_string());
+                        enqueue_popup_notification(
+                            "Couldn't find message in timeline to delete.".to_string(),
+                        );
                         error!("MessageAction::Redact: couldn't find event [{}] {:?} to react to in room {}",
                             details.item_id,
                             details.event_id.as_deref(),
@@ -2122,14 +2336,14 @@ impl RoomScreen {
                 // }
 
                 // This is handled within the Message widget itself.
-                MessageAction::HighlightMessage(..) => { }
+                MessageAction::HighlightMessage(..) => {}
                 // This is handled by the top-level App itself.
-                MessageAction::OpenMessageContextMenu { .. } => { }
+                MessageAction::OpenMessageContextMenu { .. } => {}
                 // This isn't yet handled, as we need to completely redesign it.
-                MessageAction::ActionBarOpen { .. } => { }
+                MessageAction::ActionBarOpen { .. } => {}
                 // This isn't yet handled, as we need to completely redesign it.
-                MessageAction::ActionBarClose => { }
-                MessageAction::None => { }
+                MessageAction::ActionBarClose => {}
+                MessageAction::None => {}
             }
         }
     }
@@ -2157,11 +2371,8 @@ impl RoomScreen {
         // otherwise a very-tall input bar might show up underneath a shorter editing pane.
         self.view(id!(input_bar)).set_visible(cx, false);
 
-        self.editing_pane(id!(editing_pane)).show(
-            cx,
-            event_tl_item,
-            room_id,
-        );
+        self.editing_pane(id!(editing_pane))
+            .show(cx, event_tl_item, room_id);
         self.redraw(cx);
     }
 
@@ -2177,11 +2388,7 @@ impl RoomScreen {
 
     /// Shows a preview of the given event that the user is currently replying to
     /// above the message input bar.
-    fn show_replying_to(
-        &mut self,
-        cx: &mut Cx,
-        replying_to: (EventTimelineItem, RepliedToInfo),
-    ) {
+    fn show_replying_to(&mut self, cx: &mut Cx, replying_to: (EventTimelineItem, RepliedToInfo)) {
         let replying_preview_view = self.view(id!(replying_preview));
         let (replying_preview_username, _) = replying_preview_view
             .avatar(id!(reply_preview_content.reply_preview_avatar))
@@ -2235,23 +2442,29 @@ impl RoomScreen {
     /// Invoke this when this timeline is being shown,
     /// e.g., when the user navigates to this timeline.
     fn show_timeline(&mut self, cx: &mut Cx) {
-        let room_id = self.room_id.clone()
+        let room_id = self
+            .room_id
+            .clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
         // just an optional sanity check
-        assert!(self.tl_state.is_none(),
+        assert!(
+            self.tl_state.is_none(),
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
 
         // Obtain the current user's power levels for this room.
-        submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
+        submit_async_request(MatrixRequest::GetRoomPowerLevels {
+            room_id: room_id.clone(),
+        });
 
         let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
-                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let (update_sender, update_receiver, request_sender) =
+                take_timeline_endpoints(&room_id)
+                    .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid
@@ -2279,19 +2492,23 @@ impl RoomScreen {
 
         // Subscribe to typing notices, but hide the typing notice view initially.
         self.view(id!(typing_notice)).set_visible(cx, false);
-        submit_async_request(
-            MatrixRequest::SubscribeToTypingNotices {
-                room_id: room_id.clone(),
-                subscribe: true,
-            }
-        );
+        submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+            room_id: room_id.clone(),
+            subscribe: true,
+        });
 
-        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id: room_id.clone(), subscribe: true });
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
+            room_id: room_id.clone(),
+            subscribe: true,
+        });
         // Kick off a back pagination request for this room. This is "urgent",
         // because we want to show the user some messages as soon as possible
         // when they first open the room, and there might not be any messages yet.
         if first_time_showing_room && !tl_state.fully_paginated {
-            log!("Sending a first-time backwards pagination request for room {}", room_id);
+            log!(
+                "Sending a first-time backwards pagination request for room {}",
+                room_id
+            );
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: room_id.clone(),
                 num_events: 50,
@@ -2324,7 +2541,9 @@ impl RoomScreen {
 
     /// Invoke this when this RoomScreen/timeline is being hidden or no longer being shown.
     fn hide_timeline(&mut self) {
-        let Some(room_id) = self.room_id.clone() else { return };
+        let Some(room_id) = self.room_id.clone() else {
+            return;
+        };
 
         self.save_state();
 
@@ -2350,13 +2569,18 @@ impl RoomScreen {
     /// Note: after calling this function, the widget's `tl_state` will be `None`.
     fn save_state(&mut self) {
         let Some(mut tl) = self.tl_state.take() else {
-            error!("Timeline::save_state(): skipping due to missing state, room {:?}", self.room_id);
+            error!(
+                "Timeline::save_state(): skipping due to missing state, room {:?}",
+                self.room_id
+            );
             return;
         };
 
         let portal_list = self.portal_list(id!(list));
         let message_input_box = self.text_input(id!(message_input));
-        let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
+        let editing_event = self
+            .editing_pane(id!(editing_pane))
+            .get_event_being_edited();
         let state = SavedState {
             first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
             message_input_state: message_input_box.save_state(),
@@ -2365,7 +2589,10 @@ impl RoomScreen {
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
-        TIMELINE_STATES.lock().unwrap().insert(tl.room_id.clone(), tl);
+        TIMELINE_STATES
+            .lock()
+            .unwrap()
+            .insert(tl.room_id.clone(), tl);
     }
 
     /// Restores the previously-saved visual UI state of this room.
@@ -2393,7 +2620,7 @@ impl RoomScreen {
         let saved_message_input_state = std::mem::take(message_input_state);
         self.text_input(id!(message_input))
             .restore_state(saved_message_input_state);
-        
+
         // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
@@ -2411,12 +2638,7 @@ impl RoomScreen {
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(
-        &mut self,
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-        room_name: String,
-    ) {
+    pub fn set_displayed_room(&mut self, cx: &mut Cx, room_id: OwnedRoomId, room_name: String) {
         // If the room is already being displayed, then do nothing.
         if let Some(current_room_id) = &self.room_id {
             if current_room_id.eq(&room_id) {
@@ -2444,7 +2666,9 @@ impl RoomScreen {
             return;
         }
         let first_index = portal_list.first_id();
-        let Some(tl_state) = self.tl_state.as_mut() else { return };
+        let Some(tl_state) = self.tl_state.as_mut() else {
+            return;
+        };
 
         if let Some(ref mut index) = tl_state.prev_first_index {
             // to detect change of scroll when scroll ends
@@ -2455,7 +2679,7 @@ impl RoomScreen {
                         .items
                         .get(std::cmp::min(
                             first_index + portal_list.visible_items(),
-                            tl_state.items.len().saturating_sub(1)
+                            tl_state.items.len().saturating_sub(1),
                         ))
                         .and_then(|f| f.as_event())
                         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
@@ -2473,17 +2697,20 @@ impl RoomScreen {
                             event_id: last_event_id.to_owned(),
                         });
                     } else {
-                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
-                        .and_then(|receipt| receipt.ts) {
+                        if let Some(own_user_receipt_timestamp) = &tl_state
+                            .latest_own_user_receipt
+                            .clone()
+                            .and_then(|receipt| receipt.ts)
+                        {
                             let Some((_first_event_id, first_timestamp)) = tl_state
                                 .items
                                 .get(first_index)
                                 .and_then(|f| f.as_event())
                                 .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
-                                else {
-                                    *index = first_index;
-                                    return;
-                                };
+                            else {
+                                *index = first_index;
+                                return;
+                            };
                             if own_user_receipt_timestamp >= &first_timestamp
                                 && own_user_receipt_timestamp <= &last_timestamp
                             {
@@ -2493,7 +2720,6 @@ impl RoomScreen {
                                     event_id: last_event_id.to_owned(),
                                 });
                             }
-
                         }
                     }
                 }
@@ -2512,14 +2738,22 @@ impl RoomScreen {
         actions: &ActionsBuf,
         portal_list: &PortalListRef,
     ) {
-        let Some(tl) = self.tl_state.as_mut() else { return };
-        if tl.fully_paginated { return };
-        if !portal_list.scrolled(actions) { return };
+        let Some(tl) = self.tl_state.as_mut() else {
+            return;
+        };
+        if tl.fully_paginated {
+            return;
+        };
+        if !portal_list.scrolled(actions) {
+            return;
+        };
 
         let first_index = portal_list.first_id();
         if first_index == 0 && tl.last_scrolled_index > 0 {
-            log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
-                tl.last_scrolled_index, tl.room_id,
+            log!(
+                "Scrolled up from item {} --> 0, sending back pagination request for room {}",
+                tl.last_scrolled_index,
+                tl.room_id,
             );
             submit_async_request(MatrixRequest::PaginateRoomTimeline {
                 room_id: tl.room_id.clone(),
@@ -2533,13 +2767,10 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room(
-        &self,
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-        room_name: String,
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+    pub fn set_displayed_room(&self, cx: &mut Cx, room_id: OwnedRoomId, room_name: String) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_displayed_room(cx, room_id, room_name);
     }
 }
@@ -2752,7 +2983,9 @@ struct TimelineUiState {
 
 #[derive(Default, Debug)]
 enum MessageHighlightAnimationState {
-    Pending { item_id: usize },
+    Pending {
+        item_id: usize,
+    },
     #[default]
     Off,
 }
@@ -2793,9 +3026,8 @@ fn find_new_item_matching_current_item(
 ) -> Option<(usize, usize, f64, OwnedEventId)> {
     let mut curr_item_focus = curr_items.focus();
     let mut idx_curr = starting_at_curr_idx;
-    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> = Vec::with_capacity(
-        portal_list.visible_items()
-    );
+    let mut curr_items_with_ids: Vec<(usize, OwnedEventId)> =
+        Vec::with_capacity(portal_list.visible_items());
 
     // Find all items with real event IDs that are currently visible in the portal list.
     // TODO: if this is slow, we could limit it to 3-5 events at the most.
@@ -2873,10 +3105,14 @@ impl MessageOrSticker<'_> {
                 MessageType::Image(image) => MessageOrStickerType::Image(image),
                 MessageType::Location(location) => MessageOrStickerType::Location(location),
                 MessageType::Notice(notice) => MessageOrStickerType::Notice(notice),
-                MessageType::ServerNotice(server_notice) => MessageOrStickerType::ServerNotice(server_notice),
+                MessageType::ServerNotice(server_notice) => {
+                    MessageOrStickerType::ServerNotice(server_notice)
+                }
                 MessageType::Text(text) => MessageOrStickerType::Text(text),
                 MessageType::Video(video) => MessageOrStickerType::Video(video),
-                MessageType::VerificationRequest(verification_request) => MessageOrStickerType::VerificationRequest(verification_request),
+                MessageType::VerificationRequest(verification_request) => {
+                    MessageOrStickerType::VerificationRequest(verification_request)
+                }
                 MessageType::_Custom(custom) => MessageOrStickerType::_Custom(custom),
                 _ => MessageOrStickerType::Unknown,
             },
@@ -2934,14 +3170,12 @@ impl MessageOrStickerType<'_> {
     /// Returns details of the image for this message or sticker, if it contains one.
     pub fn get_image_info(&self) -> Option<(Option<ImageInfo>, MediaSource)> {
         match self {
-            Self::Image(image) => Some((
-                image.info.clone().map(|info| *info),
-                image.source.clone(),
-            )),
-            Self::Sticker(sticker) => Some((
-                Some(sticker.info.clone()),
-                sticker.source.clone().into(),
-            )),
+            Self::Image(image) => {
+                Some((image.info.clone().map(|info| *info), image.source.clone()))
+            }
+            Self::Sticker(sticker) => {
+                Some((Some(sticker.info.clone()), sticker.source.clone().into()))
+            }
             _ => None,
         }
     }
@@ -2964,7 +3198,6 @@ impl MessageOrStickerType<'_> {
         }
     }
 }
-
 
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
 /// with the given `item_id`.
@@ -2997,7 +3230,8 @@ fn populate_message_view(
             TimelineItemContent::Message(_) | TimelineItemContent::Sticker(_) => {
                 let prev_msg_sender = prev_event_tl_item.sender();
                 prev_msg_sender == event_tl_item.sender()
-                    && ts_millis.0
+                    && ts_millis
+                        .0
                         .checked_sub(prev_event_tl_item.timestamp().0)
                         .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
             }
@@ -3012,8 +3246,12 @@ fn populate_message_view(
     // to avoid having to call it twice.
     let mut set_username_and_get_avatar_retval = None;
     let (item, used_cached_item) = match message.get_type() {
-        MessageOrStickerType::Text(TextMessageEventContent { body, formatted, .. }) => {
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+        MessageOrStickerType::Text(TextMessageEventContent {
+            body, formatted, ..
+        }) => {
+            has_html_body = formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3035,9 +3273,13 @@ fn populate_message_view(
         }
         // A notice message is just a message sent by an automated bot,
         // so we treat it just like a message but use a different font color.
-        MessageOrStickerType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+        MessageOrStickerType::Notice(NoticeMessageEventContent {
+            body, formatted, ..
+        }) => {
             is_notice = true;
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            has_html_body = formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3048,23 +3290,21 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                html_or_plaintext_ref.apply_over(cx, live!(
-                    html_view = {
-                        html = {
-                            font_color: (MESSAGE_NOTICE_TEXT_COLOR),
-                            draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                            draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                            draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                            draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
-                        }
-                    }
-                ));
-                populate_text_message_content(
+                html_or_plaintext_ref.apply_over(
                     cx,
-                    &html_or_plaintext_ref,
-                    body,
-                    formatted.as_ref(),
+                    live!(
+                        html_view = {
+                            html = {
+                                font_color: (MESSAGE_NOTICE_TEXT_COLOR),
+                                draw_normal:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                                draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            }
+                        }
+                    ),
                 );
+                populate_text_message_content(cx, &html_or_plaintext_ref, body, formatted.as_ref());
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -3078,25 +3318,30 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                html_or_plaintext_ref.apply_over(cx, live!(
-                    html_view = {
-                        html = {
-                            font_color: (COLOR_DANGER_RED),
-                            draw_normal:      { color: (COLOR_DANGER_RED), }
-                            draw_italic:      { color: (COLOR_DANGER_RED), }
-                            draw_bold:        { color: (COLOR_DANGER_RED), }
-                            draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                html_or_plaintext_ref.apply_over(
+                    cx,
+                    live!(
+                        html_view = {
+                            html = {
+                                font_color: (COLOR_DANGER_RED),
+                                draw_normal:      { color: (COLOR_DANGER_RED), }
+                                draw_italic:      { color: (COLOR_DANGER_RED), }
+                                draw_bold:        { color: (COLOR_DANGER_RED), }
+                                draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                            }
                         }
-                    }
-                ));
+                    ),
+                );
                 let formatted = format!(
                     "<b>Server notice:</b> {}\n\n<i>Notice type:</i>: {}{}{}",
                     sn.body,
                     sn.server_notice_type.as_str(),
-                    sn.limit_type.as_ref()
+                    sn.limit_type
+                        .as_ref()
                         .map(|l| format!("\n<i>Limit type:</i> {}", l.as_str()))
                         .unwrap_or_default(),
-                    sn.admin_contact.as_ref()
+                    sn.admin_contact
+                        .as_ref()
                         .map(|c| format!("\n<i>Admin contact:</i> {}", c))
                         .unwrap_or_default(),
                 );
@@ -3115,8 +3360,12 @@ fn populate_message_view(
         }
         // An emote is just like a message but is prepended with the user's name
         // to indicate that it's an "action" that the user is performing.
-        MessageOrStickerType::Emote(EmoteMessageEventContent { body, formatted, .. }) => {
-            has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+        MessageOrStickerType::Emote(EmoteMessageEventContent {
+            body, formatted, ..
+        }) => {
+            has_html_body = formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3127,13 +3376,15 @@ fn populate_message_view(
                 (item, true)
             } else {
                 // Draw the profile up front here because we need the username for the emote body.
-                let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
-                    cx,
-                    room_id,
-                    event_tl_item.sender(),
-                    Some(event_tl_item.sender_profile()),
-                    event_tl_item.event_id(),
-                );
+                let (username, profile_drawn) = item
+                    .avatar(id!(profile.avatar))
+                    .set_avatar_and_get_username(
+                        cx,
+                        room_id,
+                        event_tl_item.sender(),
+                        Some(event_tl_item.sender_profile()),
+                        event_tl_item.event_id(),
+                    );
 
                 // Prepend a "* <username> " to the emote body, as suggested by the Matrix spec.
                 let (body, formatted) = if let Some(fb) = formatted.as_ref() {
@@ -3142,7 +3393,7 @@ fn populate_message_view(
                         Some(FormattedBody {
                             format: fb.format.clone(),
                             body: format!("* {} {}", &username, &fb.body),
-                        })
+                        }),
                     )
                 } else {
                     (Cow::from(format!("* {} {}", &username, body)), None)
@@ -3161,7 +3412,9 @@ fn populate_message_view(
         // Handle images and sticker messages that are static images.
         mtype @ MessageOrStickerType::Image(_) | mtype @ MessageOrStickerType::Sticker(_) => {
             has_html_body = match mtype {
-                MessageOrStickerType::Image(image) => image.formatted.as_ref()
+                MessageOrStickerType::Image(image) => image
+                    .formatted
+                    .as_ref()
                     .is_some_and(|f| f.format == MessageFormat::Html),
                 _ => false,
             };
@@ -3208,7 +3461,10 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::File(file_content) => {
-            has_html_body = file_content.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            has_html_body = file_content
+                .formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3227,7 +3483,10 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::Audio(audio) => {
-            has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            has_html_body = audio
+                .formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3246,7 +3505,10 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::Video(video) => {
-            has_html_body = video.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            has_html_body = video
+                .formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
             } else {
@@ -3265,7 +3527,10 @@ fn populate_message_view(
             }
         }
         MessageOrStickerType::VerificationRequest(verification) => {
-            has_html_body = verification.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+            has_html_body = verification
+                .formatted
+                .as_ref()
+                .is_some_and(|f| f.format == MessageFormat::Html);
             let template = live_id!(Message);
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
@@ -3302,10 +3567,8 @@ fn populate_message_view(
                 (item, true)
             } else {
                 let kind = other.as_str();
-                item.label(id!(content.message)).set_text(
-                    cx,
-                    &format!("[Unsupported ({kind})] {}", message.body()),
-                );
+                item.label(id!(content.message))
+                    .set_text(cx, &format!("[Unsupported ({kind})] {}", message.body()));
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -3316,8 +3579,13 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        item.reaction_list(id!(content.reaction_list))
-            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
+        item.reaction_list(id!(content.reaction_list)).set_list(
+            cx,
+            event_tl_item.reactions(),
+            room_id.to_owned(),
+            event_tl_item.identifier(),
+            item_id,
+        );
         populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
@@ -3342,41 +3610,52 @@ fn populate_message_view(
         // log!("\t --> populate_message_view(): DRAWING  profile draw for item_id: {item_id}");
         let username_label = item.label(id!(content.username));
 
-        if !is_server_notice { // the normal case
-            let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
-                item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
-                    cx,
-                    room_id,
-                    event_tl_item.sender(),
-                    Some(event_tl_item.sender_profile()),
-                    event_tl_item.event_id(),
-                )
-            );
+        if !is_server_notice {
+            // the normal case
+            let (username, profile_drawn) =
+                set_username_and_get_avatar_retval.unwrap_or_else(|| {
+                    item.avatar(id!(profile.avatar))
+                        .set_avatar_and_get_username(
+                            cx,
+                            room_id,
+                            event_tl_item.sender(),
+                            Some(event_tl_item.sender_profile()),
+                            event_tl_item.event_id(),
+                        )
+                });
             if is_notice {
-                username_label.apply_over(cx, live!(
-                    draw_text: {
-                        color: (MESSAGE_NOTICE_TEXT_COLOR),
-                    }
-                ));
+                username_label.apply_over(
+                    cx,
+                    live!(
+                        draw_text: {
+                            color: (MESSAGE_NOTICE_TEXT_COLOR),
+                        }
+                    ),
+                );
             }
             username_label.set_text(cx, &username);
             new_drawn_status.profile_drawn = profile_drawn;
-        }
-        else {
+        } else {
             // Server notices are drawn with a red color avatar background and username.
             let avatar = item.avatar(id!(profile.avatar));
             avatar.show_text(cx, None, "⚠");
-            avatar.apply_over(cx, live!(
-                text_view = {
-                    draw_bg: { background_color: (COLOR_DANGER_RED), }
-                }
-            ));
+            avatar.apply_over(
+                cx,
+                live!(
+                    text_view = {
+                        draw_bg: { background_color: (COLOR_DANGER_RED), }
+                    }
+                ),
+            );
             username_label.set_text(cx, "Server notice");
-            username_label.apply_over(cx, live!(
-                draw_text: {
-                    color: (COLOR_DANGER_RED),
-                }
-            ));
+            username_label.apply_over(
+                cx,
+                live!(
+                    draw_text: {
+                        color: (COLOR_DANGER_RED),
+                    }
+                ),
+            );
             new_drawn_status.profile_drawn = true;
         }
     }
@@ -3418,22 +3697,17 @@ fn populate_message_view(
     (item, new_drawn_status)
 }
 
-
 /// Returns `true` if the given message mentions the current user or is a room mention.
-fn does_message_mention_current_user(
-    message: &MessageOrSticker,
-) -> bool {
+fn does_message_mention_current_user(message: &MessageOrSticker) -> bool {
     let Some(current_user_id) = sliding_sync::current_user_id() else {
         return false;
     };
 
     match message {
         // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
-        MessageOrSticker::Message(msg) => {
-            msg.mentions().is_some_and(|mentions|
-                mentions.room || mentions.user_ids.contains(&current_user_id)
-            )
-        }
+        MessageOrSticker::Message(msg) => msg
+            .mentions()
+            .is_some_and(|mentions| mentions.room || mentions.user_ids.contains(&current_user_id)),
         MessageOrSticker::Sticker(_) => false, // Stickers can't mention users.
     }
 }
@@ -3446,15 +3720,13 @@ fn populate_text_message_content(
     formatted_body: Option<&FormattedBody>,
 ) {
     // The message was HTML-formatted rich text.
-    if let Some(fb) = formatted_body.as_ref()
+    if let Some(fb) = formatted_body
+        .as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
         message_content_widget.show_html(
             cx,
-            utils::linkify(
-                utils::trim_start_html_whitespace(&fb.body),
-                true,
-            )
+            utils::linkify(utils::trim_start_html_whitespace(&fb.body), true),
         );
     }
     // The message was non-HTML plaintext.
@@ -3478,10 +3750,12 @@ fn populate_image_message_content(
 ) -> bool {
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
-    let (mimetype, _width, _height) = image_info_source.as_ref()
-        .and_then(|(info, _)| info.as_ref()
-            .map(|info| (info.mimetype.as_deref(), info.width, info.height))
-        )
+    let (mimetype, _width, _height) = image_info_source
+        .as_ref()
+        .and_then(|(info, _)| {
+            info.as_ref()
+                .map(|info| (info.mimetype.as_deref(), info.width, info.height))
+        })
         .unwrap_or_default();
 
     // If we have a known mimetype and it's not a static image,
@@ -3500,75 +3774,92 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
-            MediaCacheEntry::Loaded(data) => {
-                let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &data)
-                        .map(|()| img.size_in_pixels(cx).unwrap_or_default())
-                });
-                if let Err(e) = show_image_result {
-                    let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                    error!("{err_str}");
-                    text_or_image_ref.show_text(cx, &err_str);
-                }
+    let mut fetch_and_show_image_uri =
+        |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
+            match media_cache
+                .try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into()))
+            {
+                MediaCacheEntry::Loaded(data) => {
+                    let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                        utils::load_png_or_jpg(&img, cx, &data)
+                            .map(|()| img.size_in_pixels(cx).unwrap_or_default())
+                    });
+                    if let Err(e) = show_image_result {
+                        let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                        error!("{err_str}");
+                        text_or_image_ref.show_text(cx, &err_str);
+                    }
 
-                // We're done drawing the image, so mark it as fully drawn.
-                fully_drawn = true;
-            }
-            MediaCacheEntry::Requested => {
-                if let Some(image_info) = image_info {
-                    if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
-                        let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                            let (Ok(width), Ok(height)) = (width.try_into(), height.try_into()) else { return Err(image_cache::ImageError::EmptyData)};
-                            if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
-                                ImageBuffer::new(&data, width as usize, height as usize).map(|img_buff| {
-                                    let texture = Some(img_buff.into_new_texture(cx));
-                                    img.set_texture(cx, texture);
-                                    img.size_in_pixels(cx).unwrap_or_default()
-                                })
-                            } else {
-                                Err(image_cache::ImageError::EmptyData)
+                    // We're done drawing the image, so mark it as fully drawn.
+                    fully_drawn = true;
+                }
+                MediaCacheEntry::Requested => {
+                    if let Some(image_info) = image_info {
+                        if let (Some(ref blurhash), Some(width), Some(height)) = (
+                            image_info.blurhash.clone(),
+                            image_info.width,
+                            image_info.height,
+                        ) {
+                            let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
+                                let (Ok(width), Ok(height)) = (width.try_into(), height.try_into())
+                                else {
+                                    return Err(image_cache::ImageError::EmptyData);
+                                };
+                                if let Ok(data) = blurhash::decode(blurhash, width, height, 1.0) {
+                                    ImageBuffer::new(&data, width as usize, height as usize).map(
+                                        |img_buff| {
+                                            let texture = Some(img_buff.into_new_texture(cx));
+                                            img.set_texture(cx, texture);
+                                            img.size_in_pixels(cx).unwrap_or_default()
+                                        },
+                                    )
+                                } else {
+                                    Err(image_cache::ImageError::EmptyData)
+                                }
+                            });
+                            if let Err(e) = show_image_result {
+                                let err_str = format!("{body}\n\nFailed to display image: {e:?}");
+                                error!("{err_str}");
+                                text_or_image_ref.show_text(cx, &err_str);
                             }
-                        });
-                        if let Err(e) = show_image_result {
-                            let err_str = format!("{body}\n\nFailed to display image: {e:?}");
-                            error!("{err_str}");
-                            text_or_image_ref.show_text(cx, &err_str);
                         }
                     }
+                    fully_drawn = false;
                 }
-                fully_drawn = false;
+                MediaCacheEntry::Failed => {
+                    text_or_image_ref.show_text(
+                        cx,
+                        format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri),
+                    );
+                    // For now, we consider this as being "complete". In the future, we could support
+                    // retrying to fetch thumbnail of the image on a user click/tap.
+                    fully_drawn = true;
+                }
             }
-            MediaCacheEntry::Failed => {
-                text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
-                // For now, we consider this as being "complete". In the future, we could support
-                // retrying to fetch thumbnail of the image on a user click/tap.
-                fully_drawn = true;
-            }
-        }
-    };
+        };
 
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
-        match media_source {
-            MediaSource::Encrypted(encrypted) => {
-                // We consider this as "fully drawn" since we don't yet support encryption.
-                text_or_image_ref.show_text(
-                    cx,
-                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
-                );
-            },
-            MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri, image_info)
+    let mut fetch_and_show_media_source =
+        |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
+            match media_source {
+                MediaSource::Encrypted(encrypted) => {
+                    // We consider this as "fully drawn" since we don't yet support encryption.
+                    text_or_image_ref.show_text(
+                        cx,
+                        format!(
+                            "{body}\n\n[TODO] fetch encrypted image at {:?}",
+                            encrypted.url
+                        ),
+                    );
+                }
+                MediaSource::Plain(mxc_uri) => fetch_and_show_image_uri(cx, mxc_uri, image_info),
             }
-        }
-    };
+        };
 
     match image_info_source {
         Some((image_info, original_source)) => {
             // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info.clone()
+            let media_source = image_info
+                .clone()
                 .and_then(|image_info| image_info.thumbnail_source)
                 .unwrap_or(original_source);
             fetch_and_show_media_source(cx, media_source, image_info.as_ref());
@@ -3581,7 +3872,6 @@ fn populate_image_message_content(
 
     fully_drawn
 }
-
 
 /// Draws a file message's content into the given `message_content_widget`.
 ///
@@ -3599,7 +3889,8 @@ fn populate_file_message_content(
         .and_then(|info| info.size)
         .map(|bytes| format!("  ({})", ByteSize::b(bytes.into())))
         .unwrap_or_default();
-    let caption = file_content.formatted_caption()
+    let caption = file_content
+        .formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| file_content.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
@@ -3626,20 +3917,23 @@ fn populate_audio_message_content(
     let (duration, mime, size) = audio
         .info
         .as_ref()
-        .map(|info| (
-            info.duration
-                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
-                .unwrap_or_default(),
-            info.mimetype
-                .as_ref()
-                .map(|m| format!("  {m},"))
-                .unwrap_or_default(),
-            info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
-                .unwrap_or_default(),
-        ))
+        .map(|info| {
+            (
+                info.duration
+                    .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                    .unwrap_or_default(),
+                info.mimetype
+                    .as_ref()
+                    .map(|m| format!("  {m},"))
+                    .unwrap_or_default(),
+                info.size
+                    .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                    .unwrap_or_default(),
+            )
+        })
         .unwrap_or_default();
-    let caption = audio.formatted_caption()
+    let caption = audio
+        .formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
@@ -3652,7 +3946,6 @@ fn populate_audio_message_content(
     );
     true
 }
-
 
 /// Draws a video message's content into the given `message_content_widget`.
 ///
@@ -3667,23 +3960,26 @@ fn populate_video_message_content(
     let (duration, mime, size, dimensions) = video
         .info
         .as_ref()
-        .map(|info| (
-            info.duration
-                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
-                .unwrap_or_default(),
-            info.mimetype
-                .as_ref()
-                .map(|m| format!("  {m},"))
-                .unwrap_or_default(),
-            info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
-                .unwrap_or_default(),
-            info.width.and_then(|width|
-                info.height.map(|height| format!("  {width}x{height},"))
-            ).unwrap_or_default(),
-        ))
+        .map(|info| {
+            (
+                info.duration
+                    .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                    .unwrap_or_default(),
+                info.mimetype
+                    .as_ref()
+                    .map(|m| format!("  {m},"))
+                    .unwrap_or_default(),
+                info.size
+                    .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                    .unwrap_or_default(),
+                info.width
+                    .and_then(|width| info.height.map(|height| format!("  {width}x{height},")))
+                    .unwrap_or_default(),
+            )
+        })
         .unwrap_or_default();
-    let caption = video.formatted_caption()
+    let caption = video
+        .formatted_caption()
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| video.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
@@ -3697,8 +3993,6 @@ fn populate_video_message_content(
     true
 }
 
-
-
 /// Draws the given location message's content into the `message_content_widget`.
 ///
 /// Returns whether the location message content was fully drawn.
@@ -3707,19 +4001,23 @@ fn populate_location_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     location: &LocationMessageEventContent,
 ) -> bool {
-    let coords = location.geo_uri
-        .get(GEO_URI_SCHEME.len() ..)
-        .and_then(|s| {
-            let mut iter = s.split(',');
-            if let (Some(lat), Some(long)) = (iter.next(), iter.next()) {
-                Some((lat, long))
-            } else {
-                None
-            }
-        });
+    let coords = location.geo_uri.get(GEO_URI_SCHEME.len()..).and_then(|s| {
+        let mut iter = s.split(',');
+        if let (Some(lat), Some(long)) = (iter.next(), iter.next()) {
+            Some((lat, long))
+        } else {
+            None
+        }
+    });
     if let Some((lat, long)) = coords {
-        let short_lat = lat.find('.').and_then(|dot| lat.get(..dot + 7)).unwrap_or(lat);
-        let short_long = long.find('.').and_then(|dot| long.get(..dot + 7)).unwrap_or(long);
+        let short_lat = lat
+            .find('.')
+            .and_then(|dot| lat.get(..dot + 7))
+            .unwrap_or(lat);
+        let short_long = long
+            .find('.')
+            .and_then(|dot| long.get(..dot + 7))
+            .unwrap_or(long);
         let html_body = format!(
             "Location: <a href=\"{}\">{short_lat},{short_long}</a><br>\
             <p><a href=\"https://www.openstreetmap.org/?mlat={lat}&amp;mlon={long}#map=15/{lat}/{long}\">Open in OpenStreetMap</a></p>\
@@ -3729,10 +4027,8 @@ fn populate_location_message_content(
         );
         message_content_widget.show_html(cx, html_body);
     } else {
-        message_content_widget.show_html(
-            cx,
-            format!("<i>[Location invalid]</i> {}", location.body)
-        );
+        message_content_widget
+            .show_html(cx, format!("<i>[Location invalid]</i> {}", location.body));
     }
 
     // Currently we do not fetch location thumbnail previews, so we consider this as fully drawn.
@@ -3765,16 +4061,15 @@ fn draw_replied_to_message(
 
         match &in_reply_to_details.event {
             TimelineDetails::Ready(replied_to_event) => {
-                let (in_reply_to_username, is_avatar_fully_drawn) =
-                    replied_to_message_view
-                        .avatar(id!(replied_to_message_content.reply_preview_avatar))
-                        .set_avatar_and_get_username(
-                            cx,
-                            room_id,
-                            replied_to_event.sender(),
-                            Some(replied_to_event.sender_profile()),
-                            Some(in_reply_to_details.event_id.as_ref()),
-                        );
+                let (in_reply_to_username, is_avatar_fully_drawn) = replied_to_message_view
+                    .avatar(id!(replied_to_message_content.reply_preview_avatar))
+                    .set_avatar_and_get_username(
+                        cx,
+                        room_id,
+                        replied_to_event.sender(),
+                        Some(replied_to_event.sender_profile()),
+                        Some(in_reply_to_details.event_id.as_ref()),
+                    );
 
                 fully_drawn = is_avatar_fully_drawn;
 
@@ -3844,18 +4139,21 @@ fn populate_preview_of_timeline_item(
 ) {
     if let TimelineItemContent::Message(m) = timeline_item_content {
         match m.msgtype() {
-            MessageType::Text(TextMessageEventContent { body, formatted, .. })
-            | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
+            MessageType::Text(TextMessageEventContent {
+                body, formatted, ..
+            })
+            | MessageType::Notice(NoticeMessageEventContent {
+                body, formatted, ..
+            }) => {
                 return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
             }
-            _ => { } // fall through to the general case for all timeline items below.
+            _ => {} // fall through to the general case for all timeline items below.
         }
     }
     let html = text_preview_of_timeline_item(timeline_item_content, sender_username)
         .format_with(sender_username);
     widget_out.show_html(cx, html);
 }
-
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
@@ -4081,9 +4379,12 @@ fn get_profile_display_name(event_tl_item: &EventTimelineItem) -> Option<String>
 /// A simple deref wrapper around the `LocationPreview` widget that enables us to handle actions on it.
 #[derive(Live, LiveHook, Widget)]
 struct LocationPreview {
-    #[deref] view: View,
-    #[rust] coords: Option<Result<Coordinates, robius_location::Error>>,
-    #[rust] timestamp: Option<SystemTime>,
+    #[deref]
+    view: View,
+    #[rust]
+    coords: Option<Result<Coordinates, robius_location::Error>>,
+    #[rust]
+    timestamp: Option<SystemTime>,
 }
 impl Widget for LocationPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
@@ -4100,10 +4401,11 @@ impl Widget for LocationPreview {
                     Some(LocationAction::Error(e)) => {
                         self.coords = Some(Err(*e));
                         self.timestamp = None;
-                        self.button(id!(send_location_button)).set_enabled(cx, false);
+                        self.button(id!(send_location_button))
+                            .set_enabled(cx, false);
                         needs_redraw = true;
                     }
-                    _ => { }
+                    _ => {}
                 }
             }
 
@@ -4130,7 +4432,7 @@ impl Widget for LocationPreview {
                 // if let Some(st) = self.timestamp {
                 //     format!("Current location: {:.6},{:.6}\n   Timestamp: {:?}", c.latitude, c.longitude, st)
                 // } else {
-                    format!("Current location: {:.6},{:.6}", c.latitude, c.longitude)
+                format!("Current location: {:.6},{:.6}", c.latitude, c.longitude)
                 // }
             }
             Some(Err(e)) => format!("Error getting location: {e:?}"),
@@ -4140,7 +4442,6 @@ impl Widget for LocationPreview {
         self.view.draw_walk(cx, scope, walk)
     }
 }
-
 
 impl LocationPreview {
     fn show(&mut self) {
@@ -4184,7 +4485,6 @@ impl LocationPreviewRef {
     }
 }
 
-
 /// Actions related to a specific message within a room timeline.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum MessageAction {
@@ -4223,7 +4523,6 @@ pub enum MessageAction {
 
     // /// The user clicked the "report" button on a message.
     // Report(MessageDetails),
-
     /// The message at the given item index in the timeline should be highlighted.
     HighlightMessage(usize),
     /// The user requested that we show a context menu with actions
@@ -4255,15 +4554,20 @@ enum LongPressState {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
-    #[deref] view: View,
-    #[animator] animator: Animator,
+    #[deref]
+    view: View,
+    #[animator]
+    animator: Animator,
 
     /// A timer used to detect long presses on the message body.
-    #[rust] long_press_timer: Timer,
+    #[rust]
+    long_press_timer: Timer,
     /// The current status of the long-press gesture on the message body.
-    #[rust] long_press_state: LongPressState,
+    #[rust]
+    long_press_state: LongPressState,
 
-    #[rust] details: Option<MessageDetails>,
+    #[rust]
+    details: Option<MessageDetails>,
 }
 
 impl Widget for Message {
@@ -4278,7 +4582,9 @@ impl Widget for Message {
             self.animator_play(cx, id!(highlight.off));
         }
 
-        let Some(details) = self.details.clone() else { return };
+        let Some(details) = self.details.clone() else {
+            return;
+        };
 
         /// 500ms long press is default on Android/iOS
         const LONG_PRESS_DURATION: f64 = 0.500;
@@ -4296,7 +4602,7 @@ impl Widget for Message {
                     MessageAction::OpenMessageContextMenu {
                         details: details.clone(),
                         abs_pos: *abs_pos,
-                    }
+                    },
                 );
                 cx.stop_timer(self.long_press_timer);
                 self.long_press_state = LongPressState::None;
@@ -4310,9 +4616,7 @@ impl Widget for Message {
         let mark_as_handled_fn = |hit: &Hit| match hit {
             // We must ensure that this Message's child widgets *do* receive `FingerDown` hits,
             // because future `FingerUp` hits won't work if a prior `FingerDown` hit didn't occur.
-            Hit::FingerDown(_fd) => {
-                false
-            }
+            Hit::FingerDown(_fd) => false,
             // a right-click event
             Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
                 // Mark this hit as handled, such that a right-click event
@@ -4328,16 +4632,14 @@ impl Widget for Message {
             }
             // Finger movements should always be propagated to the child widget view
             // such that hover events always work.
-            Hit::FingerMove(_) => {
-                false
-            }
+            Hit::FingerMove(_) => false,
             _other => {
                 // Don't mark this hit as handled, such that this event will
                 // propagate to the child widget view.
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,
@@ -4367,7 +4669,7 @@ impl Widget for Message {
                         MessageAction::OpenMessageContextMenu {
                             details: details.clone(),
                             abs_pos: fe.abs,
-                        }
+                        },
                     );
                 }
                 // If the hit occurred on the replied-to message preview, jump to it.
@@ -4375,7 +4677,13 @@ impl Widget for Message {
                 // TODO: move this to the event handler for any reply preview content,
                 //       since we also want this jump-to-reply behavior for the reply preview
                 //       that appears above the message input box when you click the reply button.
-                if fe.is_primary_hit() && self.view(id!(replied_to_message)).area().rect(cx).contains(fe.abs) {
+                if fe.is_primary_hit()
+                    && self
+                        .view(id!(replied_to_message))
+                        .area()
+                        .rect(cx)
+                        .contains(fe.abs)
+                {
                     cx.widget_action(
                         details.room_screen_widget_uid,
                         &scope.path,
@@ -4396,7 +4704,7 @@ impl Widget for Message {
                 self.animator_play(cx, id!(hover.off));
                 // TODO: here, hide the "action bar" buttons upon hover-out
             }
-            _ => { }
+            _ => {}
         }
 
         if let Event::Actions(actions) = event {
@@ -4418,12 +4726,13 @@ impl Widget for Message {
         let mentions_user = self.details.as_ref().is_some_and(|d| d.mentions_user);
         if mentions_user {
             self.view.apply_over(
-                cx, live!(
+                cx,
+                live!(
                     draw_bg: {
                         color: (vec4(1.0, 1.0, 0.82, 1.0))
                         mentions_bar_color: #ffd54f
                     }
-                )
+                ),
             )
         }
 
@@ -4439,7 +4748,9 @@ impl Message {
 
 impl MessageRef {
     fn set_data(&self, details: MessageDetails) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_data(details);
     }
 }

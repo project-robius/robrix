@@ -1,20 +1,20 @@
 use makepad_widgets::Cx;
 
 pub mod editing_pane;
+pub mod event_reaction_list;
 pub mod home_screen;
-pub mod light_themed_dock;  
+pub mod light_themed_dock;
 pub mod loading_pane;
 pub mod main_desktop_ui;
 pub mod main_mobile_ui;
+pub mod new_message_context_menu;
 pub mod room_preview;
-pub mod room_screen;
 pub mod room_read_receipt;
+pub mod room_screen;
 pub mod rooms_list;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
 pub mod welcome_screen;
-pub mod event_reaction_list;
-pub mod new_message_context_menu;
 
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
