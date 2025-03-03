@@ -28,12 +28,12 @@ live_design! {
         }
 
         v = <View> {
-            height: Fit
+            height: 35,
             flow: Right
             spacing: 20,
 
             button = <Button> {
-                width: 40, height: 40,
+                width: 35, height: Fill,
                 draw_bg: {
                     // Define a color here
                     instance playing: 0.
@@ -56,27 +56,22 @@ live_design! {
                     }
                 }
             }
-
-            stop_button = <Button> {
-                width: 40, height: 40,
-                draw_bg: {
-                    instance color: #1F1F1F
-                    fn pixel(self) -> vec4 {
-                        return self.color;
+            <View> {
+                width: 35, height: Fill,
+                align: {x: 0.5, y: 0.5}
+                stop_button = <Button> {
+                    width: 32., height: 32.,
+                    draw_bg: {
+                        instance color: #1F1F1F
+                        fn pixel(self) -> vec4 {
+                            return self.color;
+                        }
                     }
                 }
             }
         }
     }
 }
-
-// #[derive(Clone)]
-// struct AudioPlayerData {
-//     audio_data: Option<Arc<[u8]>>,
-//     sink: Option<Arc<Sink>>,
-//     audio_existing: bool,
-//     inisialized: bool,
-// }
 #[derive(Debug, Clone, Copy, Default)]
 enum Status {
     #[default] Stopping,
@@ -117,28 +112,60 @@ impl MatchEvent for AudioPlayer {
         let button = self.view.button(id!(v.button));
         let stop_button = self.view.button(id!(v.stop_button));
 
+        let Some(sink) = self.sink.clone() else {log!("No sink, return"); return };
+        let Some(audio_data) = self.audio_data.clone() else {log!("No audio aata, return"); return };
+
         if button.clicked(actions) {
-            let Some(sink) = self.sink.clone() else {log!("No sink, return"); return };
-
-            submit_async_request(MatrixRequest::MediaHandle {
-                sender: None,
-                media_data: self.audio_data.clone(),
-                widget_uid: self.widget_uid(),
-                sink: Some(sink),
-                on_handle:|audio_data, _sender, sink|{
-                    let Some(sink) = sink else { return };
-                    init_or_play_sink(audio_data, sink)
-                }
-            });
-
-            let (playing, new_status) = match self.status {
+            let (media_handle_request, playing, new_status) = match self.status {
                 Status::Playing => {
-                    (0., Status::Pausing)
+                    (MatrixRequest::MediaHandle {
+                        sender: None,
+                        media_data: None,
+                        widget_uid: self.widget_uid(),
+                        sink: Some(sink.clone()),
+                        on_handle:|_audio_data, _sender, sink|{
+                            let sink = sink.unwrap();
+                            pause_sink(sink)
+                        }
+                    },
+                    0.,
+                    Status::Pausing
+                    )
                 },
-                Status::Pausing | Status::Stopping => {
-                    (1., Status::Playing)
+                Status::Pausing => {
+                    (MatrixRequest::MediaHandle {
+                        sender: None,
+                        media_data: None,
+                        widget_uid: self.widget_uid(),
+                        sink: Some(sink.clone()),
+                        on_handle:|_audio_data, _sender, sink|{
+                            let sink = sink.unwrap();
+                            play_sink(sink)
+                        }
+                    },
+                    1.,
+                    Status::Playing
+                    )
+                },
+                Status::Stopping => {
+                    (MatrixRequest::MediaHandle {
+                        sender: None,
+                        media_data: Some(audio_data.clone()),
+                        widget_uid: self.widget_uid(),
+                        sink: Some(sink.clone()),
+                        on_handle:|audio_data, _sender, sink|{
+                            let sink = sink.unwrap();
+                            let data = audio_data.unwrap();
+                            init_and_play_sink(data, sink)
+                        }
+                    },
+                    1.,
+                    Status::Playing
+                    )
                 }
             };
+
+            submit_async_request(media_handle_request);
 
             self.view.button(id!(v.button)).apply_over(cx, live! {
                 draw_bg: {
@@ -149,8 +176,14 @@ impl MatchEvent for AudioPlayer {
         }
 
         if stop_button.clicked(actions) {
-            let Some(sink) = self.sink.clone() else { return };
-            stop_sink(sink);
+            stop_sink(sink.clone());
+
+            self.view.button(id!(v.button)).apply_over(cx, live! {
+                draw_bg: {
+                    playing: 0.
+                }
+            });
+            self.status = Status::Stopping;
         }
     }
     // fn handle_audio_devices(&mut self, _cx: &mut Cx, _e:&AudioDevicesEvent) {
@@ -194,14 +227,14 @@ pub fn pause_sink(sink: Arc<Sink>) {
     sink.as_ref().pause();
 }
 
-pub fn init_or_play_sink(audio_data: Option<Arc<[u8]>>, sink: Arc<Sink>) {
-    if let Some(audio_data) = audio_data {
-        sink.as_ref().stop();
-        let cursor = Cursor::new(audio_data);
-        let decoder = Decoder::new(cursor).unwrap();
-        sink.as_ref().append(decoder);
-        sink.as_ref().play();
-    } else {
-        sink.as_ref().play();
-    }
+pub fn play_sink(sink: Arc<Sink>) {
+    sink.as_ref().play();
+}
+
+pub fn init_and_play_sink(audio_data: Arc<[u8]>, sink: Arc<Sink>) {
+    sink.as_ref().stop();
+    let cursor = Cursor::new(audio_data);
+    let decoder = Decoder::new(cursor).unwrap();
+    sink.as_ref().append(decoder);
+    sink.as_ref().play();
 }
