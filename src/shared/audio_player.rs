@@ -32,36 +32,26 @@ live_design! {
             flow: Right
             spacing: 20,
 
-            play_button = <Button> {
+            button = <Button> {
                 width: 40, height: 40,
                 draw_bg: {
+                    // Define a color here
+                    instance playing: 0.
                     instance color: #1F1F1F
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-
-                        sdf.line_to(self.rect_size.x, self.rect_size.y / 2.0);
-                        sdf.line_to(0., self.rect_size.y);
-                        sdf.close_path();
-                        sdf.fill(self.color);
-
-                        return sdf.result
-                    }
-                }
-            }
-
-            pause_button = <Button> {
-                width: 40, height: 40,
-                draw_bg: {
-                    instance color: #1F1F1F
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-
-                        let length = self.rect_size.x / 3.0;
-                        let height = self.rect_size.y;
-                        sdf.rect(0.0, 0.0, length, height);
-                        sdf.rect(length * 2.0, 0.0, length, height);
-                        sdf.fill(self.color);
-
+                        if self.playing < 0.1 {
+                            sdf.line_to(self.rect_size.x, self.rect_size.y / 2.0);
+                            sdf.line_to(0., self.rect_size.y);
+                            sdf.close_path();
+                            sdf.fill(self.color);
+                        } else {
+                            let length = self.rect_size.x / 3.0;
+                            let height = self.rect_size.y;
+                            sdf.rect(0.0, 0.0, length, height);
+                            sdf.rect(length * 2.0, 0.0, length, height);
+                            sdf.fill(self.color);
+                        }
                         return sdf.result
                     }
                 }
@@ -70,20 +60,15 @@ live_design! {
             stop_button = <Button> {
                 width: 40, height: 40,
                 draw_bg: {
+                    instance color: #1F1F1F
                     fn pixel(self) -> vec4 {
-                        return vec4(0., 0., 0., 1.);
+                        return self.color;
                     }
                 }
             }
         }
     }
 }
-
-// #[derive(Debug, Clone, Copy, DefaultNone)]
-// pub enum AudioPlayerAction {
-//     BeforeDrop(WidgetUid, )
-//     None,
-// }
 
 // #[derive(Clone)]
 // struct AudioPlayerData {
@@ -92,21 +77,25 @@ live_design! {
 //     audio_existing: bool,
 //     inisialized: bool,
 // }
+#[derive(Debug, Clone, Copy, Default)]
+enum Status {
+    #[default] Stopping,
+    Pausing,
+    Playing,
+}
 
 #[derive(Live, Widget)]
 pub struct AudioPlayer {
     #[deref] view: View,
     #[rust] audio_data: Option<Arc<[u8]>>,
     #[rust] sink: Option<Arc<Sink>>,
-    #[rust(false)] audio_existing: bool,
-    #[rust(false)] inisialized: bool,
+    #[rust] status: Status
 }
 
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
         let _audio_data = self.audio_data.take();
         let _sink = self.sink.take();
-        let _audio_existing = self.audio_existing;
         let _inisialized = false;
     }
 }
@@ -114,16 +103,6 @@ impl Drop for AudioPlayer {
 
 impl Widget for AudioPlayer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.inisialized {
-            log!("Start Init");
-            let Ok((stream, stream_handle)) = OutputStream::try_default() else { return };
-            Box::leak(Box::new(stream));
-            let Ok(sink) = Sink::try_new(&stream_handle) else { return };
-            log!("Success Init");
-            self.sink = Some(Arc::new(sink));
-            self.inisialized = true
-        }
-
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
@@ -134,69 +113,61 @@ impl Widget for AudioPlayer {
 }
 
 impl MatchEvent for AudioPlayer {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
-        let button_set = (id!(play_button), id!(pause_button), id!(stop_button));
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
+        let button = self.view.button(id!(v.button));
+        let stop_button = self.view.button(id!(v.stop_button));
 
-        let (play_button, pause_button, stop_button) =
-            (self.view.button(button_set.0), self.view.button(button_set.1),self.view.button(button_set.2));
+        if button.clicked(actions) {
+            let Some(sink) = self.sink.clone() else {log!("No sink, return"); return };
 
-
-        if play_button.clicked(actions) {
-            let audio_data = self.audio_data.clone();
-
-            if !self.audio_existing {
-                submit_async_request(MatrixRequest::MediaHandle {
-                    sender: None,
-                    media_data: audio_data,
-                    widget_uid: self.widget_uid(),
-                    sink: self.sink.clone(),
-                    on_handle:|audio_data, _sender, sink|{
-                        let Some(sink) = sink else { return };
-                        init_and_play_sink(audio_data, sink)
-                    }
-                });
-                self.audio_existing = true
-            } else {
-                submit_async_request(MatrixRequest::MediaHandle {
-                    sender: None,
-                    media_data: audio_data,
-                    widget_uid: self.widget_uid(),
-                    sink: self.sink.clone(),
-                    on_handle:|_audio_data, _sender, sink|{
-                        let Some(sink) = sink.clone() else { return };
-                        play_sink(sink)
-                    }
-                });
-            }
-        }
-
-        if pause_button.clicked(actions) {
             submit_async_request(MatrixRequest::MediaHandle {
                 sender: None,
-                media_data: None,
+                media_data: self.audio_data.clone(),
                 widget_uid: self.widget_uid(),
-                sink: self.sink.clone(),
-                on_handle:|_audio_data, _sender, sink|{
-                    let Some(sink) = sink.clone() else { return };
-                    pause_sink(sink)
+                sink: Some(sink),
+                on_handle:|audio_data, _sender, sink|{
+                    let Some(sink) = sink else { return };
+                    init_or_play_sink(audio_data, sink)
                 }
             });
+
+            let (playing, new_status) = match self.status {
+                Status::Playing => {
+                    (0., Status::Pausing)
+                },
+                Status::Pausing | Status::Stopping => {
+                    (1., Status::Playing)
+                }
+            };
+
+            self.view.button(id!(v.button)).apply_over(cx, live! {
+                draw_bg: {
+                    playing: (playing)
+                }
+            });
+            self.status = new_status;
         }
 
         if stop_button.clicked(actions) {
             let Some(sink) = self.sink.clone() else { return };
             stop_sink(sink);
-            self.audio_existing = false;
         }
     }
+    // fn handle_audio_devices(&mut self, _cx: &mut Cx, _e:&AudioDevicesEvent) {
+    //     log!("handle_audio_devices");
+    //     let Ok((stream, stream_handle)) = OutputStream::try_default() else { return };
+    //     Box::leak(Box::new(stream));
+    //     let Ok(sink) = Sink::try_new(&stream_handle) else { return };
+    //     self.sink = Some(Arc::new(sink));
+    //     self.status = Status::Pausing;
+    // }
 }
 impl LiveHook for AudioPlayer {
     fn after_new_from_doc(&mut self, _cx:&mut Cx) {
-        log!("handle_startup called");
+        log!("after_new_from_doc");
         let Ok((stream, stream_handle)) = OutputStream::try_default() else { return };
         Box::leak(Box::new(stream));
         let Ok(sink) = Sink::try_new(&stream_handle) else { return };
-        log!("Success Init");
         self.sink = Some(Arc::new(sink));
     }
 }
@@ -215,12 +186,6 @@ impl AudioPlayerRef {
     }
 }
 
-
-pub fn play_sink(sink: Arc<Sink>) {
-    sink.as_ref().play();
-    // sink.as_ref().sleep_until_end();
-}
-
 pub fn stop_sink(sink: Arc<Sink>) {
     sink.as_ref().stop();
 }
@@ -229,12 +194,14 @@ pub fn pause_sink(sink: Arc<Sink>) {
     sink.as_ref().pause();
 }
 
-pub fn init_and_play_sink(audio_data: Option<Arc<[u8]>>, sink: Arc<Sink>) {
-    let Some(audio_data) = audio_data else { return };
-    sink.as_ref().stop();
-    let cursor = Cursor::new(audio_data);
-    let decoder = Decoder::new(cursor).unwrap();
-    log!("Ready to play");
-    sink.as_ref().append(decoder);
-    sink.as_ref().play();
+pub fn init_or_play_sink(audio_data: Option<Arc<[u8]>>, sink: Arc<Sink>) {
+    if let Some(audio_data) = audio_data {
+        sink.as_ref().stop();
+        let cursor = Cursor::new(audio_data);
+        let decoder = Decoder::new(cursor).unwrap();
+        sink.as_ref().append(decoder);
+        sink.as_ref().play();
+    } else {
+        sink.as_ref().play();
+    }
 }
