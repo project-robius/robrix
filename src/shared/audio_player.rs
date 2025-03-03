@@ -32,11 +32,10 @@ live_design! {
             flow: Right
             spacing: 20,
 
-            play_button = <RobrixButton> {
+            play_button = <Button> {
                 width: 40, height: 40,
                 draw_bg: {
-                    // Define a color here
-                    color: #1F1F1F
+                    instance color: #1F1F1F
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
@@ -50,10 +49,10 @@ live_design! {
                 }
             }
 
-            pause_button = <RobrixButton> {
+            pause_button = <Button> {
                 width: 40, height: 40,
                 draw_bg: {
-                    color: #1F1F1F
+                    instance color: #1F1F1F
                     fn pixel(self) -> vec4 {
                         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
 
@@ -68,10 +67,12 @@ live_design! {
                 }
             }
 
-            stop_button = <RobrixButton> {
+            stop_button = <Button> {
                 width: 40, height: 40,
                 draw_bg: {
-                    color: #0
+                    fn pixel(self) -> vec4 {
+                        return vec4(0., 0., 0., 1.);
+                    }
                 }
             }
         }
