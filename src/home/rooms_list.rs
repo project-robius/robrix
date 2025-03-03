@@ -5,6 +5,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
 use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use matrix_sdk_ui::timeline::TimelineItemContent;
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -81,12 +82,15 @@ pub enum RoomsListUpdate {
     /// the max number of rooms that will ever be loaded.
     LoadedRooms{ max_rooms: Option<u32> },
     /// Add a new room to the list of all rooms.
-    AddRoom(RoomsListEntry),
+    AddRoomFront(RoomsListEntry),
+    /// Add a new room to the list of all rooms.
+    AddRoomBack(RoomsListEntry),
     /// Clear all rooms in the list of all rooms.
     ClearRooms,
     /// Update the latest event content and timestamp for the given room.
     UpdateLatestEvent {
         room_id: OwnedRoomId,
+        content: TimelineItemContent,
         timestamp: MilliSecondsSinceUnixEpoch,
         /// The Html-formatted text preview of the latest message.
         latest_message_text: String,
@@ -163,6 +167,8 @@ pub struct RoomsListEntry {
     pub tags: Option<Tags>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    /// The timestamp and Html text content of the latest display message in this room.
+    pub latest_display: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
@@ -407,6 +413,8 @@ pub struct RoomsList {
     /// The single set of all known rooms and their cached preview info.
     #[rust] all_rooms: HashMap<OwnedRoomId, RoomsListEntry>,
 
+    #[rust] all_rooms_sorted: Vec<OwnedRoomId>,
+
     /// The currently-active filter function for the list of rooms.
     ///
     /// Note: for performance reasons, this does not get automatically applied
@@ -461,15 +469,30 @@ impl Widget for RoomsList {
             while let Some(update) = PENDING_ROOM_UPDATES.pop() {
                 num_updates += 1;
                 match update {
-                    RoomsListUpdate::AddRoom(room) => {
+                    RoomsListUpdate::AddRoomBack(room) => {
                         let room_id = room.room_id.clone();
                         let should_display = (self.display_filter)(&room);
                         let _replaced = self.all_rooms.insert(room_id.clone(), room);
+                        self.all_rooms_sorted.push(room_id.clone());
                         if let Some(_old_room) = _replaced {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
                             if should_display {
                                 self.displayed_rooms.push(room_id);
+                            }
+                        }
+                        self.update_status_rooms_count();
+                    }
+                    RoomsListUpdate::AddRoomFront(room) => {
+                        let room_id = room.room_id.clone();
+                        let should_display = (self.display_filter)(&room);
+                        let _replaced = self.all_rooms.insert(room_id.clone(), room);
+                        self.all_rooms_sorted.insert(0, room_id.clone());
+                        if let Some(_old_room) = _replaced {
+                            error!("BUG: Added room {room_id} that already existed");
+                        } else {
+                            if should_display {
+                                self.displayed_rooms.insert(0,room_id);
                             }
                         }
                         self.update_status_rooms_count();
@@ -481,8 +504,14 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
-                    RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, latest_message_text } => {
+                    RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, content, latest_message_text } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            // Update the latest display message if this event should be displayed
+                            if let TimelineItemContent::Message(_) = content {
+                                room.latest_display =
+                                    Some((timestamp, latest_message_text.clone()));
+                            }
+
                             room.latest = Some((timestamp, latest_message_text));
                         } else {
                             error!("Error: couldn't find room {room_id} to update latest event");
@@ -533,6 +562,10 @@ impl Widget for RoomsList {
                             .unwrap_or_else(|| {
                                 error!("Error: couldn't find room {room_id} to remove room");
                             });
+                        let pos = self.all_rooms_sorted.iter().position(|r| r == &room_id);
+                        if let Some(pos) = pos{
+                            self.all_rooms_sorted.remove(pos);
+                        }
 
                         self.update_status_rooms_count();
 
@@ -546,6 +579,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::ClearRooms => {
                         self.all_rooms.clear();
+                        self.all_rooms_sorted.clear();
                         self.displayed_rooms.clear();
                         self.update_status_rooms_count();
                     }
@@ -697,16 +731,15 @@ impl WidgetMatchEvent for RoomsList {
         for action in actions {
             if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
                 let portal_list = self.view.portal_list(id!(list));
+               
                 if keywords.is_empty() {
                     // Reset the displayed rooms list to show all rooms.
-                    self.display_filter = RoomDisplayFilter::default();
-                    self.displayed_rooms = self.all_rooms.keys().cloned().collect();
+                    self.displayed_rooms = self.all_rooms_sorted.to_vec();
                     self.update_status_rooms_count();
                     portal_list.set_first_id_and_scroll(0, 0.0);
                     self.redraw(cx);
                     return;
                 }
-
                 let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
                     .set_keywords(keywords.clone())
                     .set_filter_criteria(RoomFilterCriteria::All)
