@@ -127,6 +127,7 @@ live_design! {
         }
 
         reply_preview_body = <HtmlOrPlaintext> {
+            margin: {left: 1.5}
             html_view = { html = {
                 font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
                     draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
@@ -764,40 +765,49 @@ live_design! {
                     width: Fill
                     height: Fit
                     flow: Down
-                    padding: 0.0
+                    padding: {left: 20, right: 20}
 
                     // Displays a "Replying to" label and a cancel button
                     // above the preview of the message being replied to.
                     <View> {
-                        padding: {right: 12.0, left: 12.0}
                         width: Fill
                         height: Fit
                         flow: Right
                         align: {y: 0.5}
+                        padding: {left: 10, right: 5, top: 10, bottom: 10}
 
                         <Label> {
+                            width: Fill,
                             draw_text: {
-                                text_style: <TEXT_SUB> {},
-                                color: (COLOR_META)
+                                text_style: <USERNAME_TEXT_STYLE> {},
+                                color: #222,
+                                wrap: Ellipsis,
                             }
                             text: "Replying to:"
                         }
 
-                        filler = <View> {width: Fill, height: Fill}
-
-                        // TODO: Fix style
-                        cancel_reply_button = <IconButton> {
+                        cancel_reply_button = <RobrixIconButton> {
                             width: Fit,
                             height: Fit,
+                            padding: 13,
+                            margin: {left: 5, right: 5},
 
+                            draw_bg: {
+                                border_color: (COLOR_DANGER_RED),
+                                color: #fff0f0 // light red
+                                radius: 5
+                            }
                             draw_icon: {
                                 svg_file: (ICON_CLOSE),
-                                fn get_color(self) -> vec4 {
-                                   return (COLOR_META)
-                                }
+                                color: (COLOR_DANGER_RED)
                             }
-                            icon_walk: {width: 12, height: 12}
+                            icon_walk: {width: 16, height: 16, margin: 0}
                         }
+                    }
+
+                    <LineH> {
+                        draw_bg: {color: (COLOR_DIVIDER_DARK)}
+                        margin: {bottom: 5.0}
                     }
 
                     reply_preview_content = <ReplyPreviewContent> { }
