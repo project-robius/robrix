@@ -551,7 +551,6 @@ async fn async_worker(
                 let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
-                    // 首先尝试从缓存中获取成员（如果requested）
                     if use_cache {
                         if let Ok(members) = room.members_no_sync(memberships).await {
                             log!("Got {} members from cache for room {}", members.len(), room_id);
@@ -562,7 +561,6 @@ async fn async_worker(
                         }
                     }
 
-                    // 然后从服务器获取（如果requested）
                     if from_server {
                         if let Ok(members) = room.members(memberships).await {
                             log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
