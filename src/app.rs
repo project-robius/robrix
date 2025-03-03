@@ -127,7 +127,7 @@ live_design! {
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
-                    
+
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -166,6 +166,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        crate::room::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -258,7 +259,7 @@ impl MatchEvent for App {
                 }
                 RoomsPanelAction::None => { }
             }
-            
+
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,

@@ -36,8 +36,6 @@ use crate::{
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
-use crate::room::room_members_cache::{enqueue_room_members_update, RoomMembersUpdate};
-
 #[derive(Parser, Debug, Default)]
 struct Cli {
     /// The user ID to login with.
@@ -236,8 +234,16 @@ pub enum MatrixRequest {
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
-    FetchRoomMembers {
+    SyncRoomMemberList {
         room_id: OwnedRoomId,
+    },
+    /// Request to get the actual list of members in a room.
+    /// This returns the list of members that can be displayed in the UI.
+    GetRoomMembers {
+        room_id: OwnedRoomId,
+        memberships: RoomMemberships,
+        use_cache: bool,
+        from_server: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -479,50 +485,59 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchRoomMembers { room_id } => {
-                // let (timeline, sender) = {
-                //     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                //     let Some(room_info) = all_room_info.get(&room_id) else {
-                //         log!("BUG: room info not found for fetch members request {room_id}");
-                //         continue;
-                //     };
-
-                //     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
-                // };
-
-                // // Spawn a new async task that will make the actual fetch request.
-                // let _fetch_task = Handle::current().spawn(async move {
-                //     log!("Sending fetch room members request for room {room_id}...");
-                //     timeline.fetch_members().await;
-                //     log!("Completed fetch room members request for room {room_id}.");
-                //     sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
-                //     SignalToUI::set_ui_signal();
-                // });
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
+
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
+                // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending sync room members request for room {room_id}...");
+                    timeline.fetch_members().await;
+                    log!("Completed sync room members request for room {room_id}.");
+                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::GetRoomMembers { room_id, memberships, use_cache, from_server } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for get room members request {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
-                    match room.members(RoomMemberships::JOIN).await {
-                        Ok(members) => {
-                            log!("Successfully fetched {} members for room {}", members.len(), room_id);
-                            // 将成员列表添加到缓存
-                            enqueue_room_members_update(RoomMembersUpdate {
-                                room_id: room_id.clone(),
-                                members,
-                            });
-                            // 通知 UI 线程更新已完成
-                            sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+
+                    // 首先尝试从缓存中获取成员（如果requested）
+                    if use_cache {
+                        if let Ok(members) = room.members_no_sync(memberships).await {
+                            log!("Got {} members from cache for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
                             SignalToUI::set_ui_signal();
                         }
-                        Err(e) => {
-                            error!("Failed to fetch members for room {}: {:?}", room_id, e);
+                    }
+
+                    // 然后从服务器获取（如果requested）
+                    if from_server {
+                        if let Ok(members) = room.members(memberships).await {
+                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
                         }
                     }
                 });
@@ -1011,7 +1026,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1310,7 +1325,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -2228,7 +2243,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.

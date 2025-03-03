@@ -1,8 +1,5 @@
 use makepad_widgets::*;
 
-// #eaecf0
-pub(crate) const KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR: Vec4 = vec4(0.92, 0.93, 0.94, 1.0);
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;

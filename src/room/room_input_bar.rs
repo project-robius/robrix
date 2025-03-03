@@ -1,4 +1,4 @@
-//! MentionInputBar component provides a message input interface with @mention capabilities
+//! RoomInputBar component provides a message input interface with @mention capabilities
 //! Supports user mention autocomplete, avatar display, and desktop/mobile layouts
 //!
 //! TODO for the future:
@@ -8,12 +8,12 @@
 //!   4. Optimize performance and add a loading animation for the user list.
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
-use crate::shared::styles::KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR;
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use crate::utils;
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::OwnedRoomId;
+use unicode_segmentation::UnicodeSegmentation;
 
 live_design! {
     use link::theme::*;
@@ -27,6 +27,7 @@ live_design! {
     ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
     ICO_SEND = dep("crate://self/resources/icon_send.svg")
 
+    // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
@@ -92,7 +93,7 @@ live_design! {
         }
     }
 
-    pub MentionInputBar = {{MentionInputBar}} {
+    pub RoomInputBar = {{RoomInputBar}} {
         width: Fill,
         height: Fit
         flow: Right
@@ -107,8 +108,6 @@ live_design! {
             text: "",
         }
 
-        user_list_item: <UserListItem> {}
-
         message_input = <CommandTextInput> {
             width: Fill,
             height: Fit
@@ -117,19 +116,14 @@ live_design! {
             trigger: "@"
             inline_search: true
 
+            keyboard_focus_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR),
+            pointer_hover_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
+
             popup = {
                 spacing: 0.0
                 padding: 0.0
-                clip_y: true
-                draw_bg: {
-                    color: #fff,
-                    radius: 8.0,
-                    border_width: 1.0,
-                    border_color: #e5e5e5
-                }
 
                 header_view = {
-                    visible: true,
                     header_label = {
                         text: "Users List"
                     }
@@ -218,22 +212,28 @@ live_design! {
             draw_icon: {svg_file: (ICO_SEND)},
             icon_walk: {width: 18.0, height: Fit},
         }
+
+        // Template for user list items in the mention popup
+        user_list_item: <UserListItem> {}
     }
 }
 
-/// Actions emitted by the MentionInputBar component
+/// Actions emitted by the RoomInputBar component
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
-pub enum MentionInputBarAction {
+pub enum RoomInputBarAction {
     /// Triggered when message content changes
     MessageChanged(String),
     /// Triggered when a user is specifically mentioned
     UserMentioned(String),
+    /// Default empty action
+    None,
 }
 
 /// Main component for message input with @mention support
 /// Provides a text input area with autocomplete popup for user mentions
 #[derive(Live, Widget)]
-pub struct MentionInputBar {
+pub struct RoomInputBar {
     /// Base view properties
     #[deref]
     view: View,
@@ -246,9 +246,6 @@ pub struct MentionInputBar {
     /// List of available room members for mentions
     #[rust]
     room_members: Vec<RoomMember>,
-    /// Current input text content
-    #[rust]
-    current_input: String,
     /// Position where the @ mention starts
     #[rust]
     mention_start_index: Option<usize>,
@@ -257,13 +254,9 @@ pub struct MentionInputBar {
     is_searching: bool,
 }
 
-impl Widget for MentionInputBar {
+impl Widget for RoomInputBar {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let mut ret = self.view.draw_walk(cx, scope, walk);
-
-        let text_input = self.command_text_input(id!(message_input)).text_input_ref();
-        let area = text_input.area();
-        cx.show_text_ime(area, DVec2::default());
 
         while !ret.is_done() {
             ret = self.view.draw_walk(cx, scope, walk);
@@ -299,7 +292,7 @@ impl Widget for MentionInputBar {
     }
 }
 
-impl MentionInputBar {
+impl RoomInputBar {
     // Handles user selection from mention popup
     // Manages text insertion and cursor positioning
     fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
@@ -324,7 +317,7 @@ impl MentionInputBar {
             cx.widget_action(
                 self.widget_uid(),
                 &scope.path,
-                MentionInputBarAction::UserMentioned(username),
+                RoomInputBarAction::UserMentioned(username),
             );
         }
 
@@ -340,7 +333,6 @@ impl MentionInputBar {
         scope: &mut Scope,
         text: String,
     ) {
-        self.current_input = text.clone();
         let cursor_pos = message_input
             .text_input_ref()
             .borrow()
@@ -350,18 +342,18 @@ impl MentionInputBar {
             self.mention_start_index = Some(trigger_pos);
             self.is_searching = true;
 
-            // 提取搜索文本
+            // Extract search text
             let search_text = text[trigger_pos + 1..cursor_pos].to_lowercase();
             self.update_user_list(cx, message_input, &search_text);
             message_input.view(id!(popup)).set_visible(cx, true);
-        } else {
+        } else if self.is_searching {
             self.close_mention_popup(cx);
         }
 
         cx.widget_action(
             self.widget_uid(),
             &scope.path,
-            MentionInputBarAction::MessageChanged(text),
+            RoomInputBarAction::MessageChanged(text),
         );
     }
 
@@ -400,20 +392,27 @@ impl MentionInputBar {
                 return;
             }
 
+            let header_view = message_input.view(id!(popup.header_view));
+
+            let header_height = if header_view.area().rect(cx).size.y > 0.0 {
+                header_view.area().rect(cx).size.y
+            } else {
+                // Fallback
+                let estimated_padding = 24.0;
+                let text_height = 16.0;
+                estimated_padding + text_height
+            };
+
+            // Get spacing between header and list
+            let estimated_spacing = 4.0;
+
             if member_count <= MAX_VISIBLE_ITEMS {
                 let single_item_height = if is_desktop { 32.0 } else { 64.0 };
-                let total_height = (member_count as f64 * single_item_height) + 16.0;
+                let total_height = (member_count as f64 * single_item_height) + header_height + estimated_spacing;
                 popup.apply_over(cx, live! { height: (total_height) });
             } else {
                 let max_height = if is_desktop { 400.0 } else { 480.0 };
                 popup.apply_over(cx, live! { height: (max_height) });
-            }
-
-            // FIXME:
-            // Limit the number of members displayed to avoid errors: "HarfBuzz guarantees monotonic cluster values"
-            const MAX_DISPLAY: usize = 200;
-            if matched_members.len() > MAX_DISPLAY {
-                matched_members.truncate(MAX_DISPLAY);
             }
 
             for (index, (display_name, member)) in matched_members.into_iter().enumerate() {
@@ -421,8 +420,9 @@ impl MentionInputBar {
 
                 item.label(id!(user_info.label)).set_text(cx, &display_name);
 
-                let safe_matrix_id = format!("@{}:matrix.org", member.user_id().localpart());
-                item.label(id!(matrix_url)).set_text(cx, &safe_matrix_id);
+                // Use the full user ID string instead of manually formatting
+                let user_id_str = member.user_id().as_str();
+                item.label(id!(matrix_url)).set_text(cx, user_id_str);
 
                 item.apply_over(
                     cx,
@@ -485,43 +485,82 @@ impl MentionInputBar {
     }
 
     // Detects valid mention trigger positions in text
-    // Handles various edge cases and validation rules
+    // Uses graphemes instead of chars for proper Unicode handling
     fn find_mention_trigger_position(&self, text: &str, cursor_pos: usize) -> Option<usize> {
         if cursor_pos == 0 {
             return None;
         }
 
-        if text.chars().nth(cursor_pos.saturating_sub(1)) == Some('@') {
-            return Some(cursor_pos - 1);
+        // Build grapheme boundary mapping
+        let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+        let mut grapheme_boundaries = Vec::with_capacity(text_graphemes.len() + 1);
+        let mut byte_pos = 0;
+        grapheme_boundaries.push(0); // String start position
+
+        for g in &text_graphemes {
+            byte_pos += g.len();
+            grapheme_boundaries.push(byte_pos);
         }
 
-        text[..cursor_pos].rfind('@').filter(|&idx| {
-            let after_trigger = &text[idx..cursor_pos];
-
-            if after_trigger.len() == 1 {
-                return true;
-            }
-
-            if after_trigger
-                .chars()
-                .nth(1).is_some_and(|c| c.is_whitespace())
-            {
-                return false;
-            }
-
-            let chars: Vec<char> = after_trigger.chars().collect();
-            for i in 0..chars.len().saturating_sub(1) {
-                if chars[i].is_whitespace() && chars[i + 1].is_whitespace() {
-                    return false;
+        // Find the grapheme index containing the cursor position
+        let mut grapheme_cursor_idx = grapheme_boundaries.len() - 1;
+        for (i, &boundary) in grapheme_boundaries.iter().enumerate() {
+            match boundary.cmp(&cursor_pos) {
+                std::cmp::Ordering::Greater => {
+                    grapheme_cursor_idx = i.saturating_sub(1);
+                    break;
                 }
+                std::cmp::Ordering::Equal => {
+                    grapheme_cursor_idx = i;
+                    break;
+                }
+                std::cmp::Ordering::Less => {}
             }
+        }
 
-            if after_trigger.contains('\n') {
-                return false;
+        // Check if cursor is immediately after @ symbol
+        if grapheme_cursor_idx > 0 && text_graphemes[grapheme_cursor_idx - 1] == "@" {
+            return Some(grapheme_boundaries[grapheme_cursor_idx - 1]);
+        }
+
+        // Find the last @ symbol before cursor
+        let mut last_at_pos = None;
+        for (i, &grapheme) in text_graphemes.iter().enumerate().take(grapheme_cursor_idx) {
+            if grapheme == "@" {
+                last_at_pos = Some(i);
             }
+        }
 
-            true
-        })
+        if let Some(idx) = last_at_pos {
+            // Validate @ mention format
+            if idx < grapheme_cursor_idx {
+                // Safely extract graphemes from @ to cursor position
+                let after_trigger_graphemes = &text_graphemes[idx+1..grapheme_cursor_idx];
+
+                // If @ is immediately followed by whitespace, it's not a valid mention
+                if !after_trigger_graphemes.is_empty() && after_trigger_graphemes[0].trim().is_empty() {
+                    return None;
+                }
+
+                // Check for consecutive whitespace
+                for i in 0..after_trigger_graphemes.len().saturating_sub(1) {
+                    if after_trigger_graphemes[i].trim().is_empty() && after_trigger_graphemes[i+1].trim().is_empty() {
+                        return None;
+                    }
+                }
+
+                // Check for newlines in mention text
+                let contains_newline = after_trigger_graphemes.iter().any(|g| g.contains('\n'));
+                if contains_newline {
+                    return None;
+                }
+
+                // All checks passed, this is a valid mention trigger
+                return Some(grapheme_boundaries[idx]);
+            }
+        }
+
+        None
     }
 
     // Cleanup helper for closing mention popup
@@ -551,17 +590,21 @@ impl MentionInputBar {
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
         let message_input = self.command_text_input(id!(message_input));
         message_input.text_input_ref().set_text(cx, text);
-        self.current_input = text.to_string();
         self.redraw(cx);
     }
 
-    /// Sets the Matrix room ID and initiates member list loading
+    /// Sets the Matrix room ID
     ///
     /// # Arguments
     /// * `room_id` - The Matrix room identifier
     pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
         self.room_id = Some(room_id.clone());
-        submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+        submit_async_request(MatrixRequest::GetRoomMembers {
+            room_id,
+            memberships: matrix_sdk::RoomMemberships::JOIN,
+            use_cache: true,
+            from_server: true
+        });
     }
 
     /// Updates the list of available room members for mentions
@@ -594,25 +637,14 @@ impl MentionInputBar {
     }
 }
 
-impl LiveHook for MentionInputBar {
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+impl LiveHook for RoomInputBar {
+    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         let message_input = self.command_text_input(id!(message_input));
-
-        message_input.apply_over(
-            cx,
-            live! {
-                trigger: "@",
-                inline_search: true,
-                keyboard_focus_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR),
-                pointer_hover_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
-            },
-        );
-
         message_input.request_text_input_focus();
     }
 }
 
-impl MentionInputBarRef {
+impl RoomInputBarRef {
     pub fn set_text(&self, cx: &mut Cx, text: &str) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_text(cx, text);

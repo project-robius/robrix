@@ -6,12 +6,14 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
+
 use matrix_sdk::{
+    room::RoomMember,
     ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-            }, ImageInfo, MediaSource
+            }, ImageInfo, MediaSource,
         }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
     }, OwnedServerName
 };
@@ -34,8 +36,8 @@ use rangemap::RangeSet;
 
 use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
-use crate::shared::mention_input_bar::MentionInputBarWidgetExt;
-use crate::room::room_members_cache::{get_room_members, process_room_members_updates};
+use crate::room::room_input_bar::RoomInputBarWidgetExt;
+
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -62,7 +64,7 @@ live_design! {
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
-    use crate::shared::mention_input_bar::*;
+    use crate::room::room_input_bar::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -808,8 +810,8 @@ live_design! {
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
                 // Below that, display a view that holds the message input bar and send button.
-                input_bar = <MentionInputBar> {}
-                
+                input_bar = <RoomInputBar> {}
+
                 can_not_send_message_notice = <View> {
                     visible: false
                     show_bg: true
@@ -964,7 +966,7 @@ impl Widget for RoomScreen {
                     );
                 }
                 let avatar_row_ref = wr.avatar_row(id!(avatar_row));
-                if let RoomScreenTooltipActions::HoverInReadReceipt { 
+                if let RoomScreenTooltipActions::HoverInReadReceipt {
                     widget_rect,
                     bg_color,
                     read_receipts
@@ -987,7 +989,7 @@ impl Widget for RoomScreen {
                         self.widget_uid(),
                         &scope.path,
                         TooltipAction::HoverOut
-                    );                
+                    );
                 }
             }
 
@@ -1081,7 +1083,7 @@ impl Widget for RoomScreen {
             }
 
             // Handle the send message button being clicked and enter key being pressed.
-            let input_bar = self.mention_input_bar(id!(input_bar));
+            let input_bar = self.room_input_bar(id!(input_bar));
             let message_input = input_bar.command_text_input(id!(message_input));
 
             let mut should_send = false;
@@ -1587,15 +1589,14 @@ impl RoomScreen {
                     // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
-                    process_room_members_updates(cx);
-
-                    if let Some(members) = get_room_members(cx, tl.room_id.clone(), false) {
-                        log!("Retrieved {} members from cache for room {}",
-                                members.len(), tl.room_id);
-                        let input_bar = self.view.mention_input_bar(id!(input_bar));
-                        input_bar.set_room_members(members);
-                    }
                 }
+                TimelineUpdate::RoomMembersListFetched { members } => {
+                    let input_bar = self.view.room_input_bar(id!(input_bar));
+                    log!("Updated room members list for input bar, {} members", members.len());
+                    input_bar.set_room_members(members);
+
+                }
+
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
@@ -2208,7 +2209,7 @@ impl RoomScreen {
             // Even though we specify that room member profiles should be lazy-loaded,
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
-            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2320,7 +2321,7 @@ impl RoomScreen {
         self.room_id = Some(room_id.clone());
 
         // Clear any mention input state
-        let input_bar = self.view.mention_input_bar(id!(input_bar));
+        let input_bar = self.view.room_input_bar(id!(input_bar));
         input_bar.set_room_id(room_id);
 
         self.show_timeline(cx);
@@ -2523,6 +2524,9 @@ pub enum TimelineUpdate {
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
     RoomMembersFetched,
+    RoomMembersListFetched {
+        members: Vec<RoomMember>
+    },
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
@@ -4225,7 +4229,7 @@ impl Widget for Message {
                 false
             }
         };
-        
+
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,
