@@ -23,7 +23,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -820,7 +820,7 @@ live_design! {
                     width: Fill, height: Fit,
                     flow: Overlay,
 
-                  
+
                     // Below that, display a view that holds the message input bar and send button.
                     input_bar = <RoomInputBar> {}
 
@@ -1061,7 +1061,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.escape(actions) 
+                || message_input.escape(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -1104,7 +1104,7 @@ impl Widget for RoomScreen {
 
             // Handle the send message button being clicked and enter key being pressed.
             let input_bar = self.room_input_bar(id!(input_bar));
-            let message_input = input_bar.command_text_input(id!(message_input));
+            let message_input = input_bar.text_input(id!(message_input));
 
             let send_message_shortcut_pressed = message_input
                 .key_down_unhandled(actions)
@@ -1131,10 +1131,11 @@ impl Widget for RoomScreen {
                         ),
                         // TODO: support attaching mentions, etc.
                     });
+                }
             }
             let mut should_send = false;
 
-            if let Some(ke) = message_input.text_input_ref().key_down_unhandled(actions) {
+            if let Some(ke) = message_input.key_down_unhandled(actions) {
                 if ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary() {
                     should_send = true;
                 }
@@ -1167,7 +1168,7 @@ impl Widget for RoomScreen {
                 }
             }
 
-            if let Some(new_text) = message_input.text_input_ref().changed(actions) {
+            if let Some(new_text) = message_input.changed(actions) {
                 submit_async_request(MatrixRequest::SendTypingNotice {
                     room_id: self.room_id.clone().unwrap(),
                     typing: !new_text.is_empty(),
@@ -2403,7 +2404,7 @@ impl RoomScreen {
         let saved_message_input_state = std::mem::take(message_input_state);
         self.text_input(id!(message_input))
             .restore_state(saved_message_input_state);
-        
+
         // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
