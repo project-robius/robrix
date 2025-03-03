@@ -25,8 +25,8 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt, search::SearchUpdate
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels, SEARCH_RESULTS_RECEIVER}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -946,7 +946,12 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// The current search state for the room.
+    #[rust] search_state: Option<SearchUiState>,
+    /// The last search term used in the room.
+    #[rust] last_search_term: String,
 }
+
 impl Drop for RoomScreen {
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
@@ -955,6 +960,66 @@ impl Drop for RoomScreen {
         // RoomScreen will be dropped whenever its widget instance is destroyed, e.g.,
         // when a Tab is closed or the app is resized to a different AdaptiveView layout.
         self.hide_timeline();
+    }
+}
+
+impl RoomScreen {
+    
+    fn start_message_search(&mut self, room_id: OwnedRoomId, search_term: String) {
+        let (update_sender, update_receiver) = crossbeam_channel::unbounded();
+        let search_state = SearchUiState {
+            room_id: room_id.clone(),
+            fully_paginated: false,
+            items: Vector::new(),
+            next_batch: None,
+            update_receiver,
+        };
+        self.search_state = Some(search_state);
+        
+        submit_async_request(MatrixRequest::SearchRoomMessages {
+            room_id,
+            search_term,
+            next_batch: None,
+        });
+    }
+
+    fn process_search_updates(&mut self, cx: &mut Cx) {
+        let Some(search_state) = self.search_state.as_mut() else { return };
+    
+        let Some(receiver) = SEARCH_RESULTS_RECEIVER.get() else { return };
+    
+        while let Ok(update) = receiver.try_recv() {
+            match update {
+                SearchUpdate::NewResults { room_id, results, next_batch } => {
+                    if search_state.room_id == room_id {
+                        search_state.items.extend(results);
+                        search_state.next_batch = next_batch.clone();
+    
+                        // Stop pagination if no more results
+                        if next_batch.is_none() {
+                            search_state.fully_paginated = true;
+                        }
+                    }
+                }
+            }
+        }
+        self.redraw(cx);
+    }    
+    
+
+    fn paginate_search_results(&mut self) {
+        let Some(search_state) = self.search_state.as_mut() else { return };
+        if search_state.fully_paginated {
+            return;
+        }
+    
+        if let Some(next_batch) = search_state.next_batch.clone() {
+            submit_async_request(MatrixRequest::SearchRoomMessages {
+                room_id: search_state.room_id.clone(),
+                search_term: self.last_search_term.clone(),
+                next_batch: Some(next_batch),
+            });
+        }
     }
 }
 
@@ -2745,19 +2810,27 @@ struct TimelineUiState {
     /// This index is saved before the timeline undergoes any jumps, e.g.,
     /// receiving new items, major scroll changes, or other timeline view jumps.
     prev_first_index: Option<usize>,
+    
+/// Whether the user has scrolled past their latest read marker.
+///
+/// This is used to determine whether we should send a fully-read receipt
+/// after the user scrolls past their "read marker", i.e., their latest fully-read receipt.
+/// Its value is determined by comparing the fully-read event's timestamp with the
+/// first and last timestamp of displayed events in the timeline.
+/// When scrolling down, if the value is true, we send a fully-read receipt
+/// for the last visible event in the timeline.
+///
+/// When new message come in, this value is reset to `false`.
+scrolled_past_read_marker: bool,
+latest_own_user_receipt: Option<Receipt>,
+}
 
-    /// Whether the user has scrolled past their latest read marker.
-    ///
-    /// This is used to determine whether we should send a fully-read receipt
-    /// after the user scrolls past their "read marker", i.e., their latest fully-read receipt.
-    /// Its value is determined by comparing the fully-read event's timestamp with the
-    /// first and last timestamp of displayed events in the timeline.
-    /// When scrolling down, if the value is true, we send a fully-read receipt
-    /// for the last visible event in the timeline.
-    ///
-    /// When new message come in, this value is reset to `false`.
-    scrolled_past_read_marker: bool,
-    latest_own_user_receipt: Option<Receipt>,
+struct SearchUiState {
+    room_id: OwnedRoomId,
+    fully_paginated: bool,
+    items: Vector<Arc<TimelineItem>>,
+    next_batch: Option<String>,
+    update_receiver: crossbeam_channel::Receiver<SearchUpdate>,
 }
 
 #[derive(Default, Debug)]
