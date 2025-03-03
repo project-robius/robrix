@@ -1,18 +1,11 @@
-use crate::{
-    app::AppState,
-    shared::jump_to_bottom_button::UnreadMessageCount,
-    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
-};
-use bitflags::bitflags;
+use std::{cmp::Ordering, collections::HashMap, ops::Deref};
 use crossbeam_queue::SegQueue;
 use imbl::HashSet;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{
-    events::tag::{TagName, Tags},
-    MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId,
-};
+use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
+use bitflags::bitflags;
+use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 use matrix_sdk_ui::timeline::TimelineItemContent;
-use std::{cmp::Ordering, collections::HashMap, ops::Deref};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -31,7 +24,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
-
+    
     use crate::home::room_preview::*;
 
     // An empty view that takes up no space in the portal list.
@@ -76,6 +69,7 @@ live_design! {
     }
 }
 
+
 /// The possible updates that should be displayed by the single list of all rooms.
 ///
 /// These updates are enqueued by the `enqueue_rooms_list_update` function
@@ -86,7 +80,7 @@ pub enum RoomsListUpdate {
     NotLoaded,
     /// Some rooms were loaded, and the server optionally told us
     /// the max number of rooms that will ever be loaded.
-    LoadedRooms { max_rooms: Option<u32> },
+    LoadedRooms{ max_rooms: Option<u32> },
     /// Add a new room to the list of all rooms.
     AddRoom(RoomsListEntry),
     /// Clear all rooms in the list of all rooms.
@@ -123,7 +117,9 @@ pub enum RoomsListUpdate {
         new_tags: Option<Tags>,
     },
     /// Update the status label at the bottom of the list of all rooms.
-    Status { status: String },
+    Status {
+        status: String,
+    },
 }
 
 static PENDING_ROOM_UPDATES: SegQueue<RoomsListUpdate> = SegQueue::new();
@@ -136,6 +132,7 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
 }
 
 pub type RoomIndex = usize;
+
 
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
@@ -236,9 +233,7 @@ bitflags! {
 }
 
 impl Default for RoomFilterCriteria {
-    fn default() -> Self {
-        RoomFilterCriteria::All
-    }
+    fn default() -> Self { RoomFilterCriteria::All }
 }
 
 type SortFn = dyn Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering;
@@ -284,7 +279,7 @@ impl RoomDisplayFilterBuilder {
 
     pub fn sort_by<F>(mut self, sort_fn: F) -> Self
     where
-        F: Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering + 'static,
+        F: Fn(&RoomsListEntry, &RoomsListEntry) -> Ordering + 'static
     {
         self.sort_fn = Some(Box::new(sort_fn));
         self
@@ -301,12 +296,10 @@ impl RoomDisplayFilterBuilder {
     }
 
     fn matches_room_alias(room: &RoomsListEntry, keywords: &str) -> bool {
-        let matches_canonical_alias = room
-            .canonical_alias
+        let matches_canonical_alias = room.canonical_alias
             .as_ref()
             .is_some_and(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
-        let matches_alt_aliases = room
-            .alt_aliases
+        let matches_alt_aliases = room.alt_aliases
             .iter()
             .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
 
@@ -322,17 +315,8 @@ impl RoomDisplayFilterBuilder {
         fn is_tag_match(search_tag: &str, tag_name: &TagName) -> bool {
             match tag_name {
                 TagName::Favorite => ["favourite", "favorite"].contains(&search_tag),
-                TagName::LowPriority => {
-                    ["low_priority", "low-priority", "lowpriority", "lowPriority"]
-                        .contains(&search_tag)
-                }
-                TagName::ServerNotice => [
-                    "server_notice",
-                    "server-notice",
-                    "servernotice",
-                    "serverNotice",
-                ]
-                .contains(&search_tag),
+                TagName::LowPriority => ["low_priority", "low-priority", "lowpriority", "lowPriority"].contains(&search_tag),
+                TagName::ServerNotice => ["server_notice", "server-notice", "servernotice", "serverNotice"].contains(&search_tag),
                 TagName::User(user_tag) => user_tag.as_ref().eq_ignore_ascii_case(search_tag),
                 _ => false,
             }
@@ -340,9 +324,7 @@ impl RoomDisplayFilterBuilder {
 
         room.tags.as_ref().is_some_and(|room_tags| {
             search_tags.iter().all(|search_tag| {
-                room_tags
-                    .iter()
-                    .any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
+                room_tags.iter().any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
             })
         })
     }
@@ -357,11 +339,7 @@ impl RoomDisplayFilterBuilder {
         }
     }
 
-    fn matches_filter(
-        room: &RoomsListEntry,
-        keywords: &str,
-        filter_criteria: RoomFilterCriteria,
-    ) -> bool {
+    fn matches_filter(room: &RoomsListEntry, keywords: &str, filter_criteria: RoomFilterCriteria) -> bool {
         if filter_criteria.is_empty() {
             return false;
         }
@@ -371,22 +349,16 @@ impl RoomDisplayFilterBuilder {
         if specific_type != RoomFilterCriteria::All {
             // When using a special prefix, only check that specific type
             match specific_type {
-                RoomFilterCriteria::RoomId
-                    if filter_criteria.contains(RoomFilterCriteria::RoomId) =>
-                {
+                RoomFilterCriteria::RoomId if filter_criteria.contains(RoomFilterCriteria::RoomId) => {
                     Self::matches_room_id(room, cleaned_keywords)
                 }
-                RoomFilterCriteria::RoomAlias
-                    if filter_criteria.contains(RoomFilterCriteria::RoomAlias) =>
-                {
+                RoomFilterCriteria::RoomAlias if filter_criteria.contains(RoomFilterCriteria::RoomAlias) => {
                     Self::matches_room_alias(room, cleaned_keywords)
                 }
-                RoomFilterCriteria::RoomTags
-                    if filter_criteria.contains(RoomFilterCriteria::RoomTags) =>
-                {
+                RoomFilterCriteria::RoomTags if filter_criteria.contains(RoomFilterCriteria::RoomTags) => {
                     Self::matches_room_tags(room, cleaned_keywords)
                 }
-                _ => false,
+                _ => false
             }
         } else {
             // No special prefix, check all enabled filter types
@@ -423,6 +395,7 @@ impl RoomDisplayFilterBuilder {
 
         (filter, self.sort_fn)
     }
+
 }
 
 impl Default for RoomDisplayFilterBuilder {
@@ -433,53 +406,41 @@ impl Default for RoomDisplayFilterBuilder {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomsList {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 
     /// The single set of all known rooms and their cached preview info.
-    #[rust]
-    all_rooms: HashMap<OwnedRoomId, RoomsListEntry>,
+    #[rust] all_rooms: HashMap<OwnedRoomId, RoomsListEntry>,
 
     /// The currently-active filter function for the list of rooms.
     ///
     /// Note: for performance reasons, this does not get automatically applied
     /// when its value changes. Instead, you must manually invoke it on the set of `all_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
-    #[rust]
-    display_filter: RoomDisplayFilter,
-
+    #[rust] display_filter: RoomDisplayFilter,
+    
     /// The list of rooms currently displayed in the UI, in order from top to bottom.
     /// This must be a strict subset of the rooms present in `all_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_rooms``.
-    #[rust]
-    displayed_rooms: Vec<OwnedRoomId>,
+    #[rust] displayed_rooms: Vec<OwnedRoomId>,
 
     /// Maps the WidgetUid of a `RoomPreview` to that room's index in the `displayed_rooms` vector.
     ///
     /// NOTE: this should only be modified by the draw routine, not anything else.
-    #[rust]
-    displayed_rooms_map: HashMap<WidgetUid, usize>,
+    #[rust] displayed_rooms_map: HashMap<WidgetUid, usize>,
 
     /// The latest status message that should be displayed in the bottom status label.
-    #[rust]
-    status: String,
+    #[rust] status: String,
     /// The index of the currently-selected room.
-    #[rust]
-    current_active_room_index: Option<usize>,
+    #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
-    #[rust]
-    max_known_rooms: Option<u32>,
+    #[rust] max_known_rooms: Option<u32>,
 }
 
 impl RoomsList {
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
         self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!(
-                "Loaded {} of {} total rooms.",
-                self.all_rooms.len(),
-                max_rooms
-            )
+            format!("Loaded {} of {} total rooms.", self.all_rooms.len(), max_rooms)
         } else {
             format!("Loaded {} rooms.", self.all_rooms.len())
         };
@@ -524,12 +485,7 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update avatar");
                         }
                     }
-                    RoomsListUpdate::UpdateLatestEvent {
-                        room_id,
-                        timestamp,
-                        content,
-                        latest_message_text,
-                    } => {
+                    RoomsListUpdate::UpdateLatestEvent { room_id, timestamp, content, latest_message_text } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             // Update the latest display message if this event should be displayed
                             if let TimelineItemContent::Message(_) = content {
@@ -542,27 +498,17 @@ impl Widget for RoomsList {
                             error!("Error: couldn't find room {room_id} to update latest event");
                         }
                     }
-                    RoomsListUpdate::UpdateNumUnreadMessages {
-                        room_id,
-                        count,
-                        unread_mentions,
-                    } => {
+                    RoomsListUpdate::UpdateNumUnreadMessages { room_id, count , unread_mentions} => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             (room.num_unread_messages, room.num_unread_mentions) = match count {
                                 UnreadMessageCount::Unknown => (0, 0),
                                 UnreadMessageCount::Known(count) => (count, unread_mentions),
                             };
                         } else {
-                            error!(
-                                "Error: couldn't find room {} to update unread messages count",
-                                room_id
-                            );
+                            error!("Error: couldn't find room {} to update unread messages count", room_id);
                         }
                     }
-                    RoomsListUpdate::UpdateRoomName {
-                        room_id,
-                        new_room_name,
-                    } => {
+                    RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             let was_displayed = (self.display_filter)(room);
                             room.room_name = Some(new_room_name);
@@ -587,9 +533,9 @@ impl Widget for RoomsList {
                     RoomsListUpdate::RemoveRoom(room_id) => {
                         self.all_rooms
                             .remove(&room_id)
-                            .and_then(|_removed| {
+                            .and_then(|_removed|
                                 self.displayed_rooms.iter().position(|r| r == &room_id)
-                            })
+                            )
                             .map(|index_to_remove| {
                                 // Remove the room from the list of displayed rooms.
                                 self.displayed_rooms.remove(index_to_remove);
@@ -619,7 +565,7 @@ impl Widget for RoomsList {
                     RoomsListUpdate::LoadedRooms { max_rooms } => {
                         self.max_known_rooms = max_rooms;
                         self.update_status_rooms_count();
-                    }
+                    },
                     RoomsListUpdate::Tags { room_id, new_tags } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
                             room.tags = new_tags;
@@ -633,10 +579,7 @@ impl Widget for RoomsList {
                 }
             }
             if num_updates > 0 {
-                log!(
-                    "RoomsList: processed {} updates to the list of all rooms",
-                    num_updates
-                );
+                log!("RoomsList: processed {} updates to the list of all rooms", num_updates);
                 self.redraw(cx);
             }
         }
@@ -646,27 +589,22 @@ impl Widget for RoomsList {
         let props = RoomsListScopeProps {
             was_scrolling: self.view.portal_list(id!(list)).was_scrolling(),
         };
-        let list_actions = cx.capture_actions(|cx| {
-            self.view
-                .handle_event(cx, event, &mut Scope::with_props(&props))
-        });
+        let list_actions = cx.capture_actions(
+            |cx| self.view.handle_event(cx, event, &mut Scope::with_props(&props))
+        );
         for list_action in list_actions {
             if let RoomPreviewAction::Click = list_action.as_widget_action().cast() {
                 let widget_action = list_action.as_widget_action();
 
-                let Some(displayed_room_index) = self
-                    .displayed_rooms_map
+                let Some(displayed_room_index) = self.displayed_rooms_map
                     .iter()
-                    .find(|&(&room_widget_uid, _)| {
-                        widget_action.widget_uid_eq(room_widget_uid).is_some()
-                    })
+                    .find(|&(&room_widget_uid, _)| widget_action.widget_uid_eq(room_widget_uid).is_some())
                     .map(|(_, &room_index)| room_index)
                 else {
                     error!("BUG: couldn't find displayed index of clicked room for widget action {widget_action:?}");
                     continue;
                 };
-                let Some(room_details) = self
-                    .displayed_rooms
+                let Some(room_details) = self.displayed_rooms
                     .get(displayed_room_index)
                     .and_then(|room_id| self.all_rooms.get(room_id))
                 else {
@@ -682,13 +620,14 @@ impl Widget for RoomsList {
                         room_index: displayed_room_index,
                         room_id: room_details.room_id.to_owned(),
                         room_name: room_details.room_name.clone(),
-                    },
+                    }
                 );
                 self.redraw(cx);
             }
         }
         self.widget_match_event(cx, event, scope);
     }
+
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
@@ -708,19 +647,17 @@ impl Widget for RoomsList {
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = list_item.as_portal_list();
-            let Some(mut list) = portal_list_ref.borrow_mut() else {
-                continue;
-            };
+            let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
             // Add 1 for the status label at the bottom.
             list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                
                 let mut scope = Scope::empty();
 
                 // Draw the room preview for each room in the `displayed_rooms` list.
-                let room_to_draw = self
-                    .displayed_rooms
+                let room_to_draw = self.displayed_rooms
                     .get(item_id)
                     .and_then(|room_id| self.all_rooms.get_mut(room_id));
                 let item = if let Some(room_info) = room_to_draw {
@@ -745,13 +682,10 @@ impl Widget for RoomsList {
                 // Draw the status label as the bottom entry.
                 else if item_id == status_label_id {
                     let item = list.item(cx, item_id, live_id!(status_label));
-                    item.as_view().apply_over(
-                        cx,
-                        live! {
-                            height: Fit,
-                            label = { text: (&self.status) }
-                        },
-                    );
+                    item.as_view().apply_over(cx, live!{
+                        height: Fit,
+                        label = { text: (&self.status) }
+                    });
                     item
                 }
                 // Draw a filler entry to take up space at the bottom of the portal list.
@@ -765,6 +699,7 @@ impl Widget for RoomsList {
 
         DrawStep::done()
     }
+
 }
 
 impl WidgetMatchEvent for RoomsList {
@@ -790,24 +725,23 @@ impl WidgetMatchEvent for RoomsList {
                 if keywords.is_empty() {
                     // Reset the displayed rooms list to show all rooms.
                     let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                        .sort_by(custom_sort_fn)
-                        .build();
+                    .sort_by(custom_sort_fn)
+                    .build();
 
-                    self.display_filter = filter;
+                self.display_filter = filter;
 
-                    self.displayed_rooms = if let Some(sort_fn) = sort_fn {
-                        let mut rooms: Vec<_> = self.all_rooms.iter().collect();
+                self.displayed_rooms = if let Some(sort_fn) = sort_fn {
+                    let mut rooms: Vec<_> = self.all_rooms.iter().collect();
 
-                        rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
+                    rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
 
-                        rooms
-                            .into_iter()
-                            .map(|(room_id, _)| room_id.clone())
-                            .collect()
-                    } else {
-                        self.all_rooms.keys().cloned().collect()
-                    };
-
+                    rooms
+                        .into_iter()
+                        .map(|(room_id, _)| room_id.clone())
+                        .collect()
+                } else {
+                    self.all_rooms.keys().cloned().collect()
+                };
                     self.update_status_rooms_count();
                     portal_list.set_first_id_and_scroll(0, 0.0);
                     self.redraw(cx);
@@ -821,8 +755,7 @@ impl WidgetMatchEvent for RoomsList {
                 self.display_filter = filter;
 
                 let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
-                    let mut filtered_rooms: Vec<_> = self
-                        .all_rooms
+                    let mut filtered_rooms: Vec<_> = self.all_rooms
                         .iter()
                         .filter(|(_, room)| (self.display_filter)(room))
                         .collect();

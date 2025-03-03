@@ -8,6 +8,7 @@ use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 
+
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
 pub const MAX_VISIBLE_AVATARS_IN_READ_RECEIPT: usize = 3;

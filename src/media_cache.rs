@@ -1,23 +1,11 @@
-use crate::{
-    home::room_screen::TimelineUpdate,
-    sliding_sync::{self, MatrixRequest},
-    utils::MediaFormatConst,
-};
+use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
 use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{
-    media::{MediaFormat, MediaRequest},
-    ruma::{events::room::MediaSource, OwnedMxcUri},
-};
-use std::{
-    collections::{btree_map::Entry, BTreeMap},
-    ops::{Deref, DerefMut},
-    sync::{Arc, Mutex},
-    time::SystemTime,
-};
+use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
+use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
 
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 
-/// An entry in the media cache.
+/// An entry in the media cache. 
 #[derive(Debug, Clone)]
 pub enum MediaCacheEntry {
     /// A request has been issued and we're waiting for it to complete.
@@ -84,23 +72,27 @@ impl MediaCache {
         media_format: Option<MediaFormat>,
     ) -> MediaCacheEntry {
         let value_ref = match self.entry(mxc_uri.clone()) {
-            Entry::Vacant(vacant) => {
-                vacant.insert(Arc::new(Mutex::new(MediaCacheEntry::Requested)))
-            }
+            Entry::Vacant(vacant) => vacant.insert(
+                Arc::new(Mutex::new(MediaCacheEntry::Requested))
+            ),
             Entry::Occupied(occupied) => return occupied.get().lock().unwrap().deref().clone(),
         };
 
         let destination = Arc::clone(value_ref);
-        let format = media_format.unwrap_or_else(|| self.default_format.clone().into());
-        sliding_sync::submit_async_request(MatrixRequest::FetchMedia {
-            media_request: MediaRequest {
-                source: MediaSource::Plain(mxc_uri),
-                format,
-            },
-            on_fetched: insert_into_cache,
-            destination,
-            update_sender: self.timeline_update_sender.clone(),
-        });
+        let format = media_format.unwrap_or_else(||
+            self.default_format.clone().into()
+        );
+        sliding_sync::submit_async_request(
+            MatrixRequest::FetchMedia {
+                media_request: MediaRequest {
+                    source: MediaSource::Plain(mxc_uri),
+                    format,
+                },
+                on_fetched: insert_into_cache,
+                destination,
+                update_sender: self.timeline_update_sender.clone(),
+            }
+        );
         MediaCacheEntry::Requested
     }
 }
@@ -115,25 +107,21 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
-
+            
             // debugging: dump out the media image to disk
             if false {
                 if let MediaSource::Plain(mxc_uri) = _request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
-                    let filename = format!(
-                        "{}_{}_{}",
-                        SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis(),
-                        mxc_uri.server_name().unwrap(),
-                        mxc_uri.media_id().unwrap(),
+                    let filename = format!("{}_{}_{}",
+                        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+                        mxc_uri.server_name().unwrap(), mxc_uri.media_id().unwrap(),
                     );
                     path.push(filename);
                     path.set_extension("png");
                     log!("Writing user media image to disk: {:?}", path);
-                    std::fs::write(path, &data).expect("Failed to write user media image to disk");
+                    std::fs::write(path, &data)
+                        .expect("Failed to write user media image to disk");
                 }
             }
 

@@ -35,7 +35,7 @@ live_design! {
                     instance target_pos: vec2(0.0, 0.0),
                     // Size of the moused over widget
                     instance target_size: vec2(0.0, 0.0),
-                    // Expected Width of the the tooltip
+                    // Expected Width of the the tooltip 
                     instance expected_dimension_x: 0.0,
                     // Determine height of the triangle in the callout pointer
                     instance triangle_height: 7.5,

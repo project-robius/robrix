@@ -56,7 +56,7 @@ live_design! {
             padding: {top: 17., left: 17., right: 17.}
             flow: Down, spacing: 7
             width: Fill, height: Fill
-        }
+        }        
     }
 }
 
@@ -78,7 +78,7 @@ impl Widget for RoomsView {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
     }
-
+    
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
@@ -90,18 +90,10 @@ impl WidgetMatchEvent for RoomsView {
         for action in actions {
             match action.as_widget_action().cast() {
                 SearchBarAction::Search(keywords) => {
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        RoomsViewAction::Search(keywords.clone()),
-                    );
+                    cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search(keywords.clone()));
                 }
                 SearchBarAction::ResetSearch => {
-                    cx.widget_action(
-                        widget_uid,
-                        &scope.path,
-                        RoomsViewAction::Search("".to_string()),
-                    );
+                    cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search("".to_string()));
                 }
                 _ => {}
             }

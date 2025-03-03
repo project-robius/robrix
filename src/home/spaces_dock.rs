@@ -164,8 +164,7 @@ live_design! {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct Profile {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for Profile {

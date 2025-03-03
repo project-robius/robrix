@@ -4,7 +4,7 @@ use makepad_widgets::*;
 static POPUP_NOTIFICATION: SegQueue<String> = SegQueue::new();
 
 /// Displays a new popup notification with the given message.
-///
+/// 
 /// Popup notifications will be shown in the order they were enqueued,
 /// and are currently only removed when manually closed by the user.
 pub fn enqueue_popup_notification(message: String) {
@@ -117,7 +117,7 @@ pub struct PopupList {
 
 impl LiveHook for PopupList {
     fn after_apply(&mut self, cx: &mut Cx, apply: &mut Apply, index: usize, nodes: &[LiveNode]) {
-        for (button, _) in self.popups.iter_mut() {
+        for (button, _ ) in self.popups.iter_mut() {
             if let Some(index) = nodes.child_by_name(index, live_id!(popup_content).as_field()) {
                 button.apply(cx, apply, index, nodes);
             }
@@ -128,7 +128,7 @@ impl LiveHook for PopupList {
 impl Widget for PopupList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         while let Some(message) = POPUP_NOTIFICATION.pop() {
-            self.push(cx, message);
+            self.push(cx, message);            
         }
         for (view, _) in self.popups.iter_mut() {
             view.handle_event(cx, event, scope);
@@ -151,13 +151,12 @@ impl Widget for PopupList {
     }
 }
 impl PopupList {
-    /// Adds a new popup with a close button to the right side of the screen.
-    ///
+    /// Adds a new popup with a close button to the right side of the screen. 
+    /// 
     /// The popup's content is a string given by the `message` parameter.
-    /// New popup will be displayed below the previous ones.
+    /// New popup will be displayed below the previous ones. 
     pub fn push(&mut self, cx: &mut Cx, message: String) {
-        self.popups
-            .push((View::new_from_ptr(cx, self.popup_content), message));
+        self.popups.push((View::new_from_ptr(cx, self.popup_content), message));
         self.redraw(cx);
     }
 }

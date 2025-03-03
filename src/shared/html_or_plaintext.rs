@@ -9,7 +9,7 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-
+    
     use crate::shared::styles::*;
 
     // These match the `MESSAGE_*` styles defined in `styles.rs`.
@@ -102,47 +102,39 @@ live_design! {
     }
 }
 
+
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Live, Widget)]
 struct MatrixHtmlSpan {
     // TODO: this is unused; just here to invalidly satisfy the area provider.
     //       I'm not sure how to implement `fn area()` given that it has multiple area rects.
-    #[redraw]
-    #[area]
-    area: Area,
+    #[redraw] #[area] area: Area,
 
     // TODO: remove these if they're unneeded
-    #[walk]
-    walk: Walk,
-    #[layout]
-    layout: Layout,
+    #[walk] walk: Walk,
+    #[layout] layout: Layout,
 
-    #[rust]
-    drawn_areas: SmallVec<[Area; 2]>,
+    #[rust] drawn_areas: SmallVec<[Area; 2]>,
 
     /// Whether to grab key focus when pressed.
-    #[live(true)]
-    grab_key_focus: bool,
+    #[live(true)] grab_key_focus: bool,
 
     /// The text content within the `<span>` tag.
-    #[live]
-    text: ArcStringMut,
+    #[live] text: ArcStringMut,
     /// The current display state of the spoiler.
-    #[rust]
-    spoiler: SpoilerDisplay,
+    #[rust] spoiler: SpoilerDisplay,
     /// Foreground (text) color: the `data-mx-color` or `color` attributes.
-    #[rust]
-    fg_color: Option<Vec4>,
+    #[rust] fg_color: Option<Vec4>,
     /// Background color: the `data-mx-bg-color` attribute.
-    #[rust]
-    bg_color: Option<Vec4>,
+    #[rust] bg_color: Option<Vec4>,
 }
+
 
 /// The possible states that a spoiler can be in: hidden or revealed.
 ///
 /// The enclosed `reason` string is an optional reason given for why
 /// the text is hidden; if empty, then no reason was given.
-#[derive(Default, Debug)]
+#[derive(Default, Debug)]    
 enum SpoilerDisplay {
     /// There is no spoiler at all.
     #[default]
@@ -164,7 +156,7 @@ impl SpoilerDisplay {
                 let s = std::mem::take(reason);
                 *self = SpoilerDisplay::Hidden { reason: s };
             }
-            SpoilerDisplay::None => {}
+            SpoilerDisplay::None => { }
         }
     }
 
@@ -182,32 +174,23 @@ impl LiveHook for MatrixHtmlSpan {
         // * in `<font>` tags: `color`
         // * in `<span>` tags: `data-mx-color`, `data-mx-bg-color`, `data-mx-spoiler`
 
-        if let ApplyFrom::NewFromDoc { .. } = apply.from {
+        if let ApplyFrom::NewFromDoc {..} = apply.from {
             if let Some(scope) = apply.scope.as_ref() {
                 if let Some(doc) = scope.props.get::<HtmlDoc>() {
                     let mut walker = doc.new_walker_with_index(scope.index + 1);
                     while let Some((lc, attr)) = walker.while_attr_lc() {
                         let attr = attr.trim_matches(['"', '\'']);
                         match lc {
-                            live_id!(color) | live_id!(data - mx - color) => {
-                                self.fg_color = Vec4::from_hex_str(attr).ok()
-                            }
-                            live_id!(data - mx - bg - color) => {
-                                self.bg_color = Vec4::from_hex_str(attr).ok()
-                            }
-                            live_id!(data - mx - spoiler) => {
-                                self.spoiler = SpoilerDisplay::Hidden {
-                                    reason: attr.into(),
-                                }
-                            }
-                            _ => (),
+                            live_id!(color)
+                            | live_id!(data-mx-color) => self.fg_color = Vec4::from_hex_str(attr).ok(),
+                            live_id!(data-mx-bg-color) => self.bg_color = Vec4::from_hex_str(attr).ok(),
+                            live_id!(data-mx-spoiler) => self.spoiler = SpoilerDisplay::Hidden { reason: attr.into() },
+                            _ => ()
                         }
                     }
                 }
             } else {
-                error!(
-                    "BUG: MatrixHtmlSpan::after_apply(): scope not found, cannot set attributes."
-                );
+                error!("BUG: MatrixHtmlSpan::after_apply(): scope not found, cannot set attributes.");
             }
         }
     }
@@ -237,7 +220,7 @@ impl Widget for MatrixHtmlSpan {
             }
         }
     }
-
+    
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, _walk: Walk) -> DrawStep {
         let Some(tf) = scope.data.get_mut::<TextFlow>() else {
             return DrawStep::done();
@@ -264,7 +247,8 @@ impl Widget for MatrixHtmlSpan {
         }
 
         match &self.spoiler {
-            SpoilerDisplay::Hidden { reason } | SpoilerDisplay::Revealed { reason } => {
+            SpoilerDisplay::Hidden { reason }
+            | SpoilerDisplay::Revealed { reason } => {
                 // Draw the spoiler reason text in an italic gray font.
                 tf.font_colors.push(COLOR_SPOILER_REASON);
                 tf.italic.push();
@@ -279,12 +263,11 @@ impl Widget for MatrixHtmlSpan {
                 tf.font_colors.pop();
 
                 // Now, draw the spoiler context text itself, either hidden or revealed.
-                if matches!(self.spoiler, SpoilerDisplay::Hidden { .. }) {
+                if matches!(self.spoiler, SpoilerDisplay::Hidden {..}) {
                     // Use a background color that is the same as the foreground color,
                     // which is a hacky way to make the spoiled text non-readable.
                     // In the future, we should use a proper blur effect.
-                    let spoiler_bg_color = self
-                        .fg_color
+                    let spoiler_bg_color = self.fg_color
                         .or_else(|| tf.font_colors.last().copied())
                         .unwrap_or(tf.font_color);
 
@@ -296,6 +279,7 @@ impl Widget for MatrixHtmlSpan {
 
                     tf.draw_block.code_color = old_bg_color;
                     tf.inline_code.pop();
+
                 } else {
                     tf.draw_text(cx, self.text.as_ref());
                 }
@@ -316,11 +300,13 @@ impl Widget for MatrixHtmlSpan {
         }
 
         let (start, end) = tf.areas_tracker.pop_tracker();
-        self.drawn_areas = SmallVec::from(&tf.areas_tracker.areas[start..end]);
+        self.drawn_areas = SmallVec::from(
+            &tf.areas_tracker.areas[start..end]
+        );
 
         DrawStep::done()
     }
-
+    
     fn text(&self) -> String {
         self.text.as_ref().to_string()
     }
@@ -331,10 +317,10 @@ impl Widget for MatrixHtmlSpan {
     }
 }
 
+
 #[derive(LiveHook, Live, Widget)]
 pub struct HtmlOrPlaintext {
-    #[deref]
-    view: View,
+    #[deref] view: View,
 }
 
 impl Widget for HtmlOrPlaintext {
@@ -352,14 +338,12 @@ impl HtmlOrPlaintext {
     pub fn show_plaintext<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
         self.view(id!(html_view)).set_visible(cx, false);
         self.view(id!(plaintext_view)).set_visible(cx, true);
-        self.label(id!(plaintext_view.pt_label))
-            .set_text(cx, text.as_ref());
+        self.label(id!(plaintext_view.pt_label)).set_text(cx, text.as_ref());
     }
 
     /// Sets the HTML content, making the HTML visible and the plaintext invisible.
     pub fn show_html<T: AsRef<str>>(&mut self, cx: &mut Cx, html_body: T) {
-        self.html(id!(html_view.html))
-            .set_text(cx, html_body.as_ref());
+        self.html(id!(html_view.html)).set_text(cx, html_body.as_ref());
         self.view(id!(html_view)).set_visible(cx, true);
         self.view(id!(plaintext_view)).set_visible(cx, false);
     }

@@ -1,20 +1,9 @@
 use makepad_widgets::*;
-use matrix_sdk::{
-    room::edit::EditedContent,
-    ruma::{
-        events::{
-            poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock},
-            room::message::{FormattedBody, MessageType, RoomMessageEventContentWithoutRelation},
-        },
-        OwnedRoomId,
-    },
-};
+use matrix_sdk::{room::edit::EditedContent, ruma::{events::{poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock}, room::message::{FormattedBody, MessageType, RoomMessageEventContentWithoutRelation}}, OwnedRoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
 
-use crate::{
-    shared::popup_list::enqueue_popup_notification,
-    sliding_sync::{submit_async_request, MatrixRequest},
-};
+use crate::{shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest}};
+
 
 live_design! {
     use link::theme::*;
@@ -110,7 +99,7 @@ live_design! {
         <LineH> {
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
-
+        
         edit_text_input = <RobrixTextInput> {
             width: Fill, height: Fit,
             margin: { bottom: 5 }
@@ -156,6 +145,7 @@ live_design! {
     }
 }
 
+
 /// Action emitted by the EditingPane widget.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum EditingPaneAction {
@@ -173,24 +163,18 @@ struct EditingPaneInfo {
 /// A view that slides in from the bottom of the screen to allow editing a message.
 #[derive(Live, LiveHook, Widget)]
 pub struct EditingPane {
-    #[deref]
-    view: View,
-    #[animator]
-    animator: Animator,
+    #[deref] view: View,
+    #[animator] animator: Animator,
 
-    #[rust]
-    info: Option<EditingPaneInfo>,
-    #[rust]
-    is_animating_out: bool,
+    #[rust] info: Option<EditingPaneInfo>,
+    #[rust] is_animating_out: bool,
 }
 
 impl Widget for EditingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        if !self.visible {
-            return;
-        }
+        if !self.visible { return; }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
@@ -202,7 +186,11 @@ impl Widget for EditingPane {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
-                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hide);
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        EditingPaneAction::Hide,
+                    );
                     cx.revert_key_focus();
                     self.redraw(cx);
                     return;
@@ -211,7 +199,7 @@ impl Widget for EditingPane {
                     self.is_animating_out = true;
                     return;
                 }
-                _ => {}
+                _ => { }
             }
         }
 
@@ -220,22 +208,20 @@ impl Widget for EditingPane {
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
-            if self.button(id!(cancel_button)).clicked(actions) || edit_text_input.escape(actions) {
+            if self.button(id!(cancel_button)).clicked(actions)
+                || edit_text_input.escape(actions)
+            {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
                 return;
             }
 
-            let Some(info) = self.info.as_ref() else {
-                return;
-            };
+            let Some(info) = self.info.as_ref() else { return };
 
-            if self.button(id!(accept_button)).clicked(actions)
-                || edit_text_input
+            if self.button(id!(accept_button)).clicked(actions) ||
+                edit_text_input
                     .key_down_unhandled(actions)
-                    .is_some_and(|ke| {
-                        ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
-                    })
+                    .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary())
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -248,12 +234,10 @@ impl Widget for EditingPane {
 
                             // TODO: also handle "/html" or "/plain" prefixes, just like when sending new messages.
                             MessageType::Text(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::text_markdown(&edited_text),
+                                RoomMessageEventContentWithoutRelation::text_markdown(&edited_text)
                             ),
                             MessageType::Emote(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::emote_markdown(
-                                    &edited_text,
-                                ),
+                                RoomMessageEventContentWithoutRelation::emote_markdown(&edited_text)
                             ),
                             // TODO: support adding/removing attachments.
                             //       For now, we just support modifying the body/formatted body of the message.
@@ -267,8 +251,8 @@ impl Widget for EditingPane {
                                 new_image_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Image(new_image_msg),
-                                    ),
+                                        MessageType::Image(new_image_msg)
+                                    )
                                 )
                             }
                             MessageType::Audio(audio) => {
@@ -279,8 +263,8 @@ impl Widget for EditingPane {
                                 new_audio_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Audio(new_audio_msg),
-                                    ),
+                                        MessageType::Audio(new_audio_msg)
+                                    )
                                 )
                             }
                             MessageType::File(file) => {
@@ -290,9 +274,9 @@ impl Widget for EditingPane {
                                 }
                                 new_file_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
-                                    RoomMessageEventContentWithoutRelation::new(MessageType::File(
-                                        new_file_msg,
-                                    )),
+                                    RoomMessageEventContentWithoutRelation::new(
+                                        MessageType::File(new_file_msg)
+                                    )
                                 )
                             }
                             MessageType::Video(video) => {
@@ -303,14 +287,12 @@ impl Widget for EditingPane {
                                 new_video_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Video(new_video_msg),
-                                    ),
+                                        MessageType::Video(new_video_msg)
+                                    )
                                 )
                             }
                             _non_editable => {
-                                enqueue_popup_notification(
-                                    "That message type cannot be edited.".into(),
-                                );
+                                enqueue_popup_notification("That message type cannot be edited.".into());
                                 self.animator_play(cx, id!(panel.hide));
                                 self.redraw(cx);
                                 return;
@@ -319,10 +301,15 @@ impl Widget for EditingPane {
 
                         // TODO: extract mentions out of the new edited text and use them here.
                         if let Some(existing_mentions) = message.mentions() {
-                            if let EditedContent::RoomMessage(new_message_content) =
-                                &mut edited_content
-                            {
-                                new_message_content.mentions = Some(existing_mentions.clone());
+                            match &mut edited_content {
+                                EditedContent::RoomMessage(new_message_content) => {
+                                    new_message_content.mentions = Some(existing_mentions.clone());
+                                }
+                                // TODO: once we update the matrix-sdk dependency, uncomment this.
+                                // EditedContent::MediaCaption { mentions, .. }) => {
+                                //     mentions = Some(existing_mentions);
+                                // }
+                                _ => { }
                             }
                         }
 
@@ -339,9 +326,7 @@ impl Widget for EditingPane {
                             .collect::<Vec<_>>()
                             .try_into()
                         else {
-                            enqueue_popup_notification(
-                                "Failed to obtain existing poll answers while editing poll.".into(),
-                            );
+                            enqueue_popup_notification("Failed to obtain existing poll answers while editing poll.".into());
                             return;
                         };
                         let mut new_content_block = UnstablePollStartContentBlock::new(
@@ -375,6 +360,7 @@ impl Widget for EditingPane {
         }
     }
 
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.info.is_none() {
             self.visible = false;
@@ -382,6 +368,7 @@ impl Widget for EditingPane {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
 
 impl EditingPane {
     /// Returns `true` if this pane is currently being shown.
@@ -460,9 +447,7 @@ impl EditingPane {
 impl EditingPaneRef {
     /// See [`EditingPane::is_currently_shown()`].
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        let Some(inner) = self.borrow() else {
-            return false;
-        };
+        let Some(inner) = self.borrow() else { return false };
         inner.is_currently_shown(cx)
     }
 
@@ -473,17 +458,13 @@ impl EditingPaneRef {
         timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
     /// See [`EditingPane::show()`].
     pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.show(cx, event_tl_item, room_id);
     }
 
@@ -497,9 +478,7 @@ impl EditingPaneRef {
 
     /// Hides the editing pane immediately without animating it out.
     pub fn force_hide(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.visible = false;
         inner.redraw(cx);
     }

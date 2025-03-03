@@ -1,7 +1,10 @@
 use makepad_widgets::*;
 
 use crate::{
-    shared::{avatar::AvatarWidgetExt, html_or_plaintext::HtmlOrPlaintextWidgetExt},
+    shared::{
+        avatar::AvatarWidgetExt,
+        html_or_plaintext::HtmlOrPlaintextWidgetExt,
+    },
     utils::{self, relative_format},
 };
 
@@ -114,7 +117,7 @@ live_design! {
                 instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
                 instance default_color: (UNREAD_DEFAULT_COLOR),
                 instance radius: 4.0
-                // Adjust this border_width to larger value to make oval smaller
+                // Adjust this border_width to larger value to make oval smaller 
                 instance border_width: 2.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
@@ -181,7 +184,7 @@ live_design! {
                         spacing: 5,
                         flow: Right,
                         room_name = <RoomName> {}
-                        // Use a small top margin to align the timestamp text baseline with the room name text baseline.
+                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
                         timestamp = <Timestamp> { margin: { top: 1.3 } }
                     }
                     bottom = <View> {
@@ -222,7 +225,7 @@ impl LiveHook for RoomPreview {
         self.view
             .adaptive_view(id!(adaptive_preview))
             .set_variant_selector(|_cx, parent_size| match parent_size.x {
-                width if width <= 70.0 => live_id!(OnlyIcon),
+                width if width <= 70.0  => live_id!(OnlyIcon),
                 width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
             });
@@ -238,11 +241,8 @@ impl Widget for RoomPreview {
             Hit::FingerDown(_fe) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe)
-                if !rooms_list_props.was_scrolling
-                    && fe.is_over
-                    && fe.is_primary_hit()
-                    && fe.was_tap() =>
+            Hit::FingerUp(fe) if !rooms_list_props.was_scrolling &&
+                fe.is_over && fe.is_primary_hit() && fe.was_tap() =>
             {
                 cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
             }
@@ -282,11 +282,7 @@ impl Widget for RoomPreviewContent {
             if let Some(ref name) = room_info.room_name {
                 self.view.label(id!(room_name)).set_text(cx, name);
             }
-
-            // Get latest display event falling back to last event
-            let latest_event = room_info.latest_display.as_ref();
-
-            if let Some((ts, msg)) = latest_event {
+            if let Some((ts, msg)) = room_info.latest.as_ref() {
                 if let Some(human_readable_date) = relative_format(ts) {
                     self.view
                         .label(id!(timestamp))
@@ -309,11 +305,11 @@ impl Widget for RoomPreviewContent {
                 }
             }
 
-            let unread_badge = self.view(id!(unread_badge));
+            let unread_badge = self.view(id!(unread_badge)); 
             // Helper function to format the rounded rectangle.
             //
             // The rounded rectangle needs to be wider for longer text.
-            // It also adds a plus sign at the end if the unread count is greater than 99.
+            // It also adds a plus sign at the end if the unread count is greater than 99. 
             fn format_border_and_truncation(count: u64) -> (f64, &'static str) {
                 let (border_size, plus_sign) = if count > 99 {
                     (0.0, "+")
@@ -325,46 +321,30 @@ impl Widget for RoomPreviewContent {
                 (border_size, plus_sign)
             }
             if room_info.num_unread_mentions > 0 {
-                let (border_size, plus_sign) =
-                    format_border_and_truncation(room_info.num_unread_mentions);
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_mentions);
                 // If there are unread mentions, show red badge and the number of unread mentions
-                unread_badge.label(id!(unread_messages_count)).set_text(
-                    cx,
-                    &format!(
-                        "{}{plus_sign}",
-                        std::cmp::min(room_info.num_unread_mentions, 99)
-                    ),
-                );
-                unread_badge.view(id!(rounded_label)).apply_over(
-                    cx,
-                    live! {
-                        draw_bg: {
-                            border_width: (border_size),
-                            highlight: 1.0
-                        }
-                    },
-                );
+                unread_badge
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_mentions, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 1.0
+                    }
+                });
                 unread_badge.set_visible(cx, true);
             } else if room_info.num_unread_messages > 0 {
-                let (border_size, plus_sign) =
-                    format_border_and_truncation(room_info.num_unread_messages);
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_messages);
                 // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
-                unread_badge.label(id!(unread_messages_count)).set_text(
-                    cx,
-                    &format!(
-                        "{}{plus_sign}",
-                        std::cmp::min(room_info.num_unread_messages, 99)
-                    ),
-                );
-                unread_badge.view(id!(rounded_label)).apply_over(
-                    cx,
-                    live! {
-                        draw_bg: {
-                            border_width: (border_size),
-                            highlight: 0.0
-                        }
-                    },
-                );
+                unread_badge
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_messages, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 0.0
+                    }
+                });
                 unread_badge.set_visible(cx, true);
             } else {
                 // If there are no unread mentions and no unread messages, hide the badge

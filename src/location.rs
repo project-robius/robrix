@@ -1,14 +1,8 @@
 //! Functions for querying the device's current location.
 
-use std::{
-    sync::{
-        mpsc::{self, Receiver, Sender},
-        Mutex,
-    },
-    time::SystemTime,
-};
+use std::{sync::{mpsc::{self, Receiver, Sender}, Mutex}, time::SystemTime};
 
-use makepad_widgets::{error, log, Cx};
+use makepad_widgets::{Cx, error, log};
 use robius_location::{Access, Accuracy, Coordinates, Location, Manager};
 
 /// The action emitted upon every location update.
@@ -18,7 +12,7 @@ pub enum LocationAction {
     Update(LocationUpdate),
     /// The location handler encountered an error.
     Error(robius_location::Error),
-    None,
+    None
 }
 
 /// An updated location sample, including coordinates and a system timestamp.
@@ -37,6 +31,7 @@ static LATEST_LOCATION: Mutex<Option<LocationUpdate>> = Mutex::new(None);
 pub fn get_latest_location() -> Option<LocationUpdate> {
     *(LATEST_LOCATION.lock().unwrap())
 }
+
 
 struct LocationHandler;
 
@@ -66,10 +61,12 @@ impl robius_location::Handler for LocationHandler {
     }
 }
 
+
 fn location_request_loop(
     request_receiver: Receiver<LocationRequest>,
     mut manager: ManagerWrapper,
 ) -> Result<(), robius_location::Error> {
+    
     manager.update_once()?;
 
     while let Ok(request) = request_receiver.recv() {
@@ -89,6 +86,7 @@ fn location_request_loop(
     error!("Location request loop exited unexpectedly (the senders all died).");
     Err(robius_location::Error::Unknown)
 }
+
 
 pub enum LocationRequest {
     UpdateOnce,

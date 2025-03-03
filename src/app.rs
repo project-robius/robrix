@@ -4,18 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{
-        main_desktop_ui::RoomsPanelAction,
-        new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction,
-        rooms_list::RoomsListAction,
-    },
-    login::login_screen::LoginAction,
-    shared::{
-        callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction},
-        popup_list::PopupNotificationAction,
-    },
-    verification::VerificationAction,
-    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt},
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -140,7 +129,7 @@ live_design! {
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
-
+                    
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -215,24 +204,17 @@ impl MatchEvent for App {
             }
 
             // Handle an action requesting to open the new message context menu.
-            if let MessageAction::OpenMessageContextMenu { details, abs_pos } =
-                action.as_widget_action().cast()
-            {
+            if let MessageAction::OpenMessageContextMenu { details, abs_pos } = action.as_widget_action().cast() {
                 self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
-                let new_message_context_menu = self
-                    .ui
-                    .new_message_context_menu(id!(new_message_context_menu));
+                let new_message_context_menu = self.ui.new_message_context_menu(id!(new_message_context_menu));
                 let expected_dimensions = new_message_context_menu.show(cx, details);
                 // Ensure the context menu does not spill over the window's bounds.
                 let rect = self.ui.area().rect(cx);
                 let pos_x = min(abs_pos.x, rect.size.x - expected_dimensions.x);
                 let pos_y = min(abs_pos.y, rect.size.y - expected_dimensions.y);
-                new_message_context_menu.apply_over(
-                    cx,
-                    live! {
-                        main_content = { margin: { left: (pos_x), top: (pos_y) } }
-                    },
-                );
+                new_message_context_menu.apply_over(cx, live! {
+                    main_content = { margin: { left: (pos_x), top: (pos_y) } }
+                });
                 self.ui.redraw(cx);
             }
 
@@ -248,11 +230,7 @@ impl MatchEvent for App {
 
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomsListAction::Selected {
-                    room_id,
-                    room_index: _,
-                    room_name,
-                } => {
+                RoomsListAction::Selected { room_id, room_index: _, room_name } => {
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
                         room_id: room_id.clone(),
                         room_name: room_name.clone(),
@@ -263,18 +241,14 @@ impl MatchEvent for App {
                     cx.widget_action(
                         widget_uid,
                         &Scope::default().path,
-                        StackNavigationAction::NavigateTo(live_id!(main_content_view)),
+                        StackNavigationAction::NavigateTo(live_id!(main_content_view))
                     );
                     // Update the Stack Navigation header with the room name
-                    self.ui
-                        .label(id!(main_content_view.header.content.title_container.title))
-                        .set_text(
-                            cx,
-                            &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)),
-                        );
+                    self.ui.label(id!(main_content_view.header.content.title_container.title))
+                        .set_text(cx, &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
-                RoomsListAction::None => {}
+                RoomsListAction::None => { }
             }
 
             match action.as_widget_action().cast() {
@@ -284,10 +258,10 @@ impl MatchEvent for App {
                 RoomsPanelAction::FocusNone => {
                     self.app_state.rooms_panel.selected_room = None;
                 }
-                RoomsPanelAction::None => {}
+                RoomsPanelAction::None => { }
                 _ => {}
             }
-
+            
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,
@@ -296,13 +270,10 @@ impl MatchEvent for App {
                     bg_color,
                 } => {
                     // Don't show any tooltips if the message context menu is currently shown.
-                    if self
-                        .ui
-                        .new_message_context_menu(id!(new_message_context_menu))
-                        .is_currently_shown(cx)
-                    {
+                    if self.ui.new_message_context_menu(id!(new_message_context_menu)).is_currently_shown(cx) {
                         self.ui.callout_tooltip(id!(app_tooltip)).hide(cx);
-                    } else {
+                    }
+                    else {
                         self.ui.callout_tooltip(id!(app_tooltip)).show_with_options(
                             cx,
                             &text,
@@ -324,8 +295,7 @@ impl MatchEvent for App {
             //
             // Note: other verification actions are handled by the verification modal itself.
             if let Some(VerificationAction::RequestReceived(state)) = action.downcast_ref() {
-                self.ui
-                    .verification_modal(id!(verification_modal_inner))
+                self.ui.verification_modal(id!(verification_modal_inner))
                     .initialize_with_data(cx, state.clone());
                 self.ui.modal(id!(verification_modal)).open(cx);
             }
@@ -424,12 +394,8 @@ impl App {
                 .modal(id!(login_screen_view.login_screen.login_status_modal))
                 .close(cx);
         }
-        self.ui
-            .view(id!(login_screen_view))
-            .set_visible(cx, show_login);
-        self.ui
-            .view(id!(home_screen_view))
-            .set_visible(cx, !show_login);
+        self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
 }
 

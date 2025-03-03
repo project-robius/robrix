@@ -76,7 +76,7 @@ pub enum SearchBarAction {
     Search(String),
     /// The user has cleared the search query.
     ResetSearch,
-    None,
+    None
 }
 
 impl Widget for SearchBar {
@@ -98,11 +98,19 @@ impl WidgetMatchEvent for SearchBar {
         // Handle user changing the input text
         if let Some(keywords) = input.changed(actions) {
             clear_button.set_visible(cx, !keywords.is_empty());
-            let widget_uid = self.widget_uid();
+            let widget_uid = self.widget_uid(); 
             if keywords.is_empty() {
-                cx.widget_action(widget_uid, &scope.path, SearchBarAction::ResetSearch);
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    SearchBarAction::ResetSearch
+                );
             } else {
-                cx.widget_action(widget_uid, &scope.path, SearchBarAction::Search(keywords));
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    SearchBarAction::Search(keywords)
+                );
             }
         }
 
@@ -112,7 +120,11 @@ impl WidgetMatchEvent for SearchBar {
             clear_button.set_visible(cx, false);
             input.set_key_focus(cx);
 
-            cx.widget_action(self.widget_uid(), &scope.path, SearchBarAction::ResetSearch);
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                SearchBarAction::ResetSearch,
+            );
         }
     }
 }
