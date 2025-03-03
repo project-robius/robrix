@@ -1335,7 +1335,7 @@ async fn async_main_loop(
         Box::new(|_room| true),
     );
 
-    const LOG_ROOM_LIST_DIFFS: bool = false;
+    const LOG_ROOM_LIST_DIFFS: bool = true;
 
     let mut all_known_rooms = Vector::new();
     pin_mut!(room_diff_stream);
@@ -1347,7 +1347,7 @@ async fn async_main_loop(
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
                     for new_room in &new_rooms {
-                        add_new_room(new_room, &room_list_service).await?;
+                        add_new_room(new_room, &room_list_service, true).await?;
                     }
                     all_known_rooms.append(new_rooms);
                 }
@@ -1359,12 +1359,12 @@ async fn async_main_loop(
                 }
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
-                    add_new_room(&new_room, &room_list_service).await?;
+                    add_new_room(&new_room, &room_list_service, false).await?;
                     all_known_rooms.push_front(new_room);
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
-                    add_new_room(&new_room, &room_list_service).await?;
+                    add_new_room(&new_room, &room_list_service,true).await?;
                     all_known_rooms.push_back(new_room);
                 }
                 VectorDiff::PopFront => {
@@ -1383,7 +1383,8 @@ async fn async_main_loop(
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
-                    add_new_room(&new_room, &room_list_service).await?;
+                    // TODO: handle correctly insert
+                    add_new_room(&new_room, &room_list_service, true).await?;
                     all_known_rooms.insert(index, new_room);
                 }
                 VectorDiff::Set { index, value: changed_room } => {
@@ -1445,7 +1446,7 @@ async fn async_main_loop(
                     ALL_ROOM_INFO.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
-                        add_new_room(room, &room_list_service).await?;
+                        add_new_room(room, &room_list_service, true).await?;
                     }
                     all_known_rooms = new_rooms;
                 }
@@ -1511,7 +1512,7 @@ async fn update_room(
             old_room.room_id(), new_room_id,
         );
         remove_room(old_room);
-        add_new_room(new_room, room_list_service).await
+        add_new_room(new_room, room_list_service, false).await
     }
 }
 
@@ -1526,7 +1527,8 @@ fn remove_room(room: &room_list_service::Room) {
 
 
 /// Invoked when the room list service has received an update with a brand new room.
-async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService) -> Result<()> {
+async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService, back: bool) -> Result<()> {
+
     let room_id = room.room_id().to_owned();
 
     // NOTE: the call to `sync_up()` never returns, so I'm not sure how to force a room to fully sync.
@@ -1610,7 +1612,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         .as_ref()
         .map(|ev| get_latest_event_details(ev, &room_id));
 
-    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
+    let room_list_entry = RoomsListEntry {
         room_id: room_id.clone(),
         latest_display,
         latest,
@@ -1624,7 +1626,9 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
-    }));
+    };
+
+    rooms_list::enqueue_rooms_list_update(match back {true => RoomsListUpdate::AddRoomBack(room_list_entry), false =>RoomsListUpdate::AddRoomFront(room_list_entry)});
 
     spawn_fetch_room_avatar(room.inner_room().clone());
 
