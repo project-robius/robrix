@@ -3,9 +3,6 @@ use makepad_widgets::{error, log, SignalToUI};
 <<<<<<< HEAD
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
-=======
-use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 pub type EntryAndFormatRef = Arc<Mutex<EntryAndFormat>>;
 // Replace `Vec` with `SmallVec` in the future.
@@ -179,9 +176,8 @@ impl MediaCache {
 
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
-    value_ref: &Mutex<Vec<EntryAndFormat>>,
-    request: MediaRequest,
->>>>>>> 0e17569 (Dead lock)
+    value_ref: &Mutex<MediaCacheEntry>,
+    _request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
