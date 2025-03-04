@@ -23,11 +23,16 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
     use crate::shared::html_or_plaintext::HtmlOrPlaintext;
-    
+
     use crate::home::room_preview::*;
 
     // An empty view that takes up no space in the portal list.
     Empty = <View> { }
+
+    // It shows above `Rooms` header.
+    Blank = <View> {
+        width: Fill, height: 30.
+    }
 
     StatusLabel = <View> {
         width: Fill, height: Fit,
@@ -57,6 +62,7 @@ live_design! {
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
 
+            blank = <Blank> {}
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
             status_label = <StatusLabel> {}
@@ -173,6 +179,8 @@ pub struct RoomsListEntry {
     pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
+    /// Whether this room is direct.
+    pub is_direct: bool,
 }
 
 #[derive(Debug)]
@@ -413,7 +421,7 @@ pub struct RoomsList {
     /// when its value changes. Instead, you must manually invoke it on the set of `all_rooms`
     /// in order to update the set of `displayed_rooms` accordingly.
     #[rust] display_filter: RoomDisplayFilter,
-    
+
     /// The list of rooms currently displayed in the UI, in order from top to bottom.
     /// This must be a strict subset of the rooms present in `all_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_rooms``.
@@ -430,8 +438,20 @@ pub struct RoomsList {
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
+    /// The count of rooms that are not direct.
+    #[rust] not_direct_rooms_count: usize,
+    /// Label Template for header for groups in the room list
+    #[live] header_template: Option<LivePtr>
 }
-
+/// Represents the state of the header in the rooms list.
+pub enum DrawRoomListHeader {
+    /// The header "Room" has not been drawn yet
+    HaveNotDrawnRoom,
+    /// The header "People" has not been drawn yet
+    HaveNotDrawnPeople,
+    /// Finish drawing all headers
+    Done
+}
 impl RoomsList {
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
@@ -462,6 +482,7 @@ impl Widget for RoomsList {
                 num_updates += 1;
                 match update {
                     RoomsListUpdate::AddRoom(room) => {
+                        let is_direct = room.is_direct;
                         let room_id = room.room_id.clone();
                         let should_display = (self.display_filter)(&room);
                         let _replaced = self.all_rooms.insert(room_id.clone(), room);
@@ -469,7 +490,18 @@ impl Widget for RoomsList {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
                             if should_display {
-                                self.displayed_rooms.push(room_id);
+                                // We segmentation in advance:
+                                // Top indexes are non-direct room index while backward indexes are direct.
+                                if !is_direct {
+                                    // if the room is not direct while should display, we count it as a not_direct room.
+                                    self.not_direct_rooms_count += 1;
+                                    // For non-direct rooms, we insert it at the front.
+                                    self.displayed_rooms.insert(self.not_direct_rooms_count - 1, room_id);
+
+                                } else {
+                                    // For direct rooms, we push it at the back.
+                                    self.displayed_rooms.push(room_id);
+                                }
                             }
                         }
                         self.update_status_rooms_count();
@@ -500,6 +532,7 @@ impl Widget for RoomsList {
                     }
                     RoomsListUpdate::UpdateRoomName { room_id, new_room_name } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
+                            let is_direct = room.is_direct;
                             let was_displayed = (self.display_filter)(room);
                             room.room_name = Some(new_room_name);
                             let should_display = (self.display_filter)(room);
@@ -513,7 +546,13 @@ impl Widget for RoomsList {
                                 }
                                 (false, true) => {
                                     // Room was not displayed but should now be displayed.
-                                    self.displayed_rooms.push(room_id);
+                                    if !is_direct {
+                                        self.not_direct_rooms_count += 1;
+                                        self.displayed_rooms.insert(self.not_direct_rooms_count - 1, room_id);
+
+                                    } else {
+                                        self.displayed_rooms.push(room_id);
+                                    }
                                 }
                             }
                         } else {
@@ -523,9 +562,12 @@ impl Widget for RoomsList {
                     RoomsListUpdate::RemoveRoom(room_id) => {
                         self.all_rooms
                             .remove(&room_id)
-                            .and_then(|_removed|
+                            .and_then(|removed| {
+                                if !removed.is_direct {
+                                    self.not_direct_rooms_count -= 1;
+                                }
                                 self.displayed_rooms.iter().position(|r| r == &room_id)
-                            )
+                            })
                             .map(|index_to_remove| {
                                 // Remove the room from the list of displayed rooms.
                                 self.displayed_rooms.remove(index_to_remove);
@@ -547,6 +589,7 @@ impl Widget for RoomsList {
                     RoomsListUpdate::ClearRooms => {
                         self.all_rooms.clear();
                         self.displayed_rooms.clear();
+                        self.not_direct_rooms_count = 0;
                         self.update_status_rooms_count();
                     }
                     RoomsListUpdate::NotLoaded => {
@@ -618,7 +661,6 @@ impl Widget for RoomsList {
         self.widget_match_event(cx, event, scope);
     }
 
-
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Override the current active room index if the app state has a different selected room
@@ -631,25 +673,25 @@ impl Widget for RoomsList {
         }
 
         let count = self.displayed_rooms.len();
+
         let status_label_id = count;
 
-        // Start the actual drawing procedure.
         while let Some(list_item) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = list_item.as_portal_list();
             let Some(mut list) = portal_list_ref.borrow_mut() else { continue };
 
-            // Add 1 for the status label at the bottom.
             list.set_item_range(cx, 0, count + 1);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                
+
                 let mut scope = Scope::empty();
 
                 // Draw the room preview for each room in the `displayed_rooms` list.
                 let room_to_draw = self.displayed_rooms
                     .get(item_id)
                     .and_then(|room_id| self.all_rooms.get_mut(room_id));
+                // We have already segmentate `self.displayed_rooms`
                 let item = if let Some(room_info) = room_to_draw {
                     let item = list.item(cx, item_id, live_id!(room_preview));
                     self.displayed_rooms_map.insert(item.widget_uid(), item_id);
@@ -667,6 +709,7 @@ impl Widget for RoomsList {
 
                     // Pass the room info down to the RoomPreview widget via Scope.
                     scope = Scope::with_props(&*room_info);
+
                     item
                 }
                 // Draw the status label as the bottom entry.
@@ -686,7 +729,6 @@ impl Widget for RoomsList {
                 item.draw_all(cx, &mut scope);
             }
         }
-
         DrawStep::done()
     }
 
