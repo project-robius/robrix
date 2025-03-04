@@ -63,23 +63,29 @@ impl MediaCache {
     ///
     /// This is suitable for use in a latency-sensitive context, such as a UI draw routine.
     pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri, prefer_thumbnail: bool) -> MediaCacheEntry {
-            self.get(mxc_uri).map(|v|{
-                for entry_and_format in v {
-                    let mutex_guard = entry_and_format.lock().unwrap();
-                    let entry_and_format = mutex_guard.deref().clone();
+        if let Some(v) = self.get(mxc_uri) {
+            for entry_and_format in v {
+                let mutex_guard = entry_and_format.lock().unwrap();
+                let entry_and_format = mutex_guard.deref().clone();
 
-
-                    if prefer_thumbnail && !matches!(&entry_and_format.format, &MediaFormat::File) {
-                        return entry_and_format.entry.clone();
-                    } else if !prefer_thumbnail && matches!(&entry_and_format.format, &MediaFormat::File) {
-                        return entry_and_format.entry.clone();
-                    } else {
-                        continue;
-                    }
+                if prefer_thumbnail && !matches!(&entry_and_format.format, &MediaFormat::File)
+                    ||
+                !prefer_thumbnail && matches!(&entry_and_format.format, &MediaFormat::File)
+                {
+                    return entry_and_format.entry.clone();
                 }
-                return v.first().unwrap_or(Arc::new(Mutex::new(MediaCacheEntry::Failed)));
-            });
-            MediaCacheEntry::Failed
+            }
+            for entry_and_format in v {
+                let mutex_guard = entry_and_format.lock().unwrap();
+                let entry_and_format = mutex_guard.deref().clone();
+
+                if matches!(&entry_and_format.entry, MediaCacheEntry::Loaded(..)) {
+                    return entry_and_format.entry.clone();
+                }
+            }
+            return MediaCacheEntry::Requested
+        }
+        MediaCacheEntry::Failed
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.
@@ -91,53 +97,42 @@ impl MediaCache {
         &mut self,
         mxc_uri: OwnedMxcUri,
         media_format: Option<MediaFormat>,
-        want_thumbnail: bool,
+        prefer_thumbnail: bool,
     ) -> MediaCacheEntry {
 
         let media_format = media_format.unwrap_or(MediaFormat::File);
         let value_ref = match self.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => {
-                let entry_and_format = EntryAndFormat {
+                let entry_and_format_ref = Arc::new(Mutex::new(EntryAndFormat {
                     entry: MediaCacheEntry::Requested,
                     format: media_format.clone()
-                };
+                }));
+
                 // note we just insert the first value into the cache so we can get [0].
-                vacant.insert(vec![Arc::new(Mutex::new(entry_and_format))])[0].clone()
+                vacant.insert(vec![entry_and_format_ref.clone()]);
+                entry_and_format_ref
             },
             Entry::Occupied(mut occupied) => {
-                if want_thumbnail {
-                    for entry_and_format in occupied.get() {
-                        let mutex_guard = entry_and_format.lock().unwrap();
-                        let entry_and_format = mutex_guard.deref();
+                for entry_and_format in occupied.get() {
+                    let mutex_guard = entry_and_format.lock().unwrap();
+                    let entry_and_format = mutex_guard.deref();
 
-                        // anti condition
-                        if !matches!(entry_and_format.format, MediaFormat::File) {
-                            return entry_and_format.entry.clone();
-                        }
-                        continue;
-                    }
-
-                } else {
-                    for entry_and_format in occupied.get() {
-                        let mutex_guard = entry_and_format.lock().unwrap();
-                        let entry_and_format = mutex_guard.deref();
-
-                        // anti condition
-                        if matches!(entry_and_format.format, MediaFormat::File) {
-                            return entry_and_format.entry.clone();
-                        }
-                        continue;
+                    // anti condition
+                    if prefer_thumbnail && !matches!(entry_and_format.format, MediaFormat::File)
+                        ||
+                    !prefer_thumbnail && matches!(entry_and_format.format, MediaFormat::File)
+                    {
+                        return entry_and_format.entry.clone();
                     }
                 }
 
                 // if not found, we push a new value and return its ref.
-                let entry_and_format = EntryAndFormat {
+                let entry_and_format = Arc::new(Mutex::new(EntryAndFormat {
                     entry: MediaCacheEntry::Requested,
                     format: media_format.clone()
-                };
-                occupied.get_mut().push(Arc::new(Mutex::new(entry_and_format)));
-                // note we just push a value into the cache so we can safely get the last value.
-                occupied.get().last().unwrap().clone()
+                }));
+                occupied.get_mut().push(entry_and_format.clone());
+                entry_and_format
             },
         };
 
