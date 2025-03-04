@@ -42,8 +42,6 @@ The following table shows which host systems can currently be used to build Robr
  - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
  - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
- - The app window may be titled "Makepad" on certain platforms, e.g., Linux. We are improving our packaging+windowing infrastructure to fix this.
-
 
 ## Building and Running
 
