@@ -1721,14 +1721,11 @@ impl RoomScreen {
             self.view.view(id!(typing_notice)).set_visible(cx, true);
             // Animate in the typing notice view (sliding it up from the bottom).
             self.animator_play(cx, id!(typing_notice_animator.show));
-            // Start the typing notice text animation of bouncing dots.
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            typing_animation.animate(cx);
+     
         } else {
             // Animate out the typing notice view (sliding it out towards the bottom).
             self.animator_play(cx, id!(typing_notice_animator.hide));
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            typing_animation.stop_animation();
+
         }
 
         if num_updates > 0 {
