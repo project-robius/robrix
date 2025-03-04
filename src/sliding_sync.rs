@@ -418,10 +418,12 @@ async fn async_worker(
                     (timeline_ref, sender)
                 };
                 if use_cache {
-                    let (ec, ed) = timeline.room().event_cache().await.unwrap();
-                    let (cache_timelines, _) = ec.subscribe().await;
+                    let Ok((room_event_cache, _event_cache_drop_handler))  = timeline.room().event_cache().await else {
+                        continue;
+                    };
+                    let (cache_timelines, _) = room_event_cache.subscribe().await;
                     if cache_timelines.len() >= num_events.into() {
-                        log!("Fetching timeline events from the cache with length: {:?} for room {room_id}...", timelines.len());
+                        log!("Fetching timeline events from the cache with length: {:?} for room {room_id}...", cache_timelines.len());
                         sender.send(TimelineUpdate::PaginationIdle {
                             fully_paginated: true,
                             direction: PaginationDirection::Backwards,
