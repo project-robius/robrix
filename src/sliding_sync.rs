@@ -226,7 +226,7 @@ pub enum MatrixRequest {
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
-        /// If true, skipp timeline pagination if the length of event cache is larger or equal to num_events
+        /// If true, skips timeline pagination if the length of event cache is larger or equal to number of events
         use_cache: bool
     },
     /// Request to edit the content of an event in the given room's timeline.
