@@ -3,9 +3,9 @@ use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
-pub type EntryAndFormatRef = Arc<Mutex<EntryAndFormat>>;
+pub type CacheRef = Arc<Mutex<EntryAndFormat>>;
 // Replace `Vec` with `SmallVec` in the future.
-pub type Caches = Vec<EntryAndFormatRef>;
+pub type CacheSet = Vec<CacheRef>;
 
 #[derive(Debug, Clone)]
 pub struct EntryAndFormat {
@@ -13,11 +13,6 @@ pub struct EntryAndFormat {
     pub format: MediaFormat,
 }
 
-impl EntryAndFormat {
-    pub const fn new(entry: MediaCacheEntry, format: MediaFormat) -> Self {
-        Self {entry, format}
-    }
-}
 /// An entry in the media cache.
 #[derive(Debug, Clone)]
 pub enum MediaCacheEntry {
@@ -32,12 +27,12 @@ pub enum MediaCacheEntry {
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
 pub struct MediaCache {
     /// The actual cached data.
-    cache: BTreeMap<OwnedMxcUri, Caches>,
+    cache: BTreeMap<OwnedMxcUri, CacheSet>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
-    type Target = BTreeMap<OwnedMxcUri, Caches>;
+    type Target = BTreeMap<OwnedMxcUri, CacheSet>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
@@ -66,38 +61,24 @@ impl MediaCache {
     /// Gets media from the cache without sending a fetch request if the media is absent.
     ///
     /// This is suitable for use in a latency-sensitive context, such as a UI draw routine.
-    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri, want_thumbnail: bool) -> Option<MediaCacheEntry> {
-        if want_thumbnail {
-            self.get(mxc_uri).and_then(|v|{
+    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri, prefer_thumbnail: bool) -> MediaCacheEntry {
+            self.get(mxc_uri).map(|v|{
                 for entry_and_format in v {
                     let mutex_guard = entry_and_format.lock().unwrap();
                     let entry_and_format = mutex_guard.deref().clone();
 
-                    // we just only anti the condition here.
-                    if !matches!(&entry_and_format.format, &MediaFormat::File) {
-                        return Some(entry_and_format.entry.clone());
-                    } else {
-                        continue;
-                    }
-                }
-                None
-            })
-        } else {
-            self.get(mxc_uri).and_then(|v|{
-                for entry_and_format in v {
-                    let mutex_guard = entry_and_format.lock().unwrap();
-                    let entry_and_format = mutex_guard.deref().clone();
 
-                    // we only anti the condition here.
-                    if matches!(&entry_and_format.format, &MediaFormat::File) {
-                        return Some(entry_and_format.entry.clone());
+                    if prefer_thumbnail && !matches!(&entry_and_format.format, &MediaFormat::File) {
+                        return entry_and_format.entry.clone();
+                    } else if !prefer_thumbnail && matches!(&entry_and_format.format, &MediaFormat::File) {
+                        return entry_and_format.entry.clone();
                     } else {
                         continue;
                     }
                 }
-                None
-            })
-        }
+                return v.first().unwrap_or(Arc::new(Mutex::new(MediaCacheEntry::Failed)));
+            });
+            MediaCacheEntry::Failed
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.
@@ -115,10 +96,10 @@ impl MediaCache {
         let media_format = media_format.unwrap_or(MediaFormat::File);
         let value_ref = match self.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => {
-                let entry_and_format = EntryAndFormat::new(
-                    MediaCacheEntry::Requested,
-                    media_format.clone()
-                );
+                let entry_and_format = EntryAndFormat {
+                    entry: MediaCacheEntry::Requested,
+                    format: media_format.clone()
+                };
                 // note we just insert the first value into the cache so we can get [0].
                 vacant.insert(vec![Arc::new(Mutex::new(entry_and_format))])[0].clone()
             },
@@ -149,7 +130,10 @@ impl MediaCache {
                 }
 
                 // if not found, we push a new value and return its ref.
-                let entry_and_format = EntryAndFormat::new(MediaCacheEntry::Requested, media_format.clone());
+                let entry_and_format = EntryAndFormat {
+                    entry: MediaCacheEntry::Requested,
+                    format: media_format.clone()
+                };
                 occupied.get_mut().push(Arc::new(Mutex::new(entry_and_format)));
                 // note we just push a value into the cache so we can safely get the last value.
                 occupied.get().last().unwrap().clone()
@@ -209,7 +193,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         }
     };
 
-    *value_ref.lock().unwrap() = EntryAndFormat::new(entry, format);
+    *value_ref.lock().unwrap() = EntryAndFormat {entry, format};
 
     if let Some(sender) = update_sender {
         let _ = sender.send(TimelineUpdate::MediaFetched);
