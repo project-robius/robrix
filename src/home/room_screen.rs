@@ -514,7 +514,7 @@ live_design! {
 
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
-    DayDivider = <View> {
+    DateDivider = <View> {
         width: Fill,
         height: Fit,
         margin: {top: 7.0, bottom: 7.0}
@@ -542,8 +542,8 @@ live_design! {
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
-    // This is implemented as a DayDivider with a different color and a fixed text label.
-    ReadMarker = <DayDivider> {
+    // This is implemented as a DateDivider with a different color and a fixed text label.
+    ReadMarker = <DateDivider> {
         left_line = {
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
@@ -606,7 +606,7 @@ live_design! {
             CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
-            DayDivider = <DayDivider> {}
+            DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
         }
 
@@ -990,7 +990,7 @@ impl Widget for RoomScreen {
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
                             .map(|user_profile| user_profile.displayable_name().to_string())
-                            .unwrap_or(sender.to_string())
+                            .unwrap_or_else(|| sender.to_string())
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
@@ -1397,8 +1397,8 @@ impl Widget for RoomScreen {
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
-                        TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DayDivider));
+                        TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
+                            let item = list.item(cx, item_id, live_id!(DateDivider));
                             let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
@@ -3326,8 +3326,13 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        item.reaction_list(id!(content.reaction_list))
-            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
+        item.reaction_list(id!(content.reaction_list)).set_list(
+            cx,
+            &event_tl_item.content().reactions(),
+            room_id.to_owned(),
+            event_tl_item.identifier(),
+            item_id,
+        );
         populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
