@@ -1693,6 +1693,7 @@ impl RoomScreen {
                 room_id: tl.room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: false
             });
         }
 
@@ -2306,6 +2307,7 @@ impl RoomScreen {
                 room_id: room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: true
             });
 
             // Even though we specify that room member profiles should be lazy-loaded,
@@ -2535,6 +2537,7 @@ impl RoomScreen {
                 room_id: tl.room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: false
             });
         }
         tl.last_scrolled_index = first_index;

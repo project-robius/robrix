@@ -226,6 +226,8 @@ pub enum MatrixRequest {
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
+        /// If true, skipp timeline pagination if the length of event cache is larger or equal to num_events
+        use_cache: bool
     },
     /// Request to edit the content of an event in the given room's timeline.
     EditMessage {
@@ -403,7 +405,7 @@ async fn async_worker(
                     )));
                 }
             }
-            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction, use_cache } => {
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -415,6 +417,19 @@ async fn async_worker(
                     let sender = room_info.timeline_update_sender.clone();
                     (timeline_ref, sender)
                 };
+                if use_cache {
+                    let (ec, ed) = timeline.room().event_cache().await.unwrap();
+                    let (cache_timelines, _) = ec.subscribe().await;
+                    if cache_timelines.len() >= num_events.into() {
+                        log!("Fetching timeline events from the cache with length: {:?} for room {room_id}...", timelines.len());
+                        sender.send(TimelineUpdate::PaginationIdle {
+                            fully_paginated: true,
+                            direction: PaginationDirection::Backwards,
+                        }).unwrap();
+                        SignalToUI::set_ui_signal();
+                        continue;
+                    }
+                }
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
@@ -670,6 +685,7 @@ async fn async_worker(
                         room_id,
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
+                        use_cache: false
                     });
                 });
             }
@@ -1308,7 +1324,8 @@ async fn async_main_loop(
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
-
+    client.event_cache().enable_storage().expect("BUG: CLIENT's event cache unable to enable storage");
+    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
     add_verification_event_handlers_and_sync_client(client.clone());
@@ -1670,6 +1687,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                         room_id: joined_room.room_id().to_owned(),
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
+                        use_cache: true
                     });
                 }
             }
@@ -1865,6 +1883,7 @@ async fn timeline_subscriber_handler(
                             room_id: room_id.clone(),
                             num_events: 50,
                             direction: PaginationDirection::Backwards,
+                            use_cache: true
                         });
                     }
                 }

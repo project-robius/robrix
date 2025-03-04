@@ -662,6 +662,7 @@ impl Widget for RoomsList {
                             room_id: room_info.room_id.clone(),
                             num_events: 50,
                             direction: PaginationDirection::Backwards,
+                            use_cache: false
                         });
                     }
 
