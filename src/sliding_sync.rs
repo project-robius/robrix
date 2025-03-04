@@ -240,8 +240,16 @@ pub enum MatrixRequest {
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
-    FetchRoomMembers {
+    SyncRoomMemberList {
         room_id: OwnedRoomId,
+    },
+    /// Request to get the actual list of members in a room.
+    /// This returns the list of members that can be displayed in the UI.
+    GetRoomMembers {
+        room_id: OwnedRoomId,
+        memberships: RoomMemberships,
+        use_cache: bool,
+        from_server: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -509,7 +517,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchRoomMembers { room_id } => {
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -522,11 +530,46 @@ async fn async_worker(
 
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch room members request for room {room_id}...");
+                    log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    log!("Completed fetch room members request for room {room_id}.");
+                    log!("Completed sync room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::GetRoomMembers { room_id, memberships, use_cache, from_server } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for get room members request {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _get_members_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+
+                    if use_cache {
+                        if let Ok(members) = room.members_no_sync(memberships).await {
+                            log!("Got {} members from cache for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
+                    }
+
+                    if from_server {
+                        if let Ok(members) = room.members(memberships).await {
+                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                            SignalToUI::set_ui_signal();
+                        }
+                    }
                 });
             }
 
@@ -1003,7 +1046,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1302,7 +1345,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -2220,7 +2263,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
