@@ -1,15 +1,15 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
-use std::path::PathBuf;
+use std::{collections::HashMap, io::Read, path::PathBuf};
 use anyhow::{anyhow, bail};
-use makepad_widgets::{log, Cx};
+use makepad_widgets::{log, makepad_micro_serde::{DeRon, SerRon}, Cx, DockItem, LiveId};
 use matrix_sdk::{
     authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
 };
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use tokio::{fs, io};
 
-use crate::{app_data_dir, login::login_screen::LoginAction};
+use crate::{app::SelectedRoom, app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +59,10 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 }
 
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
+
+const LATEST_DOCK_STATE: &str = "latest_dock_state.ron";
+
+const OPEN_ROOMS: &str = "open_rooms.json";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
@@ -181,4 +185,44 @@ pub async fn save_session(
     // `cross_signing_bootstrap` example).
 
     Ok(())
+}
+
+/// Save the room panel when window is closed.
+pub fn save_room_panel(dock_state: &HashMap<LiveId, DockItem>, open_rooms: &HashMap<LiveId, SelectedRoom>) -> anyhow::Result<()> {
+    std::fs::write(
+        app_data_dir().join(LATEST_DOCK_STATE),
+        dock_state.serialize_ron(),
+    )?;
+    let open_rooms_serialize: HashMap<u64, SelectedRoom>  = HashMap::from_iter(open_rooms.iter().map(|(k, v)| (k.0, v.clone())));
+    std::fs::write(
+        app_data_dir().join(OPEN_ROOMS),
+        serde_json::to_string(&open_rooms_serialize)?,
+    )?;
+    Ok(())
+}
+
+/// Restore the room panel when app starts up
+pub fn restore_room_panel() -> anyhow::Result<(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>)> {
+    let mut file = match std::fs::File::open(app_data_dir().join(LATEST_DOCK_STATE)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((HashMap::new(), HashMap::new())),
+        Err(e) => return Err(e.into()),
+    };
+    // Read the file contents into a String
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let dock_state: HashMap<LiveId, DockItem> = HashMap::deserialize_ron(&contents).map_err(|er| {
+        anyhow::Error::msg(er.msg)
+    })?;
+    let mut file = match std::fs::File::open(app_data_dir().join(OPEN_ROOMS)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((HashMap::new(), HashMap::new())),
+        Err(e) => return Err(e.into()),
+    };
+    // Read the file contents into a String
+    let mut contents = String::new();
+    file.read_to_string(&mut contents)?;
+    let open_rooms_serialize: HashMap<u64, SelectedRoom> = serde_json::from_str(&contents)?;
+    let open_rooms: HashMap<LiveId, SelectedRoom>  = HashMap::from_iter(open_rooms_serialize.iter().map(|(k, v)| (LiveId(*k), v.clone())));
+    Ok((dock_state, open_rooms))
 }
