@@ -302,6 +302,9 @@ impl MatchEvent for MainDesktopUI {
                     }
                     should_save_dock_action = true;
                 }
+                DockAction::SplitPanelChanged { panel_id: _, axis: _, align: _ } => {
+                    should_save_dock_action = true;
+                }
                 _ => (),
             }
             if should_save_dock_action {
