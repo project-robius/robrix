@@ -1,6 +1,6 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
 use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{ruma::{OwnedMxcUri, events::room::MediaSource}, media::{MediaRequest, MediaFormat}};
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
 
 pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
@@ -84,7 +84,7 @@ impl MediaCache {
         );
         sliding_sync::submit_async_request(
             MatrixRequest::FetchMedia {
-                media_request: MediaRequest {
+                media_request: MediaRequestParameters {
                     source: MediaSource::Plain(mxc_uri),
                     format,
                 },
@@ -100,7 +100,7 @@ impl MediaCache {
 /// Insert data into a previously-requested media cache entry.
 fn insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
-    _request: MediaRequest,
+    _request: MediaRequestParameters,
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
