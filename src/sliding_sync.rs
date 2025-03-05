@@ -7,135 +7,37 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig,
-    event_handler::EventHandlerDropGuard,
-    media::MediaRequest,
-    room::RoomMember,
-    ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType,
-        events::{
-            receipt::ReceiptThread,
-            room::{
-                message::{
-                    ForwardThread,
-                    RoomMessageEventContent
-                },
-                power_levels::RoomPowerLevels,
-                MediaSource
-            },
-            FullStateEventContent,
-            MessageLikeEventType,
-            StateEventType
-        },
-        MilliSecondsSinceUnixEpoch,
-        OwnedEventId,
-        OwnedMxcUri,
-        OwnedRoomAliasId,
-        OwnedRoomId,
-        OwnedUserId,
-        UserId
-    },
-    sliding_sync::VersionBuilder,
-    Client,
-    ClientBuildError,
-    Error,
-    Room,
-    RoomMemberships
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
+        api::client::receipt::create_receipt::v3::ReceiptType, events::{
+            receipt::ReceiptThread, room::{
+                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+            }, FullStateEventContent, MessageLikeEventType, StateEventType
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{
-        self,
-        RoomListLoadingState
-    },
-    sync_service::{
-        self,
-        SyncService
-    },
-    timeline::{
-        AnyOtherFullStateEventContent,
-        EventTimelineItem,
-        MembershipChange,
-        RepliedToInfo,
-        TimelineEventItemId,
-        TimelineItem,
-        TimelineItemContent
-    },
-    RoomListService,
-    Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use reqwest;
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{
-        mpsc::{
-            Receiver,
-            Sender,
-            UnboundedReceiver,
-            UnboundedSender
-        },
-        watch,
-        Notify
-    },
-    task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{
-    cmp::{ max, min},
-    collections::{ BTreeMap, BTreeSet },
-    ops::Not,
-    path:: Path,
-    sync::{
-        Arc,
-        LazyLock,
-        Mutex,
-        OnceLock
-    }
-};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock} };
 use std::io;
 
 use url_preview;
 
 use crate::{
-    app_data_dir,
-    avatar_cache::AvatarUpdate,
-    card_cache::{
-        CardCacheEntry,
-        LinkPreviewCard,
-    },
-    event_preview::text_preview_of_timeline_item,
-    home::{
-        room_screen::TimelineUpdate,
-        rooms_list::{
-            self,
-            enqueue_rooms_list_update,
-            RoomPreviewAvatar,
-            RoomsListEntry,
-            RoomsListUpdate
-        }
-    },
-    login::login_screen::LoginAction,
-    media_cache::MediaCacheEntry,
-    persistent_state::{
-        self, ClientSessionPersisted
-    },
-    profile::{
+    app_data_dir, avatar_cache::AvatarUpdate, card_cache::{CardCacheEntry, LinkPreviewCard, }, event_preview::text_preview_of_timeline_item, home::{
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
-        user_profile_cache::{
-            enqueue_user_profile_update,
-            UserProfileUpdate
-        },
-    },
-    shared::{
-        jump_to_bottom_button::UnreadMessageCount,
-        popup_list::enqueue_popup_notification
-    },
-    utils::{
-        self,
-        AVATAR_THUMBNAIL_FORMAT
-    },
-    verification::add_verification_event_handlers_and_sync_client
+        user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
