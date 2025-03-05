@@ -1,12 +1,12 @@
 use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
 use makepad_widgets::{error, log, SignalToUI};
-<<<<<<< HEAD
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
 
 pub type CacheRef = Arc<Mutex<EntryAndFormat>>;
-// Replace `Vec` with `SmallVec` in the future.
-pub type CacheSet = Vec<CacheRef>;
+
+/// We want all the `CacheRef` stored in heap.
+pub type CacheSet = SmallVec<[CacheRef; 0]>;
 
 #[derive(Debug, Clone)]
 pub struct EntryAndFormat {
@@ -109,7 +109,7 @@ impl MediaCache {
                 }));
 
                 // note we just insert the first value into the cache so we can get [0].
-                vacant.insert(vec![entry_and_format_ref.clone()]);
+                vacant.insert(smallvec![entry_and_format_ref.clone()]);
                 entry_and_format_ref
             },
             Entry::Occupied(mut occupied) => {
