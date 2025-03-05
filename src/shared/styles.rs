@@ -199,56 +199,55 @@ live_design! {
             color: #FFFFFF00
             instance rotation_speed: 1.
             fn pixel(self) -> vec4 {
-                // Position normalization and adjusting the aspect ratio
                 let aspect = self.rect_size.x / self.rect_size.y;
                 let normalized_pos_x = (self.pos.x - 0.5) * max(aspect, 1.);
                 let normalized_pos_y = (self.pos.y - 0.5) * max(1. / aspect, 1.);
                 let pos = vec2(normalized_pos_x, normalized_pos_y) * 1.5;
 
-                // Calculate pixel-to-center distance and angle
                 let radius = length(pos);
                 let angle = atan(pos.y, pos.x);
 
-                // Define inner and outer radii of the circle
                 let inner_radius = 0.6; // r
                 let outer_radius = 0.7; // R
                 let ring_thickness = outer_radius - inner_radius; // R - r
                 let cap_radius = ring_thickness / 2.0;
 
-                // Calculate the transparency of the circle
                 let ring_center = (inner_radius + outer_radius) / 2.0;
                 let edge = abs(radius - ring_center) - ring_thickness / 2.0;
                 let d = smoothstep(0.005, -0.005, edge);
 
-                // Calculate the head-tail angle
-                let tail_speed = self.rotation_speed;
-                let head_speed = self.rotation_speed * 1.5;
-                let tail_angle = mod(self.time * tail_speed * 2.0 * PI, 2.0 * PI);
-                let head_angle = mod(self.time * head_speed * 2.0 * PI, 2.0 * PI);
+                // Define the maximum arc length and oscillation frequency
+                // Maximum arc length, slightly less than 2π
+                let max_arc = 1.93 * PI;
+                // Matches the original chase frequency
+                let frequency = 0.75 * self.rotation_speed * 2.0 * PI;
+                let arc_length = (1.0 - cos(self.time * frequency)) * max_arc / 2.0;
 
-                // Calculate the pixel angle relative to the tail
+                // Calculate tail and head angles
+                let tail_angle = mod(self.time * self.rotation_speed * 2.0 * PI, 2.0 * PI);
+                let head_angle = mod(tail_angle + arc_length, 2.0 * PI);
+
+                // Calculate the angle of the pixel relative to the tail
                 let relative_angle = mod(angle - tail_angle, 2.0 * PI);
-                let head_relative = mod(head_angle - tail_angle, 2.0 * PI);
 
-                // Calculate the center of the semicircle (at the center of the circle at the head and tail)
+                // Calculate the transparency of the arc body
+                let arc_alpha = step(0.0, relative_angle) * step(relative_angle, arc_length);
+
+                // Calculate the center of the head and tail semicircles
                 let cap_center_tail = vec2(cos(tail_angle), sin(tail_angle)) * ring_center;
                 let cap_center_head = vec2(cos(head_angle), sin(head_angle)) * ring_center;
 
-                // Calculate the distance from the pixel to the center of the head and tail semicircles
+                // Calculate the distance from the pixel to the center of the semicircle
                 let dist_to_tail_cap = length(pos - cap_center_tail);
                 let dist_to_head_cap = length(pos - cap_center_head);
 
-                // Determine if the pixel is inside the head and tail semicircles
+                // Determine if a pixel is within the head or tail semicircle
                 let in_tail_cap = dist_to_tail_cap < cap_radius;
                 let in_head_cap = dist_to_head_cap < cap_radius;
 
-                // Calculate the transparency of the body of the circle
-                let arc_alpha = step(0.0, relative_angle) * step(relative_angle, head_relative);
-
-                // Merging the transparency of arcs and semicircles
+                // Transparency of merged arcs and semicircles
                 let alpha = (arc_alpha + float(in_tail_cap) + float(in_head_cap)) * d;
-
-                alpha = min(alpha, 1.0);
+                let alpha = min(alpha, 1.0);
 
                 return vec4(self.color.rgb * alpha, alpha);
             }
