@@ -484,7 +484,7 @@ impl HtmlOrPlaintextRef {
         }
     }
 
-    /// See [`cardOrPlaintext::show_card()`].
+    /// See [`HtmlOrPlaintext::show_card()`].
     pub fn show_card(
         &mut self, cx: &mut Cx, card: &LinkPreviewCard
     ) {

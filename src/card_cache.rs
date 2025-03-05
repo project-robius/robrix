@@ -11,6 +11,9 @@ use crate::{
     sliding_sync::{self, MatrixRequest},
 };
 
+use url_preview;
+
+pub type LinkPreviewResult = Result<LinkPreviewCard, url_preview::PreviewError>;
 
 // Link preview card data
 #[derive(Clone, Debug)]
@@ -110,10 +113,10 @@ impl CardCache {
 }
 
 /// Insert data into a previously-requested card cache entry.
-fn insert_into_cache<D: Into<Arc<LinkPreviewCard>>>(
+fn insert_into_cache(
     value_ref: &Mutex<CardCacheEntry>,
     url: String,
-    data: matrix_sdk::Result<D>,
+    data: LinkPreviewResult,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     let new_value = match data {
