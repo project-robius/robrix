@@ -3,10 +3,10 @@ use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
 
-pub type CacheRef = Arc<Mutex<EntryAndFormat>>;
+pub type MediaCacheEntryRef = Arc<Mutex<EntryAndFormat>>;
 
-/// We want all the `CacheRef` stored in heap.
-pub type CacheSet = SmallVec<[CacheRef; 0]>;
+/// We want all the `MediaCacheEntryRef` stored in heap.
+pub type ValuesVec = SmallVec<[MediaCacheEntryRef; 0]>;
 
 #[derive(Debug, Clone)]
 pub struct EntryAndFormat {
@@ -28,12 +28,12 @@ pub enum MediaCacheEntry {
 /// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
 pub struct MediaCache {
     /// The actual cached data.
-    cache: BTreeMap<OwnedMxcUri, CacheSet>,
+    cache: BTreeMap<OwnedMxcUri, ValuesVec>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
-    type Target = BTreeMap<OwnedMxcUri, CacheSet>;
+    type Target = BTreeMap<OwnedMxcUri, ValuesVec>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
@@ -63,29 +63,22 @@ impl MediaCache {
     ///
     /// This is suitable for use in a latency-sensitive context, such as a UI draw routine.
     pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri, prefer_thumbnail: bool) -> MediaCacheEntry {
-        if let Some(v) = self.get(mxc_uri) {
-            for entry_and_format in v {
-                let mutex_guard = entry_and_format.lock().unwrap();
-                let entry_and_format = mutex_guard.deref().clone();
+        self.get(mxc_uri).map_or(MediaCacheEntry::Failed, |entries| {
+            let matches_preferred = |e: &EntryAndFormat| {
+                prefer_thumbnail != matches!(e.format, MediaFormat::File)
+            };
 
-                if prefer_thumbnail && !matches!(&entry_and_format.format, &MediaFormat::File)
-                    ||
-                !prefer_thumbnail && matches!(&entry_and_format.format, &MediaFormat::File)
-                {
-                    return entry_and_format.entry.clone();
-                }
-            }
-            for entry_and_format in v {
-                let mutex_guard = entry_and_format.lock().unwrap();
-                let entry_and_format = mutex_guard.deref().clone();
-
-                if matches!(&entry_and_format.entry, MediaCacheEntry::Loaded(..)) {
-                    return entry_and_format.entry.clone();
-                }
-            }
-            return MediaCacheEntry::Requested
-        }
-        MediaCacheEntry::Failed
+            entries.iter()
+                .map(|e| e.lock().unwrap().clone())
+                .find(matches_preferred)
+                .map_or_else(
+                    || entries.iter()
+                        .map(|e| e.lock().unwrap().clone())
+                        .find(|e| matches!(e.entry, MediaCacheEntry::Loaded(..)))
+                        .map_or(MediaCacheEntry::Requested, |e| e.entry),
+                    |e| e.entry
+                )
+        })
     }
 
     /// Tries to get the media from the cache, or submits an async request to fetch it.
