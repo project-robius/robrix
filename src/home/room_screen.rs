@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1134,12 +1134,11 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked and enter key being pressed.
-            let send_message_shortcut_pressed = message_input
-                .key_down_unhandled(actions)
-                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
-            if send_message_shortcut_pressed
-                || self.button(id!(send_message_button)).clicked(actions)
+            // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
+            if self.button(id!(send_message_button)).clicked(actions)
+                || message_input.key_down_unhandled(actions).is_some_and(
+                    |ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
+                )
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
