@@ -31,7 +31,6 @@ impl AvatarState {
     }
 
     /// Returns the avatar URI, if in the `Known` state and it exists.
-    #[allow(unused)]
     pub fn uri(&self) -> Option<&OwnedMxcUri> {
         if let AvatarState::Known(Some(uri)) = self {
             Some(uri)
