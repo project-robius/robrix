@@ -184,21 +184,24 @@ impl Widget for LoadingPane {
         // 3. The escape key is pressed if this pane has key focus,
         // 4. The back mouse button is clicked within this view,
         // 5. The user clicks/touches outside the main_content view area.
-        let close_pane = match event {
-            Event::Actions(actions) => self.button(id!(cancel_button)).clicked(actions), // 1
-            Event::BackPressed => true,                                                  // 2
-            _ => false,
-        } || match event.hits_with_capture_overload(cx, area, true) {
-            Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                          // 3
-            Hit::FingerDown(_fde) => {
-                cx.set_key_focus(area);
-                false
+        let close_pane = {
+            matches!(
+                event,
+                Event::Actions(actions) if self.button(id!(cancel_button)).clicked(actions)
+            )
+            || event.back_pressed()
+            || match event.hits_with_capture_overload(cx, area, true) {
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::FingerDown(_fde) => {
+                    cx.set_key_focus(area);
+                    false
+                }
+                Hit::FingerUp(fue) if fue.is_over => {
+                    fue.mouse_button().is_some_and(|b| b.is_back())
+                    || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)
+                }
+                _ => false,
             }
-            Hit::FingerUp(fue) if fue.is_over => {
-                fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
-                || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
-            }
-            _ => false,
         };
         if close_pane {
             if let LoadingPaneState::BackwardsPaginateUntilEvent { target_event_id, request_sender, .. } = &self.state {
