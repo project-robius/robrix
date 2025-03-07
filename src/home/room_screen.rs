@@ -1445,16 +1445,21 @@ impl RoomScreen {
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::FirstUpdate { initial_items } => {
+                TimelineUpdate::FirstUpdate { initial_items, num_unread } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
+                    
                     // Set the portal list to the very bottom of the timeline.
-                    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
-                    portal_list.set_tail_range(true);
+                    // #123
+                    //portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
+                    //portal_list.set_tail_range(true);
+                    //portal_list.set_tail_range(true);
+                    portal_list.set_first_id_and_scroll(portal_list.first_id().saturating_sub(num_unread), 0.0);
                     jump_to_bottom.update_visibility(cx, true);
-
-                    tl.items = initial_items;
+                    
+                    
+                    println!("tl_state item len {:?}", tl.items.len());
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
@@ -1503,12 +1508,12 @@ impl RoomScreen {
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
-                            portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
-                            tl.prev_first_index = Some(new_item_idx);
-                            // Set scrolled_past_read_marker false when we jump to a new event
-                            tl.scrolled_past_read_marker = false;
-                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
-                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
+                            // portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
+                            // tl.prev_first_index = Some(new_item_idx);
+                            // // Set scrolled_past_read_marker false when we jump to a new event
+                            // tl.scrolled_past_read_marker = false;
+                            // // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            // cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
 
                         }
                     }
@@ -1562,6 +1567,17 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
+                    println!("unread_message_count {:?}", unread_messages_count);
+                    if let UnreadMessageCount::Known(unread_message_count) = unread_messages_count {
+                        let first_index = portal_list.first_id();
+                        //portal_list.set_first_id(first_index.saturating_sub(unread_message_count as usize));
+                        println!("first_index {:?}", first_index);
+                        portal_list.set_tail_range(false);
+                        portal_list.set_first_id_and_scroll(first_index.saturating_sub(unread_message_count as usize), 0.0);
+
+                        tl.prev_first_index = Some(first_index.saturating_sub(unread_message_count as usize));
+                    }
+
                     jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
@@ -1692,6 +1708,7 @@ impl RoomScreen {
                 room_id: tl.room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: false
             });
         }
 
@@ -2252,7 +2269,7 @@ impl RoomScreen {
 
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
-
+        //submit_async_request(MatrixRequest::GetNumberUnreadMessages { room_id: room_id.clone() });
         let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
@@ -2303,6 +2320,7 @@ impl RoomScreen {
                 room_id: room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: true
             });
 
             // Even though we specify that room member profiles should be lazy-loaded,
@@ -2532,6 +2550,7 @@ impl RoomScreen {
                 room_id: tl.room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: false
             });
         }
         tl.last_scrolled_index = first_index;
@@ -2584,6 +2603,7 @@ pub enum TimelineUpdate {
     FirstUpdate {
         /// The initial list of timeline items (events) for a room.
         initial_items: Vector<Arc<TimelineItem>>,
+        num_unread: usize
     },
     /// The content of a room's timeline was updated in the background.
     NewItems {

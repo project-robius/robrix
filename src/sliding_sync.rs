@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -84,19 +84,19 @@ async fn build_client(
     // Generate a unique subfolder name for the client database,
     // which allows multiple clients to run simultaneously.
     let now = chrono::Local::now();
-    let db_subfolder_name: String = format!("db_{}", now.format("%F_%H_%M_%S_%f"));
+    let db_subfolder_name: String = format!("db_{}", "test");
     let db_path = data_dir.join(db_subfolder_name);
 
     // Generate a random passphrase.
-    let passphrase: String = {
-        use rand::{Rng, thread_rng};
-        thread_rng()
-            .sample_iter(rand::distributions::Alphanumeric)
-            .take(32)
-            .map(char::from)
-            .collect()
-    };
-
+    // let passphrase: String = {
+    //     use rand::{Rng, thread_rng};
+    //     thread_rng()
+    //         .sample_iter(rand::distributions::Alphanumeric)
+    //         .take(32)
+    //         .map(char::from)
+    //         .collect()
+    // };
+    let passphrase = String::from("8jeHwE4KQSGa9nR9B53FDIvuQVUTTSxS");
     let homeserver_url = cli.homeserver.as_deref()
         .unwrap_or("https://matrix-client.matrix.org/");
         // .unwrap_or("https://matrix.org/");
@@ -226,6 +226,8 @@ pub enum MatrixRequest {
         /// The maximum number of timeline events to fetch in each pagination batch.
         num_events: u16,
         direction: PaginationDirection,
+        /// If true, skips timeline pagination if the length of event cache is larger or equal to number of events
+        use_cache: bool
     },
     /// Request to edit the content of an event in the given room's timeline.
     EditMessage {
@@ -403,7 +405,7 @@ async fn async_worker(
                     )));
                 }
             }
-            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
+            MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction, use_cache } => {
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -415,6 +417,21 @@ async fn async_worker(
                     let sender = room_info.timeline_update_sender.clone();
                     (timeline_ref, sender)
                 };
+                if use_cache {
+                    let Ok((room_event_cache, _event_cache_drop_handler))  = timeline.room().event_cache().await else {
+                        continue;
+                    };
+                    let (cache_timelines, _) = room_event_cache.subscribe().await;
+                    if cache_timelines.len() >= num_events.into() {
+                        log!("Fetching timeline events from the cache with length: {:?} for room {room_id}...", cache_timelines.len());
+                        sender.send(TimelineUpdate::PaginationIdle {
+                            fully_paginated: true,
+                            direction: PaginationDirection::Backwards,
+                        }).unwrap();
+                        SignalToUI::set_ui_signal();
+                        continue;
+                    }
+                }
 
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
@@ -598,6 +615,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::GetNumberUnreadMessages { room_id } => {
+                println!("GetNumberUnreadMessages {:?}", room_id);
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -670,6 +688,7 @@ async fn async_worker(
                         room_id,
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
+                        use_cache: false
                     });
                 });
             }
@@ -1308,7 +1327,8 @@ async fn async_main_loop(
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
-
+    client.event_cache().enable_storage().expect("BUG: CLIENT's event cache unable to enable storage");
+    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
     add_verification_event_handlers_and_sync_client(client.clone());
@@ -1670,6 +1690,7 @@ fn handle_ignore_user_list_subscriber(client: Client) {
                         room_id: joined_room.room_id().to_owned(),
                         num_events: 50,
                         direction: PaginationDirection::Backwards,
+                        use_cache: true
                     });
                 }
             }
@@ -1778,18 +1799,28 @@ async fn timeline_subscriber_handler(
             None
         }
     }
-
-
+    let mut timeline_event_cache = vec![];
+    if let Ok((event_cache, _event_cache_drop_handler)) = timeline.room().event_cache().await {
+        let (timeline_events, room_event_cache_handler) = event_cache.subscribe().await;
+        timeline_event_cache = timeline_events;
+    }
     let room_id = room.room_id().to_owned();
-    log!("Starting timeline subscriber for room {room_id}...");
+    log!("Starting timeline subscriber for room {room_id}... timeline_event_cache length {:?}", timeline_event_cache.len());
+    if timeline_event_cache.len() < room.unread_notification_counts().notification_count as usize + 50 {
+        let b = timeline.paginate_backwards(50).await.unwrap();
+        println!("b {:?}", b);
+    }
     let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
-    log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
+    //# 123
+    println!("timeline_items {:?} room_id {:?}",timeline_items.len(), room_id);
     timeline_update_sender.send(TimelineUpdate::FirstUpdate {
         initial_items: timeline_items.clone(),
+        num_unread: room.unread_notification_counts().notification_count as usize
     }).unwrap_or_else(
         |_e| panic!("Error: timeline update sender couldn't send first update ({} items) to room {room_id}!", timeline_items.len())
     );
+    
 
     let mut latest_event = timeline.latest_event().await;
 
@@ -1865,6 +1896,7 @@ async fn timeline_subscriber_handler(
                             room_id: room_id.clone(),
                             num_events: 50,
                             direction: PaginationDirection::Backwards,
+                            use_cache: true
                         });
                     }
                 }
