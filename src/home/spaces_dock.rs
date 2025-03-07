@@ -63,39 +63,36 @@ live_design! {
         margin: {left: 15, right: 15}
     }
 
-    Home = <RoundedView> {
+    HomeButton = {{HomeButton}} {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is because the icon is not correctly centered
-        // within its parent
-        padding: {top: 8, left: 8, right: 12, bottom: 8}
-        show_bg: true
-        draw_bg: {
-            color: (COLOR_PRIMARY_DARKER)
-            radius: 4.0
-            border_color: (COLOR_SELECTED_PRIMARY)
-            border_width: 1.5
-        }
-
         align: {x: 0.5, y: 0.5}
-        <Icon> {
-            draw_icon: {
-                svg_file: (ICON_HOME),
-                fn get_color(self) -> vec4 {
-                    return #1C274C;
-                }
+        select_btn = <RoundedView> {
+            width: Fit, height: Fit
+            show_bg: true
+            draw_bg: {
+                color: (COLOR_PRIMARY_DARKER)
+                radius: 4.0
+                border_color: (COLOR_SELECTED_PRIMARY)
+                border_width: 1.5
             }
-            icon_walk: {width: 25, height: Fit}
+    
+            align: {x: 0.5, y: 0.5}
+            home_button = <Button> {
+                draw_icon: {
+                    svg_file: (ICON_HOME),
+                    fn get_color(self) -> vec4 {
+                        return #1C274C;
+                    }
+                }
+                icon_walk: {width: 25, height: Fit}
+            }
         }
     }
 
-    Settings = <View> {
+    SettingButton = {{SettingButton}} {
         width: Fit, height: Fit
-        // FIXME: the extra padding on the right is because the icon is not correctly centered
-        // within its parent
-        padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
-        <Button> {
-            enabled: false
+        setting_button = <Button> {
             draw_bg: {
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -105,8 +102,7 @@ live_design! {
             draw_icon: {
                 svg_file: (ICON_SETTINGS),
                 fn get_color(self) -> vec4 {
-                    return (COLOR_TEXT_IDLE);
-                    // return #x566287; // grayed-out #1C274C until enabled
+                    return #1C274C;
                 }
             }
             icon_walk: {width: 25, height: Fit}
@@ -128,11 +124,11 @@ live_design! {
 
             <Separator> {}
 
-            <Home> {}
+            <HomeButton> {}
 
             <Filler> {}
 
-            <Settings> {}
+            <SettingButton> {}
         }
 
         Mobile = {
@@ -175,4 +171,60 @@ impl Widget for Profile {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct SettingButton {
+    #[deref] view: View,
+}
+
+impl Widget for SettingButton {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for SettingButton {
+    fn handle_actions(&mut self, cx: &mut Cx, actions :&Actions, _scope: &mut Scope) {
+        if self.button(id!(setting_button)).clicked(actions) {
+            cx.action(PageSwitchAction::SwitchToSetting);
+        }
+    }
+}
+
+#[derive(Live, LiveHook, Widget)]
+pub struct HomeButton {
+    #[deref] view: View,
+}
+
+impl Widget for HomeButton {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
+        self.widget_match_event(cx, event, scope);
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for HomeButton {
+    fn handle_actions(&mut self, cx: &mut Cx, actions :&Actions, _scope: &mut Scope) {
+        if self.button(id!(home_button)).clicked(actions) {
+            cx.action(PageSwitchAction::SwitchToHome);
+        }
+    }
+}
+
+
+#[derive(Clone, DefaultNone, Debug)]
+pub enum PageSwitchAction {
+    None,
+    SwitchToSetting,
+    SwitchToHome
 }
