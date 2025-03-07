@@ -18,6 +18,8 @@ mod verification_modal;
 pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
+/// setting page.
+pub mod setting;
 
 
 // Matrix stuff
