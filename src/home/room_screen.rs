@@ -27,7 +27,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputWidgetRefExt}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -1648,10 +1648,13 @@ impl RoomScreen {
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
                 TimelineUpdate::RoomMembersListFetched { members } => {
-                    let input_bar = self.view.room_input_bar(id!(input_bar));
-                    log!("Updated room members list for input bar, {} members", members.len());
-                    input_bar.set_room_members(members);
+                    // 使用房间成员管理器更新数据
+                    // 这里调用 room_members::update 方法，它是 RoomMemberManager 提供的便捷函数
+                    use crate::room::room_member_manager::room_members;
+                    room_members::update(cx, self.room_id.clone().unwrap(), members);
 
+                    // 不再需要直接更新每个组件
+                    // 所有订阅了这个房间的组件都会自动收到通知
                 }
 
                 TimelineUpdate::MediaFetched => {
@@ -2443,7 +2446,8 @@ impl RoomScreen {
 
         // Clear any mention input state
         let input_bar = self.view.room_input_bar(id!(input_bar));
-        input_bar.set_room_id(room_id);
+        let message_input = input_bar.mentionable_text_input(id!(message_input));
+        message_input.set_room_id(cx, room_id);
 
         self.show_timeline(cx);
     }

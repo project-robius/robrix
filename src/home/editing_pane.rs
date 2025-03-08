@@ -5,6 +5,12 @@ use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineIt
 use crate::{shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest}};
 
 
+use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
+use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
+use matrix_sdk::room::RoomMember;
+use std::sync::{Arc, Mutex};
+
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -14,6 +20,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
+    use crate::shared::mentionable_text_input::MentionableTextInput;
 
     // Copied from Moxin
     FadeView = <CachedView> {
@@ -99,14 +106,28 @@ live_design! {
         <LineH> {
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
-        
-        edit_text_input = <RobrixTextInput> {
+
+        edit_text_input = <MentionableTextInput> {
             width: Fill, height: Fit,
             margin: { bottom: 5 }
             padding: { top: 3 }
             align: {y: 0.5}
-            empty_message: "Enter edited message..."
+            persistent = {
+                center = {
+                    text_input = {
+                        empty_message: "Enter edited message..."
+                    }
+                }
+            }
         }
+
+        // edit_text_input = <RobrixTextInput> {
+        //     width: Fill, height: Fit,
+        //     margin: { bottom: 5 }
+        //     padding: { top: 3 }
+        //     align: {y: 0.5}
+        //     empty_message: "Enter edited message..."
+        // }
     }
 
 
@@ -160,6 +181,37 @@ struct EditingPaneInfo {
     room_id: OwnedRoomId,
 }
 
+/// Actions specific to EditingPane for internal use
+#[derive(Clone, Debug, DefaultNone)]
+enum EditingPaneInternalAction {
+    /// Room members data has been updated
+    RoomMembersUpdated(Arc<Vec<matrix_sdk::room::RoomMember>>),
+    None,
+}
+
+/// Subscriber for EditingPane to receive room member updates
+struct EditingPaneSubscriber {
+    // Store a stable identifier instead of widget_uid
+    pane_id: String,
+    widget_uid: WidgetUid,
+}
+
+impl RoomMemberSubscriber for EditingPaneSubscriber {
+    fn on_room_members_updated(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
+        // Log with stable identifier
+        log!("EditingPaneSubscriber({}) received members update for room {}", self.pane_id, room_id);
+
+        // Send both global and widget-specific actions for redundancy
+        cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
+
+        cx.widget_action(
+            self.widget_uid,
+            &Scope::empty().path,
+            EditingPaneInternalAction::RoomMembersUpdated(members)
+        );
+    }
+}
+
 /// A view that slides in from the bottom of the screen to allow editing a message.
 #[derive(Live, LiveHook, Widget)]
 pub struct EditingPane {
@@ -168,6 +220,7 @@ pub struct EditingPane {
 
     #[rust] info: Option<EditingPaneInfo>,
     #[rust] is_animating_out: bool,
+    #[rust] member_subscription: Option<RoomMemberSubscription>,
 }
 
 impl Widget for EditingPane {
@@ -204,12 +257,32 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-            let edit_text_input = self.text_input(id!(edit_text_input));
+            let edit_text_input = self.mentionable_text_input(id!(edit_text_input));
+
+            // Check for room member update actions
+            for action in actions {
+                // First check for global actions
+                if let Some(update_action) = action.downcast_ref::<EditingPaneInternalAction>() {
+                    if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
+                        log!("EditingPane received global RoomMembersUpdated action with {} members", members.len());
+                        self.handle_members_updated(cx, members.clone());
+                    }
+                    continue;
+                }
+
+                // Then check for widget-specific actions
+                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid()) {
+                    if let Some(EditingPaneInternalAction::RoomMembersUpdated(members)) = widget_action.cast() {
+                        log!("EditingPane ID: {:?} processing update from widget action", self.widget_uid());
+                        self.handle_members_updated(cx, members);
+                    }
+                }
+            }
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
             if self.button(id!(cancel_button)).clicked(actions)
-                || edit_text_input.escape(actions)
+                || edit_text_input.as_text_input().escape(actions)
             {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
@@ -219,7 +292,7 @@ impl Widget for EditingPane {
             let Some(info) = self.info.as_ref() else { return };
 
             if self.button(id!(accept_button)).clicked(actions) ||
-                edit_text_input
+                edit_text_input.as_text_input()
                     .key_down_unhandled(actions)
                     .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary())
             {
@@ -371,6 +444,7 @@ impl Widget for EditingPane {
 
 
 impl EditingPane {
+
     /// Returns `true` if this pane is currently being shown.
     pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
         self.visible
@@ -411,7 +485,7 @@ impl EditingPane {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
         }
-        let text_input = self.text_input(id!(editing_content.edit_text_input));
+        let text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
                 text_input.set_text(cx, message.body());
@@ -427,8 +501,18 @@ impl EditingPane {
 
         self.info = Some(EditingPaneInfo {
             event_tl_item,
-            room_id,
+            room_id: room_id.clone(),
         });
+
+        // Create room member subscription
+        self.create_room_subscription(cx, room_id.clone());
+
+        // submit_async_request(MatrixRequest::GetRoomMembers {
+        //     room_id,
+        //     memberships: matrix_sdk::RoomMemberships::JOIN,
+        //     use_cache: true,
+        //     from_server: true
+        // });
 
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
@@ -436,11 +520,45 @@ impl EditingPane {
 
         // Set the text input's cursor to the end and give it key focus.
         let text_len = text_input.text().len();
-        text_input.set_cursor(text_len, text_len);
-        text_input.set_key_focus(cx);
+        text_input.as_text_input().set_cursor(text_len, text_len);
+        text_input.as_text_input().set_key_focus(cx);
 
         self.animator_play(cx, id!(panel.show));
         self.redraw(cx);
+    }
+
+    /// Create room member subscription for the editing pane
+    fn create_room_subscription(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
+        // Cancel previous subscription if any
+        self.member_subscription = None;
+
+        // Use stable identifier when creating subscriber
+        let pane_id = format!("EditingPane-{:?}", self.widget_uid());
+
+        // Create new subscriber
+        let subscriber = Arc::new(Mutex::new(EditingPaneSubscriber {
+            pane_id,
+            widget_uid: self.widget_uid(),
+        }));
+
+        log!("Creating room member subscription for EditingPane, ID: {:?}", self.widget_uid());
+
+        // Create and save subscription
+        self.member_subscription = Some(
+            RoomMemberSubscription::new(cx, room_id, subscriber)
+        );
+    }
+
+    /// Handle room members update event
+    fn handle_members_updated(&mut self, cx: &mut Cx, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
+        // Pass room member data to MentionableTextInput
+        let text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+
+        log!("EditingPane::handle_members_updated - passing {} members to MentionableTextInput",
+                members.len());
+
+        // Pass data to MentionableTextInput
+        text_input.set_room_members(members);
     }
 }
 
@@ -482,4 +600,5 @@ impl EditingPaneRef {
         inner.visible = false;
         inner.redraw(cx);
     }
+
 }
