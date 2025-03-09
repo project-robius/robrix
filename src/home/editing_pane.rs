@@ -73,8 +73,6 @@ live_design! {
                 text: "Editing message:"
             }
 
-            // filler = <View> {width: Fill, height: Fill}
-
             cancel_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
@@ -129,14 +127,6 @@ live_design! {
                 }
             }
         }
-
-        // edit_text_input = <RobrixTextInput> {
-        //     width: Fill, height: Fit,
-        //     margin: { bottom: 5 }
-        //     padding: { top: 3 }
-        //     align: {y: 0.5}
-        //     empty_message: "Enter edited message..."
-        // }
     }
 
 

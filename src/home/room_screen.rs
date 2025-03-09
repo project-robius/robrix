@@ -191,6 +191,7 @@ live_design! {
         }
 
         reply_preview_body = <HtmlOrPlaintext> {
+            margin: {left: 1.5}
             html_view = { html = {
                 font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
                     draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
@@ -577,7 +578,7 @@ live_design! {
 
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
-    DayDivider = <View> {
+    DateDivider = <View> {
         width: Fill,
         height: Fit,
         margin: {top: 7.0, bottom: 7.0}
@@ -605,8 +606,8 @@ live_design! {
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
-    // This is implemented as a DayDivider with a different color and a fixed text label.
-    ReadMarker = <DayDivider> {
+    // This is implemented as a DateDivider with a different color and a fixed text label.
+    ReadMarker = <DateDivider> {
         left_line = {
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
@@ -669,7 +670,7 @@ live_design! {
             CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
-            DayDivider = <DayDivider> {}
+            DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
         }
 
@@ -828,40 +829,49 @@ live_design! {
                     width: Fill
                     height: Fit
                     flow: Down
-                    padding: 0.0
+                    padding: {left: 20, right: 20}
 
                     // Displays a "Replying to" label and a cancel button
                     // above the preview of the message being replied to.
                     <View> {
-                        padding: {right: 12.0, left: 12.0}
                         width: Fill
                         height: Fit
                         flow: Right
                         align: {y: 0.5}
+                        padding: {left: 10, right: 5, top: 10, bottom: 10}
 
                         <Label> {
+                            width: Fill,
                             draw_text: {
-                                text_style: <TEXT_SUB> {},
-                                color: (COLOR_META)
+                                text_style: <USERNAME_TEXT_STYLE> {},
+                                color: #222,
+                                wrap: Ellipsis,
                             }
                             text: "Replying to:"
                         }
 
-                        filler = <View> {width: Fill, height: Fill}
-
-                        // TODO: Fix style
-                        cancel_reply_button = <IconButton> {
+                        cancel_reply_button = <RobrixIconButton> {
                             width: Fit,
                             height: Fit,
+                            padding: 13,
+                            margin: {left: 5, right: 5},
 
+                            draw_bg: {
+                                border_color: (COLOR_DANGER_RED),
+                                color: #fff0f0 // light red
+                                radius: 5
+                            }
                             draw_icon: {
                                 svg_file: (ICON_CLOSE),
-                                fn get_color(self) -> vec4 {
-                                   return (COLOR_META)
-                                }
+                                color: (COLOR_DANGER_RED)
                             }
-                            icon_walk: {width: 12, height: 12}
+                            icon_walk: {width: 16, height: 16, margin: 0}
                         }
+                    }
+
+                    <LineH> {
+                        draw_bg: {color: (COLOR_DIVIDER_DARK)}
+                        margin: {bottom: 5.0}
                     }
 
                     reply_preview_content = <ReplyPreviewContent> { }
@@ -1032,12 +1042,19 @@ impl Widget for RoomScreen {
                             )
                             .0
                             .map(|user_profile| user_profile.displayable_name().to_string())
-                            .unwrap_or(sender.to_string())
-                        })
-                        .collect();
-                    let mut tooltip_text = utils::human_readable_list(
-                        &tooltip_text_arr,
-                        MAX_VISIBLE_AVATARS_IN_READ_RECEIPT,
+                            .unwrap_or_else(|| sender.to_string())
+                    }).collect();
+                    let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
+                    tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        TooltipAction::HoverIn {
+                            widget_rect,
+                            text: tooltip_text,
+                            text_color: None,
+                            bg_color,
+                        }
                     );
                     tooltip_text
                         .push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
@@ -1177,21 +1194,19 @@ impl Widget for RoomScreen {
                 }
             }
 
+
             // Handle the send message button being clicked and enter key being pressed.
             let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
-            let mut should_send = false;
+            // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
+            if self.button(id!(send_message_button)).clicked(actions)
+                || message_input.key_down_unhandled(actions).is_some_and(
+                    |ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
+                )
+            {
+                let entered_text = message_input.text().trim().to_string();
+                if !entered_text.is_empty() {
 
-            if let Some(ke) = message_input.key_down_unhandled(actions) {
-                if ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary() {
-                    should_send = true;
-                }
-            }
-
-            if should_send || self.button(id!(send_message_button)).clicked(actions) {
-                let text = message_input.text();
-                let text = text.trim();
-                if !text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
                     let message = if let Some(html_text) = text.strip_prefix("/html") {
                         RoomMessageEventContent::text_html(html_text, html_text)
@@ -1442,10 +1457,10 @@ impl Widget for RoomScreen {
                                 item.label(id!(content))
                                     .set_text(cx, &format!("[Unsupported] {:?}", unhandled));
                                 (item, ItemDrawnStatus::both_drawn())
-                            },
-                        },
-                        TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DayDivider));
+                            }
+                        }
+                        TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
+                            let item = list.item(cx, item_id, live_id!(DateDivider));
                             let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
@@ -1815,13 +1830,11 @@ impl RoomScreen {
             // Animate in the typing notice view (sliding it up from the bottom).
             self.animator_play(cx, id!(typing_notice_animator.show));
             // Start the typing notice text animation of bouncing dots.
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            typing_animation.animate(cx);
+            self.view.typing_animation(id!(typing_animation)).start_animation(cx);
         } else {
             // Animate out the typing notice view (sliding it out towards the bottom).
             self.animator_play(cx, id!(typing_notice_animator.hide));
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            typing_animation.stop_animation();
+            self.view.typing_animation(id!(typing_animation)).stop_animation(cx);
         }
 
         if num_updates > 0 {
@@ -3443,7 +3456,7 @@ fn populate_message_view(
     if !used_cached_item {
         item.reaction_list(id!(content.reaction_list)).set_list(
             cx,
-            event_tl_item.reactions(),
+            &event_tl_item.content().reactions(),
             room_id.to_owned(),
             event_tl_item.identifier(),
             item_id,

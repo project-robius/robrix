@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{edit::EditedContent, RoomMember}, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -210,7 +210,7 @@ impl std::fmt::Display for PaginationDirection {
 /// The function signature for the callback that gets invoked when media is fetched.
 pub type OnMediaFetchedFn = fn(
     &Mutex<MediaCacheEntry>,
-    MediaRequest,
+    MediaRequestParameters,
     matrix_sdk::Result<Vec<u8>>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
@@ -291,7 +291,7 @@ pub enum MatrixRequest {
     /// will be invoked with four arguments: the `destination`, the `media_request`,
     /// the result of the media fetch, and the `update_sender`.
     FetchMedia {
-        media_request: MediaRequest,
+        media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
         destination: Arc<Mutex<MediaCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -431,7 +431,7 @@ async fn async_worker(
                     SignalToUI::set_ui_signal();
 
                     let res = if direction == PaginationDirection::Forwards {
-                        timeline.focused_paginate_forwards(num_events).await
+                        timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
@@ -833,7 +833,7 @@ async fn async_worker(
                 let Some(client) = CLIENT.get() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
-                    let media_request = MediaRequest {
+                    let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
                         format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
@@ -1523,7 +1523,7 @@ async fn update_room(
             spawn_fetch_room_avatar(new_room.inner_room().clone());
         }
 
-        if let Ok(new_room_name) = new_room.compute_display_name().await {
+        if let Ok(new_room_name) = new_room.display_name().await {
             let new_room_name = new_room_name.to_string();
             if old_room.cached_display_name().as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
@@ -1617,7 +1617,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
-    let room_name = room.compute_display_name().await
+    let room_name = room.display_name().await
         .map(|n| n.to_string())
         .ok();
 
@@ -1825,7 +1825,7 @@ async fn timeline_subscriber_handler(
 
     let room_id = room.room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}...");
-    let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
+    let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
     timeline_update_sender.send(TimelineUpdate::FirstUpdate {
