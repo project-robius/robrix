@@ -5,7 +5,7 @@
 
 use makepad_widgets::*;
 
-use super::auto_fit_image::RobrixAutoFitImageWidgetExt;
+use super::auto_fit_image::AutoFitImageWidgetExt;
 
 live_design! {
     use link::theme::*;
@@ -13,7 +13,7 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
-    use crate::shared::auto_fit_image::RobrixAutoFitImage;
+    use crate::shared::auto_fit_image::AutoFitImage;
 
     pub TextOrImage = {{TextOrImage}} {
         width: Fill, height: Fit,
@@ -35,7 +35,7 @@ live_design! {
                 }
             }
         }
-        image_view = <RobrixAutoFitImage> {
+        image_view = <AutoFitImage> {
             visible: false,
             cursor: Default, // Use `Hand` once we support clicking on the image
         }
@@ -70,7 +70,7 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.robrix_auto_fit_image(id!(image_view)).set_visible(cx, false);
+        self.auto_fit_image(id!(image_view)).set_visible(cx, false);
         self.view(id!(text_view)).set_visible(cx, true);
         self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
         self.status = TextOrImageStatus::Text;
@@ -94,7 +94,7 @@ impl TextOrImage {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.robrix_auto_fit_image(id!(image_view)).set_visible(cx, true);
+                self.auto_fit_image(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
                 Ok(())
             }
