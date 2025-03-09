@@ -5,12 +5,15 @@
 
 use makepad_widgets::*;
 
+use super::auto_fit_image::AutoFitImageWidgetExt;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
 
     use crate::shared::styles::*;
+    use crate::shared::auto_fit_image::AutoFitImage;
 
     pub TextOrImage = {{TextOrImage}} {
         width: Fill, height: Fit,
@@ -32,18 +35,12 @@ live_design! {
                 }
             }
         }
-        image_view = <View> {
+        image_view = <AutoFitImage> {
             visible: false,
             cursor: Default, // Use `Hand` once we support clicking on the image
-            width: Fill, height: Fit,
-            image = <Image> {
-                width: Fill, height: Fit,
-                fit: Smallest,
-            }
         }
     }
 }
-
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
@@ -54,7 +51,6 @@ live_design! {
 pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
-    // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
 }
 
@@ -74,7 +70,7 @@ impl TextOrImage {
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
     pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
-        self.view(id!(image_view)).set_visible(cx, false);
+        self.auto_fit_image(id!(image_view)).set_visible(cx, false);
         self.view(id!(text_view)).set_visible(cx, true);
         self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
         self.status = TextOrImageStatus::Text;
@@ -93,11 +89,12 @@ impl TextOrImage {
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
+
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
                 self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
-                self.view(id!(image_view)).set_visible(cx, true);
+                self.auto_fit_image(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
                 Ok(())
             }

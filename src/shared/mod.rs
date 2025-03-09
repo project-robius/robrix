@@ -11,6 +11,7 @@ pub mod text_or_image;
 pub mod typing_animation;
 pub mod popup_list;
 pub mod verification_badge;
+pub mod auto_fit_image;
 pub mod callout_tooltip;
 
 pub fn live_design(cx: &mut Cx) {
@@ -26,5 +27,6 @@ pub fn live_design(cx: &mut Cx) {
     jump_to_bottom_button::live_design(cx);
     popup_list::live_design(cx);
     verification_badge::live_design(cx);
+    auto_fit_image::live_design(cx);
     callout_tooltip::live_design(cx);
 }
