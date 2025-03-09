@@ -1,15 +1,24 @@
 use makepad_widgets::*;
-use matrix_sdk::{room::edit::EditedContent, ruma::{events::{poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock}, room::message::{FormattedBody, MessageType, RoomMessageEventContentWithoutRelation}}, OwnedRoomId}};
+use matrix_sdk::{
+    room::edit::EditedContent,
+    ruma::{
+        OwnedRoomId,
+        events::{
+            poll::unstable_start::{UnstablePollAnswer, UnstablePollStartContentBlock},
+            room::message::{FormattedBody, MessageType, RoomMessageEventContentWithoutRelation},
+        },
+    },
+};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
 
-use crate::{shared::popup_list::enqueue_popup_notification, sliding_sync::{submit_async_request, MatrixRequest}};
+use crate::{
+    shared::popup_list::enqueue_popup_notification,
+    sliding_sync::{MatrixRequest, submit_async_request},
+};
 
-
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
 use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
-use matrix_sdk::room::RoomMember;
+use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
 use std::sync::{Arc, Mutex};
-
 
 live_design! {
     use link::theme::*;
@@ -166,7 +175,6 @@ live_design! {
     }
 }
 
-
 /// Action emitted by the EditingPane widget.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum EditingPaneAction {
@@ -191,15 +199,21 @@ enum EditingPaneInternalAction {
 
 /// Subscriber for EditingPane to receive room member updates
 struct EditingPaneSubscriber {
-    // Store a stable identifier instead of widget_uid
-    pane_id: String,
     widget_uid: WidgetUid,
 }
 
+/// Implement `RoomMemberSubscriber` trait, receive member update notifications
 impl RoomMemberSubscriber for EditingPaneSubscriber {
-    fn on_room_members_updated(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
+    fn on_room_members_updated(
+        &mut self, cx: &mut Cx, room_id: &OwnedRoomId,
+        members: Arc<Vec<matrix_sdk::room::RoomMember>>,
+    ) {
         // Log with stable identifier
-        log!("EditingPaneSubscriber({}) received members update for room {}", self.pane_id, room_id);
+        log!(
+            "EditingPaneSubscriber({:?}) received members update for room {}",
+            self.widget_uid,
+            room_id
+        );
 
         // Send both global and widget-specific actions for redundancy
         cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
@@ -207,7 +221,7 @@ impl RoomMemberSubscriber for EditingPaneSubscriber {
         cx.widget_action(
             self.widget_uid,
             &Scope::empty().path,
-            EditingPaneInternalAction::RoomMembersUpdated(members)
+            EditingPaneInternalAction::RoomMembersUpdated(members),
         );
     }
 }
@@ -215,19 +229,26 @@ impl RoomMemberSubscriber for EditingPaneSubscriber {
 /// A view that slides in from the bottom of the screen to allow editing a message.
 #[derive(Live, LiveHook, Widget)]
 pub struct EditingPane {
-    #[deref] view: View,
-    #[animator] animator: Animator,
+    #[deref]
+    view: View,
+    #[animator]
+    animator: Animator,
 
-    #[rust] info: Option<EditingPaneInfo>,
-    #[rust] is_animating_out: bool,
-    #[rust] member_subscription: Option<RoomMemberSubscription>,
+    #[rust]
+    info: Option<EditingPaneInfo>,
+    #[rust]
+    is_animating_out: bool,
+    #[rust]
+    member_subscription: Option<RoomMemberSubscription>,
 }
 
 impl Widget for EditingPane {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        if !self.visible { return; }
+        if !self.visible {
+            return;
+        }
 
         let animator_action = self.animator_handle_event(cx, event);
         if animator_action.must_redraw() {
@@ -239,20 +260,16 @@ impl Widget for EditingPane {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
-                    cx.widget_action(
-                        self.widget_uid(),
-                        &scope.path,
-                        EditingPaneAction::Hide,
-                    );
+                    cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hide);
                     cx.revert_key_focus();
                     self.redraw(cx);
                     return;
-                }
+                },
                 (false, true) => {
                     self.is_animating_out = true;
                     return;
-                }
-                _ => { }
+                },
+                _ => {},
             }
         }
 
@@ -261,21 +278,13 @@ impl Widget for EditingPane {
 
             // Check for room member update actions
             for action in actions {
-                // First check for global actions
+                // check for global actions
                 if let Some(update_action) = action.downcast_ref::<EditingPaneInternalAction>() {
                     if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
-                        log!("EditingPane received global RoomMembersUpdated action with {} members", members.len());
-                        self.handle_members_updated(cx, members.clone());
+                        // log!("EditingPane received global RoomMembersUpdated action with {} members", members.len());
+                        self.handle_members_updated(members.clone());
                     }
                     continue;
-                }
-
-                // Then check for widget-specific actions
-                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid()) {
-                    if let Some(EditingPaneInternalAction::RoomMembersUpdated(members)) = widget_action.cast() {
-                        log!("EditingPane ID: {:?} processing update from widget action", self.widget_uid());
-                        self.handle_members_updated(cx, members);
-                    }
                 }
             }
 
@@ -289,12 +298,14 @@ impl Widget for EditingPane {
                 return;
             }
 
-            let Some(info) = self.info.as_ref() else { return };
+            let Some(info) = self.info.as_ref() else {
+                return;
+            };
 
-            if self.button(id!(accept_button)).clicked(actions) ||
-                edit_text_input.as_text_input()
-                    .key_down_unhandled(actions)
-                    .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary())
+            if self.button(id!(accept_button)).clicked(actions)
+                || edit_text_input.as_text_input().key_down_unhandled(actions).is_some_and(|ke| {
+                    ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
+                })
             {
                 let edited_text = edit_text_input.text().trim().to_string();
                 let edited_content = match info.event_tl_item.content() {
@@ -307,10 +318,12 @@ impl Widget for EditingPane {
 
                             // TODO: also handle "/html" or "/plain" prefixes, just like when sending new messages.
                             MessageType::Text(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::text_markdown(&edited_text)
+                                RoomMessageEventContentWithoutRelation::text_markdown(&edited_text),
                             ),
                             MessageType::Emote(_) => EditedContent::RoomMessage(
-                                RoomMessageEventContentWithoutRelation::emote_markdown(&edited_text)
+                                RoomMessageEventContentWithoutRelation::emote_markdown(
+                                    &edited_text,
+                                ),
                             ),
                             // TODO: support adding/removing attachments.
                             //       For now, we just support modifying the body/formatted body of the message.
@@ -324,10 +337,10 @@ impl Widget for EditingPane {
                                 new_image_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Image(new_image_msg)
-                                    )
+                                        MessageType::Image(new_image_msg),
+                                    ),
                                 )
-                            }
+                            },
                             MessageType::Audio(audio) => {
                                 let mut new_audio_msg = audio.clone();
                                 if audio.formatted.is_some() {
@@ -336,10 +349,10 @@ impl Widget for EditingPane {
                                 new_audio_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Audio(new_audio_msg)
-                                    )
+                                        MessageType::Audio(new_audio_msg),
+                                    ),
                                 )
-                            }
+                            },
                             MessageType::File(file) => {
                                 let mut new_file_msg = file.clone();
                                 if file.formatted.is_some() {
@@ -347,11 +360,11 @@ impl Widget for EditingPane {
                                 }
                                 new_file_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
-                                    RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::File(new_file_msg)
-                                    )
+                                    RoomMessageEventContentWithoutRelation::new(MessageType::File(
+                                        new_file_msg,
+                                    )),
                                 )
-                            }
+                            },
                             MessageType::Video(video) => {
                                 let mut new_video_msg = video.clone();
                                 if video.formatted.is_some() {
@@ -360,34 +373,31 @@ impl Widget for EditingPane {
                                 new_video_msg.body = edited_text.clone();
                                 EditedContent::RoomMessage(
                                     RoomMessageEventContentWithoutRelation::new(
-                                        MessageType::Video(new_video_msg)
-                                    )
+                                        MessageType::Video(new_video_msg),
+                                    ),
                                 )
-                            }
+                            },
                             _non_editable => {
-                                enqueue_popup_notification("That message type cannot be edited.".into());
+                                enqueue_popup_notification(
+                                    "That message type cannot be edited.".into(),
+                                );
                                 self.animator_play(cx, id!(panel.hide));
                                 self.redraw(cx);
                                 return;
-                            }
+                            },
                         };
 
                         // TODO: extract mentions out of the new edited text and use them here.
                         if let Some(existing_mentions) = message.mentions() {
-                            match &mut edited_content {
-                                EditedContent::RoomMessage(new_message_content) => {
-                                    new_message_content.mentions = Some(existing_mentions.clone());
-                                }
-                                // TODO: once we update the matrix-sdk dependency, uncomment this.
-                                // EditedContent::MediaCaption { mentions, .. }) => {
-                                //     mentions = Some(existing_mentions);
-                                // }
-                                _ => { }
+                            if let EditedContent::RoomMessage(new_message_content) =
+                                &mut edited_content
+                            {
+                                new_message_content.mentions = Some(existing_mentions.clone());
                             }
                         }
 
                         edited_content
-                    }
+                    },
 
                     TimelineItemContent::Poll(poll) => {
                         let poll_result = poll.results();
@@ -399,7 +409,9 @@ impl Widget for EditingPane {
                             .collect::<Vec<_>>()
                             .try_into()
                         else {
-                            enqueue_popup_notification("Failed to obtain existing poll answers while editing poll.".into());
+                            enqueue_popup_notification(
+                                "Failed to obtain existing poll answers while editing poll.".into(),
+                            );
                             return;
                         };
                         let mut new_content_block = UnstablePollStartContentBlock::new(
@@ -415,11 +427,11 @@ impl Widget for EditingPane {
                             fallback_text: edited_text,
                             new_content: new_content_block,
                         }
-                    }
+                    },
                     _ => {
                         enqueue_popup_notification("That event type cannot be edited.".into());
                         return;
-                    }
+                    },
                 };
 
                 submit_async_request(MatrixRequest::EditMessage {
@@ -433,7 +445,6 @@ impl Widget for EditingPane {
         }
     }
 
-
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if self.info.is_none() {
             self.visible = false;
@@ -442,9 +453,7 @@ impl Widget for EditingPane {
     }
 }
 
-
 impl EditingPane {
-
     /// Returns `true` if this pane is currently being shown.
     pub fn is_currently_shown(&self, _cx: &mut Cx) -> bool {
         self.visible
@@ -455,9 +464,7 @@ impl EditingPane {
     /// This will handle the result, and either show a success message
     /// and hide this editing pane, or show an error message.
     pub fn handle_edit_result(
-        &mut self,
-        cx: &mut Cx,
-        timeline_event_item_id: TimelineEventItemId,
+        &mut self, cx: &mut Cx, timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
         let Some(info) = self.info.as_ref() else {
@@ -471,11 +478,10 @@ impl EditingPane {
         match edit_result {
             Ok(()) => {
                 self.animator_play(cx, id!(panel.hide));
-                self.redraw(cx);
-            }
+            },
             Err(e) => {
                 enqueue_popup_notification(format!("Failed to edit message: {}", e));
-            }
+            },
         }
     }
 
@@ -489,30 +495,20 @@ impl EditingPane {
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
                 text_input.set_text(cx, message.body());
-            }
+            },
             TimelineItemContent::Poll(poll) => {
                 text_input.set_text(cx, &poll.results().question);
-            }
+            },
             _ => {
                 enqueue_popup_notification("That message cannot be edited.".into());
                 return;
-            }
+            },
         }
 
-        self.info = Some(EditingPaneInfo {
-            event_tl_item,
-            room_id: room_id.clone(),
-        });
+        self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
         // Create room member subscription
         self.create_room_subscription(cx, room_id.clone());
-
-        // submit_async_request(MatrixRequest::GetRoomMembers {
-        //     room_id,
-        //     memberships: matrix_sdk::RoomMemberships::JOIN,
-        //     use_cache: true,
-        //     from_server: true
-        // });
 
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
@@ -532,30 +528,23 @@ impl EditingPane {
         // Cancel previous subscription if any
         self.member_subscription = None;
 
-        // Use stable identifier when creating subscriber
-        let pane_id = format!("EditingPane-{:?}", self.widget_uid());
-
         // Create new subscriber
-        let subscriber = Arc::new(Mutex::new(EditingPaneSubscriber {
-            pane_id,
-            widget_uid: self.widget_uid(),
-        }));
+        let subscriber =
+            Arc::new(Mutex::new(EditingPaneSubscriber { widget_uid: self.widget_uid() }));
 
         log!("Creating room member subscription for EditingPane, ID: {:?}", self.widget_uid());
 
         // Create and save subscription
-        self.member_subscription = Some(
-            RoomMemberSubscription::new(cx, room_id, subscriber)
-        );
+        self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id, subscriber));
     }
 
     /// Handle room members update event
-    fn handle_members_updated(&mut self, cx: &mut Cx, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
+    fn handle_members_updated(&mut self, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
         // Pass room member data to MentionableTextInput
         let text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
 
-        log!("EditingPane::handle_members_updated - passing {} members to MentionableTextInput",
-                members.len());
+        // log!("EditingPane::handle_members_updated - passing {} members to MentionableTextInput",
+        //         members.len());
 
         // Pass data to MentionableTextInput
         text_input.set_room_members(members);
@@ -565,40 +554,42 @@ impl EditingPane {
 impl EditingPaneRef {
     /// See [`EditingPane::is_currently_shown()`].
     pub fn is_currently_shown(&self, cx: &mut Cx) -> bool {
-        let Some(inner) = self.borrow() else { return false };
+        let Some(inner) = self.borrow() else {
+            return false;
+        };
         inner.is_currently_shown(cx)
     }
 
     /// See [`EditingPane::handle_edit_result()`].
     pub fn handle_edit_result(
-        &self,
-        cx: &mut Cx,
-        timeline_event_item_id: TimelineEventItemId,
+        &self, cx: &mut Cx, timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.handle_edit_result(cx, timeline_event_item_id, edit_result);
     }
 
     /// See [`EditingPane::show()`].
     pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.show(cx, event_tl_item, room_id);
     }
 
     /// Returns the event that is currently being edited, if any.
     pub fn get_event_being_edited(&self) -> Option<EventTimelineItem> {
-        self.borrow()?
-            .info
-            .as_ref()
-            .map(|info| info.event_tl_item.clone())
+        self.borrow()?.info.as_ref().map(|info| info.event_tl_item.clone())
     }
 
     /// Hides the editing pane immediately without animating it out.
     pub fn force_hide(&self, cx: &mut Cx) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.visible = false;
         inner.redraw(cx);
     }
-
 }

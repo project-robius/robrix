@@ -1,0 +1,48 @@
+# Rustfmt configuration file
+# See the full list of options at: https://rust-lang.github.io/rustfmt/
+
+# Specify the Rust edition to use
+# Options: 2015, 2018, 2021
+edition = "2021"
+
+# General formatting settings
+max_width = 100                # Maximum width of each line
+tab_spaces = 4                 # Number of spaces per tab
+hard_tabs = false              # Use spaces instead of tabs
+newline_style = "Unix"         # Line ending style (Unix, Windows, Native)
+use_small_heuristics = "Max"   # Amount of width heuristics to use (Max prevents wrapping)
+
+# Code structure settings
+fn_params_layout = "Compressed"  # Determines if function parameters are laid out horizontally or vertically
+# wrap_comments = true           # [unstable] Wrap comments to max_width
+# format_code_in_doc_comments = true # [unstable] Format code snippets in doc comments
+# overflow_delimited_expr = true # [unstable] Allow arrays/structs to overflow
+reorder_impl_items = true      # Reorder impl items
+merge_derives = true           # Merge multiple derives into a single one
+use_field_init_shorthand = true # Use field init shorthand when possible
+
+# Import organization 
+# imports_granularity = "Crate"  # [unstable] Merge imports from the same crate
+# group_imports = "StdExternalCrate" # [unstable] Group imports by std, external crates, and local imports
+# imports_layout = "HorizontalVertical" # [unstable] Prefer horizontal layout for imports
+# imports_wrap = "Preserve"        # [unstable] Keep imports on a single line as written
+reorder_imports = true         # Sort imports alphabetically
+reorder_modules = true         # Sort module declarations alphabetically
+
+# To prevent imports from wrapping in stable rustfmt, use max_width and use_small_heuristics
+# The combination above should make imports less likely to wrap
+
+# Control flow formatting
+control_brace_style = "AlwaysSameLine" # Brace style for control flow constructs
+match_block_trailing_comma = true # Put a trailing comma after the last match arm
+
+# Error recovery
+error_on_line_overflow = false # Don't error on lines longer than max_width
+# error_on_unformatted = false   # [unstable] Don't error if unable to format some code
+
+# Stability settings
+# version = "Two"                # [unstable] Rustfmt version to use for backwards compatibility
+
+# Documentation settings
+# normalize_comments = true      # [unstable] Convert /* */ comments to // comments where possible
+# normalize_doc_attributes = true # [unstable] Convert /// to //! and vice versa where appropriate

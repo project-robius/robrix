@@ -1,7 +1,5 @@
-//! 房间成员管理器 - 使用引用计数实现高效的内存管理
-//! 当组件订阅时保留数据，当没有订阅者时自动清理数据
-#![allow(dead_code)]
-
+//! Room Member Manager - Efficient memory management using reference counting
+//! Data is retained when components subscribe and automatically cleaned up when there are no subscribers
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -9,177 +7,181 @@ use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::OwnedRoomId;
 
-/// 组件需要实现此特性来接收房间成员更新
+/// Component needs to implement this trait to receive room member updates
 pub trait RoomMemberSubscriber: 'static + Send + Sync {
-    /// 当房间成员列表更新时被调用
-    fn on_room_members_updated(&mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>);
+    /// Called when the room member list is updated
+    fn on_room_members_updated(
+        &mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
+    );
 }
 
-/// 订阅者的包装类型
+/// Wrapper type for subscribers
 struct SubscriberEntry {
-    /// 订阅者的强引用 - 改为 Arc 而不是 Weak 以确保生命周期
+    /// Strong reference to the subscriber - Changed to Arc instead of Weak to ensure lifetime
     subscriber: Arc<Mutex<dyn RoomMemberSubscriber>>,
-    /// 订阅者的唯一标识符
+    /// Subscriber's unique identifier
     id: u64,
 }
 
-/// 管理房间成员数据和通知订阅者
+/// Manages room member data and notifies subscribers
 #[derive(Default)]
 pub struct RoomMemberManager {
-    /// 按房间ID存储的成员列表
+    /// Stores member lists by room ID
     room_members: HashMap<OwnedRoomId, Arc<Vec<RoomMember>>>,
 
-    /// 订阅者列表 (按房间ID分组)
+    /// Subscriber list (grouped by room ID)
     subscribers: HashMap<OwnedRoomId, Vec<SubscriberEntry>>,
 
-    /// 每个房间的活跃订阅者计数
+    /// Active subscriber count per room
     active_subscribers_count: HashMap<OwnedRoomId, usize>,
 
-    /// 用于生成唯一订阅者ID
+    /// Used to generate unique subscriber IDs
     next_subscriber_id: u64,
 }
 
-/// 全局单例，使用 OnceLock 代替 lazy_static
+/// Global singleton, using OnceLock instead of lazy_static
 static ROOM_MEMBER_MANAGER: OnceLock<Arc<Mutex<RoomMemberManager>>> = OnceLock::new();
 
 impl RoomMemberManager {
-    /// 获取管理器单例实例
+    /// Get the manager singleton instance
     pub fn instance() -> Arc<Mutex<RoomMemberManager>> {
-        ROOM_MEMBER_MANAGER.get_or_init(|| {
-            Arc::new(Mutex::new(RoomMemberManager::default()))
-        }).clone()
+        ROOM_MEMBER_MANAGER
+            .get_or_init(|| Arc::new(Mutex::new(RoomMemberManager::default())))
+            .clone()
     }
 
-    /// 更新特定房间的成员列表并通知订阅者
+    /// Update specific room's member list and notify subscribers
     pub fn update_room_members(cx: &mut Cx, room_id: OwnedRoomId, members: Vec<RoomMember>) {
         let instance = Self::instance();
         let mut manager = instance.lock().unwrap();
 
-        // 只有当有活跃订阅者时才存储数据
+        // Only store data when there are active subscribers
         if manager.active_subscribers_count.get(&room_id).copied().unwrap_or(0) > 0 {
-            // 为成员列表创建共享引用
+            // Create a shared reference for the member list
             let shared_members = Arc::new(members);
 
-            // 存储共享的成员列表
+            // Store the shared member list
             manager.room_members.insert(room_id.clone(), shared_members.clone());
 
-            // 收集需要通知的订阅者
+            // Collect subscribers to notify
             let mut to_notify = Vec::new();
 
             if let Some(subscribers) = manager.subscribers.get(&room_id) {
                 log!("Processing {} subscribers for room {}", subscribers.len(), room_id);
 
-                // 由于使用 Arc 而不是 Weak，所有订阅者都应该有效
+                // Since using Arc instead of Weak, all subscribers should be valid
                 for entry in subscribers {
                     to_notify.push((entry.subscriber.clone(), shared_members.clone()));
                 }
             }
 
-            // 记录日志
-            log!("更新房间 {} 的成员数据，通知 {} 个订阅者",
-                 room_id, to_notify.len());
+            // Log the update
+            log!(
+                "Updating room {} member data, notifying {} subscribers",
+                room_id,
+                to_notify.len()
+            );
 
-            // 释放锁，然后通知订阅者
+            // Release the lock before notifying subscribers
             drop(manager);
 
-            // 在锁释放后通知所有收集的订阅者
+            // Notify all collected subscribers after the lock is released
             let room_id_ref = &room_id;
             for (subscriber, members) in to_notify {
                 if let Ok(mut sub) = subscriber.lock() {
                     sub.on_room_members_updated(cx, room_id_ref, members);
                 } else {
-                    log!("警告：无法获取订阅者锁");
+                    log!("Warning: Unable to acquire subscriber lock");
                 }
             }
         } else {
-            log!("跳过存储房间 {} 的成员数据 (没有活跃订阅者)", room_id);
+            log!("Skipping storing room {} member data (no active subscribers)", room_id);
         }
     }
 
-    /// 订阅特定房间的成员更新
+    /// Subscribe to specific room member updates
     pub fn subscribe(
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-        subscriber: Arc<Mutex<dyn RoomMemberSubscriber>>,
+        cx: &mut Cx, room_id: OwnedRoomId, subscriber: Arc<Mutex<dyn RoomMemberSubscriber>>,
     ) -> u64 {
         let instance = Self::instance();
         let mut manager = instance.lock().unwrap();
 
-        // 创建唯一订阅ID
+        // Create unique subscription ID
         let subscriber_id = manager.next_subscriber_id;
         manager.next_subscriber_id += 1;
 
-        // 增加订阅者计数
+        // Increase subscriber count
         *manager.active_subscribers_count.entry(room_id.clone()).or_insert(0) += 1;
 
-        // 创建订阅条目并添加到对应房间
-        let entry = SubscriberEntry {
-            subscriber: subscriber.clone(), // 存储强引用
-            id: subscriber_id,
-        };
+        // Create subscription entry and add to corresponding room
+        let entry = SubscriberEntry { subscriber: subscriber.clone(), id: subscriber_id };
 
         manager.subscribers.entry(room_id.clone()).or_default().push(entry);
 
-        log!("房间 {} 添加了新订阅者 ID: {}，总订阅者数: {}",
-             room_id, subscriber_id, manager.active_subscribers_count.get(&room_id).copied().unwrap_or(0));
+        log!(
+            "Room {} added a new subscriber ID: {}, total subscribers: {}",
+            room_id,
+            subscriber_id,
+            manager.active_subscribers_count.get(&room_id).copied().unwrap_or(0)
+        );
 
-        // 如果有当前房间的成员数据，立即提供给新订阅者
+        // If there is current room member data, immediately provide it to the new subscriber
         let members_clone = manager.room_members.get(&room_id).cloned();
 
-        // 为了避免在锁内执行回调，先释放锁
+        // To avoid executing callbacks within the lock, release the lock first
         drop(manager);
 
-        // 如果有现有数据，立即通知新订阅者
+        // If there is existing data, immediately notify the new subscriber
         if let Some(members) = members_clone {
             if let Ok(mut sub) = subscriber.lock() {
                 sub.on_room_members_updated(cx, &room_id, members);
             }
         }
 
-        // 返回订阅ID
+        // Return subscription ID
         subscriber_id
     }
 
-    /// 取消订阅
+    /// Unsubscribe
     pub fn unsubscribe(room_id: &OwnedRoomId, subscriber_id: u64) {
         let instance = Self::instance();
         let mut manager = instance.lock().unwrap();
 
         if let Some(subscribers) = manager.subscribers.get_mut(room_id) {
-            // 检查订阅者是否存在
+            // Check if the subscriber exists
             let existed = subscribers.iter().any(|entry| entry.id == subscriber_id);
 
-            // 移除匹配的订阅者
+            // Remove the matching subscriber
             subscribers.retain(|entry| entry.id != subscriber_id);
 
-            // 如果订阅者存在且被移除，减少计数
+            // If the subscriber exists and was removed, decrease the count
             if existed {
                 if let Some(count) = manager.active_subscribers_count.get_mut(room_id) {
                     *count = count.saturating_sub(1);
 
-                    // 如果没有更多订阅者，清理数据
+                    // If there are no more subscribers, clean up the data
                     if *count == 0 {
                         manager.room_members.remove(room_id);
                         manager.subscribers.remove(room_id);
                         manager.active_subscribers_count.remove(room_id);
-                        log!("自动清理房间 {} 的成员数据 (没有订阅者)", room_id);
+                        log!(
+                            "Automatically cleaned up room {} member data (no subscribers)",
+                            room_id
+                        );
                     } else {
-                        log!("从房间 {} 取消订阅 ID: {}。剩余订阅者: {}",
-                            room_id, subscriber_id, *count);
+                        log!(
+                            "Unsubscribed ID: {} from room {}. Remaining subscribers: {}",
+                            subscriber_id,
+                            room_id,
+                            *count
+                        );
                     }
                 }
             }
         }
     }
 
-    /// 获取特定房间的成员列表
-    pub fn get_room_members(room_id: &OwnedRoomId) -> Option<Arc<Vec<RoomMember>>> {
-        let instance = Self::instance();
-        let manager = instance.lock().unwrap();
-        manager.room_members.get(room_id).cloned()
-    }
-
-    /// 诊断方法：获取房间的订阅者计数
+    /// Diagnostic method: Get the subscriber count for a room
     #[allow(dead_code)]
     pub fn get_subscriber_count(room_id: &OwnedRoomId) -> usize {
         let instance = Self::instance();
@@ -187,7 +189,7 @@ impl RoomMemberManager {
         manager.active_subscribers_count.get(room_id).copied().unwrap_or(0)
     }
 
-    /// 诊断方法：获取管理的房间总数
+    /// Diagnostic method: Get the total number of managed rooms
     #[allow(dead_code)]
     pub fn get_managed_room_count() -> usize {
         let instance = Self::instance();
@@ -196,32 +198,26 @@ impl RoomMemberManager {
     }
 }
 
-/// 用于管理订阅生命周期的辅助类型
+/// Helper type for managing subscription lifecycles
 pub struct RoomMemberSubscription {
-    /// 房间ID
+    /// Room ID
     room_id: OwnedRoomId,
-    /// 订阅ID
+    /// Subscription ID
     subscription_id: u64,
-    /// 标记是否已取消订阅
+    /// Flag indicating whether the subscription has been unsubscribed
     unsubscribed: bool,
 }
 
 impl RoomMemberSubscription {
-    /// 创建新的订阅
+    /// Create a new subscription
     pub fn new(
-        cx: &mut Cx,
-        room_id: OwnedRoomId,
-        subscriber: Arc<Mutex<dyn RoomMemberSubscriber>>,
+        cx: &mut Cx, room_id: OwnedRoomId, subscriber: Arc<Mutex<dyn RoomMemberSubscriber>>,
     ) -> Self {
         let subscription_id = RoomMemberManager::subscribe(cx, room_id.clone(), subscriber);
-        Self {
-            room_id,
-            subscription_id,
-            unsubscribed: false,
-        }
+        Self { room_id, subscription_id, unsubscribed: false }
     }
 
-    /// 手动取消订阅
+    /// Manually unsubscribe from the subscription
     pub fn unsubscribe(&mut self) {
         if !self.unsubscribed {
             RoomMemberManager::unsubscribe(&self.room_id, self.subscription_id);
@@ -230,35 +226,118 @@ impl RoomMemberSubscription {
     }
 }
 
+/// Auto-unsubscribe when the subscribed component is destroyed
 impl Drop for RoomMemberSubscription {
     fn drop(&mut self) {
+        log!("RoomMemberSubscription dropped");
         self.unsubscribe();
     }
 }
 
-/// 房间成员更新的快捷访问方法
+/// Room member update shortcut methods
 pub mod room_members {
     use super::*;
 
-    /// 更新房间成员数据
+    /// Update room member data
     pub fn update(cx: &mut Cx, room_id: OwnedRoomId, members: Vec<RoomMember>) {
         RoomMemberManager::update_room_members(cx, room_id, members);
     }
 
-    /// 获取房间成员数据
-    pub fn get(room_id: &OwnedRoomId) -> Option<Arc<Vec<RoomMember>>> {
-        RoomMemberManager::get_room_members(room_id)
-    }
-
-    /// 诊断：获取房间的订阅者计数
+    /// Diagnostic: Get the subscriber count for a room
     #[allow(dead_code)]
     pub fn subscriber_count(room_id: &OwnedRoomId) -> usize {
         RoomMemberManager::get_subscriber_count(room_id)
     }
 
-    /// 诊断：获取管理的房间总数
+    /// Diagnostic: Get the total number of managed rooms
     #[allow(dead_code)]
     pub fn managed_room_count() -> usize {
         RoomMemberManager::get_managed_room_count()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Simple test subscriber implementation
+    struct TestSubscriber {
+        id: String,
+        received_updates: AtomicUsize,
+    }
+
+    impl RoomMemberSubscriber for TestSubscriber {
+        fn on_room_members_updated(
+            &mut self, _cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
+        ) {
+            self.received_updates.fetch_add(1, Ordering::SeqCst);
+            log!(
+                "TestSubscriber({}) received update for room {} with {} members",
+                self.id,
+                room_id,
+                members.len()
+            );
+        }
+    }
+
+    fn create_test_cx() -> Cx {
+        let event_handler = Box::new(|_: &mut Cx, _: &Event| {
+            log!("Test event handler called");
+        });
+
+        Cx::new(event_handler)
+    }
+
+    #[test]
+    fn test_subscription_without_cx() {
+        // Create a mock room ID
+        let room_id_str = "!test_room:example.org";
+        let room_id = OwnedRoomId::try_from(room_id_str).unwrap();
+
+        // Reset the singleton for test isolation
+        let manager = RoomMemberManager::instance();
+        let mut guard = manager.lock().unwrap();
+        *guard = RoomMemberManager::default();
+        drop(guard);
+
+        // Create a dummy context that won't be used
+        let mut cx = create_test_cx();
+
+        // Create test subscriber
+        let subscriber = Arc::new(Mutex::new(TestSubscriber {
+            id: "test_sub".to_string(),
+            received_updates: AtomicUsize::new(0),
+        }));
+
+        // Manually manage subscription ID
+        let sub_id = RoomMemberManager::subscribe(&mut cx, room_id.clone(), subscriber.clone());
+
+        // Verify subscription was created
+        assert_eq!(RoomMemberManager::get_subscriber_count(&room_id), 1);
+
+        // Get initial subscriber update count
+        let initial_count = subscriber.lock().unwrap().received_updates.load(Ordering::SeqCst);
+
+        // Directly update room members
+        RoomMemberManager::update_room_members(&mut cx, room_id.clone(), vec![]);
+
+        // Verify update was received
+        let new_count = subscriber.lock().unwrap().received_updates.load(Ordering::SeqCst);
+        assert_eq!(new_count, initial_count + 1);
+
+        // Manually unsubscribe
+        RoomMemberManager::unsubscribe(&room_id, sub_id);
+
+        // Verify subscription was removed
+        assert_eq!(RoomMemberManager::get_subscriber_count(&room_id), 0);
+
+        // Update room members again
+        RoomMemberManager::update_room_members(&mut cx, room_id.clone(), vec![]);
+
+        // Verify no additional updates were received
+        let final_count = subscriber.lock().unwrap().received_updates.load(Ordering::SeqCst);
+        assert_eq!(final_count, new_count);
     }
 }

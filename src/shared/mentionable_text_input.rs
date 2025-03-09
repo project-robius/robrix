@@ -13,9 +13,8 @@ use crate::utils;
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::OwnedRoomId;
-use unicode_segmentation::UnicodeSegmentation;
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
 use std::sync::Arc;
+use unicode_segmentation::UnicodeSegmentation;
 
 live_design! {
     use link::theme::*;
@@ -201,9 +200,9 @@ pub enum MentionableTextInputAction {
     TextChanged(String),
     /// Triggered when a user is specifically mentioned
     UserMentioned(String),
-    /// 房间成员列表已更新
+    /// Room members list has been updated
     RoomMembersUpdated(Arc<Vec<RoomMember>>),
-    /// 房间ID已更新 (新增)
+    /// Room ID has been updated (new)
     RoomIdChanged(OwnedRoomId),
     /// Default empty action
     None,
@@ -256,7 +255,6 @@ impl Widget for MentionableTextInput {
         }
     }
 
-    // 实现必需的 draw_walk 方法
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
@@ -269,10 +267,7 @@ impl MentionableTextInput {
 
         if let Some(start_idx) = self.mention_start_index {
             let current_text = self.view.text();
-            let head = self.view
-                .text_input_ref()
-                .borrow()
-                .map_or(0, |p| p.get_cursor().head.index);
+            let head = self.view.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
 
             let before = &current_text[..start_idx];
             let after = &current_text[head..];
@@ -293,16 +288,9 @@ impl MentionableTextInput {
     }
 
     // Core text change handler that manages mention context
-    fn handle_text_change(
-        &mut self,
-        cx: &mut Cx,
-        scope: &mut Scope,
-        text: String,
-    ) {
-        let cursor_pos = self.view
-            .text_input_ref()
-            .borrow()
-            .map_or(0, |p| p.get_cursor().head.index);
+    fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+        let cursor_pos =
+            self.view.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
 
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
             self.mention_start_index = Some(trigger_pos);
@@ -324,11 +312,7 @@ impl MentionableTextInput {
     }
 
     // Updates the mention suggestion list based on search
-    fn update_user_list(
-        &mut self,
-        cx: &mut Cx,
-        search_text: &str,
-    ) {
+    fn update_user_list(&mut self, cx: &mut Cx, search_text: &str) {
         self.view.clear_items();
 
         if self.is_searching {
@@ -372,7 +356,8 @@ impl MentionableTextInput {
 
             if member_count <= MAX_VISIBLE_ITEMS {
                 let single_item_height = if is_desktop { 32.0 } else { 64.0 };
-                let total_height = (member_count as f64 * single_item_height) + header_height + estimated_spacing;
+                let total_height =
+                    (member_count as f64 * single_item_height) + header_height + estimated_spacing;
                 popup.apply_over(cx, live! { height: (total_height) });
             } else {
                 let max_height = if is_desktop { 400.0 } else { 480.0 };
@@ -388,14 +373,11 @@ impl MentionableTextInput {
                 let user_id_str = member.user_id().as_str();
                 item.label(id!(matrix_url)).set_text(cx, user_id_str);
 
-                item.apply_over(
-                    cx,
-                    live! {
-                        show_bg: true,
-                        cursor: Hand,
-                        padding: {left: 8., right: 8., top: 4., bottom: 4.}
-                    },
-                );
+                item.apply_over(cx, live! {
+                    show_bg: true,
+                    cursor: Hand,
+                    padding: {left: 8., right: 8., top: 4., bottom: 4.}
+                });
 
                 if is_desktop {
                     item.apply_over(
@@ -435,7 +417,6 @@ impl MentionableTextInput {
                 self.view.add_item(item.clone());
 
                 if index == 0 {
-                    // 修复: 移除 borrow_mut 调用
                     self.view.set_keyboard_focus_index(0);
                 }
             }
@@ -471,12 +452,12 @@ impl MentionableTextInput {
                 std::cmp::Ordering::Greater => {
                     grapheme_cursor_idx = i.saturating_sub(1);
                     break;
-                }
+                },
                 std::cmp::Ordering::Equal => {
                     grapheme_cursor_idx = i;
                     break;
-                }
-                std::cmp::Ordering::Less => {}
+                },
+                std::cmp::Ordering::Less => {},
             }
         }
 
@@ -497,16 +478,20 @@ impl MentionableTextInput {
             // Validate @ mention format
             if idx < grapheme_cursor_idx {
                 // Safely extract graphemes from @ to cursor position
-                let after_trigger_graphemes = &text_graphemes[idx+1..grapheme_cursor_idx];
+                let after_trigger_graphemes = &text_graphemes[idx + 1..grapheme_cursor_idx];
 
                 // If @ is immediately followed by whitespace, it's not a valid mention
-                if !after_trigger_graphemes.is_empty() && after_trigger_graphemes[0].trim().is_empty() {
+                if !after_trigger_graphemes.is_empty()
+                    && after_trigger_graphemes[0].trim().is_empty()
+                {
                     return None;
                 }
 
                 // Check for consecutive whitespace
                 for i in 0..after_trigger_graphemes.len().saturating_sub(1) {
-                    if after_trigger_graphemes[i].trim().is_empty() && after_trigger_graphemes[i+1].trim().is_empty() {
+                    if after_trigger_graphemes[i].trim().is_empty()
+                        && after_trigger_graphemes[i + 1].trim().is_empty()
+                    {
                         return None;
                     }
                 }
@@ -546,10 +531,9 @@ impl MentionableTextInput {
         self.redraw(cx);
     }
 
-    pub fn set_room_id(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
         self.room_id = Some(room_id.clone());
-        log!("MentionableTextInput: Room ID set to {}", room_id);
-        // 发送房间ID变更事件
+        // Send the room ID changed event to widget listeners
         Cx::post_action(MentionableTextInputAction::RoomIdChanged(room_id.clone()));
     }
 
@@ -583,9 +567,9 @@ impl MentionableTextInputRef {
         }
     }
 
-    pub fn set_room_id(&self, cx: &mut Cx, room_id: OwnedRoomId) {
+    pub fn set_room_id(&self, room_id: OwnedRoomId) {
         if let Some(mut inner) = self.borrow_mut() {
-            inner.set_room_id(cx, room_id);
+            inner.set_room_id(room_id);
         }
     }
 }
