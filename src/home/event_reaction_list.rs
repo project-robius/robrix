@@ -155,6 +155,11 @@ impl Widget for ReactionList {
                     self.do_hover_out(cx, scope, button_ref);
                     break;
                 }
+                // A long press is treated as a hover-in.
+                Hit::FingerLongPress(_) => {
+                    self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
+                    break;
+                }
                 Hit::FingerUp(fue) => {
                     // If the finger is not over the button, treat it as a hover-out.
                     if !fue.is_over {
@@ -162,13 +167,8 @@ impl Widget for ReactionList {
                         break;
                     }
 
-                    // A right-click or a long-press is treated as a hover-in.
-                    if fue.is_over &&
-                        (
-                            fue.mouse_button().is_some_and(|b| b.is_secondary())
-                            || (fue.is_primary_hit() && fue.was_long_press())
-                        )
-                    {
+                    // A right-click or is treated as a hover-in.
+                    if fue.is_over && fue.mouse_button().is_some_and(|b| b.is_secondary()) {
                         self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
                         break;
                     }
