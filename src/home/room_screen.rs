@@ -1755,7 +1755,7 @@ impl RoomScreen {
                         }
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                             log!("TODO: jump to known room {}", room_id);
@@ -1767,7 +1767,7 @@ impl RoomScreen {
                     MatrixId::RoomAlias(room_alias) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open room alias {}", room_alias);
                         // TODO: open a room loading screen that shows a spinner
@@ -1805,7 +1805,7 @@ impl RoomScreen {
                     MatrixId::Event(room_id, event_id) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open event {} in room {}", event_id, room_id);
                         // TODO: this requires the same first step as the `MatrixId::Room` case above,
@@ -1829,7 +1829,7 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification("Could not open URL: {url}".to_string());
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
                 }
             }
             true
@@ -4258,22 +4258,11 @@ pub enum MessageAction {
     None,
 }
 
-#[derive(Debug, Clone, Default)]
-enum LongPressState {
-    Pressing(DVec2),
-    #[default]
-    None,
-}
-
+/// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
-
-    /// A timer used to detect long presses on the message body.
-    #[rust] long_press_timer: Timer,
-    /// The current status of the long-press gesture on the message body.
-    #[rust] long_press_state: LongPressState,
 
     #[rust] details: Option<MessageDetails>,
 }
@@ -4292,85 +4281,17 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        /// 500ms long press is default on Android/iOS
-        const LONG_PRESS_DURATION: f64 = 0.500;
+        // We *first* forward the event to the child view such that it has the chance
+        // to handle it before the Message widget handles it.
+        // This ensures that events like right-clicking/long-pressing a reaction button
+        // or a link within a message will be treated as an action upon that child view
+        // rather than an action upon the message itself.
+        self.view.handle_event(cx, event, scope);
 
-        // Here, we handle bringing up the context menu for a message,
-        // which occurs upon a long press or a right-click event on the message body itself.
-        //
-        // We first check if the timer is up, indicating a prior long press has completed.
-        // Then, we handle other context menu events: a long press start/end, and right-click.
-        if let LongPressState::Pressing(abs_pos) = &self.long_press_state {
-            if self.long_press_timer.is_event(event).is_some() {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
-                    MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
-                        abs_pos: *abs_pos,
-                    }
-                );
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-            }
-        }
-
-        // This closure is passed into the below `hits()` function,
-        // which is used to determine if a hit should be marked as handled.
-        // If this closure returns `true`, the hit is marked as handled,
-        // which means that this hit will *not* propagate to the child widgets.
-        let mark_as_handled_fn = |hit: &Hit| match hit {
-            // We must ensure that this Message's child widgets *do* receive `FingerDown` hits,
-            // because future `FingerUp` hits won't work if a prior `FingerDown` hit didn't occur.
-            Hit::FingerDown(_fd) => {
-                false
-            }
-            // a right-click event
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
-                // Mark this hit as handled, such that a right-click event
-                // doesn't propagate to the child widget view.
-                true
-            }
-            // A long press was released
-            Hit::FingerUp(_) => {
-                // If we're ending a long press, then we should mark this hit as handled,
-                // such that the end of the long press event doesn't propagate to the child widget view.
-                let val = matches!(self.long_press_state, LongPressState::Pressing(_));
-                val
-            }
-            // Finger movements should always be propagated to the child widget view
-            // such that hover events always work.
-            Hit::FingerMove(_) => {
-                false
-            }
-            _other => {
-                // Don't mark this hit as handled, such that this event will
-                // propagate to the child widget view.
-                false
-            }
-        };
-        
         let message_view_area = self.view.area();
-        let hit = event.hits_with_mark_as_handled_fn(
-            cx,
-            message_view_area,
-            // self.view(id!(body)).area(),
-            mark_as_handled_fn,
-        );
-        match hit {
-            // a long press has started
-            Hit::FingerDown(fe) => {
+        match event.hits(cx, message_view_area) {
+            Hit::FingerDown(fe, _) => {
                 cx.set_key_focus(message_view_area);
-                if matches!(self.long_press_state, LongPressState::None) {
-                    self.long_press_state = LongPressState::Pressing(fe.abs);
-                    self.long_press_timer = cx.start_interval(LONG_PRESS_DURATION);
-                }
-            }
-            // A click/touch event has occurred somewhere within this Message's entire view area.
-            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
@@ -4382,6 +4303,18 @@ impl Widget for Message {
                         }
                     );
                 }
+            }
+            Hit::FingerLongPress(lp) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: lp.abs,
+                    }
+                );
+            }
+            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
                 // If the hit occurred on the replied-to message preview, jump to it.
                 //
                 // TODO: move this to the event handler for any reply preview content,
@@ -4395,12 +4328,7 @@ impl Widget for Message {
                     );
                 }
             }
-            // a long press has ended
-            Hit::FingerUp(_) | Hit::FingerMove(_) => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-            }
-            Hit::FingerHoverIn(_fhi) => {
+            Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
                 // TODO: here, show the "action bar" buttons upon hover-in
             }
@@ -4422,8 +4350,6 @@ impl Widget for Message {
                 }
             }
         }
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

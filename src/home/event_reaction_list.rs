@@ -143,11 +143,11 @@ impl Widget for ReactionList {
             // Note: the `break` statements are used to break out of the loop over
             // all reaction buttons, since a hit event can only occur on one button.
             match event.hits(cx, button_area) {
-                Hit::FingerDown(_) => {
+                Hit::FingerDown(..) => {
                     cx.set_key_focus(button_area);
                     break;
                 }
-                Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) => {
+                Hit::FingerHoverIn(..) | Hit::FingerHoverOver(..) => {
                     self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
                     break;
                 }
@@ -164,17 +164,9 @@ impl Widget for ReactionList {
                     // If the finger is not over the button, treat it as a hover-out.
                     if !fue.is_over {
                         self.do_hover_out(cx, scope, button_ref);
-                        break;
                     }
-
-                    // A right-click or is treated as a hover-in.
-                    if fue.is_over && fue.mouse_button().is_some_and(|b| b.is_secondary()) {
-                        self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
-                        break;
-                    }
-
-                    // A primary click/press should toggle the reaction button.
-                    if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
+                    // Otherwise, a primary click/press over the button should toggle the reaction.
+                    else if fue.is_primary_hit() && fue.was_tap() {
                         let Some(room_id) = &self.room_id else { return };
                         let Some(timeline_event_id) = &self.timeline_event_id else {
                             return;
@@ -194,10 +186,8 @@ impl Widget for ReactionList {
                             draw_bg: { color: (bg_color) , border_color: (border_color) }
                         });
                         self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
-                        break;
                     }
-
-                    
+                    break;
                 }
                 Hit::FingerScroll(_) => {
                     self.do_hover_out(cx, scope, button_ref);
