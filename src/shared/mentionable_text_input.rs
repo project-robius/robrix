@@ -10,6 +10,8 @@
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::utils;
+use crate::sliding_sync::{MatrixRequest, submit_async_request};
+
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::OwnedRoomId;
@@ -209,7 +211,7 @@ pub enum MentionableTextInputAction {
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct MentionableTextInput {
     /// Base command text input
     #[deref]
@@ -533,19 +535,18 @@ impl MentionableTextInput {
 
     pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
         self.room_id = Some(room_id.clone());
+
         // Send the room ID changed event to widget listeners
-        Cx::post_action(MentionableTextInputAction::RoomIdChanged(room_id.clone()));
+        Cx::post_action(MentionableTextInputAction::RoomIdChanged(room_id));
+    }
+
+    pub fn get_room_id(&self) -> Option<OwnedRoomId> {
+        self.room_id.clone()
     }
 
     /// Sets room members for mention suggestions
     pub fn set_room_members(&mut self, members: Arc<Vec<RoomMember>>) {
         self.room_members = members;
-    }
-}
-
-impl LiveHook for MentionableTextInput {
-    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
-        // Setup defaults if needed
     }
 }
 
@@ -571,5 +572,9 @@ impl MentionableTextInputRef {
         if let Some(mut inner) = self.borrow_mut() {
             inner.set_room_id(room_id);
         }
+    }
+
+    pub fn get_room_id(&self) -> Option<OwnedRoomId> {
+        self.borrow().map_or(None, |inner| inner.get_room_id())
     }
 }

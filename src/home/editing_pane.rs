@@ -190,6 +190,7 @@ enum EditingPaneInternalAction {
 /// Subscriber for EditingPane to receive room member updates
 struct EditingPaneSubscriber {
     widget_uid: WidgetUid,
+    current_room_id: Option<OwnedRoomId>,
 }
 
 /// Implement `RoomMemberSubscriber` trait, receive member update notifications
@@ -198,21 +199,22 @@ impl RoomMemberSubscriber for EditingPaneSubscriber {
         &mut self, cx: &mut Cx, room_id: &OwnedRoomId,
         members: Arc<Vec<matrix_sdk::room::RoomMember>>,
     ) {
-        // Log with stable identifier
-        log!(
-            "EditingPaneSubscriber({:?}) received members update for room {}",
-            self.widget_uid,
-            room_id
-        );
+        if let Some(current_room_id) = &self.current_room_id {
+            if current_room_id == room_id {
+                // Log with stable identifier
+                log!(
+                    "EditingPaneSubscriber({:?}) received members update for room {}",
+                    self.widget_uid,
+                    room_id
+                );
 
-        // Send both global and widget-specific actions for redundancy
-        cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
+                cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
+            }else{
+                log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
+            }
+        }
 
-        cx.widget_action(
-            self.widget_uid,
-            &Scope::empty().path,
-            EditingPaneInternalAction::RoomMembersUpdated(members),
-        );
+
     }
 }
 
@@ -264,14 +266,14 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-            let edit_text_input = self.mentionable_text_input(id!(edit_text_input));
+            let edit_text_input = self.mentionable_text_input(id!(edit_text_input)).text_input(id!(text_input));
 
             // Check for room member update actions
             for action in actions {
                 // check for global actions
                 if let Some(update_action) = action.downcast_ref::<EditingPaneInternalAction>() {
                     if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
-                        // log!("EditingPane received global RoomMembersUpdated action with {} members", members.len());
+                        log!("EditingPane received global RoomMembersUpdated action with {} members", members.len());
                         self.handle_members_updated(members.clone());
                     }
                     continue;
@@ -281,7 +283,7 @@ impl Widget for EditingPane {
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
             if self.button(id!(cancel_button)).clicked(actions)
-                || edit_text_input.as_text_input().escape(actions)
+                || edit_text_input.escape(actions)
             {
                 self.animator_play(cx, id!(panel.hide));
                 self.redraw(cx);
@@ -292,8 +294,9 @@ impl Widget for EditingPane {
                 return;
             };
 
+
             if self.button(id!(accept_button)).clicked(actions)
-                || edit_text_input.as_text_input().key_down_unhandled(actions).is_some_and(|ke| {
+                || edit_text_input.key_down_unhandled(actions).is_some_and(|ke| {
                     ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
                 })
             {
@@ -481,13 +484,13 @@ impl EditingPane {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
         }
-        let text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+        let edit_text_input = self.mentionable_text_input(id!(edit_text_input));
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
-                text_input.set_text(cx, message.body());
+                edit_text_input.set_text(cx, message.body());
             },
             TimelineItemContent::Poll(poll) => {
-                text_input.set_text(cx, &poll.results().question);
+                edit_text_input.set_text(cx, &poll.results().question);
             },
             _ => {
                 enqueue_popup_notification("That message cannot be edited.".into());
@@ -505,9 +508,9 @@ impl EditingPane {
         self.button(id!(cancel_button)).reset_hover(cx);
 
         // Set the text input's cursor to the end and give it key focus.
-        let text_len = text_input.text().len();
-        text_input.as_text_input().set_cursor(text_len, text_len);
-        text_input.as_text_input().set_key_focus(cx);
+        let text_len = edit_text_input.text().len();
+        edit_text_input.text_input(id!(text_input)).set_cursor(text_len, text_len);
+        edit_text_input.text_input(id!(text_input)).set_key_focus(cx);
 
         self.animator_play(cx, id!(panel.show));
         self.redraw(cx);
@@ -518,11 +521,15 @@ impl EditingPane {
         // Cancel previous subscription if any
         self.member_subscription = None;
 
+        log!("Creating room member subscription for EditingPane, ID: {:?}", self.widget_uid());
+
         // Create new subscriber
         let subscriber =
-            Arc::new(Mutex::new(EditingPaneSubscriber { widget_uid: self.widget_uid() }));
-
-        log!("Creating room member subscription for EditingPane, ID: {:?}", self.widget_uid());
+            Arc::new(
+                Mutex::new(
+                    EditingPaneSubscriber { widget_uid: self.widget_uid(), current_room_id: Some(room_id.clone())}
+                )
+            );
 
         // Create and save subscription
         self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id, subscriber));
@@ -530,14 +537,11 @@ impl EditingPane {
 
     /// Handle room members update event
     fn handle_members_updated(&mut self, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
-        // Pass room member data to MentionableTextInput
-        let text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-
-        // log!("EditingPane::handle_members_updated - passing {} members to MentionableTextInput",
-        //         members.len());
-
-        // Pass data to MentionableTextInput
-        text_input.set_room_members(members);
+        if let Some(_info) = &self.info {
+            // Pass room member data to MentionableTextInput
+            let message_input = self.mentionable_text_input(id!(edit_text_input));
+            message_input.set_room_members(members);
+        }
     }
 }
 

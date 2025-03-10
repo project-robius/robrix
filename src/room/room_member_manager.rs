@@ -52,6 +52,8 @@ impl RoomMemberManager {
 
     /// Update specific room's member list and notify subscribers
     pub fn update_room_members(cx: &mut Cx, room_id: OwnedRoomId, members: Vec<RoomMember>) {
+        log!("Updating room members for room {}", room_id.clone());
+
         let instance = Self::instance();
         let mut manager = instance.lock().unwrap();
 

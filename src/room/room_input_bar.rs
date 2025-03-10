@@ -74,8 +74,10 @@ pub enum RoomInputBarAction {
 }
 
 /// Create subscriber adapter for RoomInputBar
+/// Create subscriber adapter for RoomInputBar
 struct RoomInputBarSubscriber {
     widget_uid: WidgetUid,
+    current_room_id: Option<OwnedRoomId>,
 }
 
 /// Implement `RoomMemberSubscriber` trait, receive member update notifications
@@ -83,22 +85,21 @@ impl RoomMemberSubscriber for RoomInputBarSubscriber {
     fn on_room_members_updated(
         &mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
     ) {
-        // Use stable identifier for logging
-        log!(
-            "RoomInputBarSubscriber({:?}) received members update for room {}",
-            self.widget_uid,
-            room_id
-        );
+        if let Some(current_room_id) = &self.current_room_id {
+            if current_room_id == room_id {
+                // Use stable identifier for logging
+                log!(
+                    "RoomInputBarSubscriber({:?}) received members update for room {}",
+                    self.widget_uid,
+                    room_id
+                );
 
-        // IMPORTANT: This sends the action directly to the global action queue
-        cx.action(RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone()));
-
-        // Also send as a widget action for backward compatibility
-        cx.widget_action(
-            self.widget_uid,
-            &Scope::empty().path,
-            RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members),
-        );
+                // IMPORTANT: This sends the action directly to the global action queue
+                cx.action(RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone()));
+            }else{
+                log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
+            }
+        }
     }
 }
 
@@ -198,8 +199,10 @@ impl RoomInputBar {
         self.member_subscription = None;
 
         // Create new subscriber and subscribe
-        let subscriber =
-            Arc::new(Mutex::new(RoomInputBarSubscriber { widget_uid: self.widget_uid() }));
+        let subscriber = Arc::new(Mutex::new(RoomInputBarSubscriber {
+            widget_uid: self.widget_uid(),
+            current_room_id: Some(room_id.clone()),
+        }));
 
         log!("Creating subscription, RoomInputBar ID: {:?}", self.widget_uid());
 
@@ -218,15 +221,15 @@ impl RoomInputBar {
 
     /// Handle room members update event
     fn handle_members_updated(&mut self, members: Arc<Vec<RoomMember>>) {
-        // Pass room member data to internal MentionableTextInput component
-        let message_input = self.view.mentionable_text_input(id!(message_input));
+        if let Some(current_room_id) = &self.room_id {
+            let message_input = self.view.mentionable_text_input(id!(message_input));
 
-        log!(
-            "RoomInputBar::handle_members_updated - passing {} members to MentionableTextInput",
-            members.len()
-        );
-
-        // Pass data to MentionableTextInput
-        message_input.set_room_members(members);
+            if message_input.get_room_id().as_ref() == Some(current_room_id) {
+                log!("RoomInputBar: Updating {} members to MentionableTextInput (Room {})",
+                        members.len(), current_room_id);
+                // Pass data to MentionableTextInput
+                message_input.set_room_members(members);
+            }
+        }
     }
 }
