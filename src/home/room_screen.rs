@@ -3877,12 +3877,12 @@ trait SmallStateEventContent {
     ///
     /// ## Arguments
     /// * `item`: a `SmallStateEvent` widget that has already been added to
-    ///    the given `PortalList` at the given `item_id`.
-    ///    This function may either modify that item or completely replace it
-    ///    with a different widget if needed.
+    ///   the given `PortalList` at the given `item_id`.
+    ///   This function may either modify that item or completely replace it
+    ///   with a different widget if needed.
     /// * `item_drawn_status`: the old (prior) drawn status of the item.
     /// * `new_drawn_status`: the new drawn status of the item, which may have already
-    ///    been updated to reflect the item's profile having been drawn right before this function.
+    ///   been updated to reflect the item's profile having been drawn right before this function.
     ///
     /// ## Return
     /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
