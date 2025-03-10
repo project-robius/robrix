@@ -94,8 +94,12 @@ impl RoomMemberSubscriber for RoomInputBarSubscriber {
                     room_id
                 );
 
-                // IMPORTANT: This sends the action directly to the global action queue
-                cx.action(RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone()));
+                // cx.action(RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone()));
+                cx.widget_action(
+                    self.widget_uid,
+                    &Scope::empty().path,
+                    RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone())
+                );
             }else{
                 log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
             }
@@ -123,17 +127,22 @@ impl Widget for RoomInputBar {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                // First, check for a direct RoomMembersUpdated action in the global actions queue
-                if let Some(update_action) = action.downcast_ref::<RoomInputBarAction>() {
-                    if let RoomInputBarAction::RoomMembersUpdated(room_id, members) = update_action
-                    {
-                        log!(
-                            "RoomInputBar received global RoomMembersUpdated action for room {}",
-                            room_id
-                        );
-                        self.handle_members_updated(members.clone());
+
+                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
+                    log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
+                    log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
+
+                    if let Some(update_action) = widget_action.downcast_ref::<RoomInputBarAction>() {
+                        if let RoomInputBarAction::RoomMembersUpdated(room_id, members) = update_action
+                        {
+                            log!(
+                                "RoomInputBar received RoomInputBarAction RoomMembersUpdated action for room {}",
+                                room_id
+                            );
+                            self.handle_members_updated(members.clone());
+                        }
+                        continue;
                     }
-                    continue;
                 }
 
                 // Check for MentionableTextInputAction::RoomIdChanged action

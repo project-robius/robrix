@@ -208,7 +208,12 @@ impl RoomMemberSubscriber for EditingPaneSubscriber {
                     room_id
                 );
 
-                cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
+                // cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
+                cx.widget_action(
+                    self.widget_uid,
+                    &Scope::empty().path,
+                    EditingPaneInternalAction::RoomMembersUpdated(members),
+                );
             }else{
                 log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
             }
@@ -266,17 +271,22 @@ impl Widget for EditingPane {
         }
 
         if let Event::Actions(actions) = event {
-            let edit_text_input = self.mentionable_text_input(id!(edit_text_input)).text_input(id!(text_input));
+            let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
 
             // Check for room member update actions
             for action in actions {
-                // check for global actions
-                if let Some(update_action) = action.downcast_ref::<EditingPaneInternalAction>() {
-                    if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
-                        log!("EditingPane received global RoomMembersUpdated action with {} members", members.len());
-                        self.handle_members_updated(members.clone());
+
+                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
+                    log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
+                    log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
+
+                    if let Some(update_action) = widget_action.downcast_ref::<EditingPaneInternalAction>() {
+                        if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
+                            log!("EditingPane received EditingPaneInternalAction RoomMembersUpdated action with {} members", members.len());
+                            self.handle_members_updated(members.clone());
+                        }
+                        continue;
                     }
-                    continue;
                 }
             }
 
@@ -439,7 +449,7 @@ impl Widget for EditingPane {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.info.is_none() {
+        if !self.animator_in_state(cx, id!(panel.show)) || self.info.is_none() {
             self.visible = false;
         };
         self.view.draw_walk(cx, scope, walk)
@@ -484,7 +494,8 @@ impl EditingPane {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
         }
-        let edit_text_input = self.mentionable_text_input(id!(edit_text_input));
+
+        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
                 edit_text_input.set_text(cx, message.body());
@@ -532,7 +543,14 @@ impl EditingPane {
             );
 
         // Create and save subscription
-        self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id, subscriber));
+        self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
+
+        submit_async_request(MatrixRequest::GetRoomMembers {
+            room_id,
+            memberships: matrix_sdk::RoomMemberships::JOIN,
+            use_cache: true,
+            from_server: true,
+        });
     }
 
     /// Handle room members update event
@@ -575,7 +593,11 @@ impl EditingPaneRef {
 
     /// Returns the event that is currently being edited, if any.
     pub fn get_event_being_edited(&self) -> Option<EventTimelineItem> {
-        self.borrow()?.info.as_ref().map(|info| info.event_tl_item.clone())
+        let inner = self.borrow()?;
+        if !inner.visible {
+            return None;
+        }
+        inner.info.as_ref().map(|info| info.event_tl_item.clone())
     }
 
     /// Hides the editing pane immediately without animating it out.

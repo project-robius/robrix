@@ -10,7 +10,6 @@
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::utils;
-use crate::sliding_sync::{MatrixRequest, submit_async_request};
 
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
@@ -575,6 +574,6 @@ impl MentionableTextInputRef {
     }
 
     pub fn get_room_id(&self) -> Option<OwnedRoomId> {
-        self.borrow().map_or(None, |inner| inner.get_room_id())
+        self.borrow().and_then(|inner| inner.get_room_id())
     }
 }
