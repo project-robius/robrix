@@ -1634,7 +1634,7 @@ impl RoomScreen {
                 TimelineUpdate::RoomMembersListFetched { members } => {
                     // Use `pub/sub` pattern here to let multiple components share room members data
                     use crate::room::room_member_manager::room_members;
-                    room_members::update(cx, self.room_id.clone().unwrap(), members);
+                    room_members::update(cx, tl.room_id.clone(), members);
                 },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);

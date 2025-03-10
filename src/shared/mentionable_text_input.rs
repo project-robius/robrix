@@ -270,12 +270,23 @@ impl MentionableTextInput {
             let current_text = self.view.text();
             let head = self.view.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
 
-            let before = &current_text[..start_idx];
-            let after = &current_text[head..];
-            let mention = format!("{before}@{username} {after}");
+            // Use utility function to safely replace text
+            let mention = utils::safe_replace_by_byte_indices(
+                &current_text,
+                start_idx,
+                head,
+                &format!("@{username} ")
+            );
 
             self.view.set_text(cx, &mention);
-            let new_pos = start_idx + username.len() + 2;
+
+            // Calculate new cursor position
+            let before_and_insert = format!("{}@{} ",
+                &current_text[..start_idx],
+                username
+            );
+            let new_pos = before_and_insert.len();
+
             self.view.text_input_ref().set_cursor(new_pos, new_pos);
 
             cx.widget_action(
@@ -297,8 +308,12 @@ impl MentionableTextInput {
             self.mention_start_index = Some(trigger_pos);
             self.is_searching = true;
 
-            // Extract search text
-            let search_text = text[trigger_pos + 1..cursor_pos].to_lowercase();
+            let search_text = utils::safe_substring_by_byte_indices(
+                &text,
+                trigger_pos + 1,
+                cursor_pos
+            ).to_lowercase();
+
             self.update_user_list(cx, &search_text);
             self.view.view(id!(popup)).set_visible(cx, true);
         } else if self.is_searching {
@@ -435,80 +450,55 @@ impl MentionableTextInput {
             return None;
         }
 
-        // Build grapheme boundary mapping
+        // Use utility function to convert byte position to grapheme index
+        let cursor_grapheme_idx = utils::byte_index_to_grapheme_index(text, cursor_pos);
         let text_graphemes: Vec<&str> = text.graphemes(true).collect();
-        let mut grapheme_boundaries = Vec::with_capacity(text_graphemes.len() + 1);
-        let mut byte_pos = 0;
-        grapheme_boundaries.push(0); // String start position
 
-        for g in &text_graphemes {
-            byte_pos += g.len();
-            grapheme_boundaries.push(byte_pos);
-        }
-
-        // Find the grapheme index containing the cursor position
-        let mut grapheme_cursor_idx = grapheme_boundaries.len() - 1;
-        for (i, &boundary) in grapheme_boundaries.iter().enumerate() {
-            match boundary.cmp(&cursor_pos) {
-                std::cmp::Ordering::Greater => {
-                    grapheme_cursor_idx = i.saturating_sub(1);
-                    break;
-                },
-                std::cmp::Ordering::Equal => {
-                    grapheme_cursor_idx = i;
-                    break;
-                },
-                std::cmp::Ordering::Less => {},
-            }
-        }
+        // Build byte position mapping to facilitate conversion back to byte positions
+        let byte_positions = utils::build_grapheme_byte_positions(text);
 
         // Check if cursor is immediately after @ symbol
-        if grapheme_cursor_idx > 0 && text_graphemes[grapheme_cursor_idx - 1] == "@" {
-            return Some(grapheme_boundaries[grapheme_cursor_idx - 1]);
+        if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
+            return Some(byte_positions[cursor_grapheme_idx - 1]);
         }
 
-        // Find the last @ symbol before cursor
-        let mut last_at_pos = None;
-        for (i, &grapheme) in text_graphemes.iter().enumerate().take(grapheme_cursor_idx) {
-            if grapheme == "@" {
-                last_at_pos = Some(i);
-            }
-        }
+        // Find the last @ symbol before the cursor
+        let last_at_pos = text_graphemes[..cursor_grapheme_idx]
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| **g == "@")
+            .map(|(i, _)| i)
+            .last();
 
-        if let Some(idx) = last_at_pos {
-            // Validate @ mention format
-            if idx < grapheme_cursor_idx {
-                // Safely extract graphemes from @ to cursor position
-                let after_trigger_graphemes = &text_graphemes[idx + 1..grapheme_cursor_idx];
+        if let Some(at_idx) = last_at_pos {
+            // Extract the text after the @ symbol up to the cursor position
+            let mention_text = &text_graphemes[at_idx + 1..cursor_grapheme_idx];
 
-                // If @ is immediately followed by whitespace, it's not a valid mention
-                if !after_trigger_graphemes.is_empty()
-                    && after_trigger_graphemes[0].trim().is_empty()
-                {
-                    return None;
-                }
-
-                // Check for consecutive whitespace
-                for i in 0..after_trigger_graphemes.len().saturating_sub(1) {
-                    if after_trigger_graphemes[i].trim().is_empty()
-                        && after_trigger_graphemes[i + 1].trim().is_empty()
-                    {
-                        return None;
-                    }
-                }
-
-                // Check for newlines in mention text
-                let contains_newline = after_trigger_graphemes.iter().any(|g| g.contains('\n'));
-                if contains_newline {
-                    return None;
-                }
-
-                // All checks passed, this is a valid mention trigger
-                return Some(grapheme_boundaries[idx]);
+            // Validate the mention format
+            if self.is_valid_mention_text(mention_text) {
+                return Some(byte_positions[at_idx]);
             }
         }
 
         None
+    }
+
+    // Add helper method to extract validation logic
+    fn is_valid_mention_text(&self, graphemes: &[&str]) -> bool {
+        // Empty or first character is whitespace is invalid
+        if graphemes.is_empty() || graphemes[0].trim().is_empty() {
+            return false;
+        }
+
+        // Check for consecutive whitespace
+        for i in 0..graphemes.len().saturating_sub(1) {
+            if graphemes[i].trim().is_empty() && graphemes[i + 1].trim().is_empty() {
+                return false;
+            }
+        }
+
+        // Check if it contains newline characters
+        !graphemes.iter().any(|g| g.contains('\n'))
     }
 
     // Cleanup helper for closing mention popup

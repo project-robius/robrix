@@ -1,5 +1,6 @@
 use std::{borrow::Cow, time::SystemTime};
 
+use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
@@ -417,6 +418,104 @@ pub fn get_or_fetch_event_sender(
     }
     .unwrap_or_else(|| event_tl_item.sender().as_str());
     sender_username.to_owned()
+}
+
+
+/// Converts a byte index in a string to the corresponding grapheme index
+pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
+    let mut current_byte_pos = 0;
+    for (i, g) in text.graphemes(true).enumerate() {
+        if current_byte_pos <= byte_idx && current_byte_pos + g.len() > byte_idx {
+            return i;
+        }
+        current_byte_pos += g.len();
+    }
+    // If byte_idx is at end of string or past it, return grapheme count
+    text.graphemes(true).count()
+}
+
+/// Converts a grapheme index to the corresponding byte index in a string
+pub fn grapheme_index_to_byte_index(text: &str, grapheme_idx: usize) -> usize {
+    let mut byte_pos = 0;
+    for (i, g) in text.graphemes(true).enumerate() {
+        if i == grapheme_idx {
+            return byte_pos;
+        }
+        byte_pos += g.len();
+    }
+    // If grapheme_idx is beyond the last grapheme, return text length
+    text.len()
+}
+
+/// Safely extracts a substring between two byte indices, ensuring proper
+/// grapheme boundaries are respected
+pub fn safe_substring_by_byte_indices(text: &str, start_byte: usize, end_byte: usize) -> String {
+    if start_byte >= end_byte || start_byte >= text.len() {
+        return String::new();
+    }
+
+    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
+    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
+
+    text.graphemes(true)
+        .enumerate()
+        .filter(|(i, _)| *i >= start_grapheme_idx && *i < end_grapheme_idx)
+        .map(|(_, g)| g)
+        .collect()
+}
+
+/// Safely extracts a substring using grapheme indices
+pub fn safe_substring_by_grapheme_indices(text: &str, start_grapheme: usize, end_grapheme: usize) -> String {
+    if start_grapheme >= end_grapheme {
+        return String::new();
+    }
+
+    text.graphemes(true)
+        .enumerate()
+        .filter(|(i, _)| *i >= start_grapheme && *i < end_grapheme)
+        .map(|(_, g)| g)
+        .collect()
+}
+
+/// Safely replaces text between byte indices with a new string,
+/// ensuring proper grapheme boundaries are respected
+pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usize, replacement: &str) -> String {
+    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+
+    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
+    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
+
+    let before = text_graphemes[..start_grapheme_idx].join("");
+    let after = text_graphemes[end_grapheme_idx..].join("");
+
+    format!("{before}{replacement}{after}")
+}
+
+/// Safe version of String::contains that works with graphemes
+pub fn contains_grapheme(text: &str, pattern: &str) -> bool {
+    // For single grapheme patterns
+    if pattern.graphemes(true).count() == 1 {
+        text.graphemes(true).any(|g| g == pattern)
+    } else {
+        // For multi-grapheme patterns, we can use the default contains
+        // as it will work correctly for complete strings
+        text.contains(pattern)
+    }
+}
+
+/// Builds a mapping array from graphemes to byte positions in the string
+pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
+    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
+    let mut byte_pos = 0;
+
+    positions.push(0); // 字符串起始位置
+
+    for g in text.graphemes(true) {
+        byte_pos += g.len();
+        positions.push(byte_pos);
+    }
+
+    positions
 }
 
 
