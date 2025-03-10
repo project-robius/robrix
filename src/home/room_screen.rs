@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    ruma::{
+    deserialized_responses::TimelineEvent, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -946,6 +946,9 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    #[rust] first_unread: Option<usize>,
+    #[rust] is_scrolling: bool,
+    
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1075,6 +1078,20 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+                if let (Some(ScrollAction::DONE), Some(first_unread)) = (action.downcast_ref::<ScrollAction>(), self.first_unread) {
+                    let pl = self.view.portal_list(id!(list));
+                    if let Some(h) = pl.position_of_item(cx, first_unread - 1) {
+                        println!("a pl.first_id() {:?} - pl.visible_items() {:?}, - h {:?}",pl.first_id() , pl.visible_items(), - h );
+                        pl.set_first_id_and_scroll(pl.first_id(), h);
+                    } else {
+                        println!("cannot find");
+                    }
+                }
+                if let Some(ScrollAction::PENDING) = action.downcast_ref::<ScrollAction>(){
+                    println!("is_scrolling");
+                    self.is_scrolling = true;
+                }
+                
             }
 
             /*
@@ -1305,6 +1322,14 @@ impl Widget for RoomScreen {
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                if let Some(first_unread) = self.first_unread {
+                    println!("item_id {:?} first_unread {:?}", item_id,first_unread);
+                    if item_id == first_unread && self.is_scrolling {
+
+                        Cx::post_action(ScrollAction::DONE);
+                        self.is_scrolling = false;
+                    }
+                }
                 let item = {
                     let tl_idx = item_id;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -1446,24 +1471,53 @@ impl RoomScreen {
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::FirstUpdate { initial_items, num_unread } => {
+                TimelineUpdate::FirstUpdate { initial_items, num_unread , latest_read_receipt} => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
-                    
+                    let p = tl.latest_own_user_receipt.clone();
+                    println!("p {:?}", p);
+                    println!("FirstUpdate num_unread {:?} latest_read_receipt {:?} initial_items {:?}", num_unread, latest_read_receipt,initial_items.len());
+                    let Some((latest_read_receipt, r)) = latest_read_receipt else {
+                        return;
+                    };
+                    tl.latest_own_user_receipt = Some((latest_read_receipt, r));
+                    let mut first_unread = 1;
+                    for item in initial_items.iter() {
+                        if let Some(event_id) = item.as_event().and_then(|f|{
+                            f.event_id().and_then(|f|{
+                                Some(f.to_owned())
+                            })
+                        }) {
+                            first_unread += 1;
+                            if event_id == latest_read_receipt {
+                                break
+                            }
+                        }
+                    }
+                    println!("first_unread {:?}", first_unread);
+                    self.first_unread = Some(first_unread);
+                    portal_list.set_first_id_and_scroll(first_unread, 0.0);
+                    self.view.redraw(cx);
+                    cx.action(ScrollAction::PENDING);
                     // Set the portal list to the very bottom of the timeline.
                     // #123
                     //portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     //portal_list.set_tail_range(true);
                     //portal_list.set_tail_range(true);
-                    portal_list.set_first_id_and_scroll(portal_list.first_id().saturating_sub(num_unread), 0.0);
-                    jump_to_bottom.update_visibility(cx, true);
-                    
-                    
-                    println!("tl_state item len {:?}", tl.items.len());
+                    // if num_unread > 0 {
+                    //     portal_list.set_first_id_and_scroll(first_unread, 0.0);
+                    //     self.view.redraw(cx);
+                    //     cx.action(ScrollAction::PENDING);
+                    //     self.first_unread = Some(first_unread);
+                    // } else {
+                    //     portal_list.set_first_id_and_scroll(portal_list.first_id().saturating_sub(num_unread), 0.0);
+                    // }
+                    jump_to_bottom.update_visibility(cx, true);                    
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    println!("TimelineUpdate::NewItems ");
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1572,7 +1626,7 @@ impl RoomScreen {
                     if let UnreadMessageCount::Known(unread_message_count) = unread_messages_count {
                         let first_index = portal_list.first_id();
                         //portal_list.set_first_id(first_index.saturating_sub(unread_message_count as usize));
-                        println!("first_index {:?}", first_index);
+                        //println!("first_index {:?}", first_index);
                         portal_list.set_tail_range(false);
                         portal_list.set_first_id_and_scroll(first_index.saturating_sub(unread_message_count as usize), 0.0);
 
@@ -1698,8 +1752,8 @@ impl RoomScreen {
                         .set_visible(cx, !can_send_message);
                 }
 
-                TimelineUpdate::OwnUserReadReceipt(receipt) => {
-                    tl.latest_own_user_receipt = Some(receipt);
+                TimelineUpdate::OwnUserReadReceipt(event , ownership) => {
+                    tl.latest_own_user_receipt = Some((event,ownership));
                 }
             }
         }
@@ -2500,7 +2554,7 @@ impl RoomScreen {
                         });
                     } else {
                         if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
-                        .and_then(|receipt| receipt.ts) {
+                        .and_then(|(_e, receipt )| {
                             let Some((_first_event_id, first_timestamp)) = tl_state
                                 .items
                                 .get(first_index)
@@ -2508,7 +2562,7 @@ impl RoomScreen {
                                 .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
                                 else {
                                     *index = first_index;
-                                    return;
+                                    
                                 };
                             if own_user_receipt_timestamp >= &first_timestamp
                                 && own_user_receipt_timestamp <= &last_timestamp
@@ -2520,7 +2574,7 @@ impl RoomScreen {
                                 });
                             }
 
-                        }
+                        })
                     }
                 }
                 *index = first_index;
@@ -2604,7 +2658,8 @@ pub enum TimelineUpdate {
     FirstUpdate {
         /// The initial list of timeline items (events) for a room.
         initial_items: Vector<Arc<TimelineItem>>,
-        num_unread: usize
+        num_unread: usize,
+        latest_read_receipt: Option<(OwnedEventId, Receipt)>
     },
     /// The content of a room's timeline was updated in the background.
     NewItems {
@@ -2673,7 +2728,7 @@ pub enum TimelineUpdate {
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
-    OwnUserReadReceipt(Receipt),
+    OwnUserReadReceipt(OwnedEventId, Receipt),
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2775,7 +2830,7 @@ struct TimelineUiState {
     ///
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
-    latest_own_user_receipt: Option<Receipt>,
+    latest_own_user_receipt: Option<(OwnedEventId,Receipt)>,
 }
 
 #[derive(Default, Debug)]
@@ -4475,4 +4530,10 @@ impl MessageRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
     }
+}
+
+#[derive(Debug)]
+pub enum ScrollAction {
+    PENDING,
+    DONE
 }
