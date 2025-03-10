@@ -131,27 +131,27 @@ impl Widget for VerificationBadge {
 
         let badge = self.view(id!(verification_icons));
         let badge_area = badge.area();
-        match event.hits(cx, badge_area) {
-            Hit::FingerDown(_)
-            | Hit::FingerUp(_)
-            | Hit::FingerHoverIn(_)
-            | Hit::FingerHoverOver(_) => {
-                let badge_rect = badge_area.rect(cx);
-                cx.widget_action(
-                    self.widget_uid(),
-                    &scope.path,
-                    TooltipAction::HoverIn {
-                        widget_rect: badge_rect,
-                        text: verification_state_str(self.verification_state).to_string(),
-                        bg_color: Some(verification_state_color(self.verification_state)),
-                        text_color: None,
-                    },
-                );
-            }
+        let should_hover_in = match event.hits(cx, badge_area) {
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(..) => true,
+            Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                false
             }
-            _ => {}
+            _ => false,
+        };
+        if should_hover_in {
+            let badge_rect = badge_area.rect(cx);
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                TooltipAction::HoverIn {
+                    widget_rect: badge_rect,
+                    text: verification_state_str(self.verification_state).to_string(),
+                    bg_color: Some(verification_state_color(self.verification_state)),
+                    text_color: None,
+                },
+            );
         }
     }
 
