@@ -84,11 +84,11 @@ impl TextOrImage {
     ///
     /// ## Arguments
     /// * `image_set_function`: this function will be called with an [ImageRef] argument,
-    ///    which refers to the image that will be displayed within this `TextOrImage`.
-    ///    This allows the caller to set the image contents in any way they want.
-    ///    * If successful, the `image_set_function` should return the size of the image
-    ///      in pixels as a tuple, `(width, height)`.
-    ///    * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
+    ///   which refers to the image that will be displayed within this `TextOrImage`.
+    ///   This allows the caller to set the image contents in any way they want.
+    ///   * If successful, the `image_set_function` should return the size of the image
+    ///     in pixels as a tuple, `(width, height)`.
+    ///   * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
     pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
