@@ -1826,7 +1826,7 @@ impl RoomScreen {
                         }
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                             log!("TODO: jump to known room {}", room_id);
@@ -1838,7 +1838,7 @@ impl RoomScreen {
                     MatrixId::RoomAlias(room_alias) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open room alias {}", room_alias);
                         // TODO: open a room loading screen that shows a spinner
@@ -1876,7 +1876,7 @@ impl RoomScreen {
                     MatrixId::Event(room_id, event_id) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open event {} in room {}", event_id, room_id);
                         // TODO: this requires the same first step as the `MatrixId::Room` case above,
@@ -1900,7 +1900,7 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification("Could not open URL: {url}".to_string());
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
                 }
             }
             true
@@ -4333,22 +4333,11 @@ pub enum MessageAction {
     None,
 }
 
-#[derive(Debug, Clone, Default)]
-enum LongPressState {
-    Pressing(DVec2),
-    #[default]
-    None,
-}
-
+/// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
-
-    /// A timer used to detect long presses on the message body.
-    #[rust] long_press_timer: Timer,
-    /// The current status of the long-press gesture on the message body.
-    #[rust] long_press_state: LongPressState,
 
     #[rust] details: Option<MessageDetails>,
 }
@@ -4424,7 +4413,7 @@ impl Widget for Message {
                 false
             }
         };
-
+        
         let message_view_area = self.view.area();
         let hit = event.hits_with_mark_as_handled_fn(
             cx,
@@ -4470,12 +4459,7 @@ impl Widget for Message {
                     );
                 }
             }
-            // a long press has ended
-            Hit::FingerUp(_) | Hit::FingerMove(_) => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-            }
-            Hit::FingerHoverIn(_fhi) => {
+            Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
                 // TODO: here, show the "action bar" buttons upon hover-in
             }
@@ -4497,8 +4481,6 @@ impl Widget for Message {
                 }
             }
         }
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
