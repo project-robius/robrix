@@ -508,7 +508,7 @@ pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
     let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
     let mut byte_pos = 0;
 
-    positions.push(0); // 字符串起始位置
+    positions.push(0);
 
     for g in text.graphemes(true) {
         byte_pos += g.len();
