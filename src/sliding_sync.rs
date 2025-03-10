@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -777,18 +777,19 @@ async fn async_worker(
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                             log!("Received own user read receipt: {receipt:?} {event_id:?}");
-                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(event_id.clone(),receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
-                        }
-                        
-                        while (update_receiver.next().await).is_some() {
-                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
-                                    error!("Failed to get own user read receipt: {e:?}");
+                            while (update_receiver.next().await).is_some() {
+                                if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                    if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(event_id.clone(),receipt)) {
+                                        error!("Failed to get own user read receipt: {e:?}");
+                                    }
                                 }
                             }
                         }
+                        
+                        
                     }
                 });
                 tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
@@ -1806,21 +1807,25 @@ async fn timeline_subscriber_handler(
     }
     let room_id = room.room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}... timeline_event_cache length {:?}", timeline_event_cache.len());
-    if timeline_event_cache.len() < room.unread_notification_counts().notification_count as usize + 50 {
+    if timeline_event_cache.len() < 20 as usize + 50 {
         let b = timeline.paginate_backwards(50).await.unwrap();
-        println!("b {:?}", b);
+        println!("backward paginate {:?}", b);
     }
     let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
-
+    println!("timeline_items activity {:?}", timeline_items.len());
+    let Ok(read_receipt) = room.load_user_receipt(ruma_events::receipt::ReceiptType::Read, ReceiptThread::Unthreaded, &current_user_id().unwrap()).await else {return;};
     //# 123
-    println!("timeline_items {:?} room_id {:?}",timeline_items.len(), room_id);
+    // println!("timeline_items {:?} room_id {:?} unread_notification_counts {:?}",timeline_items.len(), room_id, room.unread_notification_counts());
+    // let mut timeline_items_clone = timeline_items.clone();
+    // let final_length = timeline_items.len().saturating_sub(room.unread_notification_counts().notification_count as usize - 1);
+    // timeline_items_clone.truncate(final_length);
     timeline_update_sender.send(TimelineUpdate::FirstUpdate {
         initial_items: timeline_items.clone(),
-        num_unread: room.unread_notification_counts().notification_count as usize
+        num_unread: room.unread_notification_counts().notification_count as usize,
+        latest_read_receipt: read_receipt
     }).unwrap_or_else(
         |_e| panic!("Error: timeline update sender couldn't send first update ({} items) to room {room_id}!", timeline_items.len())
     );
-    
 
     let mut latest_event = timeline.latest_event().await;
 
