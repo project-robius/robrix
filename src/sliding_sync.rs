@@ -220,6 +220,8 @@ pub type OnMediaFetchedFn = fn(
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
     Login(LoginRequest),
+    /// Request to logout.
+    Logout,
     /// Request to paginate the older (or newer) events of a room's timeline.
     PaginateRoomTimeline {
         room_id: OwnedRoomId,
@@ -403,6 +405,25 @@ async fn async_worker(
                     )));
                 }
             }
+
+            MatrixRequest::Logout => {
+                let _logout_task = Handle::current().spawn(async move {
+                    match logout_and_refresh().await {
+                        Ok(state) => match state {
+                            RefreshState::NeedRelogin => {
+                                log!("Session expired, need to relogin");
+                            }
+                        },
+                        Err(e) => {
+                            error!("Logout and refresh failed: {e:?}");
+                            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: format!("Operation failed: {e}"),
+                            });
+                        }
+                    }
+                });
+            }
+
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -2468,4 +2489,35 @@ impl UserPowerLevels {
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
     }
+}
+
+#[derive(Debug)]
+enum RefreshState {
+    NeedRelogin,
+}
+
+async fn logout_and_refresh() -> Result<RefreshState> {
+    let client = CLIENT.get().cloned()
+        .ok_or_else(|| anyhow::anyhow!("No active client found"))?;
+
+    if let Some(sync_service) = SYNC_SERVICE.get() {
+        sync_service.stop().await;
+    }
+
+    if client.logged_in() {
+        if let Err(e) = client.matrix_auth().logout().await {
+            log!("Warning: Logout failed (possibly due to invalid token): {}", e);
+        }
+    }
+
+    if let Err(e) = persistent_state::delete_session(None).await {
+        log!("Warning: Failed to delete session: {}", e);
+    }
+
+    Cx::post_action(LoginAction::Logout);
+    enqueue_rooms_list_update(RoomsListUpdate::Status {
+        status: "Session expired, please login again.".to_string(),
+    });
+
+    Ok(RefreshState::NeedRelogin)
 }

@@ -423,6 +423,9 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoSetRedirectUrl(url)) => {
                     self.sso_redirect_url = Some(url.to_string());
                 }
+                Some(LoginAction::Logout) => {
+                    login_status_modal_inner.set_text(cx, "");
+                }
                 _ => { }
             }
         }
@@ -484,4 +487,5 @@ pub enum LoginAction {
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),
     None,
+    Logout,
 }
