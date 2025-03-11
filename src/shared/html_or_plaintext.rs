@@ -17,6 +17,26 @@ live_design! {
     // HTML_LINE_SPACING = 6.0
     // HTML_TEXT_HEIGHT_FACTOR = 1.1
 
+    // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
+    // The Matrix link is a pill-shaped widget with an avatar and a title.
+    pub RobrixHtmlLink = {{RobrixHtmlLink}} {
+        width: Fit, height: Fit,
+        flow: Overlay,
+        align: { y: 0.5 },
+        cursor: Hand,
+
+        html_link_view = <View> {
+            visible: true,
+            width: Fit, height: Fit,
+
+            html_link = <HtmlLink> {
+                hover_color: #21b070
+                grab_key_focus: false,
+                padding: {left: 1.0, right: 1.5},
+            }
+        }
+    }
+
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
     pub MatrixHtmlSpan = {{MatrixHtmlSpan}} {
@@ -56,12 +76,7 @@ live_design! {
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
-
-        a = {
-            hover_color: #21b070
-            grab_key_focus: false,
-            padding: {left: 1.0, right: 1.5},
-        }
+        a = <RobrixHtmlLink> { }
 
         body: "[<i> HTML message placeholder</i>]",
     }
@@ -102,6 +117,78 @@ live_design! {
     }
 }
 
+/// A RobrixHtmlLink is either a regular `HtmlLink` (default) or a Matrix link.
+///
+/// Matrix links are displayed using the [`MatrixLinkPill`] widget.
+#[derive(Live, Widget)]
+struct RobrixHtmlLink {
+    #[deref] view: View,
+
+    /// The displayable text of the link.
+    /// This should be set automatically by the Html widget
+    /// when it parses and draws an Html `<a>` tag.
+    #[live] pub text: ArcStringMut,
+    /// The URL of the link.
+    #[live] pub url: String,
+}
+
+impl LiveHook for RobrixHtmlLink {
+    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
+        if let ApplyFrom::NewFromDoc { .. } = apply.from {
+            let scope = apply.scope.as_ref().unwrap();
+            let doc = scope.props.get::<HtmlDoc>().unwrap();
+            let mut walker = doc.new_walker_with_index(scope.index + 1);
+            if let Some((live_id!(href), attr)) = walker.while_attr_lc() {
+                self.url = attr.into();
+            }
+        }
+    }
+}
+
+impl Widget for RobrixHtmlLink {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.show_html_link(cx, self.url.clone());
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn text(&self) -> String {
+        self.text.as_ref().to_string()
+    }
+
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        self.text.as_mut_empty().push_str(v);
+        self.redraw(cx);
+    }
+}
+
+impl RobrixHtmlLink {
+    fn show_html_link(&mut self, cx: &mut Cx, url: String) {
+        /*
+         * HtmlLink isn't public and doesn't offer a Rust API to set the URL,
+         * so we can't use this code to set the URL of the HtmlLink widget.
+         * TODO: make HtmlLink public and add a Rust API to set the URL.
+         */
+        // self.html_link(id!(html_link)).set_url(cx, url);
+        // self.view(id!(html_link_view)).set_visible(cx, true);
+        // self.view(id!(matrix_link_view)).set_visible(cx, false);
+
+        self.apply_over(cx, live!{
+            html_link_view = {
+                visible: true,
+                html_link = {
+                    url: (url),
+                    text: (self.text),
+                },
+            }
+        });
+        self.redraw(cx);
+
+    }
+}
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Live, Widget)]
