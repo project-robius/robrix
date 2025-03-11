@@ -2,13 +2,12 @@ use std::sync::Arc;
 use futures_util::StreamExt;
 use makepad_widgets::{log, warning, ActionDefaultRef, Cx, DefaultNone};
 use matrix_sdk::{
-    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::{VerificationState, verification::{
+    crypto::{AcceptedProtocols, CancelInfo, EmojiShortAuthString}, encryption::{verification::{
         SasState, SasVerification, Verification, VerificationRequest,
         VerificationRequestState,
-    }}, ruma::{
+    }, VerificationState}, ruma::{
         events::{
-            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod},
-            room::message::{MessageType, OriginalSyncRoomMessageEvent},
+            key::verification::{request::ToDeviceKeyVerificationRequestEvent, VerificationMethod}, room::message::{MessageType, OriginalSyncRoomMessageEvent}
         },
         UserId,
     }, Client
@@ -69,17 +68,6 @@ pub fn add_verification_event_handlers_and_sync_client(client: Client) {
             }
         }
     );
-
-    // This doesn't seem to be necessary, as we do receive verification requests
-    // without this block.
-    // The sliding sync service must be handling the synchronization already.
-    //
-    /*
-    Handle::current().spawn(async move {
-        client.sync(SyncSettings::new()).await
-            .expect("Client sync loop failed");
-    });
-    */
 }
 
 

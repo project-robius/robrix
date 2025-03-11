@@ -2,26 +2,24 @@ use makepad_widgets::*;
 
 use crate::{
     shared::{
-        adaptive_view::{AdaptiveViewWidgetExt, DisplayContext},
         avatar::AvatarWidgetExt,
         html_or_plaintext::HtmlOrPlaintextWidgetExt,
     },
     utils::{self, relative_format},
 };
 
-use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry};
-
+use super::rooms_list::{RoomPreviewAvatar, RoomsListEntry, RoomsListScopeProps};
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::view::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
-    import crate::shared::helpers::*;
-    import crate::shared::avatar::Avatar;
-    import crate::shared::adaptive_view::AdaptiveView;
-    import crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    use crate::shared::styles::*;
+    use crate::shared::helpers::*;
+    use crate::shared::avatar::Avatar;
+    use crate::shared::html_or_plaintext::HtmlOrPlaintext;
+    pub UNREAD_HIGHLIGHT_COLOR = #FF0000;
+    pub UNREAD_DEFAULT_COLOR = #AAA;
 
     RoomName = <Label> {
         width: Fill, height: Fit
@@ -46,10 +44,8 @@ live_design! {
 
     MessagePreview = <View> {
         width: Fill, height: Fit
-        flow: Down, spacing: 5.
 
         latest_message = <HtmlOrPlaintext> {
-            padding: {top: 3.0}
             html_view = { html = {
                 font_size: 9.3,
                 draw_normal:      { text_style: { font_size: 9.3 } },
@@ -68,7 +64,8 @@ live_design! {
     }
 
     RoomPreviewContent = {{RoomPreviewContent}} {
-        flow: Right, spacing: 10., padding: 10.
+        flow: Right,
+        spacing: 10., padding: 10.
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
@@ -103,36 +100,107 @@ live_design! {
         }
     }
 
-    RoomPreview = {{RoomPreview}} {
-        // Wraps the RoomPreviewContent in an AdaptiveView
-        // to change the displayed content (and its layout) based on the available space in the sidebar.
+    UnreadBadge = <View> {
+        width: 30, height: 20,
+        align: {
+            x: 0.5,
+            y: 0.5
+        }
+        visible: false,
+        flow: Overlay,
+        rounded_label = <View> {
+            width: Fill,
+            height: Fill,
+            show_bg: true,
+            draw_bg: {
+                instance highlight: 0.0,
+                instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
+                instance default_color: (UNREAD_DEFAULT_COLOR),
+                instance radius: 4.0
+                // Adjust this border_width to larger value to make oval smaller 
+                instance border_width: 2.0
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    sdf.box(
+                        self.border_width,
+                        1.0,
+                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.y - 2.0,
+                        max(1.0, self.radius)
+                    )
+                    sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
+                    return sdf.result;
+                }
+            }
+        }
+        // Label that displays the unread message count
+        unread_messages_count = <Label> {
+            width: Fit,
+            height: Fit,
+            text: "",
+            draw_text: {
+                color: #ffffff,
+                text_style: {font_size: 8.0},
+            }
+        }
+    }
+
+    pub RoomPreview = {{RoomPreview}} {
+        flow: Down, height: Fit
+        cursor: Default,
+
+        // Wrap the RoomPreviewContent in an AdaptiveView to change the displayed content
+        // (and its layout) based on the available space in the sidebar.
         adaptive_preview = <AdaptiveView> {
+            height: Fit
+
             OnlyIcon = <RoomPreviewContent> {
                 align: {x: 0.5, y: 0.5}
                 padding: 5.
-                avatar = <Avatar> {}
+                <View> {
+                    height: Fit
+                    flow: Overlay
+                    align: { x: 1.0 }
+                    avatar = <Avatar> {}
+                    unread_badge = <UnreadBadge> {}
+                }
             }
             IconAndName = <RoomPreviewContent> {
                 padding: 5.
                 align: {x: 0.5, y: 0.5}
                 avatar = <Avatar> {}
                 room_name = <RoomName> {}
+                unread_badge = <UnreadBadge> {}
             }
             FullPreview = <RoomPreviewContent> {
+                padding: 10
                 avatar = <Avatar> {}
                 <View> {
                     flow: Down
-                    width: Fill, height: Fit
-                    header = <View> {
-                        width: Fill, height: Fit
-                        flow: Right
-                        spacing: 10.
-                        align: {y: 0.5}
-
+                    width: Fill, height: 56
+                    align: { x: 0.0, y: 0.0 }
+                    top = <View> {
+                        width: Fill, height: Fit,
+                        spacing: 5,
+                        flow: Right,
                         room_name = <RoomName> {}
-                        timestamp = <Timestamp> {}
+                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
+                        timestamp = <Timestamp> { margin: { top: 1.3 } }
                     }
-                    preview = <MessagePreview> {}
+                    bottom = <View> {
+                        width: Fill, height: Fill,
+                        spacing: 5,
+                        margin: { top: 7. }
+                        flow: Right,
+                        preview = <MessagePreview> {}
+                        <View> {
+                            width: Fit, height: Fit
+                            align: { x: 1.0 }
+                            unread_badge = <UnreadBadge> {
+                                margin: { top: 5. } // Align the badge with the timestamp, same as the message preview's margin top.
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -152,11 +220,11 @@ pub enum RoomPreviewAction {
 }
 
 impl LiveHook for RoomPreview {
-    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+    fn after_new_from_doc(&mut self, _cx: &mut Cx) {
         // Adapt the preview based on the available space.
         self.view
             .adaptive_view(id!(adaptive_preview))
-            .set_variant_selector(cx, |_cx, parent_size| match parent_size.x {
+            .set_variant_selector(|_cx, parent_size| match parent_size.x {
                 width if width <= 70.0  => live_id!(OnlyIcon),
                 width if width <= 200.0 => live_id!(IconAndName),
                 _ => live_id!(FullPreview),
@@ -167,17 +235,18 @@ impl LiveHook for RoomPreview {
 impl Widget for RoomPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let uid = self.widget_uid();
+        let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 
         match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(_fe) => {
+            Hit::FingerDown(..) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) => {
-                if fe.was_tap() {
-                    cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
-                }
+            Hit::FingerUp(fe) if !rooms_list_props.was_scrolling &&
+                fe.is_over && fe.is_primary_hit() && fe.was_tap() =>
+            {
+                cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
             }
-            _ => (),
+            _ => { }
         }
 
         self.view.handle_event(cx, event, scope);
@@ -211,31 +280,77 @@ impl Widget for RoomPreviewContent {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_info) = scope.props.get::<RoomsListEntry>() {
             if let Some(ref name) = room_info.room_name {
-                self.view.label(id!(room_name)).set_text(name);
+                self.view.label(id!(room_name)).set_text(cx, name);
             }
             if let Some((ts, msg)) = room_info.latest.as_ref() {
                 if let Some(human_readable_date) = relative_format(ts) {
                     self.view
                         .label(id!(timestamp))
-                        .set_text(&human_readable_date);
+                        .set_text(cx, &human_readable_date);
                 }
                 self.view
                     .html_or_plaintext(id!(latest_message))
-                    .show_html(msg);
+                    .show_html(cx, msg);
             }
             match room_info.avatar {
                 RoomPreviewAvatar::Text(ref text) => {
-                    self.view.avatar(id!(avatar)).show_text(None, text);
+                    self.view.avatar(id!(avatar)).show_text(cx, None, text);
                 }
                 RoomPreviewAvatar::Image(ref img_bytes) => {
                     let _ = self.view.avatar(id!(avatar)).show_image(
+                        cx,
                         None, // don't make room preview avatars clickable.
-                        |img| utils::load_png_or_jpg(&img, cx, img_bytes),
+                        |cx, img| utils::load_png_or_jpg(&img, cx, img_bytes),
                     );
                 }
             }
 
-            if cx.get_global::<DisplayContext>().is_desktop() {
+            let unread_badge = self.view(id!(unread_badge)); 
+            // Helper function to format the rounded rectangle.
+            //
+            // The rounded rectangle needs to be wider for longer text.
+            // It also adds a plus sign at the end if the unread count is greater than 99. 
+            fn format_border_and_truncation(count: u64) -> (f64, &'static str) {
+                let (border_size, plus_sign) = if count > 99 {
+                    (0.0, "+")
+                } else if count > 9 {
+                    (2.0, "")
+                } else {
+                    (5.0, "")
+                };
+                (border_size, plus_sign)
+            }
+            if room_info.num_unread_mentions > 0 {
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_mentions);
+                // If there are unread mentions, show red badge and the number of unread mentions
+                unread_badge
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_mentions, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 1.0
+                    }
+                });
+                unread_badge.set_visible(cx, true);
+            } else if room_info.num_unread_messages > 0 {
+                let (border_size, plus_sign) = format_border_and_truncation(room_info.num_unread_messages);
+                // If there are no unread mentions but there are unread messages, show gray badge and the number of unread messages
+                unread_badge
+                    .label(id!(unread_messages_count))
+                    .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_messages, 99)));
+                unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
+                    draw_bg: {
+                        border_width: (border_size),
+                        highlight: 0.0
+                    }
+                });
+                unread_badge.set_visible(cx, true);
+            } else {
+                // If there are no unread mentions and no unread messages, hide the badge
+                unread_badge.set_visible(cx, false);
+            }
+            if cx.display_context.is_desktop() {
                 self.update_preview_colors(cx, room_info.is_selected);
             } else if room_info.is_selected {
                 // Mobile doesn't have a selected state. Always use the default colors.

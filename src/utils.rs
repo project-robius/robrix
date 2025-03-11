@@ -1,8 +1,31 @@
 use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch}};
+use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
+
+use crate::sliding_sync::{submit_async_request, MatrixRequest};
+
+
+/// Returns true if the given event is an interactive hit-related event
+/// that should require a view/widget to be visible in order to handle/receive it.
+pub fn is_interactive_hit_event(event: &Event) -> bool {
+    matches!(
+        event,
+        Event::MouseDown(..)
+        | Event::MouseUp(..)
+        | Event::MouseMove(..)
+        | Event::MouseLeave(..)
+        | Event::TouchUpdate(..)
+        | Event::Scroll(..)
+        | Event::KeyDown(..)
+        | Event::KeyUp(..)
+        | Event::TextInput(..)
+        | Event::TextCopy(..)
+        | Event::TextCut(..)
+    )
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ImageFormat {
@@ -49,16 +72,20 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
         }
     };
     if let Err(err) = res.as_ref() {
-        // debugging: dump out the avatar image to disk
+        // debugging: dump out the bad image to disk
         let mut path = crate::temp_storage::get_temp_dir_path().clone();
-        let filename = format!("img_{}",
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+        let filename = format!(
+            "img_{}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .map(|d| d.as_millis())
+                .unwrap_or_else(|_| rand::random::<u128>()),
         );
         path.push(filename);
         path.set_extension("unknown");
         error!("Failed to load PNG/JPG: {err}. Dumping bad image: {:?}", path);
-        std::fs::write(path, data)
-            .expect("Failed to write user avatar image to disk");
+        let _ = std::fs::write(path, data)
+            .inspect_err(|e| error!("Failed to write bad image to disk: {e}"));
     }
     res
 }
@@ -143,21 +170,6 @@ impl From<MediaFormatConst> for MediaFormat {
 /// A const-compatible version of [`MediaThumbnailSettings`].
 #[derive(Clone, Debug)]
 pub struct MediaThumbnailSettingsConst {
-    pub size: MediaThumbnailSizeConst,
-    pub animated: bool,
-}
-impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
-    fn from(constant: MediaThumbnailSettingsConst) -> Self {
-        Self {
-            size: constant.size.into(),
-            animated: constant.animated,
-        }
-    }
-}
-
-/// A const-compatible version of [`MediaThumbnailSize`].
-#[derive(Clone, Debug)]
-pub struct MediaThumbnailSizeConst {
     /// The desired resizing method.
     pub method: Method,
     /// The desired width of the thumbnail. The actual thumbnail may not match
@@ -166,29 +178,64 @@ pub struct MediaThumbnailSizeConst {
     /// The desired height of the thumbnail. The actual thumbnail may not match
     /// the size specified.
     pub height: u32,
+    /// If we want to request an animated thumbnail from the homeserver.
+    ///
+    /// If it is `true`, the server should return an animated thumbnail if
+    /// the media supports it.
+    ///
+    /// Defaults to `false`.
+    pub animated: bool,
 }
-impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
-    fn from(constant: MediaThumbnailSizeConst) -> Self {
+impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
+    fn from(constant: MediaThumbnailSettingsConst) -> Self {
         Self {
             method: constant.method,
             width: constant.width.into(),
             height: constant.height.into(),
+            animated: constant.animated,
         }
     }
 }
 
-/// The default media format to use for thumbnail requests.
-pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+
+/// The thumbnail format to use for user and room avatars.
+pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
-        size: MediaThumbnailSizeConst {
-            method: Method::Scale,
-            width: 40,
-            height: 40,
-        },
+        method: Method::Scale,
+        width: 40,
+        height: 40,
         animated: false,
     }
 );
 
+/// The thumbnail format to use for regular media images.
+pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
+    MediaThumbnailSettingsConst {
+        method: Method::Scale,
+        width: 400,
+        height: 400,
+        animated: false,
+    }
+);
+
+/// Removes leading whitespace and HTML whitespace tags (`<p>` and `<br>`) from the given `text`.
+pub fn trim_start_html_whitespace(mut text: &str) -> &str {
+    let mut prev_text_len = text.len();
+    loop {
+        text = text
+            .trim_start_matches("<p>")
+            .trim_start_matches("<br>")
+            .trim_start_matches("<br/>")
+            .trim_start_matches("<br />")
+            .trim_start();
+
+        if text.len() == prev_text_len {
+            break;
+        }
+        prev_text_len = text.len();
+    }
+    text
+}
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
 pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
@@ -215,9 +262,9 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
         let link_txt = link.as_str();
         // Only linkify the URL if it's not already part of an HTML href attribute.
         let is_link_within_href_attr = text.get(..link.start())
-            .map_or(false, ends_with_href);
+            .is_some_and(ends_with_href);
         let is_link_within_html_tag = text.get(link.end() ..)
-            .map_or(false, |after| after.trim_end().starts_with("</a>"));
+            .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
         if is_link_within_href_attr || is_link_within_html_tag {
             linkified_text = format!(
@@ -228,16 +275,18 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
             match link.kind() {
                 LinkKind::Url => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"{link_txt}\">{}</a>",
+                        "{linkified_text}{}<a href=\"{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 LinkKind::Email => {
                     linkified_text = format!(
-                        "{linkified_text}{}<a href=\"mailto:{link_txt}\">{}</a>",
+                        "{linkified_text}{}<a href=\"mailto:{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
                         htmlize::escape_attribute(link_txt),
+                        htmlize::escape_text(link_txt),
                     );
                 }
                 _ => return Cow::Borrowed(text), // unreachable
@@ -248,6 +297,7 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
     linkified_text.push_str(
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
+    // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
     Cow::Owned(linkified_text)
 }
 
@@ -289,7 +339,125 @@ pub fn ends_with_href(text: &str) -> bool {
     substr.trim_end().ends_with("href")
 }
 
+/// Converts a list of names into a human-readable string with a limit parameter.
+///
+/// # Examples
+/// ```
+/// assert_eq!(human_readable_list(&vec!["Alice"], 3), String::from("Alice"));
+/// assert_eq!(human_readable_list(&vec![String::from("Alice"), String::from("Bob")], 3), String::from("Alice and Bob"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie"], 3), String::from("Alice, Bob and Charlie"));
+/// assert_eq!(human_readable_list(&vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny"], 3), String::from("Alice, Bob, Charlie, and 3 others"));
+/// ```
+pub fn human_readable_list<S>(names: &[S], limit: usize) -> String
+where
+    S: AsRef<str>
+{
+    let mut result = String::new();
+    match names.len() {
+        0 => return result, // early return if no names provided
+        1 => {
+            result.push_str(names[0].as_ref());
+        },
+        2 => {
+            result.push_str(names[0].as_ref());
+            result.push_str(" and ");
+            result.push_str(names[1].as_ref());
+        },
+        _ => {
+            let display_count = names.len().min(limit);
+            for (i, name) in names.iter().take(display_count - 1).enumerate() {
+                if i > 0 {
+                    result.push_str(", ");
+                }
+                result.push_str(name.as_ref());
+            }
+            if names.len() > limit {
+                let remaining = names.len() - limit;
+                result.push_str(", ");
+                result.push_str(names[display_count - 1].as_ref());
+                result.push_str(", and ");
+                if remaining == 1 {
+                    result.push_str("1 other");
+                } else {
+                    result.push_str(&format!("{} others", remaining));
+                }
+            } else {
+                result.push_str(" and ");
+                result.push_str(names[display_count - 1].as_ref());
+            }
+        }
+    };
+    result
+}
 
+
+/// Returns the sender's display name if available.
+///
+/// If not available, and if the `room_id` is provided, this function will
+/// submit an async request to fetch the event details.
+/// In this case, this will return the event sender's user ID as a string.
+pub fn get_or_fetch_event_sender(
+    event_tl_item: &EventTimelineItem,
+    room_id: Option<&OwnedRoomId>,
+) -> String {
+    let sender_username = match event_tl_item.sender_profile() {
+        TimelineDetails::Ready(profile) => profile.display_name.as_deref(),
+        TimelineDetails::Unavailable => {
+            if let Some(room_id) = room_id {
+                if let Some(event_id) = event_tl_item.event_id() {
+                    submit_async_request(MatrixRequest::FetchDetailsForEvent {
+                        room_id: room_id.clone(),
+                        event_id: event_id.to_owned(),
+                    });
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+    .unwrap_or_else(|| event_tl_item.sender().as_str());
+    sender_username.to_owned()
+}
+
+
+#[cfg(test)]
+mod tests_human_readable_list {
+    use super::*;
+    #[test]
+    fn test_human_readable_list_empty() {
+        let names: Vec<&str> = Vec::new();
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_human_readable_list_single() {
+        let names: Vec<&str> = vec!["Alice"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice");
+    }
+
+    #[test]
+    fn test_human_readable_list_two() {
+        let names: Vec<&str> = vec!["Alice", "Bob"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice and Bob");
+    }
+
+    #[test]
+    fn test_human_readable_list_many() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "David"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice, Bob, Charlie, and 1 other");
+    }
+
+    #[test]
+    fn test_human_readable_list_long() {
+        let names: Vec<&str> = vec!["Alice", "Bob", "Charlie", "Dennis", "Eudora", "Fanny", "Gina", "Hiroshi", "Ivan", "James", "Karen", "Lisa", "Michael", "Nathan", "Oliver", "Peter", "Quentin", "Rachel", "Sally", "Tanya", "Ulysses", "Victor", "William", "Xenia", "Yuval", "Zachariah"];
+        let result = human_readable_list(&names, 3);
+        assert_eq!(result, "Alice, Bob, Charlie, and 23 others");
+    }
+}
 
 #[cfg(test)]
 mod tests_linkify {

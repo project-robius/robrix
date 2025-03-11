@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{log, Cx};
 use matrix_sdk::{
-    matrix_auth::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
+    authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
 };
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -12,7 +12,7 @@ use tokio::fs;
 use crate::{app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientSessionPersisted {
     /// The URL of the homeserver of the user.
     pub homeserver: String,
@@ -118,7 +118,10 @@ pub async fn restore_session(
     }
     let status_str = format!("Loading previous session file for {user_id}...");
     log!("{status_str}: '{}'", session_file.display());
-    Cx::post_action(LoginAction::Status(status_str));
+    Cx::post_action(LoginAction::Status {
+        title: "Restoring session".into(),
+        status: status_str,
+    });
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
@@ -130,7 +133,10 @@ pub async fn restore_session(
         client_session.homeserver,
     );
     log!("{status_str}");
-    Cx::post_action(LoginAction::Status(status_str));
+    Cx::post_action(LoginAction::Status {
+        title: "Connecting to homeserver".into(),
+        status: status_str,
+    });
 
     // Build the client with the previous settings from the session.
     let client = Client::builder()
@@ -143,7 +149,10 @@ pub async fn restore_session(
 
     let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
-    Cx::post_action(LoginAction::Status(status_str));
+    Cx::post_action(LoginAction::Status {
+        title: "Authenticating session".into(),
+        status: status_str,
+    });
 
     // Restore the Matrix user session.
     client.restore_session(user_session).await?;

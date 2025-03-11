@@ -5,16 +5,15 @@ use crate::{
 };
 
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
+    use crate::shared::styles::*;
+    use crate::home::room_screen::RoomScreen;
+    use crate::home::welcome_screen::WelcomeScreen;
 
-    import crate::home::room_screen::RoomScreen;
-    import crate::home::welcome_screen::WelcomeScreen;
-
-    MainMobileUI = {{MainMobileUI}} {
+    pub MainMobileUI = {{MainMobileUI}} {
         width: Fill, height: Fill
         flow: Down,
         show_bg: true
@@ -55,11 +54,11 @@ impl Widget for MainMobileUI {
                 .room_screen(id!(room_screen))
                 .set_displayed_room(cx, room.room_id.clone(), displayed_room_name);
 
-            self.view.view(id!(welcome)).set_visible(false);
-            self.view.view(id!(rooms)).set_visible(true);
+            self.view.view(id!(welcome)).set_visible(cx, false);
+            self.view.view(id!(rooms)).set_visible(cx, true);
         } else {
-            self.view.view(id!(welcome)).set_visible(true);
-            self.view.view(id!(rooms)).set_visible(false);
+            self.view.view(id!(welcome)).set_visible(cx, true);
+            self.view.view(id!(rooms)).set_visible(cx, false);
             return self.view.draw_walk(cx, scope, walk);
         }
 

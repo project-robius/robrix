@@ -1,17 +1,17 @@
 use makepad_widgets::*;
 
 live_design! {
-    import makepad_draw::shader::std::*;
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
 
-    import crate::shared::styles::*;
+    use crate::shared::styles::*;
 
     COLOR_BRAND = #x5
     COLOR_BRAND_HOVER = #x3
     COLOR_META_TEXT = #xaaa
 
-    IconButton = <Button> {
+    pub IconButton = <Button> {
         draw_text: {
             instance hover: 0.0
             instance pressed: 0.0
@@ -57,11 +57,12 @@ live_design! {
 
     // Customized button widget, based on the RoundedView shaders with some modifications
     // which is a better fit with our application UI design
-    RobrixIconButton = <Button> {
+    pub RobrixIconButton = <Button> {
         width: Fit,
         height: Fit,
         spacing: 10,
         padding: {top: 10, bottom: 10, left: 8, right: 15}
+        align: {x: 0.0, y: 0.5}
 
         draw_bg: {
             instance color: (COLOR_PRIMARY)

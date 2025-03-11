@@ -1,11 +1,18 @@
 use makepad_widgets::*;
+use matrix_sdk::encryption::VerificationState;
 
+use crate::{
+    shared::callout_tooltip::TooltipAction, sliding_sync::get_client,
+    verification::VerificationStateAction,
+};
+
+// First, define the verification icons component layout
 live_design! {
-    import makepad_widgets::base::*;
-    import makepad_widgets::theme_desktop_dark::*;
-    import makepad_draw::shader::std::*;
-
-    import crate::shared::styles::*;
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+    use crate::shared::styles::*;
+    use crate::shared::my_tooltip::*;
 
     VERIFICATION_YES = dep("crate://self/resources/icons/verification_yes.svg")
     VERIFICATION_NO = dep("crate://self/resources/icons/verification_no.svg")
@@ -14,7 +21,8 @@ live_design! {
     VerificationIcon = <Icon> {
         icon_walk: { width: 23 }
     }
-    IconYes = <View> {
+
+    pub IconYes = <View> {
         visible: false
         width: 31, height: 31
         <VerificationIcon> {
@@ -26,7 +34,8 @@ live_design! {
             }
         }
     }
-    IconNo = <View> {
+
+    pub IconNo = <View> {
         visible: false
         width: 31, height: 31
         <VerificationIcon> {
@@ -38,7 +47,8 @@ live_design! {
             }
         }
     }
-    IconUnk = <View> {
+
+    pub IconUnk = <View> {
         visible: false
         width: 31, height: 31
         <VerificationIcon> {
@@ -51,43 +61,116 @@ live_design! {
         }
     }
 
-    VerificationNotice = <TooltipBase> {
-        width: Fill, height: Fill,
+    pub VerificationBadge = {{VerificationBadge}} {
+        width: Fit, height: Fit
         flow: Overlay
+        align: { x: 0.5, y: 0.5 }
 
-        draw_bg: {
-            fn pixel(self) -> vec4 {
-                return vec4(0., 0., 0., 0.0)
+        verification_icons = <View> {
+            flow: Overlay
+            align: { x: 0.5, y: 0.5 }
+            width: 31, height: 31
+
+            icon_yes = <IconYes> {}
+            icon_no = <IconNo> {}
+            icon_unk = <IconUnk> {}
+        }
+    }
+}
+
+pub fn verification_state_str(state: VerificationState) -> &'static str {
+    match state {
+        VerificationState::Verified => "This device is fully verified.",
+        VerificationState::Unverified => "This device is unverified. To view your encrypted message history, please verify Robrix from another client.",
+        VerificationState::Unknown => " Verification state is unknown.",
+    }
+}
+
+pub fn verification_state_color(state: VerificationState) -> Vec4 {
+    match state {
+        VerificationState::Verified => vec4(0.0, 0.75, 0.0, 1.0), // Green
+        VerificationState::Unverified => vec4(0.75, 0.0, 0.0, 1.0), // Red
+        VerificationState::Unknown => vec4(0.2, 0.2, 0.2, 1.0),   // Grey
+    }
+}
+
+#[derive(Live, Widget)]
+pub struct VerificationBadge {
+    #[deref]
+    view: View,
+    #[rust(VerificationState::Unknown)]
+    verification_state: VerificationState,
+}
+
+impl LiveHook for VerificationBadge {
+    fn after_new_from_doc(&mut self, cx: &mut Cx) {
+        if let Some(client) = get_client() {
+            let current_verification_state = client.encryption().verification_state().get();
+            if self.verification_state != current_verification_state {
+                self.verification_state = current_verification_state;
+                self.update_icon_visibility(cx);
             }
         }
+    }
+}
 
-        content: <View> {
-            flow: Overlay
+impl Widget for VerificationBadge {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope);
 
-            //The 'Fill' allows it shows anywhere we want over the app screen,
-            //our goal is to set the global relative position to make it an illusion of following the cursor.
-            width: Fill, height: Fill
-
-            <RoundedView> {
-                width: Fit, height: Fit,
-                padding: 7,
-
-                draw_bg: {
-                    color: (COLOR_TOOLTIP_BG),
-                    border_width: 1.0,
-                    border_color: #000000,
-                    radius: 2.5
-                }
-
-                tooltip_label = <Label> {
-                    width: 230
-                    draw_text: {
-                        text_style: <THEME_FONT_REGULAR>{font_size: SMALL_STATE_FONT_SIZE},
-                        text_wrap: Word,
-                        color: #000
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(VerificationStateAction::Update(state)) = action.downcast_ref() {
+                    if self.verification_state != *state {
+                        self.verification_state = *state;
+                        self.update_icon_visibility(cx);
                     }
                 }
             }
         }
+
+        let badge = self.view(id!(verification_icons));
+        let badge_area = badge.area();
+        let should_hover_in = match event.hits(cx, badge_area) {
+            Hit::FingerLongPress(_) | Hit::FingerHoverIn(..) => true,
+            Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
+            Hit::FingerHoverOut(_) => {
+                cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
+                false
+            }
+            _ => false,
+        };
+        if should_hover_in {
+            let badge_rect = badge_area.rect(cx);
+            cx.widget_action(
+                self.widget_uid(),
+                &scope.path,
+                TooltipAction::HoverIn {
+                    widget_rect: badge_rect,
+                    text: verification_state_str(self.verification_state).to_string(),
+                    bg_color: Some(verification_state_color(self.verification_state)),
+                    text_color: None,
+                },
+            );
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl VerificationBadge {
+    pub fn update_icon_visibility(&mut self, cx: &mut Cx) {
+        let (yes, no, unk) = match self.verification_state {
+            VerificationState::Unknown => (false, false, true),
+            VerificationState::Unverified => (false, true, false),
+            VerificationState::Verified => (true, false, false),
+        };
+
+        self.view(id!(icon_yes)).set_visible(cx, yes);
+        self.view(id!(icon_no)).set_visible(cx, no);
+        self.view(id!(icon_unk)).set_visible(cx, unk);
+        self.redraw(cx);
     }
 }

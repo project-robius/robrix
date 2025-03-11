@@ -12,11 +12,12 @@ keywords = ["matrix", "chat", "client", "robrix", "robius"]
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/project-robius/robrix"
-version = "0.0.1-pre-alpha"
+version = "0.0.1-pre-alpha-2"
 metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
-makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+# makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "hits_handling_redesign" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
@@ -30,15 +31,17 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { version = "0.8.8", features = ["tracing"] }
-eyeball-im = "0.5.0"
+eyeball = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
+eyeball-im = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
 futures-util = "0.3"
 htmlize = "1.0.5"
-imbl = { version = "3.0.0", features = ["serde"] }  # same as matrix-sdk-ui
+imbl = { version = "4.0.1", features = ["serde"] }  # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "experimental-sliding-sync", "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
+# matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
+# matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
+matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 serde = "1.0"
@@ -49,49 +52,9 @@ unicode-segmentation = "1.11.0"
 url = "2.5.0"
 emojis = "0.6.1"
 bytesize = "1.3.0"
-
-
-###################################################################################################
-#### Note: we now enable the usage of `rustls-tls` and the `bundled-sqlite` features in the 2  ####
-####       matrix crate dependencies, so the below android- and windows-specific dependencies  ####
-####       are no longer needed. However, if you wish to disable those features, you would     ####
-####       need to re-enable the below target-specific dependencies.                           ####
-###################################################################################################
-
-## On Android, we currently build OpenSSL and SQLite from
-## the vendored source code, because on macOS hosts there aren't yet
-## prebuilt versions readily available, nor easily-configured pkg-config sysroots
-## like there are on Linux.
-##
-## Even though we don't directly depend on these crates in Robrix,
-## specifying them here with the `vendored`/`bundled` features
-## will cause cargo to enable those features across the entire build
-## (called "feature unification", see https://doc.rust-lang.org/cargo/reference/features.html#feature-unification),
-## meaning that any other crate that depends on them will also use the vendored versions.
-##
-## Technically, we don't need these when building for Android on Linux systems,
-## but there's no way to specify that in Cargo.toml, so we just always include them.
-## Plus, this makes builds more reproducible across host systems,
-## and avoids the issue of needing to set up pkg-config sysroots on Linux.
-##
-# [target.'cfg(target_os = "android")'.dependencies]
-# openssl = { version = "*", features = ["vendored"] }
-# rusqlite = { version = "*", features = ["bundled"] }
-
-## On Windows, there are prebuilt versions of sqlite3 available,
-## but building it from bundled source is just easier and works out of the box.
-##
-## If you don't want to include sqlite3 as a static library built from source,
-## you can comment out the below lines and link against a prebuilt version.
-## One way to easily do this is to install sqlite using a package manager like `chocolatey`
-## (see <https://stackoverflow.com/a/76427629>). Another way is to or download it
-## directly from the sqlite website: <https://www.sqlite.org/download.html>,
-## where you'll want the 64-bit DLL (x64) under "Precompiled Binaries for Windows".
-## You'll need to add the directory of that prebuilt sqlite DLL to your path env variable.
-##
-# [target.'cfg(target_os = "windows")'.dependencies]
-# rusqlite = { version = "*", features = ["bundled"] }
-
+bitflags = "2.6.0"
+indexmap = "2.6.0"
+blurhash = { version = "0.2.3", default-features = false }
 
 [package.metadata.docs.rs]
 all-features = true
@@ -100,7 +63,6 @@ all-features = true
 # Temporarily include all debug info even for release builds.
 [profile.release]
 debug = "full"
-
 
 
 

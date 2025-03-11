@@ -12,10 +12,11 @@ Robrix is a Matrix chat client written in Rust to demonstrate the functionality 
 
 Check out our most recent talks and presentations for more info:
   * Robrix: a pure Rust multi-platform app for chat and beyond (from [GOSIM China 2024](https://china2024.gosim.org/schedules/robrix--a-pure-rust-multi-platform-matrix-client-and-more))
-    * Videos: [YouTube link](https://www.youtube.com/watch?v=DO5C7aITVyU)
+    * Videos: [YouTube link](https://www.youtube.com/watch?v=DO5C7aITVyU), [BiliBili link](https://www.bilibili.com/video/BV1BxUUYcEy5/)
     * Slides:
       [PowerPoint (25MB)](https://github.com/project-robius/files/blob/99bc71ab0eebb0a9ed1aa367253c398ff0622c6f/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf),
       [PDF version (6MB)](https://github.com/project-robius/files/blob/main/GOSIM%20China%202024/Robrix%20Talk%20GOSIM%20China%20October%2017%2C%202024.pdf)
+  * [An interview on Matrix Live!](https://www.youtube.com/watch?v=O_bChwDHE3U)
   * Robrix: a Matrix chat client and more (from [GOSIM Europe 2024](https://europe2024.gosim.org/schedule#fediverse))
     * Videos: [YouTube link](https://www.youtube.com/watch?v=P8RGF942A5g), [BiliBili link](https://www.bilibili.com/video/BV1oS411N7k6/)
     * Slides:
@@ -35,6 +36,12 @@ The following table shows which host systems can currently be used to build Robr
 | Windows | Android         | ✅      | ✅    |
 
 
+## Known issues
+ - Drag-n-drop on Linux isn't implemented by Makepad, so you cannot drag room tabs around yet. (see: https://github.com/makepad/makepad/issues/650)
+ - There is currently no way to explicitly log out of Robrix. You can run `robrix --login-screen` to show the login screen upon app startup, or delete the app data directory.
+ - Matrix-specific links (`https://matrix.to/...`) aren't fully handled in-app yet.
+ - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
+ - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
 
 ## Building and Running
 
@@ -53,13 +60,13 @@ The following table shows which host systems can currently be used to build Robr
    ```sh
    cargo run
    ```
-   If you want to provide a username and password for fast auto-login, you can do that on the command line like so. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user's ID or password.
+   Optionally, you can provide a username and password on the command line for fast auto-login. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user ID or password.
    ```sh
    cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
    ```
     * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
-    * The `HOMESERVER_URL` argument is optional and uses the `"https://matrix-client.matrix.org/"` URL by default.
-    * The Matrix homeserver must support Sliding Sync, the same requirement as Element X.
+    * The `HOMESERVER_URL` argument is optional and uses the `matrix.org` homeserver by default.
+    * The Matrix homeserver must support native Sliding Sync, the same requirement as Element X.
 
 
 ### Building Robrix for Android
@@ -91,49 +98,49 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] View timeline of events in a single room
 - [x] Fetch and display room avatars
 - [x] Fetch user profiles (displayable names)
+- [x] Cache user profiles and avatars
+- [x] Cache fetched media on a per-room basis 
 - [x] Fetch and display user profile avatars
-- [x] Backwards pagination (upon viewing a room timeline)
+- [x] Backwards pagination to view a room's older history
 - [x] Dynamic backwards pagination based on scroll position/movement: https://github.com/project-robius/robrix/issues/109
 - [x] Loading animation while waiting for pagination request: https://github.com/project-robius/robrix/issues/109
-- [x] Stable positioning of events during simple timeline update
-- [x] Stable positioning of events during complex/multi-part timeline update
-- [x] Display simple text-only messages
+- [x] Stable vertical position of events during timeline update
+- [x] Display simple plaintext messages
 - [x] Display image messages (PNG, JPEG)
-- [x] Rich text formatting for message bodies
+- [x] HTML (rich text) formatting for message bodies
 - [x] Display reactions (annotations)
 - [x] Handle opening links on click
 - [x] Linkify plaintext hyperlinks
-- [x] Reply previews above messages: https://github.com/project-robius/robrix/issues/82
-- [x] Send messages (standalone, no replies)
+- [x] Show reply previews above messages: https://github.com/project-robius/robrix/issues/82
+- [x] Send standalone messages
 - [x] Interactive reaction button, send reactions: https://github.com/project-robius/robrix/issues/115
-- [x] Reply button, send reply: https://github.com/project-robius/robrix/issues/83
-- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
-- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
-- [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
+- [x] Show reply button, send reply: https://github.com/project-robius/robrix/issues/83
 - [x] E2EE device verification, decrypt message content: https://github.com/project-robius/robrix/issues/116
+- [ ] Display multimedia (audio/video/gif) message events: https://github.com/project-robius/robrix/issues/120
+- [ ] Re-spawn timeline as focused on an old event after a full timeline clear: https://github.com/project-robius/robrix/issues/103
 
-### Auxiliary/admin features: login, registration, settings
+
+
+### Auxiliary features, login, registration, settings
 - [x] Persistence of app session to disk: https://github.com/project-robius/robrix/issues/112
 - [x] Username/password login screen: https://github.com/project-robius/robrix/issues/113
 - [x] SSO, other 3rd-party auth providers login screen: https://github.com/project-robius/robrix/issues/114
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
+- [x] Display read receipts besides messages: https://github.com/project-robius/robrix/pull/162
+- [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] User settings screen
 - [ ] Dedicated view of spaces
 - [ ] Dedicated view of direct messages (DMs): https://github.com/project-robius/robrix/issues/139
 - [ ] Link previews beneath messages: https://github.com/project-robius/robrix/issues/81
-- [ ] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
+- [x] Keyword filters for the list of all rooms: https://github.com/project-robius/robrix/issues/123
 - [ ] Search messages within a room: https://github.com/project-robius/robrix/issues/122
 - [ ] Room browser, search for public rooms
-- [ ] Room creation
-- [ ] Room settings/info screen
+- [ ] Join room, invite to room, knock on room
+- [ ] Administrative abilities: ban, kick, etc
+- [ ] Room creation/settings/info screen
 - [ ] Room members pane
 - [ ] Save/restore events in rooms to/from the event cache upon app shutdown/start: https://github.com/project-robius/robrix/issues/164
-
-
-## Known problems/issues
- - Matrix-specific links are not yet fully handled (https://matrix.to/...)
- - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled using gradual pagination, but the viewport position is not maintained
 
 
 ## Packaging Robrix for Distribution on Desktop Platforms
@@ -203,3 +210,5 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
+# Credits
+X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
