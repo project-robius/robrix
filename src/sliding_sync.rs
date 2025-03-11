@@ -193,30 +193,6 @@ async fn login(
     }
 }
 
-/// Log out the current user.
-async fn logout() {
-    if let Ok((client, _sync_token)) = persistent_state::restore_session(None).await {
-        match persistent_state::delete_session(None).await {
-            Ok(_) => {
-                match client.matrix_auth().logout().await {
-                    Ok(_) => {
-                        Cx::post_action(LoginAction::Logout);
-                    },
-                    Err(_err) => {
-                        log!("http error")
-                    }
-                }
-            },
-            Err(_) => {
-                log!("log out failed, fail to delete session_token, please trt again.")
-            }
-        }
-    } else {
-        let status_err = "Failed to restore previous user session. Please try later.";
-        log!("{status_err}");
-    }
-}
-
 async fn populate_login_types(
     homeserver_url: &str,
     login_types: &mut Vec<LoginType>,
@@ -433,7 +409,21 @@ async fn async_worker(
                 }
             }
             MatrixRequest::Logout => {
-                logout().await
+                let _logout_task = Handle::current().spawn(async move {
+                    match logout_and_refresh().await {
+                        Ok(state) => match state {
+                            RefreshState::NeedRelogin => {
+                                log!("Session expired, need to relogin");
+                            }
+                        },
+                        Err(e) => {
+                            error!("Logout and refresh failed: {e:?}");
+                            enqueue_rooms_list_update(RoomsListUpdate::Status {
+                                status: format!("Operation failed: {e}"),
+                            });
+                        }
+                    }
+                });
             }
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
@@ -2044,4 +2034,35 @@ async fn spawn_sso_server(
         }
         Cx::post_action(LoginAction::SsoPending(false));
     });
+}
+
+#[derive(Debug)]
+enum RefreshState {
+    NeedRelogin,
+}
+
+async fn logout_and_refresh() -> Result<RefreshState> {
+    let client = CLIENT.get().cloned()
+        .ok_or_else(|| anyhow::anyhow!("No active client found"))?;
+
+    if let Some(sync_service) = SYNC_SERVICE.get() {
+        sync_service.stop().await?;
+    }
+
+    if client.logged_in() {
+        if let Err(e) = client.matrix_auth().logout().await {
+            log!("Warning: Logout failed (possibly due to invalid token): {}", e);
+        }
+    }
+
+    if let Err(e) = persistent_state::delete_session(None).await {
+        log!("Warning: Failed to delete session: {}", e);
+    }
+
+    Cx::post_action(LoginAction::Logout);
+    enqueue_rooms_list_update(RoomsListUpdate::Status {
+        status: "Session expired, please login again.".to_string(),
+    });
+
+    Ok(RefreshState::NeedRelogin)
 }
