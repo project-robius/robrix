@@ -2501,6 +2501,8 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         .ok_or_else(|| anyhow::anyhow!("No active client found"))?;
 
     if let Some(sync_service) = SYNC_SERVICE.get() {
+        // key exchange when you logout, you need to stop the sync service before logout
+        // see more detail in Matrix sdk doc about sync_service.stop
         sync_service.stop().await;
     }
 
