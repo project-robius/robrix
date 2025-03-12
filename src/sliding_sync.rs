@@ -12,8 +12,8 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillAction, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -356,6 +356,10 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    GetRoomPreview {
+        room_or_alias_id: OwnedRoomOrAliasId,
+        via: Vec<OwnedServerName>
     },
 }
 
@@ -964,6 +968,21 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _room_preview_task = Handle::current().spawn(async move {
+                    log!("Sending get room preview request for {room_or_alias_id:?}...");
+                    if let Ok(preview) = client.get_room_preview(&room_or_alias_id, via).await {
+                        log!("Got room preview for {room_or_alias_id:?}: {preview:?}");
+                        Cx::post_action(MatrixLinkPillAction::PillLoaded {
+                            display_name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                            avatar_url: preview.avatar_url,
+                        });
+                    } else {
+                        log!("Failed to get room preview for {room_or_alias_id:?}");
+                    };
+                });
+            }
         }
     }
 

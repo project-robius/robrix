@@ -1,9 +1,9 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, RoomOrAliasId}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri, RoomOrAliasId}, OwnedServerName};
 
-use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, get_client}, utils};
+use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, get_client, submit_async_request, MatrixRequest}, utils};
 
 use super::avatar::AvatarWidgetExt;
 
@@ -210,13 +210,17 @@ impl Widget for RobrixHtmlLink {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
-            self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
-        } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
-            self.show_matrix_link(cx, matrix_uri.id(), matrix_uri.via());
-        } else {
-            self.show_html_link(cx, self.url.clone());
-        }
+        // TODO: implement this
+        // if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
+        //     self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
+        // } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
+        //     self.show_matrix_link(cx, matrix_uri.id(), matrix_uri.via());
+        // } else {
+        //     self.show_html_link(cx, self.url.clone());
+        // }
+
+        self.show_html_link(cx, self.url.clone());
+
         self.view.draw_walk(cx, scope, walk)
     }
 
@@ -231,7 +235,7 @@ impl Widget for RobrixHtmlLink {
 }
 
 impl RobrixHtmlLink {
-    fn show_matrix_link(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+    fn _show_matrix_link(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
         self.matrix_link_pill(id!(matrix_link))
             .set_info(cx, matrix_id, via);
         self.view(id!(matrix_link_view)).set_visible(cx, true);
@@ -266,6 +270,15 @@ impl RobrixHtmlLink {
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum MatrixLinkPillAction {
+    PillLoaded {
+        display_name: String,
+        avatar_url: Option<OwnedMxcUri>,
+    },
+    None,
+}
+
 /// A pill-shaped widget that shows a Matrix link as an avatar and a title.
 ///
 /// This can be a link to a user, a room, or a message in a room.
@@ -282,6 +295,19 @@ struct MatrixLinkPill {
 
 impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.downcast_ref() {
+                    Some(MatrixLinkPillAction::PillLoaded { display_name, avatar_url }) => {
+                        // TODO: set the avatar and display name of the pill.
+                        log!("MatrixLinkPillAction::PillLoaded: display_name: {}, avatar_url: {:?}", display_name, avatar_url);
+                    }
+                    _ => ()
+                }
+            }
+        }
+
         let hit = event.hits_with_capture_overload(cx, self.area(), true);
         if let Hit::FingerUp(fe) = hit {
             if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
@@ -396,6 +422,11 @@ impl MatrixLinkPill {
                 room_name = Some(display_name.to_string());
             }
             avatar_url = room.avatar_url();
+        } else {
+            submit_async_request(MatrixRequest::GetRoomPreview {
+                room_or_alias_id: room_or_alias_id.into(),
+                via: self.via.clone(),
+            });
         }
         let room_name = room_name.unwrap_or_else(|| room_or_alias_id.to_string());
         self.name = room_name.clone();
