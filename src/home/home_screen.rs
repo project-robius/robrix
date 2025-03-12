@@ -11,6 +11,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::search_bar::SearchBar;
     use crate::home::main_desktop_ui::MainDesktopUI;
+    use crate::setting::setting_page::SettingPage;
 
     NavigationWrapper = {{NavigationWrapper}} {
         view_stack = <StackNavigation> {}
@@ -29,11 +30,17 @@ live_design! {
             spaces = <SpacesDock> {}
 
             <View> {
-                flow: Down
-                width: Fill, height: Fill
-                <SearchBar> {}
-                <MainDesktopUI> {}
+                flow: Overlay,
+                <View> {
+                    flow: Down
+                    width: Fill, height: Fill
+                    <SearchBar> {}
+                    <MainDesktopUI> {}
+                }
+    
+                <SettingPage> {}
             }
+
         }
 
         Mobile = {
