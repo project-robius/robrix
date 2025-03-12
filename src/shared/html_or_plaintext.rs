@@ -298,12 +298,9 @@ impl Widget for MatrixLinkPill {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                match action.downcast_ref() {
-                    Some(MatrixLinkPillAction::PillLoaded { display_name, avatar_url }) => {
-                        // TODO: set the avatar and display name of the pill.
-                        log!("MatrixLinkPillAction::PillLoaded: display_name: {}, avatar_url: {:?}", display_name, avatar_url);
-                    }
-                    _ => ()
+                if let Some(MatrixLinkPillAction::PillLoaded { display_name, avatar_url }) = action.downcast_ref() {
+                    // TODO: set the avatar and display name of the pill.
+                    log!("MatrixLinkPillAction::PillLoaded: display_name: {}, avatar_url: {:?}", display_name, avatar_url);
                 }
             }
         }
