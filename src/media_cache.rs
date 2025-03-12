@@ -1,17 +1,13 @@
-use std::{sync::{Mutex, Arc}, collections::{BTreeMap, btree_map::Entry}, time::SystemTime, ops::{Deref, DerefMut}};
-use makepad_widgets::{error, log, SignalToUI};
+use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use makepad_widgets::{error, log, smallvec::smallvec, SignalToUI, SmallVec};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}, utils::MediaFormatConst};
+use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
-pub type MediaCacheEntryRef = Arc<Mutex<EntryAndFormat>>;
-
-/// We want all the `MediaCacheEntryRef` stored in heap.
-pub type ValuesVec = SmallVec<[MediaCacheEntryRef; 0]>;
-
+/// An entry in the media cache, one per Matrix URI.
 #[derive(Debug, Clone)]
-pub struct EntryAndFormat {
-    pub entry: MediaCacheEntry,
-    pub format: MediaFormat,
+pub struct MediaCacheValue {
+    full_file: Option<MediaCacheEntryRef>,
+    thumbnail: Option<(MediaCacheEntryRef, MediaThumbnailSettings)>,
 }
 
 /// An entry in the media cache.
@@ -25,15 +21,22 @@ pub enum MediaCacheEntry {
     Failed,
 }
 
-/// A cache of fetched media. Keys are Matrix URIs, values are references to byte arrays.
+/// A reference to a media cache entry and its associated format.
+pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
+
+
+/// A cache of fetched media, indexed by Matrix URI.
+///
+/// A single Matrix URI may have multiple media formats associated with it,
+/// such as a thumbnail and a full-size image.
 pub struct MediaCache {
     /// The actual cached data.
-    cache: BTreeMap<OwnedMxcUri, ValuesVec>,
+    cache: BTreeMap<OwnedMxcUri, MediaCacheValue>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for MediaCache {
-    type Target = BTreeMap<OwnedMxcUri, ValuesVec>;
+    type Target = BTreeMap<OwnedMxcUri, MediaCacheValue>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
@@ -59,90 +62,106 @@ impl MediaCache {
         }
     }
 
-    /// Gets media from the cache without sending a fetch request if the media is absent.
-    ///
-    /// This is suitable for use in a latency-sensitive context, such as a UI draw routine.
-    pub fn try_get_media(&self, mxc_uri: &OwnedMxcUri, prefer_thumbnail: bool) -> MediaCacheEntry {
-        self.get(mxc_uri).map_or(MediaCacheEntry::Failed, |entries| {
-            let matches_preferred = |e: &EntryAndFormat| {
-                prefer_thumbnail != matches!(e.format, MediaFormat::File)
-            };
-
-            entries.iter()
-                .map(|e| e.lock().unwrap().clone())
-                .find(matches_preferred)
-                .map_or_else(
-                    || entries.iter()
-                        .map(|e| e.lock().unwrap().clone())
-                        .find(|e| matches!(e.entry, MediaCacheEntry::Loaded(..)))
-                        .map_or(MediaCacheEntry::Requested, |e| e.entry),
-                    |e| e.entry
-                )
-        })
-    }
-
     /// Tries to get the media from the cache, or submits an async request to fetch it.
     ///
     /// This method *does not* block or wait for the media to be fetched,
     /// and will return `MediaCache::Requested` while the async request is in flight.
     /// If a request is already in flight, this will not issue a new redundant request.
+    ///
+    /// * If the `media_format` is requesting a thumbnail that is not yet in the cache,
+    ///   this function will fetch the thumbnail, and return the full-size image (if it exists).
+    /// * If the `media_format` is requesting a full-size image that is not yet in the cache,
+    ///   this function will fetch the full-size image, and return a thumbnail (if it exists).
+    ///
+    /// Returns a tuple of the media cache entry and the media format of that cached entry.
     pub fn try_get_media_or_fetch(
         &mut self,
         mxc_uri: OwnedMxcUri,
-        media_format: Option<MediaFormat>,
-        prefer_thumbnail: bool,
-    ) -> MediaCacheEntry {
+        requested_format: MediaFormat,
+    ) -> (MediaCacheEntry, MediaFormat) {
+        let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
 
-        let media_format = media_format.unwrap_or(MediaFormat::File);
-        let value_ref = match self.entry(mxc_uri.clone()) {
-            Entry::Vacant(vacant) => {
-                let entry_and_format_ref = Arc::new(Mutex::new(EntryAndFormat {
-                    entry: MediaCacheEntry::Requested,
-                    format: media_format.clone()
-                }));
-
-                // note we just insert the first value into the cache so we can get [0].
-                vacant.insert(smallvec![entry_and_format_ref.clone()]);
-                entry_and_format_ref
-            },
-            Entry::Occupied(mut occupied) => {
-                for entry_and_format in occupied.get() {
-                    let mutex_guard = entry_and_format.lock().unwrap();
-                    let entry_and_format = mutex_guard.deref();
-
-                    // anti condition
-                    if prefer_thumbnail && !matches!(entry_and_format.format, MediaFormat::File)
-                        ||
-                    !prefer_thumbnail && matches!(entry_and_format.format, MediaFormat::File)
-                    {
-                        return entry_and_format.entry.clone();
+        let entry_ref = match self.entry(mxc_uri.clone()) {
+            Entry::Vacant(vacant) => match &requested_format {
+                MediaFormat::Thumbnail(requested_mts) => {
+                    let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                    vacant.insert(MediaCacheValue {
+                        full_file: None,
+                        thumbnail: Some((Arc::clone(&entry_ref), requested_mts.clone())),
+                    });
+                    entry_ref
+                },
+                MediaFormat::File => {
+                    let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                    vacant.insert(MediaCacheValue {
+                        full_file: Some(Arc::clone(&entry_ref)),
+                        thumbnail: None,
+                    });
+                    entry_ref
+                },
+            }
+            Entry::Occupied(mut occupied) => match requested_format {
+                MediaFormat::Thumbnail(ref requested_mts) => {
+                    if let Some((entry_ref, existing_mts)) = occupied.get().thumbnail.as_ref() {
+                        return (
+                            entry_ref.lock().unwrap().deref().clone(),
+                            MediaFormat::Thumbnail(existing_mts.clone()),
+                        );
+                    }
+                    else {
+                        // Here, a thumbnail was requested but not found, so fetch it.
+                        let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                        occupied.get_mut().thumbnail = Some((Arc::clone(&entry_ref), requested_mts.clone()));
+                        // If a full-size image is already loaded, return it.
+                        if let Some(existing_file) = occupied.get().full_file.as_ref() {
+                            if let MediaCacheEntry::Loaded(d) = existing_file.lock().unwrap().deref() {
+                                post_request_retval = (
+                                    MediaCacheEntry::Loaded(Arc::clone(d)),
+                                    MediaFormat::File,
+                                );
+                            }
+                        }
+                        entry_ref
                     }
                 }
-
-                // if not found, we push a new value and return its ref.
-                let entry_and_format = Arc::new(Mutex::new(EntryAndFormat {
-                    entry: MediaCacheEntry::Requested,
-                    format: media_format.clone()
-                }));
-                occupied.get_mut().push(entry_and_format.clone());
-                entry_and_format
-            },
+                MediaFormat::File => {
+                    if let Some(entry_ref) = occupied.get().full_file.as_ref() {
+                        return (
+                            entry_ref.lock().unwrap().deref().clone(),
+                            MediaFormat::File,
+                        );
+                    }
+                    else {
+                        // Here, a full-size image was requested but not found, so fetch it.
+                        let entry_ref = Arc::new(Mutex::new(MediaCacheEntry::Requested));
+                        occupied.get_mut().full_file = Some(entry_ref.clone());
+                        // If a thumbnail is already loaded, return it.
+                        if let Some((existing_thumbnail, existing_mts)) = occupied.get().thumbnail.as_ref() {
+                            if let MediaCacheEntry::Loaded(d) = existing_thumbnail.lock().unwrap().deref() {
+                                post_request_retval = (
+                                    MediaCacheEntry::Loaded(Arc::clone(d)),
+                                    MediaFormat::Thumbnail(existing_mts.clone()),
+                                );
+                            }
+                        }
+                        entry_ref
+                    }
+                }
+            }
         };
-
-        let destination = value_ref.clone();
 
         sliding_sync::submit_async_request(
             MatrixRequest::FetchMedia {
                 media_request: MediaRequestParameters {
                     source: MediaSource::Plain(mxc_uri),
-                    format: media_format,
+                    format: requested_format,
                 },
                 on_fetched: insert_into_cache,
-                destination,
+                destination: entry_ref,
                 update_sender: self.timeline_update_sender.clone(),
             }
         );
-        MediaCacheEntry::Requested
+        post_request_retval
     }
 }
 
@@ -153,14 +172,13 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     data: matrix_sdk::Result<D>,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
-    let format = request.format.clone();
-    let entry = match data {
+    let new_value = match data {
         Ok(data) => {
             let data = data.into();
 
             // debugging: dump out the media image to disk
             if false {
-                if let MediaSource::Plain(mxc_uri) = request.source {
+                if let MediaSource::Plain(mxc_uri) = _request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}_{}",
@@ -177,12 +195,12 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", request.source);
+            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
             MediaCacheEntry::Failed
         }
     };
 
-    *value_ref.lock().unwrap() = EntryAndFormat {entry, format};
+    *value_ref.lock().unwrap() = new_value;
 
     if let Some(sender) = update_sender {
         let _ = sender.send(TimelineUpdate::MediaFetched);
