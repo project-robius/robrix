@@ -2302,7 +2302,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "anymap2",
  "aquamarine",
@@ -2356,7 +2355,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-base"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "as_variant",
  "async-trait",
@@ -2383,7 +2381,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-common"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "async-trait",
  "eyeball-im",
@@ -2406,7 +2403,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-crypto"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "aes",
  "aquamarine",
@@ -2446,7 +2442,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-indexeddb"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2474,7 +2469,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-sqlite"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "async-trait",
  "deadpool-sqlite",
@@ -2496,7 +2490,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-store-encryption"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "base64",
  "blake3",
@@ -2515,7 +2508,6 @@ dependencies = [
 [[package]]
 name = "matrix-sdk-ui"
 version = "0.10.0"
-source = "git+https://github.com/project-robius/matrix-rust-sdk/?branch=reduce_log_verbosity_to_trace#0ad31b779fd1bcf1341b667a8b8acf45e6b79aa8"
 dependencies = [
  "as_variant",
  "async-once-cell",
