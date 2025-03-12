@@ -3435,16 +3435,19 @@ fn populate_message_view(
 fn does_message_mention_current_user(
     message: &MessageOrSticker,
 ) -> bool {
-    let Some(current_user_id) = sliding_sync::current_user_id() else {
+    let Some(_current_user_id) = sliding_sync::current_user_id() else {
         return false;
     };
 
     match message {
         // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
         MessageOrSticker::Message(msg) => {
-            msg.mentions().is_some_and(|mentions|
-                mentions.room || mentions.user_ids.contains(&current_user_id)
-            )
+            // if there is no mentions, highlighted it, else instead
+            msg.mentions().is_none()
+
+            // msg.mentions().is_some_and(|mentions|
+            //     mentions.room || mentions.user_ids.contains(&current_user_id)
+            // )
         }
         MessageOrSticker::Sticker(_) => false, // Stickers can't mention users.
     }
