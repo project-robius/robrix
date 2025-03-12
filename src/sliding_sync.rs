@@ -190,9 +190,9 @@ async fn login(
 /// Which direction to paginate in.
 ///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
-///    which only works if the timeline is *focused* on a specific event.
+///   which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
-///    (towards the start of the timeline), which works in  both live mode and focused mode.
+///   (towards the start of the timeline), which works in  both live mode and focused mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaginationDirection {
     Forwards,
