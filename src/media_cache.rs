@@ -3,7 +3,7 @@ use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
-/// An entry in the media cache, one per Matrix URI.
+/// The value type in the media cache, one per Matrix URI.
 #[derive(Debug, Clone)]
 pub struct MediaCacheValue {
     full_file: Option<MediaCacheEntryRef>,
