@@ -132,7 +132,9 @@ impl Widget for VerificationBadge {
         let badge = self.view(id!(verification_icons));
         let badge_area = badge.area();
         let should_hover_in = match event.hits(cx, badge_area) {
-            Hit::FingerLongPress(_) | Hit::FingerHoverIn(..) => true,
+            Hit::FingerLongPress(_)
+            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
+            | Hit::FingerHoverIn(..) => true,
             Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(self.widget_uid(), &scope.path, TooltipAction::HoverOut);
