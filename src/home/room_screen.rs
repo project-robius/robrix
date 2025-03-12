@@ -2250,12 +2250,16 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
+    
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
+
         let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
+            // Try to load the dock again when the ALL_ROOM_INFO is not ready
+            // TODO: Prevent infinite loop of loading the Dock when the room is deleted
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
                 cx.action(RoomsPanelAction::DockLoad);
                 return;

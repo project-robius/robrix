@@ -441,9 +441,7 @@ pub struct SelectedRoom {
     pub room_id: OwnedRoomId,
     pub room_name: Option<String>,
 }
-
 impl PartialEq for SelectedRoom {
-
     fn eq(&self, other: &Self) -> bool {
         self.room_id == other.room_id
     }
