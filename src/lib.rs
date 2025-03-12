@@ -3,6 +3,7 @@ use std::{path::Path, sync::OnceLock};
 use robius_directories::ProjectDirs;
 
 pub use makepad_widgets;
+pub use gen_components;
 pub mod app;
 pub mod persistent_state;
 

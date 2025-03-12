@@ -173,6 +173,7 @@ impl LiveRegister for App {
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
         crate::setting::live_design(cx);
+        crate::gen_components::live_design(cx, None);
     }
 }
 

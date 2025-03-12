@@ -1,4 +1,5 @@
 use makepad_widgets::*;
+use gen_components::*;
 
 use crate::home::spaces_dock::PageSwitchAction;
 
@@ -6,20 +7,31 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
+    use link::gen_components::*; 
+
+    use crate::setting::side_bar::Sidebar;
+    use crate::setting::router::RouterPage;
+
 
     pub SettingPage = {{SettingPage}} {
         height: Fill,
         width: Fill,
+        flow: Right,
         visible: false,
         show_bg: true,
         draw_bg: {
-            color: #000
+            color: #fff
         }
-        <Label> {
-            text: "sasasa",
-            draw_text: {
-                color: #000
-            }
+        spacing: 2
+        <GView> {
+            border_radius: 10.0,
+            width: 300
+            <Sidebar> {}
+        }
+        <GView> {
+            border_radius: 10.0,
+            // background_color: #fff,
+            <RouterPage> {}
         }
     }
 }
@@ -61,3 +73,10 @@ impl WidgetMatchEvent for SettingPage {
 }
 
 
+#[derive(Clone, Debug, DefaultNone)]
+pub enum SwitchPageAction {
+    None,
+    AccountPage,
+    NotificationPage,
+    KeyboardPage
+}
