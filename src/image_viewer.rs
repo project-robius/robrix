@@ -1,18 +1,7 @@
-use std::collections::BTreeMap;
-use std::sync::Mutex;
 use std::sync::Arc;
+use crate::utils;
 
 use makepad_widgets::*;
-
-use matrix_sdk::media::{MediaFormat, MediaRequest};
-use matrix_sdk::ruma::OwnedMxcUri;
-
-use crate::home::room_screen::TimelineUpdate;
-use crate::shared::text_or_image::TextOrImageAction;
-use crate::{
-    media_cache::{MediaCache, MediaCacheEntry},
-    utils,
-};
 
 live_design! {
     use link::theme::*;
@@ -68,35 +57,13 @@ live_design! {
 pub struct ImageViewer {
     #[deref]
     view: View,
-    /// Key is uid of `TextOrImage`, val is the corresponded image uri and its thumbnail data.
-    #[rust]
-    map: BTreeMap<WidgetUid, OriginalAndThumbnail>,
-    /// We use a standalone `MediaCache` to store the original image data.
-    #[rust]
-    media_cache: MediaCache,
-}
-#[derive(Debug, Clone)]
-pub struct OriginalAndThumbnail {
-    original_uri: OwnedMxcUri,
-    thumbnail_data: Arc<[u8]>,
-}
-
-
-impl OriginalAndThumbnail {
-    pub const fn new(original_uri: OwnedMxcUri, thumbnail_data: Arc<[u8]>) -> Self {
-        Self {original_uri, thumbnail_data}
-    }
 }
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    SetData {
-        text_or_image_uid: WidgetUid,
-        original_thumbnail: OriginalAndThumbnail,
-    },
+    Show(Arc<[u8]>),
     ///We post this action on fetching the image
     ///which is clicked by user first time (not in `media_cache` currently) in timeline.
-    Fetched(Arc<[u8]>),
     None,
 }
 
@@ -130,32 +97,10 @@ impl MatchEvent for ImageViewer {
         }
 
         for action in actions {
-            if let Some(TextOrImageAction::ClickImage(text_or_image_uid)) = action.downcast_ref() {
+            if let Some(ImageViewerAction::Show(data)) = action.downcast_ref() {
+                self.view.image(id!(image_view.image)).set_texture(cx, None);
                 self.open(cx);
-                let thumbnail_data = self.map.get(text_or_image_uid).unwrap().thumbnail_data.clone();
-                self.load_with_data(cx, &thumbnail_data);
-
-                let original_uri = self.map.get(text_or_image_uid).unwrap().original_uri.clone();
-                match self.media_cache.try_get_media_or_fetch(original_uri, Some(MediaFormat::File), image_viewer_insert_into_cache) {
-                    MediaCacheEntry::Loaded(data) => {
-                        self.load_with_data(cx, &data);
-                    },
-                    MediaCacheEntry::Requested => { }
-                    MediaCacheEntry::Failed => { }
-                }
-            }
-
-            match action.downcast_ref() {
-                Some(ImageViewerAction::SetData {
-                    text_or_image_uid,
-                    original_thumbnail,
-                },) => {
-                    self.set_data(text_or_image_uid, original_thumbnail)
-                }
-                Some(ImageViewerAction::Fetched(data)) => {
-                    self.load_with_data(cx, data)
-                }
-                _ => {}
+                self.load_with_data(cx, data);
             }
         }
     }
@@ -168,17 +113,11 @@ impl ImageViewer {
     }
     fn close(&mut self, cx: &mut Cx) {
         self.visible = false;
-        self.view.image(id!(image)).set_texture(cx, None);
+        self.clear_texture(cx);
         self.redraw(cx);
     }
-    /// We restore image message uid and the image inside the message's mx_uri into HashMap
-    /// when the message is being populated.
-    fn set_data(
-        &mut self,
-        text_or_image_uid: &WidgetUid,
-        original_thumbnail: &OriginalAndThumbnail
-    ) {
-        self.map.insert(*text_or_image_uid, original_thumbnail.clone());
+    fn clear_texture(&mut self, cx: &mut Cx) {
+        self.view.image(id!(image_view.image)).set_texture(cx, None);
     }
     fn load_with_data(&mut self, cx: &mut Cx, data: &[u8]) {
         let image = self.view.image(id!(image_view.image));
@@ -189,29 +128,4 @@ impl ImageViewer {
             self.view.redraw(cx);
         }
     }
-}
-
-fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
-    value_ref: &Mutex<MediaCacheEntry>,
-    _request: MediaRequest,
-    data: matrix_sdk::Result<D>,
-    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
-) {
-    let new_value = match data {
-        Ok(data) => {
-            let data: Arc<[u8]> = data.into();
-            Cx::post_action(ImageViewerAction::Fetched(data.clone()));
-            MediaCacheEntry::Loaded(data)
-        }
-        Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
-            MediaCacheEntry::Failed
-        }
-    };
-    *value_ref.lock().unwrap() = new_value;
-
-    if let Some(sender) = update_sender {
-        let _ = sender.send(TimelineUpdate::MediaFetched);
-    }
-    SignalToUI::set_ui_signal();
 }

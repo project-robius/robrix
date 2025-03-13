@@ -7,12 +7,12 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
@@ -21,11 +21,11 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::{ImageViewerAction, OriginalAndThumbnail}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{ insert_into_cache, MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::ImageViewerAction, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{image_viewer_insert_into_cache, insert_into_cache, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -1047,6 +1047,21 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
+
+                if let Some(TextOrImageAction::Click(widget_uid, mxc_uri)) = action.downcast_ref() {
+                    match tl.media_cache.try_get_media_or_fetch(mxc_uri.clone(),  MediaFormat::File, image_viewer_insert_into_cache) {
+                        (MediaCacheEntry::Loaded(data), _) => {
+                            // Directly show it if the original image is already fetched.
+                            Cx::post_action(ImageViewerAction::Show(data));
+                        }
+                        (MediaCacheEntry::Requested, _) => {
+                            // Show the matching thumbnail if the original image is in fetching.
+                            Cx::post_action(TextOrImageAction::ShowThumbnail(*widget_uid));
+                        }
+                        _ => { }
+                    }
+                }
+
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -3488,7 +3503,6 @@ fn populate_image_message_content(
     body: &str,
     media_cache: &mut MediaCache,
 ) -> bool {
-    let text_or_image_uid = text_or_image_ref.widget_uid();
     // We don't use thumbnails, as their resolution is too low to be visually useful.
     // We also don't trust the provided mimetype, as it can be incorrect.
     let (mimetype, _width, _height) = image_info_source.as_ref()
@@ -3511,13 +3525,29 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
+    let handle_encrypted = |cx: &mut Cx2d, media_source: &MediaSource| {
+        if let MediaSource::Encrypted(encrypted) = media_source {
+            text_or_image_ref.show_text(
+                cx,
+                format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
+            );
+        }
+    };
+
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+    let mut closure = |cx: &mut Cx2d, original_source: &MediaSource, image_info: Option<&ImageInfo>| {
+        handle_encrypted(cx, original_source);
+
+        let MediaSource::Plain(mxc_uri_for_timeline) = image_info.and_then(|info|{info.thumbnail_source.as_ref()}).unwrap_or(original_source) else { return };
+        let MediaSource::Plain(mxc_uri_for_image_viewer) = original_source else { return };
+
+        text_or_image_ref.set_original_uri(mxc_uri_for_image_viewer);
+
+        match media_cache.try_get_media_or_fetch(mxc_uri_for_timeline.clone(), MEDIA_THUMBNAIL_FORMAT.into(), insert_into_cache) {
             (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &thumbnail_data)
+                    utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
@@ -3525,14 +3555,10 @@ fn populate_image_message_content(
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
                 }
+                text_or_image_ref.set_thumbnail_data(data);
 
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
-
-                if let MediaSource::Plain(original_uri) = original_source {
-                    let original_thumbnail = OriginalAndThumbnail::new(original_uri, thumbnail_data);
-                    Cx::post_action(ImageViewerAction::SetData {text_or_image_uid, original_thumbnail});
-                }
             }
             (MediaCacheEntry::Requested, _media_format) => {
                 if let Some(image_info) = image_info {
@@ -3560,7 +3586,7 @@ fn populate_image_message_content(
             }
             (MediaCacheEntry::Failed, _media_format) => {
                 text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri_for_timeline));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;
@@ -3568,30 +3594,9 @@ fn populate_image_message_content(
         }
     };
 
-
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, original_source: MediaSource, thumbnail_source: Option<MediaSource>, image_info: Option<&ImageInfo>| {
-        let media_source = thumbnail_source.clone().unwrap_or(original_source.clone());
-
-        match media_source {
-            MediaSource::Encrypted(encrypted) => {
-                // We consider this as "fully drawn" since we don't yet support encryption.
-                text_or_image_ref.show_text(
-                    cx,
-                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
-                );
-            },
-            MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, original_source, mxc_uri, image_info)
-            }
-        }
-    };
-
     match image_info_source {
         Some((image_info, original_source)) => {
-            // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let thumbnail_source = image_info.clone()
-                .and_then(|image_info| image_info.thumbnail_source);
-            fetch_and_show_media_source(cx, original_source, thumbnail_source, image_info.as_ref());
+            closure(cx, &original_source, image_info.as_ref());
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");

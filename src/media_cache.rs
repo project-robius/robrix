@@ -1,7 +1,7 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
-use makepad_widgets::{error, log, SignalToUI};
+use makepad_widgets::{error, log, Cx, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
-use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
+use crate::{home::room_screen::TimelineUpdate, image_viewer::ImageViewerAction, sliding_sync::{self, MatrixRequest, OnMediaFetchedFn}};
 
 /// The value type in the media cache, one per Matrix URI.
 #[derive(Debug, Clone)]
@@ -77,6 +77,7 @@ impl MediaCache {
         &mut self,
         mxc_uri: OwnedMxcUri,
         requested_format: MediaFormat,
+        on_fetched: OnMediaFetchedFn,
     ) -> (MediaCacheEntry, MediaFormat) {
         let mut post_request_retval = (MediaCacheEntry::Requested, requested_format.clone());
 
@@ -155,7 +156,7 @@ impl MediaCache {
                     source: MediaSource::Plain(mxc_uri),
                     format: requested_format,
                 },
-                on_fetched: insert_into_cache,
+                on_fetched,
                 destination: entry_ref,
                 update_sender: self.timeline_update_sender.clone(),
             }
@@ -191,6 +192,32 @@ pub fn insert_into_cache<D: Into<Arc<[u8]>>>(
                         .expect("Failed to write user media image to disk");
                 }
             }
+            MediaCacheEntry::Loaded(data)
+        }
+        Err(e) => {
+            error!("Failed to fetch media for {:?}: {e:?}", _request.source);
+            MediaCacheEntry::Failed
+        }
+    };
+
+    *value_ref.lock().unwrap() = new_value;
+
+    if let Some(sender) = update_sender {
+        let _ = sender.send(TimelineUpdate::MediaFetched);
+    }
+    SignalToUI::set_ui_signal();
+}
+
+pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
+    value_ref: &Mutex<MediaCacheEntry>,
+    _request: MediaRequestParameters,
+    data: matrix_sdk::Result<D>,
+    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+) {
+    let new_value = match data {
+        Ok(data) => {
+            let data = data.into();
+            Cx::post_action(ImageViewerAction::Show(data.clone()));
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {

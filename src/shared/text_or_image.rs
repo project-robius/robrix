@@ -3,7 +3,11 @@
 //! This is useful to display a loading message while waiting for an image to be fetched,
 //! or to display an error message if the image fails to load, etc.
 
+use std::sync::Arc;
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedMxcUri;
+
+use crate::image_viewer::ImageViewerAction;
 
 live_design! {
     use link::theme::*;
@@ -46,10 +50,16 @@ live_design! {
 
 #[derive(Debug, Clone, DefaultNone)]
 pub enum TextOrImageAction {
-    ClickImage(WidgetUid),
+    Click(WidgetUid, OwnedMxcUri),
+    ShowThumbnail(WidgetUid),
     None,
 }
 
+#[derive(Default, Clone)]
+pub struct ImageValue {
+    pub thumbnail_data: Option<Arc<[u8]>>,
+    pub original_uri: Option<OwnedMxcUri>
+}
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
@@ -61,6 +71,7 @@ pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
+    #[rust] image_value: ImageValue,
 }
 
 impl Widget for TextOrImage {
@@ -71,18 +82,18 @@ impl Widget for TextOrImage {
         let image_area = self.view.image(id!(image_view.image)).area();
 
         match event.hits(cx, image_area) {
-            Hit::FingerDown(_fe) => {
+            Hit::FingerDown(_, _) => {
                 cx.set_key_focus(image_area);
             }
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
-                    // Once Clicked, We post an action.
-                    Cx::post_action(TextOrImageAction::ClickImage(self.widget_uid()));
+                    // We run the check to see if the original image was fetched or not.
+                    Cx::post_action(TextOrImageAction::Click(self.widget_uid(), self.image_value.original_uri.clone().unwrap()));
                 }
             }
             _ => (),
         }
-
+        self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
@@ -90,13 +101,26 @@ impl Widget for TextOrImage {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
+impl MatchEvent for TextOrImage {
+    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+        for action in actions {
+            if let Some(TextOrImageAction::ShowThumbnail(widget_uid)) = action.downcast_ref() {
+                if self.widget_uid() == *widget_uid {
+                    Cx::post_action(ImageViewerAction::Show(self.image_value.thumbnail_data.clone().unwrap()));
+                }
+            }
+        }
+    }
+}
+
 impl TextOrImage {
     /// Sets the text content, which will be displayed on future draw operations.
     ///
     /// ## Arguments
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
-    pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
+    fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
         self.view(id!(image_view)).set_visible(cx, false);
         self.view(id!(text_view)).set_visible(cx, true);
         self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
@@ -112,7 +136,7 @@ impl TextOrImage {
     ///    * If successful, the `image_set_function` should return the size of the image
     ///      in pixels as a tuple, `(width, height)`.
     ///    * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+    fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
@@ -132,7 +156,7 @@ impl TextOrImage {
     }
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
-    pub fn status(&self) -> TextOrImageStatus {
+    fn status(&self) -> TextOrImageStatus {
         self.status
     }
 }
@@ -163,6 +187,16 @@ impl TextOrImageRef {
         } else {
             TextOrImageStatus::Text
         }
+    }
+
+    pub fn set_thumbnail_data(&self, data: Arc<[u8]>) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.image_value.thumbnail_data = Some(data);
+    }
+
+    pub fn set_original_uri(&self, mxc_uri: &OwnedMxcUri) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.image_value.original_uri = Some(mxc_uri.clone());
     }
 }
 
