@@ -42,6 +42,7 @@ live_design! {
                     account_page = <GView> {
                         border_radius: 10.0,
                         // background_color: #fff
+                        padding: {top: 30, right: 30, bottom: 30, left: 100}
                         visible:true
                         <AccountPage> {}
                     } ,

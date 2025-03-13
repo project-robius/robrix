@@ -20,7 +20,7 @@ live_design! {
         visible: false,
         show_bg: true,
         draw_bg: {
-            color: #fff
+            color: #d8d4cf
         }
         spacing: 2
         <GView> {

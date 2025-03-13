@@ -25,7 +25,7 @@ live_design! {
         <GLabel> {
             text: "Slider"
             font_size: 30.0
-            color:#fff
+            color:#000
             padding:{bottom: 10.0}
         }
 
@@ -39,14 +39,14 @@ live_design! {
                 <GSvg>{
                     height: 18.0,
                     width: 18.0,
-                    color: #fff,
+                    color: #000,
                     cursor: Help,
                     src: dep("crate://self/resources/icons/people.svg"),
                 }
                 <GLabel>{
                     font_size: 13.0,
                     text: "Account",
-                    color: #fff
+                    color: #000
                 }
             }
         }
@@ -61,13 +61,14 @@ live_design! {
                 <GSvg>{
                     height: 18.0,
                     width: 18.0,
-                    color: #fff,
+                    color: #000,
                     cursor: Help,
                     src: dep("crate://self/resources/icons/not.svg"),
                 }
                 <GLabel>{
                     font_size: 13.0,
                     text: "Notifications"
+                    color: #000
                 }
             }
         }
@@ -82,13 +83,14 @@ live_design! {
                 <GSvg>{
                     height: 18.0,
                     width: 18.0,
-                    color: #fff,
+                    color: #000,
                     cursor: Help,
                     src: dep("crate://self/resources/icons/keyboard.svg"),
                 }
                 <GLabel>{
                     font_size: 13.0,
-                    text: "Keyboard"
+                    text: "Keyboard",
+                    color: #000
                 }
             }
         }

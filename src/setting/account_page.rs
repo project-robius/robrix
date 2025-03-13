@@ -12,18 +12,18 @@ live_design! {
     pub AccountPage = {{AccountPage}}{
         <ScrollYView> {
             flow: Down,
-            spacing: 30.0,
+            spacing: 16.0,
             align: {
                 x: 0.5,
                 y: 0.0
             },
-            padding: {top: 30, right: 30, bottom: 30, left: 30}
 
-            <GView> {
+            <View> {
                 height: Fit,
                 width: Fill,
                 flow: Down,
                 spacing: 8,
+                margin: {bottom: 20}
                 <GLabel> {
                     text: "Profile",
                     font_size: 20,
@@ -38,10 +38,10 @@ live_design! {
             }
             
             <View> {
-                width: Fill,
+                width: 600,
                 height: Fit,
                 flow: Right,
-                spacing: 40,
+                spacing: 30,
                 <View> {
                     height: Fit,
                     width: Fit,
@@ -72,6 +72,7 @@ live_design! {
                         font_size: 20
                         cursor_width: 3.0,
                         border_width: 1.0,
+                        border_color: #000,
                         height: 50.0,
                         width: Fill,
                         placeholder: "Place Input"
@@ -80,7 +81,7 @@ live_design! {
             }
 
             <View> {
-                width: 650,
+                width: 600,
                 height: Fit,
                 flow: Down,
                 spacing: 10,
@@ -91,12 +92,12 @@ live_design! {
                 }
 
                 <GInput>{
-                    spread_radius: 2.0,
-                    shadow_offset: vec2(2.0, 2.0),
                     cursor_width: 3.0,
                     border_width: 1.0,
+                    border_color: #000,
+                    font_size: 15
                     theme: Error,
-                    height: 32.0,
+                    height: 40,
                     width: Fill,
                     placeholder: "Place Input"
                 }
@@ -104,7 +105,7 @@ live_design! {
 
             <View> {
                 height: Fit,
-                width: 500,
+                width: 600,
                 flow: Right,
                 align: {
                     x: 0.0,
@@ -116,7 +117,7 @@ live_design! {
                     height: 50.
                     theme: Error,
                     border_width: 2.0,
-                    hover_color: #52e64c,
+                    hover_color: #c7331f,
                     border_color: #fff,
                     border_radius: 4.0,
                     slot: <View> {

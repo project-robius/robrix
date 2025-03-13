@@ -20,11 +20,240 @@ live_design! {
                 x: 0.5,
                 y: 0.5
             },
+            <GVLayout>{
+                spacing: 6.0,
+                height: Fit,
+                width: Fit,
+                margin: {bottom: 50}
+
+                <GTable>{
+                    mode: Real,
+                    background_color: #667085,
+                    background_visible: true,
+                    height: Fit,
+                    width: Fit,
+                    header: <GTableHeader> {
+                        height: Fit,
+                        width: Fit,
+                        <GTRow>{
+                            height: 32.0,
+                            width: Fit,
+                            <GTCell>{
+                                height: Fill,
+                                width: 480.0,
+                                align: {
+                                    x: 0.0,
+                                    y: 0.5
+                                },
+                                <GLabel> {
+                                    text: "Gobal",
+                                    font_size: 20.0,
+                                    color: #667085
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                align: {
+                                    x: 0.5,
+                                    y: 1.0
+                                },
+                                <GLabel> {
+                                    text: "Off"
+                                    font_size: 10.0,
+                                    color: #667085
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                align: {
+                                    x: 0.5,
+                                    y: 1.0
+                                },
+                                <GLabel> {
+                                    text: "On"
+                                    font_size: 10.0
+                                    color: #667085
+
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                align: {
+                                    x: 0.5,
+                                    y: 1.0
+                                },
+                                <GLabel> {
+                                    text: "Nolsy"
+                                    font_size: 10.0
+                                    color: #667085
+                                }
+                            }
+                        }
+                    }
+                    body: <GTBody>{
+                        height: Fit,
+                        width: Fit,
+                        <GTRow>{
+                            height: 32.0,
+                            width: Fit,
+                            <GTCell>{
+                                height: Fill,
+                                width: 480.0,
+                                align: {
+                                    x: 0.0,
+                                    y: 0.5
+                                },
+                                <GLabel>{
+                                    color: #667085,
+                                    text: "Messages in one-to-one chats",
+                                }  
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                        }
+                        <GTRow>{
+                            height: 32.0,
+                            width: Fit,
+                            <GTCell>{
+                                height: Fill,
+                                width: 480.0,
+                                align: {
+                                    x: 0.0,
+                                    y: 0.5
+                                },
+                                <GLabel>{
+                                    color: #667085,
+                                    text: "Encrypted messages in one-to-one chats",
+                                }  
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                        }
+                        <GTRow> {
+                            height: 32.0,
+                            width: Fit,
+                            <GTCell>{
+                                height: Fill,
+                                width: 480.0,
+                                align: {
+                                    x: 0.0,
+                                    y: 0.5
+                                },
+                                <GLabel>{
+                                    color: #667085,
+                                    text: "Messages in group chats",
+                                }  
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                        }
+                        <GTRow> {
+                            height: 32.0,
+                            width: Fit,
+                            <GTCell>{
+                                height: Fill,
+                                width: 480.0,
+                                align: {
+                                    x: 0.0,
+                                    y: 0.5
+                                },
+                                <GLabel>{
+                                    color: #667085,
+                                    text: "Encrypted messages in group chats",
+                                }  
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                            <GTCell>{
+                                height: Fill,
+                                width: 60.0,
+                                <GCheckbox>{
+                                    theme: Dark,
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             <View> {
                 width: Fit,
                 height: Fit,
                 flow: Down,
                 spacing: 10,
+                margin: {bottom: 50}
 
                 <View> {
                     flow: Right,
@@ -122,266 +351,38 @@ live_design! {
                     }
                 }
             }
-
-            <GDivider> {}
-
-            <GVLayout>{
-                spacing: 6.0,
+            
+            <View> {
                 height: Fit,
-                width: Fit,
+                width: 550,
+                flow: Down,
+                spacing: 20,
 
-                <GTable>{
-                    mode: Real,
-                    background_color: #667085,
-                    background_visible: true,
-                    height: Fit,
-                    width: Fit,
-                    header: <GTableHeader> {
-                        height: Fit,
-                        width: Fit,
-                        <GTRow>{
-                            height: 32.0,
-                            width: Fit,
-                            <GTCell>{
-                                height: Fill,
-                                width: 480.0,
-                                align: {
-                                    x: 0.0,
-                                    y: 0.5
-                                },
-                                <GLabel> {
-                                    text: "Gobal",
-                                    font_size: 20.0,
-                                    color: #667085
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                align: {
-                                    x: 0.5,
-                                    y: 1.0
-                                },
-                                <GLabel> {
-                                    text: "Off"
-                                    font_size: 10.0,
-                                    color: #667085
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                align: {
-                                    x: 0.5,
-                                    y: 1.0
-                                },
-                                <GLabel> {
-                                    text: "On"
-                                    font_size: 10.0
-                                    color: #667085
-
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                align: {
-                                    x: 0.5,
-                                    y: 1.0
-                                },
-                                <GLabel> {
-                                    text: "On"
-                                    font_size: 10.0
-                                    color: #667085
-                                }
-                            }
-                        }
-                    }
-                    body: <GTBody>{
-                        height: Fit,
-                        width: Fit,
-                        <GTRow>{
-                            height: 32.0,
-                            width: Fit,
-                            <GTCell>{
-                                height: Fill,
-                                width: 480.0,
-                                align: {
-                                    x: 0.0,
-                                    y: 0.5
-                                },
-                                <GLabel>{
-                                    color: #667085,
-                                    text: "Messages in one-to-one chats",
-                                }  
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                        }
-                        <GTRow>{
-                            height: 32.0,
-                            width: Fit,
-                            <GTCell>{
-                                height: Fill,
-                                width: 480.0,
-                                align: {
-                                    x: 0.0,
-                                    y: 0.5
-                                },
-                                <GLabel>{
-                                    color: #667085,
-                                    text: "Encrypted messages in one-to-one chats",
-                                }  
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Error,
-                                }
-                            }
-                        }
-                        <GTRow> {
-                            height: 32.0,
-                            width: Fit,
-                            <GTCell>{
-                                height: Fill,
-                                width: 480.0,
-                                align: {
-                                    x: 0.0,
-                                    y: 0.5
-                                },
-                                <GLabel>{
-                                    color: #667085,
-                                    text: "Messages in group chats",
-                                }  
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Primary,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Info,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Success,
-                                }
-                            }
-                        }
-                        <GTRow> {
-                            height: 32.0,
-                            width: Fit,
-                            <GTCell>{
-                                height: Fill,
-                                width: 480.0,
-                                align: {
-                                    x: 0.0,
-                                    y: 0.5
-                                },
-                                <GLabel>{
-                                    color: #667085,
-                                    text: "Encrypted messages in group chats",
-                                }  
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Warning,
-                                }
-                            }
-                            <GTCell>{
-                                height: Fill,
-                                width: 60.0,
-                                <GCheckbox>{
-                                    theme: Primary,
-                                }
-                            }
-                        }
+                <GLabel> {
+                    text: "Lanuage"
+                    font_size: 20.0
+                    draw_text:{
+                        color:#fff
                     }
                 }
-            
-                <View> {
+
+                examplaselect = <View> {
                     height: Fit,
-                    width: 550,
-                    flow: Down,
-                    spacing: 20,
-    
-                    <GLabel> {
-                        text: "Lanuage"
-                        font_size: 20.0
-                        draw_text:{
-                            color:#fff
-                        }
-                    }
-    
-                    examplaselect = <View> {
-                        height: Fit,
-                        width: Fit,
-    
-                        select = <GSelect> {
-                            background_color: #fb505a,
-                            background_visible: true,
-                            // hover_color: #152e5b,
-                            select_item: <GSelectItem> {
-                                color: #000,
-                                font_size: 16.0,
-    
-                            }
+                    width: Fit,
+
+                    select = <GSelect> {
+                        background_color: #fb505a,
+                        background_visible: true,
+                        // hover_color: #152e5b,
+                        select_item: <GSelectItem> {
+                            color: #000,
+                            font_size: 16.0,
+
                         }
                     }
                 }
             }
+        
         }
     }
         
