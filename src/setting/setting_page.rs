@@ -76,8 +76,8 @@ impl WidgetMatchEvent for SettingPage {
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum SwitchPageAction {
-    None,
     AccountPage,
     NotificationPage,
-    KeyboardPage
+    KeyboardPage,
+    None
 }
