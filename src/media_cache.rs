@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, Cx, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters}, ruma::{events::room::MediaSource, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, image_viewer::ImageViewerAction, sliding_sync::{self, MatrixRequest, OnMediaFetchedFn}, utils::MEDIA_THUMBNAIL_FORMAT};
@@ -80,28 +80,39 @@ impl MediaCache {
         mxc_uri: &OwnedMxcUri,
         on_fetched: OnMediaFetchedFn,
     ) -> MediaCacheEntry {
-        let (thumbnail_uri, entry_ref) = self.cache.get(mxc_uri).unwrap();
+        log!("Called");
+        let t = self.cache.get(mxc_uri);
+        let thumbnail_uri = t.unwrap().0.clone();
 
         let (should_fetch, destination, format) = if let Some(thumbnail_uri) = thumbnail_uri.as_ref() {
-            let (_, thumbnail_ref) = self.cache.get(thumbnail_uri).unwrap();
-            let r = thumbnail_ref.lock().unwrap().clone();
-            if matches!(r, MediaCacheEntry::NotInitialized) {
-                log!("MediaCacheEntry{:?}", r);
-                *thumbnail_ref.lock().unwrap() = MediaCacheEntry::Requested;
-                (true, thumbnail_ref.clone(), MediaFormat::File)
-            } else {
-                log!("BBBBBB");
-                return r;
+            match self.cache.entry(thumbnail_uri.clone()) {
+                Entry::Occupied(mut e) => {
+                    let (_, thumbnail_ref)  = e.get_mut();
+                    let r = thumbnail_ref.lock().unwrap().clone();
+                    if matches!(r, MediaCacheEntry::NotInitialized) {
+                        *thumbnail_ref.lock().unwrap() = MediaCacheEntry::Requested;
+                        (true, thumbnail_ref.clone(), MediaFormat::File)
+                    } else {
+                        log!("BBBBBB");
+                        return r;
+                    }
+                }
+                _ => { panic!("") }
             }
         } else {
-            let r = entry_ref.lock().unwrap().clone();
-            if matches!(r, MediaCacheEntry::NotInitialized) {
-                log!("MediaCacheEntry{:?}", r);
-                *entry_ref.lock().unwrap() = MediaCacheEntry::Requested;
-                (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
-            } else {
-                log!("BBBBBB");
-                return r;
+            match self.cache.entry(mxc_uri.clone()) {
+                Entry::Occupied(mut e) => {
+                    let (_, entry_ref)  = e.get_mut();
+                    let r = entry_ref.lock().unwrap().clone();
+                    if matches!(r, MediaCacheEntry::NotInitialized) {
+                        *entry_ref.lock().unwrap() = MediaCacheEntry::Requested;
+                        (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
+                    } else {
+                        log!("BBBBBB");
+                        return r;
+                    }
+                }
+                _ => { panic!("") }
             }
         };
 
@@ -175,7 +186,6 @@ pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
 ) {
     let new_value = match data {
         Ok(data) => {
-            log!("|||||||||");
             let data = data.into();
             Cx::post_action(ImageViewerAction::Show(data.clone()));
             MediaCacheEntry::Loaded(data)
