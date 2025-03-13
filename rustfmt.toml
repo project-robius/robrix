@@ -1,0 +1,28 @@
+# Rustfmt configuration file
+# See the full list of options at: https://rust-lang.github.io/rustfmt/
+
+# Specify the Rust edition to use
+# Options: 2015, 2018, 2021
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+hard_tabs = false
+
+reorder_impl_items = false
+reorder_imports = false
+reorder_modules = false
+
+error_on_line_overflow = false
+
+inline_attribute_width = 50
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+fn_single_line = true
+format_generated_files = false
+
+blank_lines_upper_bound = 3
+hex_literal_case = "Upper"
+
+spaces_around_ranges = true
+use_try_shorthand = true

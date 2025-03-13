@@ -7,6 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
+    room::RoomMember,
     ruma::{
         events::{receipt::Receipt, room::{
             message::{
@@ -30,6 +31,9 @@ use crate::{
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::room::room_input_bar::RoomInputBarWidgetExt;
+use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
+
 use rangemap::RangeSet;
 
 use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
@@ -60,6 +64,7 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::editing_pane::*;
+    use crate::room::room_input_bar::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -825,36 +830,7 @@ live_design! {
                     flow: Overlay,
 
                     // Below that, display a view that holds the message input bar and send button.
-                    input_bar = <View> {
-                        width: Fill, height: Fit
-                        flow: Right,
-                        // Bottom-align everything to ensure that buttons always stick to the bottom
-                        // even when the message_input box is very tall.
-                        align: {y: 1.0},
-                        padding: 8.
-                        show_bg: true,
-                        draw_bg: {
-                            color: (COLOR_PRIMARY)
-                        }
-
-                        location_button = <IconButton> {
-                            draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                            icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
-                            text: "",
-                        }
-
-                        message_input = <RobrixTextInput> {
-                            width: Fill, height: Fit,
-                            margin: { bottom: 7 }
-                            align: {y: 0.5}
-                            empty_message: "Write a message (in Markdown) ..."
-                        }
-
-                        send_message_button = <IconButton> {
-                            draw_icon: {svg_file: (ICON_SEND)},
-                            icon_walk: {width: Fit, height: 25, margin: {left: -3} },
-                        }
-                    }
+                    input_bar = <RoomInputBar> {}
 
                     can_not_send_message_notice = <View> {
                         visible: false
@@ -1042,7 +1018,7 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
-            let message_input = self.text_input(id!(message_input));
+            let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
             for action in actions {
                 // Handle the highlight animation.
@@ -1133,6 +1109,7 @@ impl Widget for RoomScreen {
                     location_preview.redraw(cx);
                 }
             }
+
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
@@ -1647,11 +1624,16 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the updated event,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-                TimelineUpdate::RoomMembersFetched => {
+                TimelineUpdate::RoomMembersSynced => {
                     // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
+                TimelineUpdate::RoomMembersListFetched { members } => {
+                    // Use `pub/sub` pattern here to let multiple components share room members data
+                    use crate::room::room_member_manager::room_members;
+                    room_members::update(cx, tl.room_id.clone(), members);
+                },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
@@ -2308,7 +2290,7 @@ impl RoomScreen {
             // Even though we specify that room member profiles should be lazy-loaded,
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
-            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2435,7 +2417,13 @@ impl RoomScreen {
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
-        self.room_id = Some(room_id);
+        self.room_id = Some(room_id.clone());
+
+        // Clear any mention input state
+        let input_bar = self.view.room_input_bar(id!(input_bar));
+        let message_input = input_bar.mentionable_text_input(id!(message_input));
+        message_input.set_room_id(room_id);
+
         self.show_timeline(cx);
     }
 
@@ -2640,7 +2628,14 @@ pub enum TimelineUpdate {
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
-    RoomMembersFetched,
+    RoomMembersSynced,
+    /// A notice that the room's full member list has been fetched from the server,
+    /// includes a complete list of room members that can be shared across components.
+    /// This is different from RoomMembersSynced which only indicates members were fetched
+    /// but doesn't provide the actual data.
+    RoomMembersListFetched {
+        members: Vec<RoomMember>,
+    },
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
