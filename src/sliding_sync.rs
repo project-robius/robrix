@@ -971,10 +971,9 @@ async fn async_worker(
             MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _room_preview_task = Handle::current().spawn(async move {
-                    log!("Sending get room preview request for {room_or_alias_id:?}...");
                     if let Ok(preview) = client.get_room_preview(&room_or_alias_id, via).await {
-                        log!("Got room preview for {room_or_alias_id:?}: {preview:?}");
-                        Cx::post_action(MatrixLinkPillAction::PillLoaded {
+                        Cx::post_action(MatrixLinkPillAction::RoomPillLoaded {
+                            room_or_alias_id: room_or_alias_id.clone(),
                             display_name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
                             avatar_url: preview.avatar_url,
                         });

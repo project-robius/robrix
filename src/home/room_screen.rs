@@ -1756,7 +1756,6 @@ impl RoomScreen {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
                             enqueue_popup_notification(format!("Could not open URL: {url}"));
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                     }
                     if let Some(_known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
