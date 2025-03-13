@@ -238,7 +238,7 @@ impl Widget for RoomPreview {
         let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 
         match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(_fe) => {
+            Hit::FingerDown(..) => {
                 cx.set_key_focus(self.view.area());
             }
             Hit::FingerUp(fe) if !rooms_list_props.was_scrolling &&
@@ -246,7 +246,7 @@ impl Widget for RoomPreview {
             {
                 cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
             }
-            _ => (),
+            _ => { }
         }
 
         self.view.handle_event(cx, event, scope);
