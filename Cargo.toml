@@ -17,7 +17,7 @@ metadata.makepad-auto-version = "zqpv-Yj-K7WNVK2I8h5Okhho46Q="
 
 [dependencies]
 # makepad-widgets = { git = "https://github.com/makepad/makepad", branch = "rik" }
-makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "hits_without_mark_as_handled" }
+makepad-widgets = { git = "https://github.com/kevinaboos/makepad", branch = "hits_handling_redesign" }
 
 ## Including this crate automatically configures all `robius-*` crates to work with Makepad.
 robius-use-makepad = "0.1.1"
@@ -31,15 +31,17 @@ chrono = "0.4"
 clap = { version = "4.0.16", features = ["derive"] }
 crossbeam-channel = "0.5.10"
 crossbeam-queue = "0.3.8"
-eyeball = { version = "0.8.8", features = ["tracing"] }
-eyeball-im = "0.5.0"
+eyeball = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
+eyeball-im = { git = "https://github.com/jplatte/eyeball", branch = "main", features = ["tracing"] } # same as matrix-sdk
 futures-util = "0.3"
 htmlize = "1.0.5"
-imbl = { version = "3.0.0", features = ["serde"] }  # same as matrix-sdk-ui
+imbl = { version = "4.0.1", features = ["serde"] }  # same as matrix-sdk-ui
 imghdr = "0.7.0"
 linkify = "0.10.0"
-matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "experimental-sliding-sync", "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
-matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
+# matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
+# matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
+matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "rustls-tls" ] }
 rand = "0.8.5"
 rangemap = "1.5.0"
 serde = "1.0"
@@ -61,12 +63,6 @@ all-features = true
 # Temporarily include all debug info even for release builds.
 [profile.release]
 debug = "full"
-
-
-## Patch the imbl crate to use our fake-backported version of `imbl`,
-## such that we get all the new changes after v3.0.0 but still pretend that it's v3.0.0.
-[patch.crates-io]
-imbl = { git = "https://github.com/project-robius/imbl.git", branch = "robius" }
 
 
 

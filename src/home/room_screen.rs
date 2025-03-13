@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
 
@@ -26,13 +26,13 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -59,6 +59,7 @@ live_design! {
     use crate::shared::jump_to_bottom_button::*;
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
+    use crate::home::editing_pane::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -126,6 +127,7 @@ live_design! {
         }
 
         reply_preview_body = <HtmlOrPlaintext> {
+            margin: {left: 1.5}
             html_view = { html = {
                 font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE)
                     draw_normal:      { text_style: { font_size: (MESSAGE_REPLY_PREVIEW_FONT_SIZE) } },
@@ -512,7 +514,7 @@ live_design! {
 
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
-    DayDivider = <View> {
+    DateDivider = <View> {
         width: Fill,
         height: Fit,
         margin: {top: 7.0, bottom: 7.0}
@@ -540,8 +542,8 @@ live_design! {
     }
 
     // The view used for the divider indicating where the user's last-viewed message is.
-    // This is implemented as a DayDivider with a different color and a fixed text label.
-    ReadMarker = <DayDivider> {
+    // This is implemented as a DateDivider with a different color and a fixed text label.
+    ReadMarker = <DateDivider> {
         left_line = {
             draw_bg: {color: (COLOR_READ_MARKER)}
         }
@@ -604,7 +606,7 @@ live_design! {
             CondensedImageMessage = <CondensedImageMessage> {}
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
-            DayDivider = <DayDivider> {}
+            DateDivider = <DateDivider> {}
             ReadMarker = <ReadMarker> {}
         }
 
@@ -698,6 +700,7 @@ live_design! {
         }
     }
 
+
     pub RoomScreen = {{RoomScreen}} {
         width: Fill, height: Fill,
         cursor: Default,
@@ -723,52 +726,6 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
-
-                // Below that, display an optional preview of the message that the user
-                // is currently drafting a replied to.
-                replying_preview = <View> {
-                    visible: false
-                    width: Fill
-                    height: Fit
-                    flow: Down
-                    padding: 0.0
-
-                    // Displays a "Replying to" label and a cancel button
-                    // above the preview of the message being replied to.
-                    <View> {
-                        padding: {right: 12.0, left: 12.0}
-                        width: Fill
-                        height: Fit
-                        flow: Right
-                        align: {y: 0.5}
-
-                        <Label> {
-                            draw_text: {
-                                text_style: <TEXT_SUB> {},
-                                color: (COLOR_META)
-                            }
-                            text: "Replying to:"
-                        }
-
-                        filler = <View> {width: Fill, height: Fill}
-
-                        // TODO: Fix style
-                        cancel_reply_button = <IconButton> {
-                            width: Fit,
-                            height: Fit,
-
-                            draw_icon: {
-                                svg_file: (ICON_CLOSE),
-                                fn get_color(self) -> vec4 {
-                                   return (COLOR_META)
-                                }
-                            }
-                            icon_walk: {width: 12, height: 12}
-                        }
-                    }
-
-                    reply_preview_content = <ReplyPreviewContent> { }
-                }
 
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice = <View> {
@@ -801,59 +758,126 @@ live_design! {
                     }
                 }
 
+                // Below that, display an optional preview of the message that the user
+                // is currently drafting a replied to.
+                replying_preview = <View> {
+                    visible: false
+                    width: Fill
+                    height: Fit
+                    flow: Down
+                    padding: {left: 20, right: 20}
+
+                    // Displays a "Replying to" label and a cancel button
+                    // above the preview of the message being replied to.
+                    <View> {
+                        width: Fill
+                        height: Fit
+                        flow: Right
+                        align: {y: 0.5}
+                        padding: {left: 10, right: 5, top: 10, bottom: 10}
+
+                        <Label> {
+                            width: Fill,
+                            draw_text: {
+                                text_style: <USERNAME_TEXT_STYLE> {},
+                                color: #222,
+                                wrap: Ellipsis,
+                            }
+                            text: "Replying to:"
+                        }
+
+                        cancel_reply_button = <RobrixIconButton> {
+                            width: Fit,
+                            height: Fit,
+                            padding: 13,
+                            margin: {left: 5, right: 5},
+
+                            draw_bg: {
+                                border_color: (COLOR_DANGER_RED),
+                                color: #fff0f0 // light red
+                                radius: 5
+                            }
+                            draw_icon: {
+                                svg_file: (ICON_CLOSE),
+                                color: (COLOR_DANGER_RED)
+                            }
+                            icon_walk: {width: 16, height: 16, margin: 0}
+                        }
+                    }
+
+                    <LineH> {
+                        draw_bg: {color: (COLOR_DIVIDER_DARK)}
+                        margin: {bottom: 5.0}
+                    }
+
+                    reply_preview_content = <ReplyPreviewContent> { }
+                }
+
                 // Below that, display a preview of the current location that a user is about to send.
                 location_preview = <LocationPreview> { }
 
-                // Below that, display a view that holds the message input bar and send button.
-                input_bar = <View> {
-                    width: Fill, height: Fit
-                    flow: Right,
-                    // Bottom-align everything to ensure that buttons always stick to the bottom
-                    // even when the message_input box is very tall.
-                    align: {y: 1.0},
-                    padding: 8.
-                    show_bg: true,
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                    }
+                // Below that, display one of multiple possible views:
+                // * the message input bar
+                // * the slide-up editing pane
+                // * a notice that the user can't send messages to this room
+                <View> {
+                    width: Fill, height: Fit,
+                    flow: Overlay,
 
-                    location_button = <IconButton> {
-                        draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                        icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
-                        text: "",
-                    }
-
-                    message_input = <RobrixTextInput> {
-                        width: Fill, height: Fit,
-                        margin: { bottom: 7 }
-                        align: {y: 0.5}
-                        empty_message: "Write a message (in Markdown) ..."
-                    }
-
-                    send_message_button = <IconButton> {
-                        draw_icon: {svg_file: (ICON_SEND)},
-                        icon_walk: {width: Fit, height: 25, margin: {left: -3} },
-                    }
-                }
-                can_not_send_message_notice = <View> {
-                    visible: false
-                    show_bg: true
-                    draw_bg: {
-                        color: (COLOR_SECONDARY)
-                    }
-                    padding: {left: 50, right: 50, top: 20, bottom: 20}
-                    align: {y: 0.5}
-                    width: Fill, height: Fit
-
-                    text = <Label> {
-                        width: Fill,
-                        draw_text: {
-                            color: (COLOR_TEXT)
-                            text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
-                            wrap: Word,
+                    // Below that, display a view that holds the message input bar and send button.
+                    input_bar = <View> {
+                        width: Fill, height: Fit
+                        flow: Right,
+                        // Bottom-align everything to ensure that buttons always stick to the bottom
+                        // even when the message_input box is very tall.
+                        align: {y: 1.0},
+                        padding: 8.
+                        show_bg: true,
+                        draw_bg: {
+                            color: (COLOR_PRIMARY)
                         }
-                        text: (CAN_NOT_SEND_NOTICE)
+
+                        location_button = <IconButton> {
+                            draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
+                            icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
+                            text: "",
+                        }
+
+                        message_input = <RobrixTextInput> {
+                            width: Fill, height: Fit,
+                            margin: { bottom: 7 }
+                            align: {y: 0.5}
+                            empty_message: "Write a message (in Markdown) ..."
+                        }
+
+                        send_message_button = <IconButton> {
+                            draw_icon: {svg_file: (ICON_SEND)},
+                            icon_walk: {width: Fit, height: 25, margin: {left: -3} },
+                        }
                     }
+
+                    can_not_send_message_notice = <View> {
+                        visible: false
+                        show_bg: true
+                        draw_bg: {
+                            color: (COLOR_SECONDARY)
+                        }
+                        padding: {left: 50, right: 50, top: 20, bottom: 20}
+                        align: {y: 0.5}
+                        width: Fill, height: Fit
+
+                        text = <Label> {
+                            width: Fill,
+                            draw_text: {
+                                color: (COLOR_TEXT)
+                                text_style: <THEME_FONT_ITALIC>{font_size: 12.2}
+                                wrap: Word,
+                            }
+                            text: (CAN_NOT_SEND_NOTICE)
+                        }
+                    }
+
+                    editing_pane = <EditingPane> { }
                 }
             }
 
@@ -966,7 +990,7 @@ impl Widget for RoomScreen {
                     let tooltip_text_arr: Vec<String> = reaction_data.reaction_senders.iter().map(|(sender, _react_info)| {
                         user_profile_cache::get_user_profile_and_room_member(cx, sender.clone(), &reaction_data.room_id, true).0
                             .map(|user_profile| user_profile.displayable_name().to_string())
-                            .unwrap_or(sender.to_string())
+                            .unwrap_or_else(|| sender.to_string())
                     }).collect();
                     let mut tooltip_text = utils::human_readable_list(&tooltip_text_arr, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT);
                     tooltip_text.push_str(&format!(" reacted with: {}", reaction_data.emoji_shortcode));
@@ -1018,6 +1042,8 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
+            let message_input = self.text_input(id!(message_input));
+
             for action in actions {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1064,8 +1090,11 @@ impl Widget for RoomScreen {
             // Handle sending any read receipts for the current logged-in user.
             self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
 
-            // Handle the cancel reply button being clicked.
-            if self.button(id!(cancel_reply_button)).clicked(actions) {
+            // Clear the replying-to preview pane if the "cancel reply" button was clicked
+            // or if the `Escape` key was pressed within the message input box.
+            if self.button(id!(cancel_reply_button)).clicked(actions)
+                || message_input.escape(actions)
+            {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
             }
@@ -1105,13 +1134,11 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked and enter key being pressed.
-            let message_input = self.text_input(id!(message_input));
-            let send_message_shortcut_pressed = message_input
-                .key_down_unhandled(actions)
-                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
-            if send_message_shortcut_pressed
-                || self.button(id!(send_message_button)).clicked(actions)
+            // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
+            if self.button(id!(send_message_button)).clicked(actions)
+                || message_input.key_down_unhandled(actions).is_some_and(
+                    |ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
+                )
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
@@ -1196,6 +1223,12 @@ impl Widget for RoomScreen {
                     return false;
                 }
 
+                // When the EditingPane has been hidden, re-show the input bar.
+                if let EditingPaneAction::Hide = action.as_widget_action().cast() {
+                    self.on_hide_editing_pane(cx);
+                    return false;
+                }
+
                 /*
                 match action.as_widget_action().widget_uid_eq(room_screen_widget_uid).cast() {
                     MessageAction::ActionBarClose => {
@@ -1246,6 +1279,11 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+        if self.tl_state.is_none() {
+            // Tl_state may not be ready after dock loading.
+            // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
+            return DrawStep::done();
+        }
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -1358,8 +1396,8 @@ impl Widget for RoomScreen {
                                 (item, ItemDrawnStatus::both_drawn())
                             }
                         }
-                        TimelineItemKind::Virtual(VirtualTimelineItem::DayDivider(millis)) => {
-                            let item = list.item(cx, item_id, live_id!(DayDivider));
+                        TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
+                            let item = list.item(cx, item_id, live_id!(DateDivider));
                             let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
@@ -1385,7 +1423,6 @@ impl Widget for RoomScreen {
                 item.draw_all(cx, &mut Scope::empty());
             }
         }
-
         DrawStep::done()
     }
 }
@@ -1620,7 +1657,10 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-
+                TimelineUpdate::MessageEdited { timeline_event_id, result } => {
+                    self.view.editing_pane(id!(editing_pane))
+                        .handle_edit_result(cx, timeline_event_id, result);
+                }
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -1681,13 +1721,11 @@ impl RoomScreen {
             // Animate in the typing notice view (sliding it up from the bottom).
             self.animator_play(cx, id!(typing_notice_animator.show));
             // Start the typing notice text animation of bouncing dots.
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            typing_animation.animate(cx);
+            self.view.typing_animation(id!(typing_animation)).start_animation(cx);
         } else {
             // Animate out the typing notice view (sliding it out towards the bottom).
             self.animator_play(cx, id!(typing_notice_animator.hide));
-            let typing_animation = self.view.typing_animation(id!(typing_animation));
-            typing_animation.stop_animation();
+            self.view.typing_animation(id!(typing_animation)).stop_animation(cx);
         }
 
         if num_updates > 0 {
@@ -1717,7 +1755,7 @@ impl RoomScreen {
                         }
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                             log!("TODO: jump to known room {}", room_id);
@@ -1729,7 +1767,7 @@ impl RoomScreen {
                     MatrixId::RoomAlias(room_alias) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open room alias {}", room_alias);
                         // TODO: open a room loading screen that shows a spinner
@@ -1767,7 +1805,7 @@ impl RoomScreen {
                     MatrixId::Event(room_id, event_id) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open event {} in room {}", event_id, room_id);
                         // TODO: this requires the same first step as the `MatrixId::Room` case above,
@@ -1791,7 +1829,7 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification("Could not open URL: {url}".to_string());
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
                 }
             }
             true
@@ -1857,9 +1895,22 @@ impl RoomScreen {
                         );
                     }
                 }
-                MessageAction::Edit(_details) => {
-                    // TODO
-                    enqueue_popup_notification("Editing messages is not yet implemented.".to_string());
+                MessageAction::Edit(details) => {
+                    let Some(tl) = self.tl_state.as_ref() else { return };
+                    if let Some(event_tl_item) = tl.items.get(details.item_id)
+                        .and_then(|tl_item| tl_item.as_event().cloned())
+                        .filter(|ev| ev.event_id() == details.event_id.as_deref())
+                    {
+                        self.show_editing_pane(cx, event_tl_item, tl.room_id.clone());
+                    }
+                    else {
+                        enqueue_popup_notification("Could not find message in timeline to edit.".to_string());
+                        error!("MessageAction::Edit: couldn't find event [{}] {:?} to edit in room {:?}",
+                            details.item_id,
+                            details.event_id.as_deref(),
+                            self.room_id,
+                        );
+                    }
                 }
                 MessageAction::Pin(_details) => {
                     // TODO
@@ -2102,6 +2153,35 @@ impl RoomScreen {
         self.redraw(cx);
     }
 
+    /// Shows the editing pane to allow the user to edit the given event.
+    fn show_editing_pane(
+        &mut self,
+        cx: &mut Cx,
+        event_tl_item: EventTimelineItem,
+        room_id: OwnedRoomId,
+    ) {
+        // We must hide the input_bar while the editing pane is shown,
+        // otherwise a very-tall input bar might show up underneath a shorter editing pane.
+        self.view(id!(input_bar)).set_visible(cx, false);
+
+        self.editing_pane(id!(editing_pane)).show(
+            cx,
+            event_tl_item,
+            room_id,
+        );
+        self.redraw(cx);
+    }
+
+    /// Handles the EditingPane in this RoomScreen being fully hidden.
+    fn on_hide_editing_pane(&mut self, cx: &mut Cx) {
+        // In `show_editing_pane()` above, we hid the input_bar while the editing pane
+        // is being shown, so here we need to make it visible again.
+        self.view(id!(input_bar)).set_visible(cx, true);
+        self.redraw(cx);
+        // We don't need to do anything with the editing pane itself here,
+        // because it has already been hidden by the time this function gets called.
+    }
+
     /// Shows a preview of the given event that the user is currently replying to
     /// above the message input bar.
     fn show_replying_to(
@@ -2110,14 +2190,15 @@ impl RoomScreen {
         replying_to: (EventTimelineItem, RepliedToInfo),
     ) {
         let replying_preview_view = self.view(id!(replying_preview));
-        let (replying_preview_username, _) = replying_preview_view.avatar(id!(reply_preview_content.reply_preview_avatar))
-        .set_avatar_and_get_username(
-            cx,
-            self.room_id.as_ref().unwrap(),
-            replying_to.0.sender(),
-            Some(replying_to.0.sender_profile()),
-            replying_to.0.event_id(),
-        );
+        let (replying_preview_username, _) = replying_preview_view
+            .avatar(id!(reply_preview_content.reply_preview_avatar))
+            .set_avatar_and_get_username(
+                cx,
+                self.room_id.as_ref().unwrap(),
+                replying_to.0.sender(),
+                Some(replying_to.0.sender_profile()),
+                replying_to.0.event_id(),
+            );
 
         replying_preview_view
             .label(id!(reply_preview_content.reply_preview_username))
@@ -2191,7 +2272,7 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                media_cache: MediaCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2261,6 +2342,10 @@ impl RoomScreen {
         //   because the location might change by the next time the user opens this same room.
         self.location_preview(id!(location_preview)).clear();
         submit_async_request(MatrixRequest::SubscribeToTypingNotices {
+            room_id: room_id.clone(),
+            subscribe: false,
+        });
+        submit_async_request(MatrixRequest::SubscribeToOwnUserReadReceiptsChanged {
             room_id,
             subscribe: false,
         });
@@ -2277,12 +2362,13 @@ impl RoomScreen {
         };
 
         let portal_list = self.portal_list(id!(list));
-        let first_index = portal_list.first_id();
         let message_input_box = self.text_input(id!(message_input));
+        let editing_event = self.editing_pane(id!(editing_pane)).get_event_being_edited();
         let state = SavedState {
-            first_index_and_scroll: Some((first_index, portal_list.scroll_position())),
+            first_index_and_scroll: Some((portal_list.first_id(), portal_list.scroll_position())),
             message_input_state: message_input_box.save_state(),
             replying_to: tl.replying_to.clone(),
+            editing_event,
         };
         tl.saved_state = state;
         // Store this Timeline's `TimelineUiState` in the global map of states.
@@ -2298,7 +2384,9 @@ impl RoomScreen {
             first_index_and_scroll,
             message_input_state,
             replying_to,
+            editing_event,
         } = &mut tl_state.saved_state;
+        // 1. Restore the position of the timeline.
         if let Some((first_index, scroll_from_first_id)) = first_index_and_scroll {
             self.portal_list(id!(timeline.list))
                 .set_first_id_and_scroll(*first_index, *scroll_from_first_id);
@@ -2308,13 +2396,24 @@ impl RoomScreen {
             self.portal_list(id!(timeline.list)).set_tail_range(true);
         }
 
+        // 2. Restore the state of the message input box.
         let saved_message_input_state = std::mem::take(message_input_state);
         self.text_input(id!(message_input))
             .restore_state(saved_message_input_state);
+
+        // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
         } else {
             self.clear_replying_to(cx);
+        }
+
+        // 4. Restore the state of the editing pane.
+        if let Some(editing_event) = editing_event.take() {
+            self.show_editing_pane(cx, editing_event, tl_state.room_id.clone());
+        } else {
+            self.editing_pane(id!(editing_pane)).force_hide(cx);
+            self.on_hide_editing_pane(cx);
         }
     }
 
@@ -2533,6 +2632,11 @@ pub enum TimelineUpdate {
         event_id: OwnedEventId,
         result: Result<(), matrix_sdk_ui::timeline::Error>,
     },
+    /// The result of a request to edit a message in this timeline.
+    MessageEdited {
+        timeline_event_id: TimelineEventItemId,
+        result: Result<(), matrix_sdk_ui::timeline::Error>,
+    },
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
@@ -2671,11 +2775,12 @@ struct SavedState {
     /// If this is `None`, then the timeline has not yet been scrolled by the user
     /// and the portal list will be set to "tail" (track) the bottom of the list.
     first_index_and_scroll: Option<(usize, f64)>,
-
     /// The content of the message input box.
     message_input_state: TextInputState,
     /// The event that the user is currently replying to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
+    /// The event that the user is currently editing, if any.
+    editing_event: Option<EventTimelineItem>,
 }
 
 /// Returns info about the item in the list of `new_items` that matches the event ID
@@ -3218,8 +3323,13 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        item.reaction_list(id!(content.reaction_list))
-            .set_list(cx, event_tl_item.reactions(), room_id.to_owned(), event_tl_item.identifier(), item_id);
+        item.reaction_list(id!(content.reaction_list)).set_list(
+            cx,
+            &event_tl_item.content().reactions(),
+            room_id.to_owned(),
+            event_tl_item.identifier(),
+            item_id,
+        );
         populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
@@ -3403,10 +3513,9 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, original_source: MediaSource, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into()), insert_into_cache) {
-            MediaCacheEntry::Loaded(thumbnail_data) => {
+    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+            (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &thumbnail_data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
@@ -3425,7 +3534,7 @@ fn populate_image_message_content(
                     Cx::post_action(ImageViewerAction::SetData {text_or_image_uid, original_thumbnail});
                 }
             }
-            MediaCacheEntry::Requested => {
+            (MediaCacheEntry::Requested, _media_format) => {
                 if let Some(image_info) = image_info {
                     if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                         let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3449,7 +3558,7 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            MediaCacheEntry::Failed => {
+            (MediaCacheEntry::Failed, _media_format) => {
                 text_or_image_ref
                     .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
@@ -4157,22 +4266,11 @@ pub enum MessageAction {
     None,
 }
 
-#[derive(Debug, Clone, Default)]
-enum LongPressState {
-    Pressing(DVec2),
-    #[default]
-    None,
-}
-
+/// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
-
-    /// A timer used to detect long presses on the message body.
-    #[rust] long_press_timer: Timer,
-    /// The current status of the long-press gesture on the message body.
-    #[rust] long_press_state: LongPressState,
 
     #[rust] details: Option<MessageDetails>,
 }
@@ -4191,85 +4289,17 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        /// 500ms long press is default on Android/iOS
-        const LONG_PRESS_DURATION: f64 = 0.500;
-
-        // Here, we handle bringing up the context menu for a message,
-        // which occurs upon a long press or a right-click event on the message body itself.
-        //
-        // We first check if the timer is up, indicating a prior long press has completed.
-        // Then, we handle other context menu events: a long press start/end, and right-click.
-        if let LongPressState::Pressing(abs_pos) = &self.long_press_state {
-            if self.long_press_timer.is_event(event).is_some() {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
-                    MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
-                        abs_pos: *abs_pos,
-                    }
-                );
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-            }
-        }
-
-        // This closure is passed into the below `hits()` function,
-        // which is used to determine if a hit should be marked as handled.
-        // If this closure returns `true`, the hit is marked as handled,
-        // which means that this hit will *not* propagate to the child widgets.
-        let mark_as_handled_fn = |hit: &Hit| match hit {
-            // We must ensure that this Message's child widgets *do* receive `FingerDown` hits,
-            // because future `FingerUp` hits won't work if a prior `FingerDown` hit didn't occur.
-            Hit::FingerDown(_fd) => {
-                false
-            }
-            // a right-click event
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
-                // Mark this hit as handled, such that a right-click event
-                // doesn't propagate to the child widget view.
-                true
-            }
-            // A long press was released
-            Hit::FingerUp(_) => {
-                // If we're ending a long press, then we should mark this hit as handled,
-                // such that the end of the long press event doesn't propagate to the child widget view.
-                let val = matches!(self.long_press_state, LongPressState::Pressing(_));
-                val
-            }
-            // Finger movements should always be propagated to the child widget view
-            // such that hover events always work.
-            Hit::FingerMove(_) => {
-                false
-            }
-            _other => {
-                // Don't mark this hit as handled, such that this event will
-                // propagate to the child widget view.
-                false
-            }
-        };
+        // We *first* forward the event to the child view such that it has the chance
+        // to handle it before the Message widget handles it.
+        // This ensures that events like right-clicking/long-pressing a reaction button
+        // or a link within a message will be treated as an action upon that child view
+        // rather than an action upon the message itself.
+        self.view.handle_event(cx, event, scope);
 
         let message_view_area = self.view.area();
-        let hit = event.hits_with_mark_as_handled_fn(
-            cx,
-            message_view_area,
-            // self.view(id!(body)).area(),
-            mark_as_handled_fn,
-        );
-        match hit {
-            // a long press has started
-            Hit::FingerDown(fe) => {
+        match event.hits(cx, message_view_area) {
+            Hit::FingerDown(fe, _) => {
                 cx.set_key_focus(message_view_area);
-                if matches!(self.long_press_state, LongPressState::None) {
-                    self.long_press_state = LongPressState::Pressing(fe.abs);
-                    self.long_press_timer = cx.start_interval(LONG_PRESS_DURATION);
-                }
-            }
-            // A click/touch event has occurred somewhere within this Message's entire view area.
-            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
@@ -4281,6 +4311,18 @@ impl Widget for Message {
                         }
                     );
                 }
+            }
+            Hit::FingerLongPress(lp) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: lp.abs,
+                    }
+                );
+            }
+            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
                 // If the hit occurred on the replied-to message preview, jump to it.
                 //
                 // TODO: move this to the event handler for any reply preview content,
@@ -4294,12 +4336,7 @@ impl Widget for Message {
                     );
                 }
             }
-            // a long press has ended
-            Hit::FingerUp(_) | Hit::FingerMove(_) => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-            }
-            Hit::FingerHoverIn(_fhi) => {
+            Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
                 // TODO: here, show the "action bar" buttons upon hover-in
             }
@@ -4321,8 +4358,6 @@ impl Widget for Message {
                 }
             }
         }
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

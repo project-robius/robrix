@@ -2,7 +2,7 @@ use std::{borrow::Cow, time::SystemTime};
 
 use chrono::{DateTime, Duration, Local, TimeZone};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -170,21 +170,6 @@ impl From<MediaFormatConst> for MediaFormat {
 /// A const-compatible version of [`MediaThumbnailSettings`].
 #[derive(Clone, Debug)]
 pub struct MediaThumbnailSettingsConst {
-    pub size: MediaThumbnailSizeConst,
-    pub animated: bool,
-}
-impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
-    fn from(constant: MediaThumbnailSettingsConst) -> Self {
-        Self {
-            size: constant.size.into(),
-            animated: constant.animated,
-        }
-    }
-}
-
-/// A const-compatible version of [`MediaThumbnailSize`].
-#[derive(Clone, Debug)]
-pub struct MediaThumbnailSizeConst {
     /// The desired resizing method.
     pub method: Method,
     /// The desired width of the thumbnail. The actual thumbnail may not match
@@ -193,25 +178,32 @@ pub struct MediaThumbnailSizeConst {
     /// The desired height of the thumbnail. The actual thumbnail may not match
     /// the size specified.
     pub height: u32,
+    /// If we want to request an animated thumbnail from the homeserver.
+    ///
+    /// If it is `true`, the server should return an animated thumbnail if
+    /// the media supports it.
+    ///
+    /// Defaults to `false`.
+    pub animated: bool,
 }
-impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
-    fn from(constant: MediaThumbnailSizeConst) -> Self {
+impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
+    fn from(constant: MediaThumbnailSettingsConst) -> Self {
         Self {
             method: constant.method,
             width: constant.width.into(),
             height: constant.height.into(),
+            animated: constant.animated,
         }
     }
 }
 
+
 /// The thumbnail format to use for user and room avatars.
 pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
-        size: MediaThumbnailSizeConst {
-            method: Method::Scale,
-            width: 40,
-            height: 40,
-        },
+        method: Method::Scale,
+        width: 40,
+        height: 40,
         animated: false,
     }
 );
@@ -219,11 +211,9 @@ pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnai
 /// The thumbnail format to use for regular media images.
 pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
-        size: MediaThumbnailSizeConst {
-            method: Method::Scale,
-            width: 400,
-            height: 400,
-        },
+        method: Method::Scale,
+        width: 400,
+        height: 400,
         animated: false,
     }
 );

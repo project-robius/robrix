@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{log, Cx};
 use matrix_sdk::{
-    matrix_auth::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
+    authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
 };
 use serde::{Deserialize, Serialize};
 use tokio::fs;
