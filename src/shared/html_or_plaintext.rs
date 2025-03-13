@@ -210,7 +210,9 @@ impl Widget for RobrixHtmlLink {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // TODO: implement this
+        // TODO: this is currently disabled because Makepad doesn't yet support
+        // partial vertical alignment of inline Html subwidgets with the surrounding text.
+        // Once makepad supports that, we can re-enable this to show the Pill widgets.
         // if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
         //     self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
         // } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
