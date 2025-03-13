@@ -27,31 +27,33 @@ live_design! {
         scroll_bars: <GScrollBars>{},
         clip_x: true,
         clip_y: true,
-        // background_color: #fff
+        background_color: #fff
 
         <GView> {
             height: Fill,
             width: Fill,
             flow: Down,
             border_radius: 10.0,
-            // background_color: #fff
+            background_color: #fff
             padding: {left: 15, top: 15, right: 15, bottom: 15}
 
             app_router = <GRouter> {
                 bar_pages = {
                     account_page = <GView> {
                         border_radius: 10.0,
-                        // background_color: #fff
+                        background_color: #fff
                         padding: {top: 30, right: 30, bottom: 30, left: 100}
                         visible:true
                         <AccountPage> {}
                     } ,
                     notification_page = <GView> {
+                        background_color: #fff
                         border_radius: 10.0,
                         visible:false
                         <NotificationPage> {}
                     }, 
                     keyboard_page = <GView> {
+                        background_color: #fff
                         visible:false
                         border_radius: 10.0,
                         <KeyboardPage> {}
@@ -72,6 +74,8 @@ impl Widget for RouterPage {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let _ = self.deref_widget.draw_walk(cx, scope, walk);
 
+        // Right now, there's an issue with the active() method in the router. 
+        // Whenever an event happens, it keeps activating the set page over and over. Gotta wait for GenUI to fix it...
         let router = self.grouter(id!(app_router));
         router.borrow_mut().map(|mut router| {
             let _ = router
@@ -80,7 +84,7 @@ impl Widget for RouterPage {
                     None,
                     None
                 )
-                // .active(id!(page1))
+                // .active(id!(account_page))
                 .build(cx);
         });
         

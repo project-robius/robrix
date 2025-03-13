@@ -25,12 +25,13 @@ live_design! {
         spacing: 2
         <GView> {
             border_radius: 10.0,
-            width: 300
+            width: 300,
+            background_color: #fff,
             <Sidebar> {}
         }
         <GView> {
             border_radius: 10.0,
-            // background_color: #fff,
+            background_color: #fff,
             <RouterPage> {}
         }
     }

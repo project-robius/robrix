@@ -27,13 +27,13 @@ live_design! {
                 <GLabel> {
                     text: "Profile",
                     font_size: 20,
-                    color: #fff
+                    color: #000
                 }
 
                 <GLabel> {
                     text: "This is how you appear to others on the app.",
                     font_size: 12,
-                    color: #fff
+                    color: #000
                 }
             }
             
@@ -47,7 +47,7 @@ live_design! {
                     width: Fit,
                     flow: Right,
                     spacing: 10,
-                    <Avatar> {
+                    avatar = <Avatar> {
                         width: 150,
                         height: 150,
                     }
@@ -65,7 +65,7 @@ live_design! {
                     <GLabel> {
                         text: "Display name"
                         font_size: 20.0
-                        color:#fff
+                        color:#000
                     }
 
                     <GInput>{
@@ -88,7 +88,7 @@ live_design! {
                 <GLabel> {
                     text: "Username"
                     font_size: 20.0
-                    color:#fff
+                    color:#000
                 }
 
                 <GInput>{
@@ -118,7 +118,7 @@ live_design! {
                     theme: Error,
                     border_width: 2.0,
                     hover_color: #c7331f,
-                    border_color: #fff,
+                    border_color: #000,
                     border_radius: 4.0,
                     slot: <View> {
                         flow: Right,

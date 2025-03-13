@@ -264,6 +264,7 @@ live_design! {
                     <GLabel> {
                         width: 500.0,
                         text: "Enable notifications for this account"
+                        color: #000
                     }
 
                     toggle = <GToggle> {
@@ -279,7 +280,8 @@ live_design! {
 
                     <GLabel> {
                         width: 500.0,
-                        text: "Enable notifications for this device"
+                        text: "Enable notifications for this device",
+                        color: #000
                     }
 
                     toggle = <GToggle> {
@@ -295,7 +297,8 @@ live_design! {
 
                     <GLabel> {
                         width: 500.0,
-                        text: "Enable desktop notifications for this session"
+                        text: "Enable desktop notifications for this session",
+                        color: #000
                     }
 
                     toggle = <GToggle> {
@@ -311,7 +314,8 @@ live_design! {
 
                     <GLabel> {
                         width: 500.0,
-                        text: "Show message in desktop notification"
+                        text: "Show message in desktop notification",
+                        color: #000
                     }
 
                     toggle = <GToggle> {
@@ -327,7 +331,8 @@ live_design! {
 
                     <GLabel> {
                         width: 500.0,
-                        text: "Enable audible notifications for this session"
+                        text: "Enable audible notifications for this session",
+                        color: #000
                     }
 
                     toggle = <GToggle> {
@@ -343,7 +348,8 @@ live_design! {
 
                     <GLabel> {
                         width: 500.0,
-                        text: "Enable email notifications for g1024536444@gmail.com"
+                        text: "Enable email notifications for g1024536444@gmail.com",
+                        color: #000
                     }
 
                     toggle = <GToggle> {
@@ -361,9 +367,7 @@ live_design! {
                 <GLabel> {
                     text: "Lanuage"
                     font_size: 20.0
-                    draw_text:{
-                        color:#fff
-                    }
+                    color: #000
                 }
 
                 examplaselect = <View> {

@@ -30,15 +30,17 @@ live_design! {
             spaces = <SpacesDock> {}
 
             <View> {
-                flow: Overlay,
                 <View> {
                     flow: Down
                     width: Fill, height: Fill
                     <SearchBar> {}
-                    <MainDesktopUI> {}
+                    <View> {
+                        flow: Overlay,
+                        <MainDesktopUI> {}
+                        <SettingPage> {}
+                    }
                 }
     
-                <SettingPage> {}
             }
 
         }

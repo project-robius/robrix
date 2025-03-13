@@ -18,7 +18,7 @@ live_design! {
             x: 0.5,
             y: 0.5
         }
-        // margin: {top: 12, bottom: 12, left: 12}
+
         padding: {top: 12, bottom: 12, left: 12, right: 12}
 
 
@@ -30,7 +30,7 @@ live_design! {
         }
 
         to_account = <GButton>{
-            theme: Dark,
+            background_color: #fff,
             width: Fill,
             height: 40.0,
             slot: <View> {
@@ -52,7 +52,7 @@ live_design! {
         }
 
         to_notification = <GButton>{
-            theme: Dark,
+            background_color: #fff,
             width: Fill,
             height: 40.0,
             slot: <View> {
@@ -74,7 +74,7 @@ live_design! {
         }
 
         to_keyboard= <GButton>{
-            theme: Dark,
+            background_color: #fff,
             width: Fill,
             height: 40.0,
             slot: <View> {
@@ -90,6 +90,204 @@ live_design! {
                 <GLabel>{
                     font_size: 13.0,
                     text: "Keyboard",
+                    color: #000
+                }
+            }
+        }
+
+        to_sessions= <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Sessions",
+                    color: #000
+                }
+            }
+        }
+
+        to_appearance= <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Appearance",
+                    color: #000
+                }
+            }
+        }
+
+        to_preferences= <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Preferences",
+                    color: #000
+                }
+            }
+        }
+
+        to_sidebar= <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Sidebar",
+                    color: #000
+                }
+            }
+        }
+
+        to_voice = <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Voice & Video",
+                    color: #000
+                }
+            }
+        }
+
+        to_security = <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Security & Privacy",
+                    color: #000
+                }
+            }
+        }
+
+        to_encryption = <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Encryption",
+                    color: #000
+                }
+            }
+        }
+
+        to_labs = <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Labs",
+                    color: #000
+                }
+            }
+        }
+
+        to_helps = <GButton>{
+            background_color: #fff,
+            width: Fill,
+            height: 40.0,
+            slot: <View> {
+                spacing: 10,
+                padding: {left: 10.0},
+                <GSvg>{
+                    height: 18.0,
+                    width: 18.0,
+                    color: #000,
+                    cursor: Help,
+                    src: dep("crate://self/resources/icons/keyboard.svg"),
+                }
+                <GLabel>{
+                    font_size: 13.0,
+                    text: "Help & About",
                     color: #000
                 }
             }
