@@ -2633,7 +2633,7 @@ pub enum TimelineUpdate {
     RoomMembersFetched,
     /// A notice that the room's full member list has been fetched from the server,
     /// includes a complete list of room members that can be shared across components.
-    /// This is different from RoomMembersFetched which only indicates members were fetched
+    /// This is different from RoomMembersSynced which only indicates members were fetched
     /// but doesn't provide the actual data.
     RoomMembersListFetched {
         members: Vec<RoomMember>,
