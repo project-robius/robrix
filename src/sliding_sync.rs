@@ -248,8 +248,9 @@ pub enum MatrixRequest {
     GetRoomMembers {
         room_id: OwnedRoomId,
         memberships: RoomMemberships,
-        use_cache: bool,
-        from_server: bool,
+        /// * If `true` (not recommended), only the local cache will be accessed.
+        /// * If `false` (recommended), details will be fetched from the server.
+        local_only: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -538,7 +539,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::GetRoomMembers { room_id, memberships, use_cache, from_server } => {
+            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -551,25 +552,23 @@ async fn async_worker(
                 let _get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
-                    if use_cache {
+                    if local_only {
                         if let Ok(members) = room.members_no_sync(memberships).await {
                             log!("Got {} members from cache for room {}", members.len(), room_id);
                             sender.send(TimelineUpdate::RoomMembersListFetched {
                                 members
                             }).unwrap();
-                            SignalToUI::set_ui_signal();
                         }
-                    }
-
-                    if from_server {
+                    } else {
                         if let Ok(members) = room.members(memberships).await {
                             log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
                             sender.send(TimelineUpdate::RoomMembersListFetched {
                                 members
                             }).unwrap();
-                            SignalToUI::set_ui_signal();
                         }
                     }
+
+                    SignalToUI::set_ui_signal();
                 });
             }
 
@@ -805,7 +804,7 @@ async fn async_worker(
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
-                        
+
                         while (update_receiver.next().await).is_some() {
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {

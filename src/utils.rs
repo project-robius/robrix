@@ -420,7 +420,6 @@ pub fn get_or_fetch_event_sender(
     sender_username.to_owned()
 }
 
-
 /// Converts a byte index in a string to the corresponding grapheme index
 pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
     let mut current_byte_pos = 0;
@@ -432,19 +431,6 @@ pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
     }
     // If byte_idx is at end of string or past it, return grapheme count
     text.graphemes(true).count()
-}
-
-/// Converts a grapheme index to the corresponding byte index in a string
-pub fn grapheme_index_to_byte_index(text: &str, grapheme_idx: usize) -> usize {
-    let mut byte_pos = 0;
-    for (i, g) in text.graphemes(true).enumerate() {
-        if i == grapheme_idx {
-            return byte_pos;
-        }
-        byte_pos += g.len();
-    }
-    // If grapheme_idx is beyond the last grapheme, return text length
-    text.len()
 }
 
 /// Safely extracts a substring between two byte indices, ensuring proper
@@ -464,19 +450,6 @@ pub fn safe_substring_by_byte_indices(text: &str, start_byte: usize, end_byte: u
         .collect()
 }
 
-/// Safely extracts a substring using grapheme indices
-pub fn safe_substring_by_grapheme_indices(text: &str, start_grapheme: usize, end_grapheme: usize) -> String {
-    if start_grapheme >= end_grapheme {
-        return String::new();
-    }
-
-    text.graphemes(true)
-        .enumerate()
-        .filter(|(i, _)| *i >= start_grapheme && *i < end_grapheme)
-        .map(|(_, g)| g)
-        .collect()
-}
-
 /// Safely replaces text between byte indices with a new string,
 /// ensuring proper grapheme boundaries are respected
 pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usize, replacement: &str) -> String {
@@ -489,18 +462,6 @@ pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usi
     let after = text_graphemes[end_grapheme_idx..].join("");
 
     format!("{before}{replacement}{after}")
-}
-
-/// Safe version of String::contains that works with graphemes
-pub fn contains_grapheme(text: &str, pattern: &str) -> bool {
-    // For single grapheme patterns
-    if pattern.graphemes(true).count() == 1 {
-        text.graphemes(true).any(|g| g == pattern)
-    } else {
-        // For multi-grapheme patterns, we can use the default contains
-        // as it will work correctly for complete strings
-        text.contains(pattern)
-    }
 }
 
 /// Builds a mapping array from graphemes to byte positions in the string

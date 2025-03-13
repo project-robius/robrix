@@ -196,7 +196,9 @@ struct EditingPaneSubscriber {
 /// Implement `RoomMemberSubscriber` trait, receive member update notifications
 impl RoomMemberSubscriber for EditingPaneSubscriber {
     fn on_room_members_updated(
-        &mut self, cx: &mut Cx, room_id: &OwnedRoomId,
+        &mut self,
+        cx: &mut Cx,
+        room_id: &OwnedRoomId,
         members: Arc<Vec<matrix_sdk::room::RoomMember>>,
     ) {
         if let Some(current_room_id) = &self.current_room_id {
@@ -257,6 +259,7 @@ impl Widget for EditingPane {
             match (self.is_animating_out, animator_action.is_animating()) {
                 (true, false) => {
                     self.visible = false;
+                    self.info = None;
                     cx.widget_action(self.widget_uid(), &scope.path, EditingPaneAction::Hide);
                     cx.revert_key_focus();
                     self.redraw(cx);
@@ -397,6 +400,10 @@ impl Widget for EditingPane {
                             {
                                 new_message_content.mentions = Some(existing_mentions.clone());
                             }
+                            // TODO: once we update the matrix-sdk dependency, uncomment this.
+                            // EditedContent::MediaCaption { mentions, .. }) => {
+                            //     mentions = Some(existing_mentions);
+                            // }
                         }
 
                         edited_content
@@ -449,7 +456,7 @@ impl Widget for EditingPane {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if !self.animator_in_state(cx, id!(panel.show)) || self.info.is_none() {
+        if self.info.is_none() {
             self.visible = false;
         };
         self.view.draw_walk(cx, scope, walk)
@@ -467,7 +474,9 @@ impl EditingPane {
     /// This will handle the result, and either show a success message
     /// and hide this editing pane, or show an error message.
     pub fn handle_edit_result(
-        &mut self, cx: &mut Cx, timeline_event_item_id: TimelineEventItemId,
+        &mut self,
+        cx: &mut Cx,
+        timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
         let Some(info) = self.info.as_ref() else {
@@ -535,12 +544,10 @@ impl EditingPane {
         log!("Creating room member subscription for EditingPane, ID: {:?}", self.widget_uid());
 
         // Create new subscriber
-        let subscriber =
-            Arc::new(
-                Mutex::new(
-                    EditingPaneSubscriber { widget_uid: self.widget_uid(), current_room_id: Some(room_id.clone())}
-                )
-            );
+        let subscriber = Arc::new(Mutex::new(EditingPaneSubscriber {
+            widget_uid: self.widget_uid(),
+            current_room_id: Some(room_id.clone()),
+        }));
 
         // Create and save subscription
         self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
@@ -548,8 +555,7 @@ impl EditingPane {
         submit_async_request(MatrixRequest::GetRoomMembers {
             room_id,
             memberships: matrix_sdk::RoomMemberships::JOIN,
-            use_cache: true,
-            from_server: true,
+            local_only: false,
         });
     }
 
@@ -574,7 +580,9 @@ impl EditingPaneRef {
 
     /// See [`EditingPane::handle_edit_result()`].
     pub fn handle_edit_result(
-        &self, cx: &mut Cx, timeline_event_item_id: TimelineEventItemId,
+        &self,
+        cx: &mut Cx,
+        timeline_event_item_id: TimelineEventItemId,
         edit_result: Result<(), matrix_sdk_ui::timeline::Error>,
     ) {
         let Some(mut inner) = self.borrow_mut() else {
@@ -593,11 +601,10 @@ impl EditingPaneRef {
 
     /// Returns the event that is currently being edited, if any.
     pub fn get_event_being_edited(&self) -> Option<EventTimelineItem> {
-        let inner = self.borrow()?;
-        if !inner.visible {
-            return None;
-        }
-        inner.info.as_ref().map(|info| info.event_tl_item.clone())
+        self.borrow()?
+            .info
+            .as_ref()
+            .map(|info| info.event_tl_item.clone())
     }
 
     /// Hides the editing pane immediately without animating it out.

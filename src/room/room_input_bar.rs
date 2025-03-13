@@ -26,8 +26,10 @@ live_design! {
         width: Fill,
         height: Fit
         flow: Right
-        align: {y: 0.5}
-        padding: 10.
+        // Bottom-align everything to ensure that buttons always stick to the bottom
+        // even when the message_input box is very tall.
+        align: {y: 1.0},
+        padding: 8.
         show_bg: true
         draw_bg: {color: (COLOR_PRIMARY)}
 
@@ -223,8 +225,7 @@ impl RoomInputBar {
         submit_async_request(MatrixRequest::GetRoomMembers {
             room_id,
             memberships: matrix_sdk::RoomMemberships::JOIN,
-            use_cache: true,
-            from_server: true,
+            local_only: false,
         });
     }
 

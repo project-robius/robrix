@@ -1018,7 +1018,7 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
-            let message_input = self.text_input(id!(message_input));
+            let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
             for action in actions {
                 // Handle the highlight animation.
@@ -1112,8 +1112,6 @@ impl Widget for RoomScreen {
 
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
-            let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
-
             if self.button(id!(send_message_button)).clicked(actions)
                 || message_input.key_down_unhandled(actions).is_some_and(
                     |ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()

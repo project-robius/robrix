@@ -7,18 +7,22 @@ edition = "2021"
 max_width = 100
 tab_spaces = 4
 hard_tabs = false
-newline_style = "Unix"
-use_small_heuristics = "Max"
 
-fn_params_layout = "Compressed"
-reorder_impl_items = true
-merge_derives = true
-use_field_init_shorthand = true
-
-reorder_imports = true
-reorder_modules = true
-
-control_brace_style = "AlwaysSameLine"
-match_block_trailing_comma = true
+reorder_impl_items = false
+reorder_imports = false
+reorder_modules = false
 
 error_on_line_overflow = false
+
+inline_attribute_width = 50
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+fn_single_line = true
+format_generated_files = false
+
+blank_lines_upper_bound = 3
+hex_literal_case = "Upper"
+
+spaces_around_ranges = true
+use_try_shorthand = true
