@@ -1624,7 +1624,7 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the updated event,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-                TimelineUpdate::RoomMembersFetched => {
+                TimelineUpdate::RoomMembersSynced => {
                     // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.

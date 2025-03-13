@@ -534,7 +534,7 @@ async fn async_worker(
                     log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
                     log!("Completed sync room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
                     SignalToUI::set_ui_signal();
                 });
             }
