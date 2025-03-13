@@ -2630,7 +2630,7 @@ pub enum TimelineUpdate {
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
-    RoomMembersFetched,
+    RoomMembersSynced,
     /// A notice that the room's full member list has been fetched from the server,
     /// includes a complete list of room members that can be shared across components.
     /// This is different from RoomMembersSynced which only indicates members were fetched
