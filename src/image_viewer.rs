@@ -98,7 +98,6 @@ impl MatchEvent for ImageViewer {
 
         for action in actions {
             if let Some(ImageViewerAction::Show(data)) = action.downcast_ref() {
-                self.view.image(id!(image_view.image)).set_texture(cx, None);
                 self.open(cx);
                 self.load_with_data(cx, data);
             }

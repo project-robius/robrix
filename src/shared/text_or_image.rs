@@ -7,8 +7,6 @@ use std::sync::Arc;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedMxcUri;
 
-use crate::image_viewer::ImageViewerAction;
-
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -42,7 +40,7 @@ live_design! {
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Smallest,
+                fit: Size,
             }
         }
     }
@@ -50,8 +48,7 @@ live_design! {
 
 #[derive(Debug, Clone, DefaultNone)]
 pub enum TextOrImageAction {
-    Click(WidgetUid, OwnedMxcUri),
-    ShowThumbnail(WidgetUid),
+    Click(OwnedMxcUri),
     None,
 }
 
@@ -88,29 +85,16 @@ impl Widget for TextOrImage {
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
                     // We run the check to see if the original image was fetched or not.
-                    Cx::post_action(TextOrImageAction::Click(self.widget_uid(), self.image_value.original_uri.clone().unwrap()));
+                    Cx::post_action(TextOrImageAction::Click(self.image_value.original_uri.clone().unwrap()));
                 }
             }
             _ => (),
         }
-        self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl MatchEvent for TextOrImage {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
-        for action in actions {
-            if let Some(TextOrImageAction::ShowThumbnail(widget_uid)) = action.downcast_ref() {
-                if self.widget_uid() == *widget_uid {
-                    Cx::post_action(ImageViewerAction::Show(self.image_value.thumbnail_data.clone().unwrap()));
-                }
-            }
-        }
     }
 }
 

@@ -1,0 +1,374 @@
+src/app.rs:192:9 - App::handle_startup(): app_data_dir: "/home/lym/.local/share/robrix"
+src/app.rs:196:9 - App::handle_startup(): starting matrix sdk loop
+src/sliding_sync.rs:394:5 - Started async_worker task.
+src/sliding_sync.rs:1212:5 - Most recent user ID: Some("@demolemon:matrix.org")
+src/sliding_sync.rs:1216:5 - CLI parsing succeeded? false. CLI has valid UN+PW? false
+src/sliding_sync.rs:1224:5 - Waiting for login? false
+src/sliding_sync.rs:1233:9 - Trying to restore session for user: Some("@demolemon:matrix.org")
+src/persistent_state.rs:101:5 - Loading previous session file for @demolemon:matrix.org...: '/home/lym/.local/share/robrix/demolemon_matrix.org/persistent_state/session'
+src/persistent_state.rs:116:5 - Loaded session file for @demolemon:matrix.org. Trying to connect to homeserver (https://matrix-client.matrix.org/)...
+[2m2025-03-13T10:13:24.439989Z[0m [32m INFO[0m [1mbuild[0m[1m{[0m[3mhomeserver[0m[2m=[0mServerNameOrHomeserverUrl("https://matrix-client.matrix.org/")[1m}[0m[2m:[0m [2mmatrix_sdk::client::builder[0m[2m:[0m selected sliding sync version [3mversion[0m[2m=[0mNative
+[2m2025-03-13T10:13:28.179411Z[0m [32m INFO[0m [1mbuild[0m[1m{[0m[3mhomeserver[0m[2m=[0mServerNameOrHomeserverUrl("https://matrix-client.matrix.org/")[1m}[0m[2m:[0m [2mmatrix_sdk::client::builder[0m[2m:[0m selected sliding sync version [3mversion[0m[2m=[0mNative
+src/persistent_state.rs:132:5 - Authenticating previous login session for @demolemon:matrix.org...
+[2m2025-03-13T10:13:28.201280Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::backups[0m[2m:[0m Setting up secret listeners and trying to resume backups
+src/verification.rs:25:5 - Initial verification state is Unverified
+src/sliding_sync.rs:1648:5 - Initial ignored-user list is: []
+src/verification.rs:28:13 - Received a verification state update: Unverified
+[2m2025-03-13T10:13:28.201669Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Setting up account data listeners and trying to setup recovery
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/app.rs:203:17 - Received LoginAction::LoginSuccess, hiding login view.
+src/sliding_sync.rs:1684:5 - Initial sync service state is Idle
+src/sliding_sync.rs:1687:13 - Received a sync service state update: Running
+src/sliding_sync.rs:1700:5 - Initial room list loading state is NotLoaded
+src/sliding_sync.rs:1703:13 - Received a room list loading state update: NotLoaded
+[2m2025-03-13T10:13:28.205171Z[0m [32m INFO[0m [1mnext_sync_with_lock[0m[2m:[0m[1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"encryption" [1m}[0m[2m:[0m [2mmatrix_sdk::sliding_sync[0m[2m:[0m Marking all tracked users as dirty
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+[2m2025-03-13T10:13:29.317759Z[0m [32m INFO[0m [2mmatrix_sdk::encryption::recovery[0m[2m:[0m Recovery state changed from Unknown to Incomplete
+[2m2025-03-13T10:13:29.327917Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::identities::manager[0m[2m:[0m Rejecting device update [3muser_id[0m[2m=[0m"@demolemon:matrix.org" [3mdevice_id[0m[2m=[0m"OOJJVNALUR" [3merror[0m[2m=[0mVerificationError(Signature(signature::Error { source: Some(Verification equation was not satisfied) }))
+src/verification.rs:28:13 - Received a verification state update: Unverified
+[2m2025-03-13T10:13:29.849809Z[0m [32m INFO[0m [2mmatrix_sdk_ui::room_list_service::room[0m[2m:[0m No cached sliding sync room found for `!BHcierreUuwCMxVqOf:matrix.org`, the timeline will be empty.
+[2m2025-03-13T10:13:29.849993Z[0m [33m WARN[0m [1mbuild[0m[1m{[0m[3mroom_id[0m[2m=[0m"!BHcierreUuwCMxVqOf:matrix.org" [3mtrack_read_receipts[0m[2m=[0mtrue[1m}[0m[2m:[0m [2mmatrix_sdk_base::rooms::normal[0m[2m:[0m Unknown room version, falling back to v10
+[2m2025-03-13T10:13:29.875021Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$3sQ__hIR-LPwcyyrrZwsm_FzRuqhfUi0XyKgBgsuVPs" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:46:20.199Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m5[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+src/sliding_sync.rs:1703:13 - Received a room list loading state update: Loaded { maximum_number_of_rooms: Some(13) }
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !BHcierreUuwCMxVqOf:matrix.org...
+src/sliding_sync.rs:1614:5 - Adding new room !BHcierreUuwCMxVqOf:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !BHcierreUuwCMxVqOf:matrix.org.
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !BHcierreUuwCMxVqOf:matrix.org...
+[2m2025-03-13T10:13:30.805357Z[0m [33m WARN[0m [2mmatrix_sdk::encryption[0m[2m:[0m Error when sending out an outgoing E2EE request [3merror[0m[2m=[0mHttp(Api(Server(ClientApi(Error { status_code: 400, body: Standard { kind: Unknown, message: "One time key signed_curve25519:AAAAAAAAAA4 already exists. Old key: {\"key\":\"wckM9pbttSBDa90mqILg75qRasX+0ZQdq4gYUZPQOR8\",\"signatures\":{\"@demolemon:matrix.org\":{\"ed25519:OOJJVNALUR\":\"G3gP7Ejqnw6YbiS/gs19gCZjpgByrFH5fOV54toH0lxni13o6xLLTji1H/4Sx9BVFl3/j+XtkAyJ67xQnm2eAQ\"}}}; new key: {'key': 'vpj3XsjW2oe4z4fzG4TDbH/eCsMqmac3s1lWlzVSIGM', 'signatures': {'@demolemon:matrix.org': {'ed25519:OOJJVNALUR': 'RZGDx8n1D2rMD8eH04cCZ9/bJ3yt+5mFeT7EZFo5A+5GGisz+eecZE+5hrAPT5Z0UvcAHkCW2kqm/wM4lQp1Cg'}}}" } }))))
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !MzKbWjifQZZoIBHjCX:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !MzKbWjifQZZoIBHjCX:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !MzKbWjifQZZoIBHjCX:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org...
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !ZJEzvNtzSGkPSynJpH:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !ZJEzvNtzSGkPSynJpH:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !ZJEzvNtzSGkPSynJpH:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-03-13T10:13:30.818852Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !cGyiuCNphlCyGxDYcZ:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !cGyiuCNphlCyGxDYcZ:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !cGyiuCNphlCyGxDYcZ:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !ZJEzvNtzSGkPSynJpH:matrix.org...
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !cGyiuCNphlCyGxDYcZ:matrix.org...
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !eMbtejjAApVrUTLFyB:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !eMbtejjAApVrUTLFyB:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !eMbtejjAApVrUTLFyB:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !eMbtejjAApVrUTLFyB:matrix.org...
+[2m2025-03-13T10:13:31.658488Z[0m [33m WARN[0m [2mmatrix_sdk::encryption[0m[2m:[0m Error when sending out an outgoing E2EE request [3merror[0m[2m=[0mHttp(Api(Server(ClientApi(Error { status_code: 400, body: Standard { kind: Unknown, message: "One time key signed_curve25519:AAAAAAAAAA4 already exists. Old key: {\"key\":\"wckM9pbttSBDa90mqILg75qRasX+0ZQdq4gYUZPQOR8\",\"signatures\":{\"@demolemon:matrix.org\":{\"ed25519:OOJJVNALUR\":\"G3gP7Ejqnw6YbiS/gs19gCZjpgByrFH5fOV54toH0lxni13o6xLLTji1H/4Sx9BVFl3/j+XtkAyJ67xQnm2eAQ\"}}}; new key: {'key': 'vpj3XsjW2oe4z4fzG4TDbH/eCsMqmac3s1lWlzVSIGM', 'signatures': {'@demolemon:matrix.org': {'ed25519:OOJJVNALUR': 'RZGDx8n1D2rMD8eH04cCZ9/bJ3yt+5mFeT7EZFo5A+5GGisz+eecZE+5hrAPT5Z0UvcAHkCW2kqm/wM4lQp1Cg'}}}" } }))))
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !MzKbWjifQZZoIBHjCX:matrix.org, hit start of timeline? no
+[2m2025-03-13T10:13:31.720614Z[0m [32m INFO[0m [1mhandle_event[0m[1m{[0m[3mevent_id[0m[2m=[0m"$MQc0VU3ohl5J9us2EzcaDLqNezwbNXAG2oiUFZ1YSWE" [3mposition[0m[2m=[0mAt { event_index: 39, origin: Pagination }[1m}[0m[2m:[0m[1mhandle_room_message_edit[0m[1m{[0m[3mreplacement_event_id[0m[2m=[0m"$CVLF500xoVBrqWJOeFv9NyywCRpt-Lxk9oF2MBaysys"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::event_handler[0m[2m:[0m Edit of message event applies to "a redacted messages", discarding
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !ZJEzvNtzSGkPSynJpH:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !eRkaLMNmGsvPWRbiwA:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !eRkaLMNmGsvPWRbiwA:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !eRkaLMNmGsvPWRbiwA:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !cGyiuCNphlCyGxDYcZ:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !eRkaLMNmGsvPWRbiwA:matrix.org...
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !iYnZafYUoXkeVPOSQh:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 0 items for room !iYnZafYUoXkeVPOSQh:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !iYnZafYUoXkeVPOSQh:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !iYnZafYUoXkeVPOSQh:matrix.org...
+src/home/room_screen.rs:2309:13 - Sending a first-time backwards pagination request for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/sliding_sync.rs:525:21 - Sending fetch room members request for room !eRkaLMNmGsvPWRbiwA:matrix.org...
+src/sliding_sync.rs:421:21 - Starting backwards pagination request for room !eRkaLMNmGsvPWRbiwA:matrix.org...
+src/sliding_sync.rs:760:29 - Received own user read receipt: Receipt { ts: Some(2025-03-13T05:59:44.057), thread: Main } "$mz6XrOBr5PtZ6gxSj3jLDcG0mcR1Zt0TbsfR68V00e0"
+src/sliding_sync.rs:527:21 - Completed fetch room members request for room !eRkaLMNmGsvPWRbiwA:matrix.org.
+[2m2025-03-13T10:13:32.679309Z[0m [33m WARN[0m [1mpaginate_backwards[0m[1m{[0m[3mroom_id[0m[2m=[0m"!eRkaLMNmGsvPWRbiwA:matrix.org"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::pagination[0m[2m:[0m Another pagination request is already happening, returning early
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !eRkaLMNmGsvPWRbiwA:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:912:29 - Successfully fetched power levels for room !eRkaLMNmGsvPWRbiwA:matrix.org.
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+[2m2025-03-13T10:13:32.760442Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !eRkaLMNmGsvPWRbiwA:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !lpWwCjMBNtNokvQgKN:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !lpWwCjMBNtNokvQgKN:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !lpWwCjMBNtNokvQgKN:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+[2m2025-03-13T10:13:32.905234Z[0m [33m WARN[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mevent_id[0m[2m=[0m"$3sQ__hIR-LPwcyyrrZwsm_FzRuqhfUi0XyKgBgsuVPs"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$3sQ__hIR-LPwcyyrrZwsm_FzRuqhfUi0XyKgBgsuVPs" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:46:20.199Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m5[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:32.909547Z[0m [32m INFO[0m [1mretry_one[0m[1m{[0m[3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mevent_id[0m[2m=[0m"$3sQ__hIR-LPwcyyrrZwsm_FzRuqhfUi0XyKgBgsuVPs"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::controller::decryption_retry_task[0m[2m:[0m Failed to decrypt event after receiving room key: MissingMegolmSession { withheld_code: None }
+src/home/rooms_list.rs:572:17 - RoomsList: processed 3 updates to the list of all rooms
+src/home/room_screen.rs:2842:17 - Found matching event ID $mz6XrOBr5PtZ6gxSj3jLDcG0mcR1Zt0TbsfR68V00e0 at index 13 in new items list, corresponding to current item index 1 at pos offset 0.0000007120768259483157
+src/home/room_screen.rs:1513:29 - Timeline::handle_event(): jumping view from event index 1 to new index 13, scroll 0.0000007120768259483157, event ID $mz6XrOBr5PtZ6gxSj3jLDcG0mcR1Zt0TbsfR68V00e0
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !moVNEIUPxJZpxRHDUv:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !moVNEIUPxJZpxRHDUv:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !moVNEIUPxJZpxRHDUv:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !BHcierreUuwCMxVqOf:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !iYnZafYUoXkeVPOSQh:matrix.org, hit start of timeline? no
+src/sliding_sync.rs:433:29 - Completed backwards pagination request for room !eMbtejjAApVrUTLFyB:matrix.org, hit start of timeline? no
+[2m2025-03-13T10:13:33.429980Z[0m [33m WARN[0m [2mmatrix_sdk::encryption[0m[2m:[0m Error when sending out an outgoing E2EE request [3merror[0m[2m=[0mHttp(Api(Server(ClientApi(Error { status_code: 400, body: Standard { kind: Unknown, message: "One time key signed_curve25519:AAAAAAAAAA4 already exists. Old key: {\"key\":\"wckM9pbttSBDa90mqILg75qRasX+0ZQdq4gYUZPQOR8\",\"signatures\":{\"@demolemon:matrix.org\":{\"ed25519:OOJJVNALUR\":\"G3gP7Ejqnw6YbiS/gs19gCZjpgByrFH5fOV54toH0lxni13o6xLLTji1H/4Sx9BVFl3/j+XtkAyJ67xQnm2eAQ\"}}}; new key: {'key': 'vpj3XsjW2oe4z4fzG4TDbH/eCsMqmac3s1lWlzVSIGM', 'signatures': {'@demolemon:matrix.org': {'ed25519:OOJJVNALUR': 'RZGDx8n1D2rMD8eH04cCZ9/bJ3yt+5mFeT7EZFo5A+5GGisz+eecZE+5hrAPT5Z0UvcAHkCW2kqm/wM4lQp1Cg'}}}" } }))))
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/rooms_list.rs:572:17 - RoomsList: processed 3 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !nCULugmcNjxWftdWKg:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 0 items for room !nCULugmcNjxWftdWKg:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !nCULugmcNjxWftdWKg:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !ugrySPqOXlcmORZIwY:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !ugrySPqOXlcmORZIwY:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !ugrySPqOXlcmORZIwY:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !vVLSRWycKVfdPUWXxI:matrix.org...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !vVLSRWycKVfdPUWXxI:matrix.org.
+src/sliding_sync.rs:1614:5 - Adding new room !vVLSRWycKVfdPUWXxI:matrix.org to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 4 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/verification.rs:28:13 - Received a verification state update: Unverified
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/sliding_sync.rs:1784:5 - Starting timeline subscriber for room !veagCdDBjKrMsOCzrq:privacytools.io...
+src/sliding_sync.rs:1786:5 - Received initial timeline update of 2 items for room !veagCdDBjKrMsOCzrq:privacytools.io.
+src/sliding_sync.rs:1614:5 - Adding new room !veagCdDBjKrMsOCzrq:privacytools.io to ALL_ROOM_INFO. Replaces tombstoned room: None
+src/home/rooms_list.rs:572:17 - RoomsList: processed 57 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/rooms_list.rs:572:17 - RoomsList: processed 5 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/rooms_list.rs:572:17 - RoomsList: processed 2 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+[2m2025-03-13T10:13:35.521500Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$xecx97MjWnvMt_WTQzBharbTprhnK-PkMhHio_CkSPc" [3morigin_server_ts[0m[2m=[0m"2025-03-06T17:51:49.128Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.526301Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$5CuWIk5fCCr7iHrLWWKJ4KxjMTaEnO4OL-kLeEK1iT4" [3morigin_server_ts[0m[2m=[0m"2025-03-06T17:52:30.930Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m3[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.530840Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$iKvyULn6mY-icPw8hS_uHZYh-qbuJR4qKmfQyvMHeYU" [3morigin_server_ts[0m[2m=[0m"2025-03-06T17:53:22.814Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m4[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.535698Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$8E0-kXb7DP42gLfeoyfRdTY0hhppQdWOgHPKQcQkpE0" [3morigin_server_ts[0m[2m=[0m"2025-03-09T13:28:12.301Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:9zBd9XrE0uzMcNZSvqZTBtFhRdvAr1vTZecgzuyNt3Q" [3msession_id[0m[2m=[0m"/dpOh0F+N3qk6b7SGMvMqBS5lg9Idei327W/AaOn2LU" [3mmessage_index[0m[2m=[0m21[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.540269Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$yWApedq2X3Zp1RYwMZkRKCHet1Q9s4Ro0e7ZNh1lse4" [3morigin_server_ts[0m[2m=[0m"2025-03-10T19:03:01.942Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m5[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.544929Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$ZHZlmGuCGcRkm5_R7EJAeuDgAUUZS4WoEdeLuT-GDOE" [3morigin_server_ts[0m[2m=[0m"2025-03-10T19:03:04.474Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m6[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.549402Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$1S-9Bvu6Kr7ugEZjuNTRGGhU4-6FD9l4FeQt8FBcpEI" [3morigin_server_ts[0m[2m=[0m"2025-03-10T19:03:48.906Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m7[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.553906Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$u7cxFCwbNrUHb8qD4Uht8uNqyQNFQP0DYOqKNhqWESU" [3morigin_server_ts[0m[2m=[0m"2025-03-10T19:04:08.000Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m8[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.558389Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$tNmqJDV_Zd7-KNwtCABOfEJ7QNT5b8Q5UilRXbBMRro" [3morigin_server_ts[0m[2m=[0m"2025-03-10T19:04:27.679Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m9[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.563212Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$glDs8u8NbnkJ6RXewSn2XJztU604NDsu4tCbcTomrPs" [3morigin_server_ts[0m[2m=[0m"2025-03-11T05:55:04.397Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:9zBd9XrE0uzMcNZSvqZTBtFhRdvAr1vTZecgzuyNt3Q" [3msession_id[0m[2m=[0m"/dpOh0F+N3qk6b7SGMvMqBS5lg9Idei327W/AaOn2LU" [3mmessage_index[0m[2m=[0m22[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.567724Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@kevinaboos:matrix.org" [3mevent_id[0m[2m=[0m"$jf6ziUec4IJPaKIVmboHNiAVaKHDPXR3bQmqBD9GMbw" [3morigin_server_ts[0m[2m=[0m"2025-03-12T23:11:06.485Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:XKvuikboylhWpm9n5w6XE8DSu3wNzGObgNzRiGgEjnQ" [3msession_id[0m[2m=[0m"3QBLX2ADSDRhtc0Uply12RtsrmUY2WwB9UjerIwNY4Q" [3mmessage_index[0m[2m=[0m10[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.572359Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$bDGp-Uk5vbhgUFtqQJ-n23X_Lte9mY9jZ0ZMEsEvtdA" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:43:09.537Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.577082Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$B8tqP_Xe047uFhTQv34CL77nGDy3F6qALvP3Dnx6zsc" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:44:09.882Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.581715Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$R7nmmTiRM2e0M4DbDp7rOFWrDgttmNV_1aoEbFyFn-s" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:44:35.796Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.586368Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$f_TQ9zoff7jXKGdKFlNx1MQzw_PG12XMMnEZ-uFGDNI" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:45:06.734Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m3[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.590848Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$FjQEKGm-F9GD9u2s4oQ4TYWhf5CAN3RlX3-gu7JPBvA" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:45:24.896Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m4[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.595313Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!lpWwCjMBNtNokvQgKN:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$3sQ__hIR-LPwcyyrrZwsm_FzRuqhfUi0XyKgBgsuVPs" [3morigin_server_ts[0m[2m=[0m"2025-03-13T06:46:20.199Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:J8xQ11chvZ5fdhzStq1U7R2/Exgro7YdrEg0BGnPkD0" [3msession_id[0m[2m=[0m"rLOs3++ox9xyuJypto6x5CJOGIj2dUlZCDL6FGjMmXI" [3mmessage_index[0m[2m=[0m5[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.632464Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$zvoxVs_cZU2v3MZy49OswxL-sBYAooFW1fqytA6CTY8" [3morigin_server_ts[0m[2m=[0m"2024-12-27T09:58:55.761Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"Fb3z4bsEqlOP1zptAC4oYYcohzmmevg5saAj7NAmY/w" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.637157Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$6oZANyY0TCQ4btosWSmzovwwZk3aQb7drYeAa4TiQP0" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:00:17.966Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.641897Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$PRR9Cvz1GKaRR9sDRrWac3PglNOfvigckaDPLcC_KCE" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:04:32.899Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:4/dvM6WQhZ1C8XwTHkiFLhuEje1WFUaHmiq7zc1GYlE" [3msession_id[0m[2m=[0m"XzKC431Jae5TWcq/hqoO8HQVoLxj2dfUzzJHUAYjjlw" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.646925Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!ugrySPqOXlcmORZIwY:matrix.org" [3msender[0m[2m=[0m"@aaravlu:matrix.org" [3mevent_id[0m[2m=[0m"$WrLC6uWcYUfDto1nMzRMKE-Avzm7ExRUx_VVjwDMegg" [3morigin_server_ts[0m[2m=[0m"2024-12-27T10:13:55.662Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:edovrwKptvEQGGLXGs1IleJukotZxNo+gpk9gJ+uySg" [3msession_id[0m[2m=[0m"+4zeLQVxVXREmZG9mHF2rdSeMy+P39TnIdd3Y32yrBE" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.659109Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$ioJlXq9bLXo9MGFyRcmYwGYuA_jsAF6GXReTiPONWiU" [3morigin_server_ts[0m[2m=[0m"2024-10-05T07:14:20.519Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:/HOkshobl/C176BIOD0LyGXi9MPLDIdzA4bLaeU9zi4" [3msession_id[0m[2m=[0m"6FGtths0DKvCYXTMBoZafAKPbOPznbQ9uMVgtHqLgME" [3mmessage_index[0m[2m=[0m8[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.663855Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$1QTfEjmtFmntUJS4D6TKPSaaLi333Bpgaf4g7Cp6980" [3morigin_server_ts[0m[2m=[0m"2024-10-06T14:18:11.001Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m13[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.668484Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$2mNLdYjHNdy7lkw4QBLE1ix1_xhcU0A8blvRGqx9XbM" [3morigin_server_ts[0m[2m=[0m"2024-10-06T14:23:53.072Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m14[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.673052Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$H1zMdOPvgNchychNZI2QZsUEVTnjTU88WrN-ZfKbinU" [3morigin_server_ts[0m[2m=[0m"2024-10-06T15:40:10.602Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:vxNidNk6RfxEtCSapuSmXnoASujj0+ivqQPXjAYaFhA" [3msession_id[0m[2m=[0m"So6yjTWtj7Vum67zuy5OmEPnL8dn2jCF8pke4F8q9bc" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.677722Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$_T1TJe5RJPFYDbcbJhYPvgf3QukLfmQJYQUnNm71YDg" [3morigin_server_ts[0m[2m=[0m"2024-10-06T15:50:14.140Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:vxNidNk6RfxEtCSapuSmXnoASujj0+ivqQPXjAYaFhA" [3msession_id[0m[2m=[0m"So6yjTWtj7Vum67zuy5OmEPnL8dn2jCF8pke4F8q9bc" [3mmessage_index[0m[2m=[0m1[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.682454Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$YDiOCFNekVMKrKqKK49ERE6nU8qX8cLdYjF98sP6rcQ" [3morigin_server_ts[0m[2m=[0m"2024-10-06T16:10:16.607Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:wZVXHZKrmt33qGsX63Av2xI/JFx1bcOS2dqIcw7uGVE" [3msession_id[0m[2m=[0m"9j5UkjluGI807H9xZv67Lr5qTxLPDDACPv35jB++nnE" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.687110Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$Dt5Mu084sNvpfQzsZujwwVcO2Z2ZRwJ7NaZbhpgDCtQ" [3morigin_server_ts[0m[2m=[0m"2024-10-06T16:31:16.129Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:bL+iE4J14LiR4YgtLnRNkMQI/5gudrRlxfmmDgoiGFc" [3msession_id[0m[2m=[0m"I9NEzZUsqDCthLlR1fRj/QBP01dHX6zJDWV/FbVisB8" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.691846Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@zasongguo:matrix.org" [3mevent_id[0m[2m=[0m"$Zk9Ru1R9R98PBOmr8ayMsk8qES87lYIWMWYlqYxK4xk" [3morigin_server_ts[0m[2m=[0m"2024-10-07T02:44:48.721Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:wZVXHZKrmt33qGsX63Av2xI/JFx1bcOS2dqIcw7uGVE" [3msession_id[0m[2m=[0m"9j5UkjluGI807H9xZv67Lr5qTxLPDDACPv35jB++nnE" [3mmessage_index[0m[2m=[0m3[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.696592Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$nXntWh-5BQ4e8PGeCaFG0CWL3XuVjSAcLHRUgP8mqs4" [3morigin_server_ts[0m[2m=[0m"2024-10-07T05:14:15.152Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:bL+iE4J14LiR4YgtLnRNkMQI/5gudrRlxfmmDgoiGFc" [3msession_id[0m[2m=[0m"I9NEzZUsqDCthLlR1fRj/QBP01dHX6zJDWV/FbVisB8" [3mmessage_index[0m[2m=[0m2[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.701194Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$dqmlMTRXLhneeS7W_9sLKAwBI42UkBeC5Xgj-zVRv5g" [3morigin_server_ts[0m[2m=[0m"2024-10-07T05:17:55.139Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:ih7detY/3bYS47o8I7WTCXo+jpXOMCLteVG5xdvwcC8" [3msession_id[0m[2m=[0m"BAx2e2OUE6pKF5T8RiCyBJYJB9V3yuH4wZmYfXeQvzI" [3mmessage_index[0m[2m=[0m15[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.705798Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$HKYEB8IRQhDvljIjD4BnzmDL-XhHcpldMV7QhVSRa-M" [3morigin_server_ts[0m[2m=[0m"2024-10-07T11:25:21.208Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:5aZTCU65HZ7j+znjd3YRvozWB3qpkq4G3ifUSGdNGQU" [3msession_id[0m[2m=[0m"g+WkIWRTpGQnvcj/N9YmeK9nBcybPyvfU5L/NgI7G9o" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.710408Z[0m [33m WARN[0m [1msync_once[0m[1m{[0m[3mconn_id[0m[2m=[0m"room-list" [3mpos[0m[2m=[0m"37964510/m5719525547~37.5719525549_757284974_25029032_3477886414_3851166047_264673867_1462991318_11095386116_0_444965"[1m}[0m[2m:[0m[1mhandle_response[0m[2m:[0m[1mhandle_timeline[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org"[1m}[0m[2m:[0m[1mdecrypt_room_event[0m[1m{[0m[3mroom_id[0m[2m=[0m"!vVLSRWycKVfdPUWXxI:matrix.org" [3msender[0m[2m=[0m"@demolemon:matrix.org" [3mevent_id[0m[2m=[0m"$B8ou8qdmvk2Bcd7_B5fYwdGSDBQpFcad_2wr10wyMfA" [3morigin_server_ts[0m[2m=[0m"2024-10-13T02:01:10.047Z" [3malgorithm[0m[2m=[0m"m.megolm.v1.aes-sha2" [3msender_key[0m[2m=[0m"curve25519:O68EcJ4rBhpomGmkPU8U8NOWbjlO0MgdOQvNoMUjKGs" [3msession_id[0m[2m=[0m"LNHthkmg0Ab40t0jU5a2Mvyn9WwCMNtgCurIj4Q63aM" [3mmessage_index[0m[2m=[0m0[1m}[0m[2m:[0m [2mmatrix_sdk_crypto::machine[0m[2m:[0m Failed to decrypt a room event: Can't find the room key to decrypt the event, withheld code: None
+[2m2025-03-13T10:13:35.901831Z[0m [32m INFO[0m [1mhandle_event[0m[1m{[0m[3mevent_id[0m[2m=[0m"$MQc0VU3ohl5J9us2EzcaDLqNezwbNXAG2oiUFZ1YSWE" [3mposition[0m[2m=[0mEnd { origin: Sync }[1m}[0m[2m:[0m[1mhandle_room_message_edit[0m[1m{[0m[3mreplacement_event_id[0m[2m=[0m"$CVLF500xoVBrqWJOeFv9NyywCRpt-Lxk9oF2MBaysys"[1m}[0m[2m:[0m [2mmatrix_sdk_ui::timeline::event_handler[0m[2m:[0m Edit of message event applies to "a redacted messages", discarding
+src/home/rooms_list.rs:572:17 - RoomsList: processed 50 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+[2m2025-03-13T10:14:03.327398Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+[2m2025-03-13T10:14:03.930403Z[0m [33m WARN[0m [2mmatrix_sdk::encryption[0m[2m:[0m Error when sending out an outgoing E2EE request [3merror[0m[2m=[0mHttp(Api(Server(ClientApi(Error { status_code: 400, body: Standard { kind: Unknown, message: "One time key signed_curve25519:AAAAAAAAAA4 already exists. Old key: {\"key\":\"wckM9pbttSBDa90mqILg75qRasX+0ZQdq4gYUZPQOR8\",\"signatures\":{\"@demolemon:matrix.org\":{\"ed25519:OOJJVNALUR\":\"G3gP7Ejqnw6YbiS/gs19gCZjpgByrFH5fOV54toH0lxni13o6xLLTji1H/4Sx9BVFl3/j+XtkAyJ67xQnm2eAQ\"}}}; new key: {'key': 'vpj3XsjW2oe4z4fzG4TDbH/eCsMqmac3s1lWlzVSIGM', 'signatures': {'@demolemon:matrix.org': {'ed25519:OOJJVNALUR': 'RZGDx8n1D2rMD8eH04cCZ9/bJ3yt+5mFeT7EZFo5A+5GGisz+eecZE+5hrAPT5Z0UvcAHkCW2kqm/wM4lQp1Cg'}}}" } }))))
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+[2m2025-03-13T10:14:24.994805Z[0m [33m WARN[0m [2mmatrix_sdk_crypto::backups[0m[2m:[0m Trying to backup room keys but no backup key was found
+src/home/rooms_list.rs:572:17 - RoomsList: processed 1 updates to the list of all rooms
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+[2m2025-03-13T10:14:25.646473Z[0m [33m WARN[0m [2mmatrix_sdk::encryption[0m[2m:[0m Error when sending out an outgoing E2EE request [3merror[0m[2m=[0mHttp(Api(Server(ClientApi(Error { status_code: 400, body: Standard { kind: Unknown, message: "One time key signed_curve25519:AAAAAAAAAA4 already exists. Old key: {\"key\":\"wckM9pbttSBDa90mqILg75qRasX+0ZQdq4gYUZPQOR8\",\"signatures\":{\"@demolemon:matrix.org\":{\"ed25519:OOJJVNALUR\":\"G3gP7Ejqnw6YbiS/gs19gCZjpgByrFH5fOV54toH0lxni13o6xLLTji1H/4Sx9BVFl3/j+XtkAyJ67xQnm2eAQ\"}}}; new key: {'key': 'vpj3XsjW2oe4z4fzG4TDbH/eCsMqmac3s1lWlzVSIGM', 'signatures': {'@demolemon:matrix.org': {'ed25519:OOJJVNALUR': 'RZGDx8n1D2rMD8eH04cCZ9/bJ3yt+5mFeT7EZFo5A+5GGisz+eecZE+5hrAPT5Z0UvcAHkCW2kqm/wM4lQp1Cg'}}}" } }))))
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
+src/home/room_screen.rs:1664:21 - Timeline::handle_event(): media fetched for room !eRkaLMNmGsvPWRbiwA:matrix.org
+src/media_cache.rs:99:17 - MediaCacheEntryNotInitialized
+src/media_cache.rs:109:13 - should_fetch
