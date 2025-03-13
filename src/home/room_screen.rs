@@ -3536,6 +3536,8 @@ fn populate_image_message_content(
 
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
+    //
+    // I refactor those two closure here, feel free to renamed it.
     let mut closure = |cx: &mut Cx2d, original_source: &MediaSource, image_info: Option<&ImageInfo>| {
         handle_encrypted(cx, original_source);
 
