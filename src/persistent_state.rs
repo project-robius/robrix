@@ -187,7 +187,7 @@ pub async fn save_session(
     Ok(())
 }
 
-/// Save the room panel when window is closed.
+/// Save the current display state of the room panel to persistent storage.
 pub fn save_room_panel(dock_state: &HashMap<LiveId, DockItem>, open_rooms: &HashMap<LiveId, SelectedRoom>, user_id: &UserId) -> anyhow::Result<()> {
     std::fs::write(
         persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
