@@ -111,7 +111,7 @@ impl MediaCache {
                     let mut mg = thumbnail_ref.lock().unwrap();
                     match mg.clone() {
                         MediaCacheEntry::NotInitialized => { *mg = MediaCacheEntry::Requested }
-                        MediaCacheEntry::Loaded(_) => { ret = mg.clone() }
+                        MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed => { ret = mg.clone() }
                         _ => { }
                     }
                 }
@@ -128,7 +128,7 @@ impl MediaCache {
                     let mut mg = entry_ref.lock().unwrap();
                     match mg.clone() {
                         MediaCacheEntry::NotInitialized => { *mg = MediaCacheEntry::Requested }
-                        MediaCacheEntry::Loaded(_) => { return mg.clone(); }
+                        MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed => { return mg.clone(); }
                         _ => { }
                     }
                     (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
