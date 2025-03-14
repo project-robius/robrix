@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use serde::{Deserialize, Serialize};
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::{restore_room_panel, save_room_panel}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -192,15 +193,7 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
-        match restore_room_panel() {
-            Ok((dock_state, open_rooms)) => {
-                self.app_state.rooms_panel.dock_state = dock_state;
-                self.app_state.rooms_panel.open_rooms = open_rooms;
-            }
-            Err(e) => {
-                log!("Failed to restore dock state: {}", e);
-            }
-        }
+        
         
     }
 
@@ -357,8 +350,8 @@ impl AppMain for App {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
-        if let Event::WindowClosed(_) = event {
-            if let Err(e) = save_room_panel(&self.app_state.rooms_panel.dock_state, &self.app_state.rooms_panel.open_rooms) {
+        if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
+            if let Err(e) = save_room_panel(&self.app_state.rooms_panel.dock_state, &self.app_state.rooms_panel.open_rooms, &user_id) {
                 log!("Bug! Failed to save save_room_panel: {}", e);
             }
         }
@@ -366,7 +359,25 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
-
+        if matches!(event, Event::Signal) {
+            while let Some(update) = PENDING_DOCK_STATE_UPDATES.pop() {
+                match update {
+                    LoadDockState::LoadAll(dock_state, open_rooms) => {
+                        self.app_state.rooms_panel.dock_state = dock_state;
+                        self.app_state.rooms_panel.open_rooms = open_rooms;
+                    }
+                    LoadDockState::Pending(room_id) => {
+                        cx.action(RoomsPanelAction::DockPending(room_id));
+                    }
+                    LoadDockState::Success(room_id) => {
+                        cx.action(RoomsPanelAction::DockSuccess(room_id));
+                    }
+                    LoadDockState::Timeout(room_id) => {
+                        cx.action(RoomsPanelAction::DockTimeout(room_id));
+                    }
+                }
+            }
+        }
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
@@ -447,3 +458,18 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
+
+pub enum LoadDockState {
+    LoadAll(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>),
+    Pending(OwnedRoomId),
+    Success(OwnedRoomId),
+    Timeout(OwnedRoomId)
+}
+pub static PENDING_DOCK_STATE_UPDATES: SegQueue<LoadDockState> = SegQueue::new();
+
+/// Enqueue a dock state update for loading the dock
+/// and signals the UI that a new update is available to be handled.
+pub fn enqueue_dock_state_update(update: LoadDockState) {
+    PENDING_DOCK_STATE_UPDATES.push(update);
+    SignalToUI::set_ui_signal();
+}

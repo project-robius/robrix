@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, home::main_desktop_ui::RoomsPanelAction, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -719,7 +719,15 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-
+            prompt_label = <Label> {
+                align: {x: 0.0, y: 0.5},
+                padding: {left: 5.0, right: 0.0}
+                draw_text: {
+                    color: (TYPING_NOTICE_TEXT_COLOR),
+                    text_style: <REGULAR_TEXT>{font_size: 9}
+                }
+                text: ""
+            }
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -946,6 +954,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// Draw text prompt if exist or else draw the timeline
+    #[rust] prompt: RoomScreenPrompt,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1279,6 +1289,12 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+        match self.prompt {
+            RoomScreenPrompt::Pending | RoomScreenPrompt::Timeout => {
+                return self.view.draw_walk(cx, scope, walk);
+            }
+            RoomScreenPrompt::None => {}
+        }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
@@ -2257,12 +2273,8 @@ impl RoomScreen {
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            // Try to load the dock again when the ALL_ROOM_INFO is not ready
-            // TODO: Prevent infinite loop of loading the Dock when the room is deleted
-            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
-                cx.action(RoomsPanelAction::DockLoad);
-                return;
-            };
+            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
+                .expect("BUG: couldn't get timeline state for first-viewed room.");
             
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
@@ -2444,6 +2456,27 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
+    /// Sets this `RoomScreen` widget to display text label in replace of the timeline.
+    pub fn set_prompt(
+        &mut self,
+        cx: &mut Cx,
+        prompt: RoomScreenPrompt
+    ) {
+        self.prompt = prompt;
+        match prompt {
+            RoomScreenPrompt::Pending => {
+                self.view.label(id!(prompt_label)).set_text(cx, "[Placeholder for Spinner]");
+            }
+            RoomScreenPrompt::Timeout => {
+                self.view.label(id!(prompt_label)).set_text(cx, "[Placeholder for Timeout]");
+            }
+            RoomScreenPrompt::None => {
+                self.view.label(id!(prompt_label)).set_text(cx, "");
+            }
+        }
+        self.redraw(cx);
+    }
+
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
@@ -2554,6 +2587,16 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+
+    /// See [`RoomScreen::set_prompt()`].
+    pub fn set_prompt(
+        &self,
+        cx: &mut Cx,
+        prompt: RoomScreenPrompt 
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_prompt(cx, prompt);
+    }
 }
 
 /// Actions for the room screen's tooltip.
@@ -2580,6 +2623,13 @@ pub enum RoomScreenTooltipActions {
     /// Mouse out event and clear tooltip.
     HoverOut,
     None,
+}
+
+#[derive(DefaultNone, Debug, Clone, Copy)]
+pub enum RoomScreenPrompt{
+    Pending,
+    Timeout,
+    None
 }
 
 /// A message that is sent from a background async task to a room's timeline view

@@ -21,16 +21,16 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::{sleep, Instant},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::{enqueue_dock_state_update, LoadDockState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, fetch_room_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -357,6 +357,10 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
+    /// Spawns a thread to wait for room is loaded in the roomscreen page
+    DockWaitForRoomReady{
+        room_id: OwnedRoomId,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -964,6 +968,23 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::DockWaitForRoomReady { room_id } => {
+                enqueue_dock_state_update(LoadDockState::Pending(room_id.clone()));
+                Handle::current().spawn(async move {
+                    let time = Instant::now();
+                    loop {
+                        if ALL_ROOM_INFO.lock().unwrap().contains_key(&room_id) {
+                            enqueue_dock_state_update(LoadDockState::Success(room_id));
+                            break
+                        }
+                        sleep(Duration::from_millis(1000)).await;
+                        if time.elapsed() > Duration::from_secs(10) {
+                            enqueue_dock_state_update(LoadDockState::Timeout(room_id));
+                            break
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -1182,6 +1203,16 @@ pub fn take_timeline_endpoints(
             })
         )
 }
+/// Returns whether we have any information stored about the given room ID.
+///
+/// Note that this does not necessarily mean that the given room ID is a valid room ID,
+/// only that we have some information about it stored in the `ALL_ROOM_INFO` map.
+///
+/// This is a very cheap check (it only involves a single HashMap lookup),
+/// so it can be used freely in performance-critical code.
+pub fn check_room_in_all_room_info(room_id: &OwnedRoomId) -> bool {
+    ALL_ROOM_INFO.lock().unwrap().contains_key(room_id)
+}
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
 
@@ -1310,6 +1341,22 @@ async fn async_main_loop(
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
+    
+    if let Some(current_user_id) = current_user_id() {
+        match fetch_room_panel_state(&current_user_id) {
+            Ok((dock_state, open_rooms)) => {
+                if !open_rooms.is_empty() && !dock_state.is_empty() {
+                    enqueue_dock_state_update(LoadDockState::LoadAll(dock_state, open_rooms));
+                    log!("Fetching room panel state from App data Directory");
+                }
+            }
+            Err(e) => {
+                log!("Fetching Room Panel State error {:?}",e);
+            }
+        }
+    } else {
+        log!("Cannot find current user id to fetch room panel state");
+    }
 
     add_verification_event_handlers_and_sync_client(client.clone());
 

@@ -60,9 +60,9 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
-const LATEST_DOCK_STATE: &str = "latest_dock_state.ron";
+const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
 
-const OPEN_ROOMS: &str = "open_rooms.json";
+const OPEN_ROOMS_FILE_NAME: &str = "open_rooms.json";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
@@ -188,22 +188,22 @@ pub async fn save_session(
 }
 
 /// Save the room panel when window is closed.
-pub fn save_room_panel(dock_state: &HashMap<LiveId, DockItem>, open_rooms: &HashMap<LiveId, SelectedRoom>) -> anyhow::Result<()> {
+pub fn save_room_panel(dock_state: &HashMap<LiveId, DockItem>, open_rooms: &HashMap<LiveId, SelectedRoom>, user_id: &UserId) -> anyhow::Result<()> {
     std::fs::write(
-        app_data_dir().join(LATEST_DOCK_STATE),
+        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
         dock_state.serialize_ron(),
     )?;
-    let open_rooms_serialize: HashMap<u64, SelectedRoom>  = HashMap::from_iter(open_rooms.iter().map(|(k, v)| (k.0, v.clone())));
+    let open_rooms_serialized: HashMap<u64, SelectedRoom> = HashMap::from_iter(open_rooms.iter().map(|(k, v)| (k.0, v.clone())));
     std::fs::write(
-        app_data_dir().join(OPEN_ROOMS),
-        serde_json::to_string(&open_rooms_serialize)?,
+        persistent_state_dir(user_id).join(OPEN_ROOMS_FILE_NAME),
+        serde_json::to_string(&open_rooms_serialized)?,
     )?;
     Ok(())
 }
 
-/// Restore the room panel when app starts up
-pub fn restore_room_panel() -> anyhow::Result<(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>)> {
-    let mut file = match std::fs::File::open(app_data_dir().join(LATEST_DOCK_STATE)) {
+/// Fetch the room panel's state when app starts up
+pub fn fetch_room_panel_state(user_id: &UserId) -> anyhow::Result<(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>)> {
+    let mut file = match std::fs::File::open(persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME)) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((HashMap::new(), HashMap::new())),
         Err(e) => return Err(e.into()),
@@ -214,15 +214,12 @@ pub fn restore_room_panel() -> anyhow::Result<(HashMap<LiveId, DockItem>, HashMa
     let dock_state: HashMap<LiveId, DockItem> = HashMap::deserialize_ron(&contents).map_err(|er| {
         anyhow::Error::msg(er.msg)
     })?;
-    let mut file = match std::fs::File::open(app_data_dir().join(OPEN_ROOMS)) {
+    let file = match std::fs::File::open(persistent_state_dir(user_id).join(OPEN_ROOMS_FILE_NAME)) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok((HashMap::new(), HashMap::new())),
         Err(e) => return Err(e.into()),
     };
-    // Read the file contents into a String
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let open_rooms_serialize: HashMap<u64, SelectedRoom> = serde_json::from_str(&contents)?;
-    let open_rooms: HashMap<LiveId, SelectedRoom>  = HashMap::from_iter(open_rooms_serialize.iter().map(|(k, v)| (LiveId(*k), v.clone())));
+    let open_rooms_serialized: HashMap<u64, SelectedRoom> = serde_json::from_reader(file)?;
+    let open_rooms: HashMap<LiveId, SelectedRoom>  = HashMap::from_iter(open_rooms_serialized.iter().map(|(k, v)| (LiveId(*k), v.clone())));
     Ok((dock_state, open_rooms))
 }
