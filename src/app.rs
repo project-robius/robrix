@@ -193,8 +193,6 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
-        
-        
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {

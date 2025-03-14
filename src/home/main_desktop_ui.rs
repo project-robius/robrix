@@ -190,7 +190,6 @@ impl Widget for MainDesktopUI {
         }
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
-        
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {

@@ -2275,7 +2275,7 @@ impl RoomScreen {
         } else {
             let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
-            
+
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid
