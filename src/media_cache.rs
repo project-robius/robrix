@@ -7,6 +7,7 @@ use crate::{home::room_screen::TimelineUpdate, image_viewer::ImageViewerAction, 
 /// An entry in the media cache.
 #[derive(Debug, Clone, Default)]
 pub enum MediaCacheEntry {
+    Null,
     #[default] NotInitialized,
     /// A request has been issued and we're waiting for it to complete.
     Requested,
@@ -25,13 +26,13 @@ pub type MediaCacheEntryRef = Arc<Mutex<MediaCacheEntry>>;
 /// such as a thumbnail and a full-size image.
 pub struct MediaCache {
     /// The actual cached data.
-    cache: BTreeMap<OwnedMxcUri, (Option<OwnedMxcUri>, MediaCacheEntryRef)>,
+    cache: BTreeMap<OwnedMxcUri, (Option<OwnedMxcUri>, MediaCacheEntryRef, MediaCacheEntryRef)>,
     /// A channel to send updates to a particular timeline when a media request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 
 impl Deref for MediaCache {
-    type Target = BTreeMap<OwnedMxcUri, (Option<OwnedMxcUri>, MediaCacheEntryRef)>;
+    type Target = BTreeMap<OwnedMxcUri, (Option<OwnedMxcUri>, MediaCacheEntryRef, MediaCacheEntryRef)>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
@@ -58,9 +59,19 @@ impl MediaCache {
     }
 
     pub fn set_keys(&mut self, original_uri: &OwnedMxcUri, thumbnail_uri: Option<OwnedMxcUri>) {
-        self.cache.insert(original_uri.clone(), (thumbnail_uri.clone(), Arc::new(Mutex::new(MediaCacheEntry::default()))));
-        if let Some(thumbnail_uri) = thumbnail_uri {
-            self.cache.insert(thumbnail_uri, (None, Arc::new(Mutex::new(MediaCacheEntry::default()))));
+        if let Some(uri) = thumbnail_uri.clone() {
+            if let Entry::Vacant(v) = self.cache.entry(uri.clone()) {
+                v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::Null)), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+            }
+
+            if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
+                v.insert((thumbnail_uri.clone(), Arc::new(Mutex::new(MediaCacheEntry::Null)), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+            }
+
+        } else {
+            if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
+                v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::default())), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+            }
         }
     }
     /// Tries to get the media from the cache, or submits an async request to fetch it.
@@ -76,63 +87,91 @@ impl MediaCache {
     ///
     /// Returns a tuple of the media cache entry and the media format of that cached entry.
     pub fn try_get_media_or_fetch(
-        &mut self,
-        mxc_uri: &OwnedMxcUri,
-        on_fetched: OnMediaFetchedFn,
-    ) -> MediaCacheEntry {
-        log!("Called");
-        let t = self.cache.get(mxc_uri);
-        let thumbnail_uri = t.unwrap().0.clone();
+            &mut self,
+            mxc_uri: &OwnedMxcUri,
+            prefer_thumbnail: bool,
+            on_fetched: OnMediaFetchedFn,
+        ) -> MediaCacheEntry {
+            let mut ret = MediaCacheEntry::Requested;
+            let (thumbnail_uri, better_entry, entry) = self.cache.get(mxc_uri).unwrap().clone();
+            let better_entry = better_entry.lock().unwrap().clone();
+            let entry = entry.lock().unwrap().clone();
+            if let MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed = entry {
+                // Case 1
+                if matches!(better_entry, MediaCacheEntry::Null) {
+                    return entry;
+                }
+                // Case 1
+            }
 
-        let (should_fetch, destination, format) = if let Some(thumbnail_uri) = thumbnail_uri.as_ref() {
-            match self.cache.entry(thumbnail_uri.clone()) {
-                Entry::Occupied(mut e) => {
-                    let (_, thumbnail_ref)  = e.get_mut();
-                    let r = thumbnail_ref.lock().unwrap().clone();
-                    if matches!(r, MediaCacheEntry::NotInitialized) {
-                        *thumbnail_ref.lock().unwrap() = MediaCacheEntry::Requested;
-                        (true, thumbnail_ref.clone(), MediaFormat::File)
-                    } else {
-                        log!("BBBBBB");
-                        return r;
+            let (should_fetch, destination, format) = if let Some(thumbnail_uri) = thumbnail_uri.as_ref() {
+                // Case2
+                {
+                    let (_, _, thumbnail_ref) = self.cache.get_mut(thumbnail_uri).unwrap();
+                    let mut mg = thumbnail_ref.lock().unwrap();
+                    match mg.clone() {
+                        MediaCacheEntry::NotInitialized => { *mg = MediaCacheEntry::Requested }
+                        MediaCacheEntry::Loaded(_) => { ret = mg.clone() }
+                        _ => { }
                     }
                 }
-                _ => { panic!("") }
-            }
-        } else {
-            match self.cache.entry(mxc_uri.clone()) {
-                Entry::Occupied(mut e) => {
-                    let (_, entry_ref)  = e.get_mut();
-                    let r = entry_ref.lock().unwrap().clone();
-                    if matches!(r, MediaCacheEntry::NotInitialized) {
-                        *entry_ref.lock().unwrap() = MediaCacheEntry::Requested;
-                        (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
-                    } else {
-                        log!("BBBBBB");
-                        return r;
-                    }
-                }
-                _ => { panic!("") }
-            }
-        };
+                let (_, _, entry_ref) = self.cache.get_mut(mxc_uri).unwrap();
 
-        if should_fetch {
-            log!("should_fetch");
-            sliding_sync::submit_async_request(
-                MatrixRequest::FetchMedia {
-                    media_request: MediaRequestParameters {
-                        source: MediaSource::Plain(mxc_uri.clone()),
-                        format
-                    },
-                    on_fetched,
-                    destination,
-                    update_sender: self.timeline_update_sender.clone(),
+                (true, entry_ref.clone(), MediaFormat::File)
+                // Case2
+            }
+            else {
+                // Case 3 & 4
+                if prefer_thumbnail {
+                    // Case 3
+                    let (_, _, entry_ref) = self.cache.get_mut(mxc_uri).unwrap();
+                    let mut mg = entry_ref.lock().unwrap();
+                    match mg.clone() {
+                        MediaCacheEntry::NotInitialized => { *mg = MediaCacheEntry::Requested }
+                        MediaCacheEntry::Loaded(_) => { return mg.clone(); }
+                        _ => { }
+                    }
+                    (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
+                    // Case 3
+                } else {
+                    // Case4
+                    let (_, better_entry_ref, entry_ref) = self.cache.get_mut(mxc_uri).unwrap();
+                    let mut better_entry_ref_mg = better_entry_ref.lock().unwrap();
+                    let entry_ref_mg = entry_ref.lock().unwrap();
+
+                    match better_entry_ref_mg.clone() {
+                        MediaCacheEntry::Loaded(_) => {
+                            return better_entry_ref_mg.clone()
+                        }
+                        MediaCacheEntry::NotInitialized => {
+                            if let MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed = entry_ref_mg.clone() {
+                                ret = entry_ref_mg.clone()
+                            }
+                            *better_entry_ref_mg = MediaCacheEntry::Requested;
+                            (true, better_entry_ref.clone(), MediaFormat::File)
+                        }
+                        _ => { panic!("") }
+                    }
+                    // Case4
                 }
-            );
+            // Case 3 & 4
+            };
+
+            if should_fetch {
+                sliding_sync::submit_async_request(
+                    MatrixRequest::FetchMedia {
+                        media_request: MediaRequestParameters {
+                            source: MediaSource::Plain(mxc_uri.clone()),
+                            format
+                        },
+                        on_fetched,
+                        destination,
+                        update_sender: self.timeline_update_sender.clone(),
+                    }
+                );
+            }
+            ret
         }
-
-        MediaCacheEntry::Requested
-    }
 }
 
 /// Insert data into a previously-requested media cache entry.

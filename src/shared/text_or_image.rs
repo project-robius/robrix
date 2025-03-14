@@ -52,10 +52,10 @@ pub enum TextOrImageAction {
     None,
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct ImageValue {
+    pub original_uri: OwnedMxcUri,
     pub thumbnail_data: Option<Arc<[u8]>>,
-    pub original_uri: Option<OwnedMxcUri>
 }
 
 /// A view that holds an image or text content, and can switch between the two.
@@ -68,7 +68,7 @@ pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
-    #[rust] image_value: ImageValue,
+    #[rust] image_value: Option<ImageValue>,
 }
 
 impl Widget for TextOrImage {
@@ -85,7 +85,9 @@ impl Widget for TextOrImage {
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
                     // We run the check to see if the original image was fetched or not.
-                    Cx::post_action(TextOrImageAction::Click(self.image_value.original_uri.clone().unwrap()));
+                    if let Some(image_value) = self.image_value.as_ref() {
+                        Cx::post_action(TextOrImageAction::Click(image_value.original_uri.clone()));
+                    }
                 }
             }
             _ => (),
@@ -173,14 +175,9 @@ impl TextOrImageRef {
         }
     }
 
-    pub fn set_thumbnail_data(&self, data: Arc<[u8]>) {
+    pub fn set_original_uri_and_thumbnail_data(&self, original_uri: &OwnedMxcUri, thumbnail_data: Option<Arc<[u8]>>) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.image_value.thumbnail_data = Some(data);
-    }
-
-    pub fn set_original_uri(&self, mxc_uri: &OwnedMxcUri) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.image_value.original_uri = Some(mxc_uri.clone());
+        inner.image_value= Some(ImageValue { original_uri: original_uri.clone(), thumbnail_data});
     }
 }
 

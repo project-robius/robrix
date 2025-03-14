@@ -1049,8 +1049,7 @@ impl Widget for RoomScreen {
                 let Some(tl) = self.tl_state.as_mut() else { return };
 
                 if let Some(TextOrImageAction::Click(mxc_uri)) = action.downcast_ref() {
-                    if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, image_viewer_insert_into_cache) {
-                        log!("Not Run");
+                    if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, false, image_viewer_insert_into_cache) {
                         Cx::post_action(ImageViewerAction::Show(data));
                     }
                 }
@@ -3546,9 +3545,8 @@ fn populate_image_message_content(
 
         media_cache.set_keys(original_mxc_uri, thumbnail_mxc_uri);
 
-        match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, insert_into_cache) {
+        match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, true, insert_into_cache) {
             MediaCacheEntry::Loaded(data) => {
-                log!("Loaded");
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
@@ -3558,7 +3556,8 @@ fn populate_image_message_content(
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
                 }
-                text_or_image_ref.set_thumbnail_data(data);
+
+                text_or_image_ref.set_original_uri_and_thumbnail_data(original_mxc_uri, Some(data.clone()));
 
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
