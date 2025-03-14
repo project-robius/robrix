@@ -423,8 +423,12 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::SsoSetRedirectUrl(url)) => {
                     self.sso_redirect_url = Some(url.to_string());
                 }
-                Some(LoginAction::Logout) => {
+                Some(LoginAction::LogoutSuccess) => {
                     login_status_modal_inner.set_text(cx, "");
+                    login_status_modal_inner.set_title(cx, "");
+                    // let login_status_modal_button = login_status_modal_inner.button_ref();
+                    // login_status_modal_button.set_text(cx, "Okay");
+                    // login_status_modal_button.set_enabled(cx, true);
                 }
                 _ => { }
             }
@@ -486,6 +490,9 @@ pub enum LoginAction {
     /// When an SSO-based login is pendng, pressing the cancel button will send
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),
+    /// A positive response from the backend Matrix task to logout success; 
+    LogoutSuccess,
+    /// A negative response from the backend Matrix task to logout success; 
+    LogoutFailure(String),
     None,
-    Logout,
 }

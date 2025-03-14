@@ -21,11 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -363,10 +363,12 @@ pub enum MatrixRequest {
 
 /// Submits a request to the worker thread to be executed asynchronously.
 pub fn submit_async_request(req: MatrixRequest) {
-    REQUEST_SENDER.get()
-        .unwrap() // this is initialized
-        .send(req)
-        .expect("BUG: async worker task receiver has died!");
+    if let Ok(sender_guard) = REQUEST_SENDER.lock() {
+        if let Some(sender) = sender_guard.as_ref() {
+            sender.send(req)
+                .expect("BUG: async worker task receiver has died!");
+        }
+    }
 }
 
 /// Details of a login request that get submitted within [`MatrixRequest::Login`].
@@ -411,7 +413,7 @@ async fn async_worker(
                     match logout_and_refresh().await {
                         Ok(state) => match state {
                             RefreshState::NeedRelogin => {
-                                log!("Session expired, need to relogin");
+                                log!("need to relogin");
                             }
                         },
                         Err(e) => {
@@ -998,7 +1000,7 @@ static TOKIO_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
 /// The sender used by [`submit_async_request`] to send requests to the async worker thread.
 /// Currently there is only one, but it can be cloned if we need more concurrent senders.
-static REQUEST_SENDER: OnceLock<UnboundedSender<MatrixRequest>> = OnceLock::new();
+static REQUEST_SENDER: Mutex<Option<UnboundedSender<MatrixRequest>>> = Mutex::new(None);
 
 /// A client object that is proactively created during initialization
 /// in order to speed up the client-building process when the user logs in.
@@ -1014,16 +1016,23 @@ pub fn start_matrix_tokio() -> Result<()> {
 
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
-    REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
+    {
+        let mut sender_guard = REQUEST_SENDER.lock().unwrap();
+        *sender_guard = Some(sender);
+    }
 
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
         // Spawn the actual async worker thread.
         let mut worker_join_handle = rt.spawn(async_worker(receiver, login_sender));
+        // register it in core task
+        register_core_task(CoreTask::Worker, worker_join_handle.abort_handle());
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        // register it in core task
+        register_core_task(CoreTask::Worker, main_loop_join_handle.abort_handle());
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
@@ -2508,18 +2517,55 @@ async fn logout_and_refresh() -> Result<RefreshState> {
 
     if client.logged_in() {
         if let Err(e) = client.matrix_auth().logout().await {
+            Cx::post_action(LoginAction::LogoutFailure("Logout failed (possibly due to invalid token)".to_string()));
             log!("Warning: Logout failed (possibly due to invalid token): {}", e);
         }
     }
 
-    if let Err(e) = persistent_state::delete_session(None).await {
-        log!("Warning: Failed to delete session: {}", e);
+    // 3. 清理状态
+    // SYNC_SERVICE.take();
+    // CLIENT.take();
+    
+    // 4. 重新初始化 Matrix 运行时
+    if let Err(e) = start_matrix_tokio() {
+        log!("Warning: Failed to restart matrix tokio: {}", e);
     }
 
-    Cx::post_action(LoginAction::Logout);
-    enqueue_rooms_list_update(RoomsListUpdate::Status {
-        status: "Session expired, please login again.".to_string(),
-    });
+    // 5. 通知 UI
+    Cx::post_action(LoginAction::LogoutSuccess);
 
     Ok(RefreshState::NeedRelogin)
+
+}
+
+/// A HashMap of core tasks that are spawned and need to be aborted when the app is closed.
+/// AbortHandle that can be used to remotely abort this task; More detail in docs 
+/// https://docs.rs/tokio/1.44.1/tokio/task/struct.JoinHandle.html#method.abort_handle 
+static CORE_TASKS: LazyLock<Mutex<HashMap<CoreTask, AbortHandle>>> = LazyLock::new(
+    || Mutex::new(HashMap::new())
+);
+
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum CoreTask {
+    Worker,
+    MainLoop,
+    SsoClient,
+}
+
+fn register_core_task(
+    task_type: CoreTask, 
+    handle: AbortHandle,
+) {
+    if let Ok(mut tasks) = CORE_TASKS.lock() {
+        tasks.insert(task_type, handle);
+    }
+}
+
+async fn abort_core_tasks() {
+    if let Ok(mut tasks) = CORE_TASKS.lock() {
+        for (task_type, handle) in tasks.drain() {
+            handle.abort();
+            log!("Aborted core task: {:?}", task_type);
+        }
+    }
 }

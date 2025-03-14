@@ -91,7 +91,7 @@ live_design! {
         }
     }
 
-    Logout = {{Logout}} {
+    LogoutButton= {{LogoutButton}} {
         width: Fit, height: Fit
         padding: {top: 8, left: 8, right: 12, bottom: 8}
         align: {x: 0.5, y: 0.5}
@@ -159,7 +159,7 @@ live_design! {
 
             <Filler> {}
 
-            <Logout> {}
+            <LogoutButton> {}
 
             <Settings> {}
         }
@@ -183,6 +183,8 @@ live_design! {
             <Home> {}
 
             <Filler> {}
+            
+            <LogoutButton> {}
 
             <Settings> {}
 
@@ -208,11 +210,11 @@ impl Widget for Profile {
 
 
 #[derive(Live, LiveHook, Widget)]
-pub struct Logout {
+pub struct LogoutButton{
     #[deref] view: View
 }
 
-impl Widget for Logout {
+impl Widget for LogoutButton{
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope)
@@ -223,7 +225,7 @@ impl Widget for Logout {
     }
 }
 
-impl WidgetMatchEvent for Logout {
+impl WidgetMatchEvent for LogoutButton {
     fn handle_actions(&mut self, _cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
         if self.button(id!(logout_button)).clicked(actions) {
             submit_async_request(MatrixRequest::Logout);

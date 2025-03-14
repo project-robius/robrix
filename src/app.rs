@@ -228,7 +228,7 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            if let Some(LoginAction::Logout) = action.downcast_ref() {
+            if let Some(LoginAction::LogoutSuccess) = action.downcast_ref() {
                 self.app_state.logged_in = false;
                 self.update_login_visibility(cx);
                 self.ui.redraw(cx);
