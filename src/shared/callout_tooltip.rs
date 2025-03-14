@@ -118,7 +118,7 @@ live_design! {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 /// A struct that holds the options for a callout tooltip
 pub struct CalloutTooltipOptions {
     /// The screen_size of the widget that the tooltip is pointing to
@@ -134,12 +134,31 @@ pub struct CalloutTooltipOptions {
 pub struct CalloutTooltip {
     #[deref]
     view: View,
+    /// Redraw the tooltip with a small delay when the expected dimension of the tooltip is not ready.
+    #[rust] delay_timer: Timer,
+    /// Text to be shown in the tooltip.
+    #[rust] text: String,
+    /// Options for the callout tooltip.
+    #[rust] options: Option<CalloutTooltipOptions>,
 }
 
 impl Widget for CalloutTooltip {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         //self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope);
+        match event{
+            Event::Timer(te) => {
+                if self.delay_timer.is_timer(te).is_some() {
+                    if let Some(options) = &self.options {
+                        self.show_with_options(cx, &self.text.clone(), options.clone());
+                        // Deallocate the text string and options from memory after the tooltip is shown
+                        self.text = String::new();
+                        self.options = None;
+                    }
+                }
+            },
+            _=>(),
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -158,6 +177,8 @@ impl CalloutTooltip {
     /// bottom of the widget, pointed at the center. If it is too close to bottom, the
     /// tooltip is positioned above the widget.
     pub fn show_with_options(&mut self, cx: &mut Cx, text: &str, options: CalloutTooltipOptions) {
+        self.text = text.to_string();
+        self.options = Some(options.clone());
         let mut tooltip = self.view.tooltip(id!(tooltip));
 
         let pos = options.widget_rect.pos;
@@ -206,6 +227,7 @@ impl CalloutTooltip {
         // If expected_dimension's width is 0.0, hide the text by setting it's color to be transparent
         if expected_dimension.x == 0.0 {
             text_color.w = 0.0;
+            self.delay_timer = cx.start_timeout(0.2);
         } else {
             text_color.w = 1.0;
         }
