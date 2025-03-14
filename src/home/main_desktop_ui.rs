@@ -130,7 +130,9 @@ impl Widget for MainDesktopUI {
                                     app_state.rooms_panel.open_rooms.get(head_liveid)
                                 {
                                     if &room.room_id == room_id {
-                                        widget.as_room_screen().set_prompt(cx, RoomScreenPrompt::Pending);
+                                        widget
+                                            .as_room_screen()
+                                            .set_prompt(cx, RoomScreenPrompt::Pending);
                                     }
                                 }
                             }
@@ -140,7 +142,6 @@ impl Widget for MainDesktopUI {
                     }
                     Some(RoomsPanelAction::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        let dock = self.view.dock(id!(dock));
                         if let Some(dock_state) = dock.clone_state() {
                             app_state.rooms_panel.dock_state = dock_state;
                         }
@@ -160,7 +161,7 @@ impl Widget for MainDesktopUI {
                                             room.room_id.clone(),
                                             room.room_name.clone().unwrap_or_default(),
                                         );
-                                        break
+                                        break;
                                     }
                                 }
                             }
@@ -176,7 +177,9 @@ impl Widget for MainDesktopUI {
                                     app_state.rooms_panel.open_rooms.get(head_liveid)
                                 {
                                     if &room.room_id == room_id {
-                                        widget.as_room_screen().set_prompt(cx, RoomScreenPrompt::Timeout);
+                                        widget
+                                            .as_room_screen()
+                                            .set_prompt(cx, RoomScreenPrompt::Timeout);
                                     }
                                 }
                             }

@@ -2456,19 +2456,19 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
-    /// Sets this `RoomScreen` widget to display text label in replace of the timeline.
-    pub fn set_prompt(
-        &mut self,
-        cx: &mut Cx,
-        prompt: RoomScreenPrompt
-    ) {
+    /// Sets this `RoomScreen` widget to display text label in replacement of the timeline.
+    pub fn set_prompt(&mut self, cx: &mut Cx, prompt: RoomScreenPrompt) {
         self.prompt = prompt;
         match prompt {
             RoomScreenPrompt::Pending => {
-                self.view.label(id!(prompt_label)).set_text(cx, "[Placeholder for Spinner]");
+                self.view
+                    .label(id!(prompt_label))
+                    .set_text(cx, "[Placeholder for Spinner]");
             }
             RoomScreenPrompt::Timeout => {
-                self.view.label(id!(prompt_label)).set_text(cx, "[Placeholder for Timeout]");
+                self.view
+                    .label(id!(prompt_label))
+                    .set_text(cx, "[Placeholder for Timeout]");
             }
             RoomScreenPrompt::None => {
                 self.view.label(id!(prompt_label)).set_text(cx, "");
@@ -2589,12 +2589,10 @@ impl RoomScreenRef {
     }
 
     /// See [`RoomScreen::set_prompt()`].
-    pub fn set_prompt(
-        &self,
-        cx: &mut Cx,
-        prompt: RoomScreenPrompt 
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
+    pub fn set_prompt(&self, cx: &mut Cx, prompt: RoomScreenPrompt) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
         inner.set_prompt(cx, prompt);
     }
 }

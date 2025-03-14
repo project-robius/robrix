@@ -975,12 +975,12 @@ async fn async_worker(
                     loop {
                         if ALL_ROOM_INFO.lock().unwrap().contains_key(&room_id) {
                             enqueue_dock_state_update(LoadDockState::Success(room_id));
-                            break
+                            break;
                         }
                         sleep(Duration::from_millis(1000)).await;
                         if time.elapsed() > Duration::from_secs(10) {
                             enqueue_dock_state_update(LoadDockState::Timeout(room_id));
-                            break
+                            break;
                         }
                     }
                 });
@@ -1351,7 +1351,7 @@ async fn async_main_loop(
                 }
             }
             Err(e) => {
-                log!("Fetching Room Panel State error {:?}",e);
+                log!("Fetching Room Panel State error {:?}", e);
             }
         }
     } else {

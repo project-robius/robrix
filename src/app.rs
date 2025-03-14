@@ -349,7 +349,11 @@ impl AppMain for App {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
         if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
-            if let Err(e) = save_room_panel(&self.app_state.rooms_panel.dock_state, &self.app_state.rooms_panel.open_rooms, &user_id) {
+            if let Err(e) = save_room_panel(
+                &self.app_state.rooms_panel.dock_state,
+                &self.app_state.rooms_panel.open_rooms,
+                &user_id,
+            ) {
                 log!("Bug! Failed to save save_room_panel: {}", e);
             }
         }
@@ -357,6 +361,7 @@ impl AppMain for App {
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
+
         if matches!(event, Event::Signal) {
             while let Some(update) = PENDING_DOCK_STATE_UPDATES.pop() {
                 match update {
@@ -461,12 +466,13 @@ pub enum LoadDockState {
     LoadAll(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>),
     Pending(OwnedRoomId),
     Success(OwnedRoomId),
-    Timeout(OwnedRoomId)
+    Timeout(OwnedRoomId),
 }
 pub static PENDING_DOCK_STATE_UPDATES: SegQueue<LoadDockState> = SegQueue::new();
 
-/// Enqueue a dock state update for loading the dock
-/// and signals the UI that a new update is available to be handled.
+/// Enqueue a dock state update for loading the dock.
+/// 
+/// Signals the UI that a new update is available to be handled.
 pub fn enqueue_dock_state_update(update: LoadDockState) {
     PENDING_DOCK_STATE_UPDATES.push(update);
     SignalToUI::set_ui_signal();
