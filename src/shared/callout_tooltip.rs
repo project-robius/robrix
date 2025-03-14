@@ -146,18 +146,15 @@ impl Widget for CalloutTooltip {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         //self.widget_match_event(cx, event, scope);
         self.view.handle_event(cx, event, scope);
-        match event{
-            Event::Timer(te) => {
-                if self.delay_timer.is_timer(te).is_some() {
-                    if let Some(options) = &self.options {
-                        self.show_with_options(cx, &self.text.clone(), options.clone());
-                        // Deallocate the text string and options from memory after the tooltip is shown
-                        self.text = String::new();
-                        self.options = None;
-                    }
+        if let Event::Timer(te) = event {
+            if self.delay_timer.is_timer(te).is_some() {
+                if let Some(options) = &self.options {
+                    self.show_with_options(cx, &self.text.clone(), options.clone());
+                    // Deallocate the text string and options from memory after the tooltip is shown
+                    self.text = String::new();
+                    self.options = None;
                 }
-            },
-            _=>(),
+            }
         }
     }
 
