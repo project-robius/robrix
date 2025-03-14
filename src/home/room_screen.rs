@@ -2275,7 +2275,6 @@ impl RoomScreen {
         } else {
             let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
                 .expect("BUG: couldn't get timeline state for first-viewed room.");
-
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid
@@ -2456,7 +2455,7 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
-    /// Sets this `RoomScreen` widget to display text label in replacement of the timeline.
+    /// This sets the RoomScreen widget to display a text label in place of the timeline.
     pub fn set_prompt(&mut self, cx: &mut Cx, prompt: RoomScreenPrompt) {
         self.prompt = prompt;
         match prompt {

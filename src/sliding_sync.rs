@@ -1207,9 +1207,6 @@ pub fn take_timeline_endpoints(
 ///
 /// Note that this does not necessarily mean that the given room ID is a valid room ID,
 /// only that we have some information about it stored in the `ALL_ROOM_INFO` map.
-///
-/// This is a very cheap check (it only involves a single HashMap lookup),
-/// so it can be used freely in performance-critical code.
 pub fn check_room_in_all_room_info(room_id: &OwnedRoomId) -> bool {
     ALL_ROOM_INFO.lock().unwrap().contains_key(room_id)
 }
