@@ -74,18 +74,8 @@ impl MediaCache {
             }
         }
     }
-    /// Tries to get the media from the cache, or submits an async request to fetch it.
-    ///
-    /// This method *does not* block or wait for the media to be fetched,
-    /// and will return `MediaCache::Requested` while the async request is in flight.
-    /// If a request is already in flight, this will not issue a new redundant request.
-    ///
-    /// * If the `media_format` is requesting a thumbnail that is not yet in the cache,
-    ///   this function will fetch the thumbnail, and return the full-size image (if it exists).
-    /// * If the `media_format` is requesting a full-size image that is not yet in the cache,
-    ///   this function will fetch the full-size image, and return a thumbnail (if it exists).
-    ///
-    /// Returns a tuple of the media cache entry and the media format of that cached entry.
+
+    /// Returns the media cache entry.
     pub fn try_get_media_or_fetch(
             &mut self,
             mxc_uri: &OwnedMxcUri,
@@ -93,6 +83,8 @@ impl MediaCache {
             on_fetched: OnMediaFetchedFn,
         ) -> MediaCacheEntry {
             let mut ret = MediaCacheEntry::Requested;
+
+            // `unwrap` is definitly safe here because we have set keys already.
             let (thumbnail_uri, better_entry, entry) = self.cache.get(mxc_uri).unwrap().clone();
             let better_entry = better_entry.lock().unwrap().clone();
             let entry = entry.lock().unwrap().clone();
@@ -107,6 +99,7 @@ impl MediaCache {
             let (should_fetch, destination, format) = if let Some(thumbnail_uri) = thumbnail_uri.as_ref() {
                 // Case2
                 {
+                    // Safe `unwrap`.
                     let (_, _, thumbnail_ref) = self.cache.get_mut(thumbnail_uri).unwrap();
                     let mut mg = thumbnail_ref.lock().unwrap();
                     match mg.clone() {
@@ -121,9 +114,8 @@ impl MediaCache {
                 // Case2
             }
             else {
-                // Case 3 & 4
                 if prefer_thumbnail {
-                    // Case 3
+                    // Case 1 or 3
                     let (_, _, entry_ref) = self.cache.get_mut(mxc_uri).unwrap();
                     let mut mg = entry_ref.lock().unwrap();
                     match mg.clone() {
@@ -132,7 +124,7 @@ impl MediaCache {
                         _ => { }
                     }
                     (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
-                    // Case 3
+                    // Case 1 or 3
                 } else {
                     // Case4
                     let (_, better_entry_ref, entry_ref) = self.cache.get_mut(mxc_uri).unwrap();
@@ -150,11 +142,13 @@ impl MediaCache {
                             *better_entry_ref_mg = MediaCacheEntry::Requested;
                             (true, better_entry_ref.clone(), MediaFormat::File)
                         }
-                        _ => { panic!("") }
+                        _ => {
+                            // it would never run this case.
+                            panic!("")
+                        }
                     }
                     // Case4
                 }
-            // Case 3 & 4
             };
 
             if should_fetch {
@@ -217,6 +211,7 @@ pub fn insert_into_cache<D: Into<Arc<[u8]>>>(
     SignalToUI::set_ui_signal();
 }
 
+
 pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
     value_ref: &Mutex<MediaCacheEntry>,
     _request: MediaRequestParameters,
@@ -226,6 +221,8 @@ pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
+            // This function just simply copy from `insert_from_cache`,
+            // only here is different, we just post an action on getting the image data.
             Cx::post_action(ImageViewerAction::Show(data.clone()));
             MediaCacheEntry::Loaded(data)
         }

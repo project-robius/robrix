@@ -62,8 +62,6 @@ pub struct ImageViewer {
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
     Show(Arc<[u8]>),
-    ///We post this action on fetching the image
-    ///which is clicked by user first time (not in `media_cache` currently) in timeline.
     None,
 }
 

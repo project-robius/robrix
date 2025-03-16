@@ -40,7 +40,7 @@ live_design! {
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Size,
+                fit: Size, // Only for a comfortable test, would set back to `Smallest` if this pr OK.
             }
         }
     }
@@ -84,7 +84,7 @@ impl Widget for TextOrImage {
             }
             Hit::FingerUp(fe) => {
                 if fe.was_tap() {
-                    // We run the check to see if the original image was fetched or not.
+                    // We run the check to see if the original image was already fetched or not.
                     if let Some(image_value) = self.image_value.as_ref() {
                         Cx::post_action(TextOrImageAction::Click(image_value.original_uri.clone()));
                     }
