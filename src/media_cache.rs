@@ -84,7 +84,7 @@ impl MediaCache {
         ) -> MediaCacheEntry {
             let mut ret = MediaCacheEntry::Requested;
 
-            // `unwrap` is definitly safe here because we have set keys already.
+            // `unwrap` is definitely safe here because we have set keys already.
             let (thumbnail_uri, better_entry, entry) = self.cache.get(mxc_uri).unwrap().clone();
             let better_entry = better_entry.lock().unwrap().clone();
             let entry = entry.lock().unwrap().clone();
