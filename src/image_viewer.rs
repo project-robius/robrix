@@ -67,18 +67,6 @@ pub enum ImageViewerAction {
 
 impl Widget for ImageViewer {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        let whole_area = self.view.area();
-        let image_area = self.view.image(id!(image_view.image)).area();
-
-        // click the blank area, close image viewer; click image area, nothing happen.
-        event.hits(cx, image_area);
-        if let Hit::FingerUp(fe) = event.hits(cx, whole_area) {
-            if fe.was_tap() {
-                // Once Clicking, we close image viewer.
-                self.close(cx);
-            }
-        }
-
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
@@ -90,7 +78,6 @@ impl Widget for ImageViewer {
 impl MatchEvent for ImageViewer {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         if self.view.button(id!(close_button)).clicked(actions) {
-            // Clear the image cache once the modal is closed.
             self.close(cx);
         }
 
@@ -110,11 +97,8 @@ impl ImageViewer {
     }
     fn close(&mut self, cx: &mut Cx) {
         self.visible = false;
-        self.clear_texture(cx);
-        self.redraw(cx);
-    }
-    fn clear_texture(&mut self, cx: &mut Cx) {
         self.view.image(id!(image_view.image)).set_texture(cx, None);
+        self.redraw(cx);
     }
     fn load_with_data(&mut self, cx: &mut Cx, data: &[u8]) {
         let image = self.view.image(id!(image_view.image));
