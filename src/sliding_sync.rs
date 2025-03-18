@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, Once, OnceLock}};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -554,7 +554,7 @@ async fn async_worker(
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending get user profile request: user: {user_id}, \
                     //     room: {room_id:?}, local_only: {local_only}...",
@@ -645,7 +645,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::IgnoreUser { ignore, room_member, room_id } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _ignore_task = Handle::current().spawn(async move {
                     let user_id = room_member.user_id();
                     log!("Sending request to {}ignore user: {user_id}...", if ignore { "" } else { "un" });
@@ -698,7 +698,7 @@ async fn async_worker(
             }
 
             MatrixRequest::SendTypingNotice { room_id, typing } => {
-                let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) else {
                     error!("BUG: client/room not found for typing notice request {room_id}");
                     continue;
                 };
@@ -721,7 +721,7 @@ async fn async_worker(
                             warning!("Note: room {room_id} is already subscribed to typing notices.");
                             continue;
                         } else {
-                            let Some(room) = CLIENT.get().and_then(|c| c.get_room(&room_id)) else {
+                            let Some(room) = get_client().and_then(|c| c.get_room(&room_id)) else {
                                 error!("BUG: client/room not found when subscribing to typing notices request, room: {room_id}");
                                 continue;
                             };
@@ -801,7 +801,7 @@ async fn async_worker(
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
             }
             MatrixRequest::ResolveRoomAlias(room_alias) => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _resolve_task = Handle::current().spawn(async move {
                     log!("Sending resolve room alias request for {room_alias}...");
                     let res = client.resolve_room_alias(&room_alias).await;
@@ -810,7 +810,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequestParameters {
@@ -824,7 +824,7 @@ async fn async_worker(
             }
 
             MatrixRequest::FetchMedia { media_request, on_fetched, destination, update_sender } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let media = client.media();
 
                 let _fetch_task = Handle::current().spawn(async move {
@@ -1010,7 +1010,7 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
     || Arc::new(Notify::new())
 );
 
-pub fn start_matrix_tokio() -> Result<()> {
+pub fn start_matrix_tokio(inital_flag: bool) -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
@@ -1030,12 +1030,12 @@ pub fn start_matrix_tokio() -> Result<()> {
         register_core_task(CoreTask::Worker, worker_join_handle.abort_handle());
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(inital_flag, login_receiver));
         // register it in core task
-        register_core_task(CoreTask::Worker, main_loop_join_handle.abort_handle());
+        register_core_task(CoreTask::MainLoop, main_loop_join_handle.abort_handle());
         
         // Build a Matrix Client in the background so that SSO Server starts earlier.
-        rt.spawn(async move {
+        let sso_client_handle = rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
                 Ok(client_and_session) => {
                     DEFAULT_SSO_CLIENT.lock().unwrap()
@@ -1046,6 +1046,8 @@ pub fn start_matrix_tokio() -> Result<()> {
             DEFAULT_SSO_CLIENT_NOTIFIER.notify_one();
             Cx::post_action(LoginAction::SsoPending(false));
         });
+        // register sso client in task, because of long timeout
+        register_core_task(CoreTask::SsoClient, sso_client_handle.abort_handle());
 
         #[allow(clippy::never_loop)] // unsure if needed, just following tokio's examples.
         loop {
@@ -1078,7 +1080,8 @@ pub fn start_matrix_tokio() -> Result<()> {
                             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::Status {
                                 status: e.to_string(),
                             });
-                            enqueue_popup_notification(format!("Rooms list update error: {e}"));
+                            // when abort async_join_handler it will give a error maybe show user "Stop Rooms list update"  better
+                            enqueue_popup_notification(format!("Stop Rooms list update"));
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -1152,24 +1155,61 @@ static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeM
 static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
-static CLIENT: OnceLock<Client> = OnceLock::new();
+static CLIENT: Mutex<Option<Client>> = Mutex::new(None);
 
 pub fn get_client() -> Option<Client> {
-    CLIENT.get().cloned()
+    match CLIENT.lock() {
+        Ok(guard) => guard.clone(),
+        Err(e) => {
+            error!("Failed to acquire CLIENT lock: {}", e);
+            None
+        }
+    }
+}
+
+/// Sets the global Matrix client instance.
+/// This replaces any existing client with the new one.
+pub fn set_client(client: Client) {
+    if let Ok(mut client_guard) = CLIENT.lock() {
+        *client_guard = Some(client);
+    } else {
+        error!("Failed to acquire CLIENT lock when setting client");
+    }
 }
 
 /// Returns the user ID of the currently logged-in user, if any.
 pub fn current_user_id() -> Option<OwnedUserId> {
-    CLIENT.get().and_then(|c|
+    CLIENT.lock().unwrap().as_ref().and_then(|c|
         c.session_meta().map(|m| m.user_id.clone())
     )
 }
 
-/// The singleton sync service.
-static SYNC_SERVICE: OnceLock<SyncService> = OnceLock::new();
+/// Take the client out, leaving None in its place.
+pub fn take_client() -> Option<Client> {
+    CLIENT.lock().ok()?.take()
+}
 
-pub fn get_sync_service() -> Option<&'static SyncService> {
-    SYNC_SERVICE.get()
+/// The singleton sync service.
+/// sync_service if build from the client, and is used to sync the client with the server. 
+static SYNC_SERVICE: Mutex<Option<Arc<SyncService>>> = Mutex::new(None);
+
+/// Get a clone of the sync service, if available.
+pub fn get_sync_service() -> Option<Arc<SyncService>> {
+    SYNC_SERVICE.lock().ok()?.as_ref().cloned()
+}
+
+/// Set the sync service.
+pub fn set_sync_service(service: SyncService) {
+    if let Ok(mut service_guard) = SYNC_SERVICE.lock() {
+        *service_guard = Some(Arc::new(service));
+    } else {
+        error!("Failed to acquire SYNC_SERVICE lock when setting sync service");
+    }
+}
+
+/// Take the sync service out, leaving None in its place.
+pub fn take_sync_service() -> Option<Arc<SyncService>> {
+    SYNC_SERVICE.lock().ok()?.take()
 }
 
 
@@ -1233,10 +1273,16 @@ fn username_to_full_user_id(
         })
 }
 
+static TRACING_INITIALIZED: Once = Once::new();
+
 async fn async_main_loop(
+    intial_flag: bool,
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
-    tracing_subscriber::fmt::init();
+    // only init subscribe once
+    TRACING_INITIALIZED.call_once(|| {
+        tracing_subscriber::fmt::init();
+    });
 
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
@@ -1247,11 +1293,17 @@ async fn async_main_loop(
         cli_parse_result.as_ref().is_ok(),
         cli_has_valid_username_password,
     );
-    let wait_for_login = !cli_has_valid_username_password && (
+    let mut wait_for_login = !cli_has_valid_username_password && (
         most_recent_user_id.is_none()
             || std::env::args().any(|arg| arg == "--login-screen" || arg == "--force-login")
     );
-    log!("Waiting for login? {}", wait_for_login);
+
+    // if not first time run this function, we need to force wait for login
+    if !intial_flag {
+        wait_for_login = true;
+    }
+
+    log!("is intial {} ? Waiting for login? {}", intial_flag , wait_for_login);
 
     let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
@@ -1339,7 +1391,7 @@ async fn async_main_loop(
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
-    CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
+    set_client(client.clone());
 
     add_verification_event_handlers_and_sync_client(client.clone());
 
@@ -1352,7 +1404,7 @@ async fn async_main_loop(
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
-    SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
+    set_sync_service(sync_service);
 
     let all_rooms_list = room_list_service.all_rooms().await?;
     handle_room_list_service_loading_state(all_rooms_list.loading_state());
@@ -1717,9 +1769,9 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
             log!("Received a sync service state update: {state:?}");
             if state == sync_service::State::Error {
                 log!("Restarting sync service due to error.");
-                if let Some(ss) = SYNC_SERVICE.get() {
-                    ss.start().await;
-                }
+                let sync_service = get_sync_service().expect("BUG: sync service is None");
+                sync_service.start().await;
+
             }
         }
     });
@@ -2506,14 +2558,25 @@ enum RefreshState {
 }
 
 async fn logout_and_refresh() -> Result<RefreshState> {
-    let client = CLIENT.get().cloned()
+    let client = get_client()
         .ok_or_else(|| anyhow::anyhow!("No active client found"))?;
 
-    if let Some(sync_service) = SYNC_SERVICE.get() {
+    if let Some(sync_service) = get_sync_service() {
         // key exchange when you logout, you need to stop the sync service before logout
         // see more detail in Matrix sdk doc about sync_service.stop
         sync_service.stop().await;
     }
+
+    // quit request sender
+    {
+        let mut sender_guard = REQUEST_SENDER.lock().unwrap();
+        *sender_guard = None;
+    }
+
+    // abort long term core async_tasks
+    abort_core_tasks().await;
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     if client.logged_in() {
         if let Err(e) = client.matrix_auth().logout().await {
@@ -2522,16 +2585,23 @@ async fn logout_and_refresh() -> Result<RefreshState> {
         }
     }
 
-    // 3. 清理状态
-    // SYNC_SERVICE.take();
-    // CLIENT.take();
+    // clean CLIENT and sync_service
+    take_client();  
+    take_sync_service();
+    ALL_ROOM_INFO.lock().unwrap().clear();
+    TOMBSTONED_ROOMS.lock().unwrap().clear();
+    IGNORED_USERS.lock().unwrap().clear();
+    DEFAULT_SSO_CLIENT.lock().unwrap().take();
+
+    // if let Err(e) = delete_session(None).await {
+    //     log!("Warning: Failed to delete session: {}", e);
+    // }
     
-    // 4. 重新初始化 Matrix 运行时
-    if let Err(e) = start_matrix_tokio() {
+    // not the first time to login, so we need to restart matrix tokio and wait for login
+    if let Err(e) = start_matrix_tokio(false) {
         log!("Warning: Failed to restart matrix tokio: {}", e);
     }
 
-    // 5. 通知 UI
     Cx::post_action(LoginAction::LogoutSuccess);
 
     Ok(RefreshState::NeedRelogin)
