@@ -122,11 +122,9 @@ fn insert_into_cache(
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
-
             CardCacheEntry::Loaded(data)
         }
         Err(e) => {
-            error!("Failed to fetch media for {:?}: {e:?}", url);
             CardCacheEntry::Failed
         }
     };

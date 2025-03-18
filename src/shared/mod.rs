@@ -3,6 +3,7 @@ use makepad_widgets::Cx;
 pub mod avatar;
 pub mod helpers;
 pub mod html_or_plaintext;
+pub mod link_preview;
 pub mod icon_button;
 pub mod jump_to_bottom_button;
 pub mod search_bar;
@@ -22,6 +23,7 @@ pub fn live_design(cx: &mut Cx) {
     avatar::live_design(cx);
     text_or_image::live_design(cx);
     html_or_plaintext::live_design(cx);
+    link_preview::live_design(cx);
     typing_animation::live_design(cx);
     jump_to_bottom_button::live_design(cx);
     popup_list::live_design(cx);

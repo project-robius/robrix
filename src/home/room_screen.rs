@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, link_preview::{LinkPreviewCardRef, LinkPreviewCardWidgetRefExt}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -51,6 +51,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
+    use crate::shared::link_preview::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
@@ -359,7 +360,13 @@ live_design! {
                     }
                 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> { },
+                link_preview_card = <View> {
+                    width: Fill,
+                    height: Fit,
+                    visible: false,
+                    body = <LinkPreviewCard> {},
+                },
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -401,7 +408,13 @@ live_design! {
                 flow: Down,
                 padding: { left: 10.0 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> { },
+                link_preview_card = <View> {
+                    width: Fill,
+                    height: Fit,
+                    visible: false,
+                    body = <LinkPreviewCard> {},
+                },
                 <View> {
                     width: Fill,
                     height: Fit
@@ -2941,25 +2954,23 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                populate_text_message_content(
+                    cx,
+                    &item.html_or_plaintext(id!(content.message)),
+                    body,
+                    formatted.as_ref(),
+                );
                 use linkify::{LinkFinder, LinkKind};
                 let mut links = LinkFinder::new().links(body);
-
                 if let Some(url) = links.find(|l| l.kind() == &LinkKind::Url) {
                     populate_link_preview_card(
                         cx,
-                        &mut item.html_or_plaintext(id!(content.message)),
+                        &item.view(id!(content.link_preview_card)),
                         url.as_str().to_string(),
                         body,
                         card_cache,
                     );
-                } else {
-                    populate_text_message_content(
-                        cx,
-                        &item.html_or_plaintext(id!(content.message)),
-                        body,
-                        formatted.as_ref(),
-                    );
-                }
+                };
 
                 new_drawn_status.content_drawn = true;
                 (item, false)
@@ -3519,7 +3530,7 @@ fn populate_image_message_content(
 /// Returns whether the card was fully drawn.
 fn populate_link_preview_card(
     cx: &mut Cx2d,
-    card_ref: &mut HtmlOrPlaintextRef,
+    card_ref: &ViewRef,
     url: String,
     body: &str,
     card_cache: &mut CardCache,
@@ -3527,24 +3538,21 @@ fn populate_link_preview_card(
 
     match card_cache.try_get_card_or_fetch(url.clone(), body.to_string()) {
         CardCacheEntry::Loaded(card) => {
-
-            card_ref.show_card(cx, &card);
-
-            // We're done drawing the card, so mark it as fully drawn.
+            //log!("Link Preview Card Loaded: {:?}; Fetching {:?}", url, card.url);
+            if card.title.is_some() {
+                card_ref.link_preview_card(id!(body)).show_card(cx, &card);
+            }
+            card_ref.set_visible(cx, true);
             true
         },
         CardCacheEntry::Requested => {
-            card_ref.show_plaintext(cx, body);
             log!("Link Preview Card Requested: {body}; Fetching {:?}", url);
-            // Do not consider this thumbnail as being fully drawn, as we're still fetching it.
+            card_ref.set_visible(cx, false);
             false
         },
         CardCacheEntry::Failed => {
-            card_ref
-                .show_plaintext(cx, body);
             log!("Link Preview Card Failed: {body}; Fetching {:?}", url);
-            // For now, we consider this as being "complete". In the future, we could support
-            // retrying to fetch thumbnail of the image on a user click/tap.
+            card_ref.set_visible(cx, false);
             true
         }
     }

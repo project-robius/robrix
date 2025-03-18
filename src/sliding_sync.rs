@@ -813,51 +813,43 @@ async fn async_worker(
             MatrixRequest::FetchLinkPreviewCard { url, raw_content, on_fetched, destination, update_sender } => {
 
                 log!("Start Fetch link preview card for {}", url);
-                let _fetch_task = Handle::current().spawn(async move {
-
+                Handle::current().spawn(async move {
                     let preview_service = url_preview::PreviewService::with_no_cache();
-
                     match preview_service.generate_preview(&url).await {
                         Ok(preview) => {
-                            log!("preview data: {:?}", preview);
-                            let image = if let Some(image_url) = preview.image_url {
-                                match reqwest::get(image_url.to_string()).await {
-                                    Ok(r) => {    
-                                        let data = r.bytes().await.unwrap().to_vec();
-                                        match imghdr::from_bytes(data.clone()) {
-                                            Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => {
-                                                Some(Arc::new(data))
-                                            },
-                                            _ => {
-                                                None
-                                            }
-                                        }
-                                    },
-                                    Err(e) => {
-                                        log!("Failed to fetch image for link preview card: {e}");
-                                        None
-                                    }
-                                }
+                            if let None = preview.title {
+                                log!("Failed to fetch link preview card for {url}: no title");
+                                on_fetched(&destination, url.clone(), Err(url_preview::PreviewError::FetchError("No title".to_string())), update_sender);
                             } else {
-                                None
+                                let image = if let Some(image_url) = preview.image_url {
+                                    match reqwest::get(image_url.to_string()).await {
+                                        Ok(r) => {    
+                                            let data = r.bytes().await.unwrap().to_vec();
+                                            match imghdr::from_bytes(data.clone()) {
+                                                Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => Some(Arc::new(data)),
+                                                _ => None
+                                            }
+                                        },
+                                        Err(e) => {
+                                            log!("Failed to fetch image for link preview card: {e}");
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    None
+                                };
+                                on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                                    url: preview.url,
+                                    title: preview.title,
+                                    description: preview.description,
+                                    raw_content,
+                                    image,
+                                }), update_sender);
                             };
-                            on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
-                                url: preview.url,
-                                title: preview.title,
-                                description: preview.description,
-                                raw_content,
-                                image,
-                            }), update_sender);
                         },
                         Err(e) => {
                             log!("Failed to fetch link preview card for {url}: {e}");
-                            on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
-                                url,
-                                title: None,
-                                description: None,
-                                raw_content,
-                                image: None,
-                            }), update_sender);
+                            on_fetched(&destination, url.clone(), Err(e), update_sender);
                         }
                     };
                 });
