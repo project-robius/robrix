@@ -1010,7 +1010,7 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
     || Arc::new(Notify::new())
 );
 
-pub fn start_matrix_tokio(inital_flag: bool) -> Result<()> {
+pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
 
@@ -1030,7 +1030,7 @@ pub fn start_matrix_tokio(inital_flag: bool) -> Result<()> {
         register_core_task(CoreTask::Worker, worker_join_handle.abort_handle());
 
         // Start the main loop that drives the Matrix client SDK.
-        let mut main_loop_join_handle = rt.spawn(async_main_loop(inital_flag, login_receiver));
+        let mut main_loop_join_handle = rt.spawn(async_main_loop(initial_flag, login_receiver));
         // register it in core task
         register_core_task(CoreTask::MainLoop, main_loop_join_handle.abort_handle());
         
@@ -1276,7 +1276,7 @@ fn username_to_full_user_id(
 static TRACING_INITIALIZED: Once = Once::new();
 
 async fn async_main_loop(
-    intial_flag: bool,
+    initial_flag: bool,
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     // only init subscribe once
@@ -1299,11 +1299,11 @@ async fn async_main_loop(
     );
 
     // if not first time run this function, we need to force wait for login
-    if !intial_flag {
+    if !initial_flag {
         wait_for_login = true;
     }
 
-    log!("is intial {} ? Waiting for login? {}", intial_flag , wait_for_login);
+    log!("is initial {} ? Waiting for login? {}", initial_flag , wait_for_login);
 
     let new_login_opt = if !wait_for_login {
         let specified_username = cli_parse_result.as_ref().ok().and_then(|cli|
