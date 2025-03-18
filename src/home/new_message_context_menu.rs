@@ -320,7 +320,8 @@ pub struct MessageDetails {
     pub related_event_id: Option<OwnedEventId>,
     /// The widget ID of the RoomScreen that contains this message.
     pub room_screen_widget_uid: WidgetUid,
-    /// Whether this message mentions the current user.
+    /// Whether this message should be highlighted, i.e.,
+    /// if it mentions the room/current user or is a reply to the current user.
     pub should_be_highlighted: bool,
     /// The abilities that the user has on this message.
     pub abilities: MessageAbilities,
