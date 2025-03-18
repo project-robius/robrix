@@ -3,7 +3,9 @@
 //! This is useful to display a loading message while waiting for an image to be fetched,
 //! or to display an error message if the image fails to load, etc.
 
+use std::sync::Arc;
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedMxcUri;
 
 live_design! {
     use link::theme::*;
@@ -34,16 +36,27 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Smallest,
+                fit: Size, // Only for a comfortable test, would set back to `Smallest` if this pr OK.
             }
         }
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum TextOrImageAction {
+    Click(OwnedMxcUri),
+    None,
+}
+
+#[derive(Clone)]
+pub struct ImageValue {
+    pub original_uri: OwnedMxcUri,
+    pub thumbnail_data: Option<Arc<[u8]>>,
+}
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
@@ -54,12 +67,31 @@ live_design! {
 pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
-    // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
+    #[rust] image_value: Option<ImageValue>,
 }
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // We only handle events if the status is `Image`.
+        if TextOrImageStatus::Image != self.status() { return };
+
+        let image_area = self.view.image(id!(image_view.image)).area();
+
+        match event.hits(cx, image_area) {
+            Hit::FingerDown(_, _) => {
+                cx.set_key_focus(image_area);
+            }
+            Hit::FingerUp(fe) => {
+                if fe.was_tap() {
+                    // We run the check to see if the original image was already fetched or not.
+                    if let Some(image_value) = self.image_value.as_ref() {
+                        Cx::post_action(TextOrImageAction::Click(image_value.original_uri.clone()));
+                    }
+                }
+            }
+            _ => (),
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -67,13 +99,14 @@ impl Widget for TextOrImage {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
 impl TextOrImage {
     /// Sets the text content, which will be displayed on future draw operations.
     ///
     /// ## Arguments
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
-    pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
+    fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
         self.view(id!(image_view)).set_visible(cx, false);
         self.view(id!(text_view)).set_visible(cx, true);
         self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
@@ -89,7 +122,7 @@ impl TextOrImage {
     ///    * If successful, the `image_set_function` should return the size of the image
     ///      in pixels as a tuple, `(width, height)`.
     ///    * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+    fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
@@ -109,7 +142,7 @@ impl TextOrImage {
     }
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
-    pub fn status(&self) -> TextOrImageStatus {
+    fn status(&self) -> TextOrImageStatus {
         self.status
     }
 }
@@ -140,6 +173,11 @@ impl TextOrImageRef {
         } else {
             TextOrImageStatus::Text
         }
+    }
+
+    pub fn set_original_uri_and_thumbnail_data(&self, original_uri: &OwnedMxcUri, thumbnail_data: Option<Arc<[u8]>>) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.image_value= Some(ImageValue { original_uri: original_uri.clone(), thumbnail_data});
     }
 }
 
