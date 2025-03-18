@@ -4333,7 +4333,7 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if self.details.as_ref().is_some_and(|d|d.should_be_highlighted) {
+        if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
