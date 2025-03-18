@@ -4,7 +4,7 @@ use std::{
     collections::{BTreeMap, btree_map::Entry},
     ops::{Deref, DerefMut}
 };
-use makepad_widgets::{error, SignalToUI};
+use makepad_widgets::SignalToUI;
 
 use crate::{
     home::room_screen::TimelineUpdate,
@@ -21,7 +21,6 @@ pub struct LinkPreviewCard {
     pub url: String,
     pub title: Option<String>,
     pub description: Option<String>,
-    pub raw_content: String,
     pub image: Option<Arc<Vec<u8>>>
 }
 
@@ -89,7 +88,6 @@ impl CardCache {
     pub fn try_get_card_or_fetch(
         &mut self,
         url: String,
-        raw_content: String,
     ) -> CardCacheEntry {
         let value_ref = match self.entry(url.clone()) {
             Entry::Vacant(vacant) => vacant.insert(
@@ -102,7 +100,6 @@ impl CardCache {
         sliding_sync::submit_async_request(
             MatrixRequest::FetchLinkPreviewCard {
                 url,
-                raw_content,
                 on_fetched: insert_into_cache,
                 destination,
                 update_sender: self.timeline_update_sender.clone(),

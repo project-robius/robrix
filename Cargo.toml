@@ -55,7 +55,7 @@ indexmap = "2.6.0"
 
 blurhash = { version = "0.2.3", default-features = false }
 reqwest = "0.12"
-url-preview = "0.3.0"
+url-preview = "0.3.2"
 
 
 [package.metadata.docs.rs]

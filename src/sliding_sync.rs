@@ -298,7 +298,6 @@ pub enum MatrixRequest {
     /// Request to fetch a url and return the card style preview data
     FetchLinkPreviewCard {
         url: String,
-        raw_content: String,
         on_fetched: OnLinkPreviewCardFetchedFn,
         destination: Arc<Mutex<CardCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -810,7 +809,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchLinkPreviewCard { url, raw_content, on_fetched, destination, update_sender } => {
+            MatrixRequest::FetchLinkPreviewCard { url, on_fetched, destination, update_sender } => {
 
                 log!("Start Fetch link preview card for {}", url);
                 Handle::current().spawn(async move {
@@ -842,7 +841,6 @@ async fn async_worker(
                                     url: preview.url,
                                     title: preview.title,
                                     description: preview.description,
-                                    raw_content,
                                     image,
                                 }), update_sender);
                             };
