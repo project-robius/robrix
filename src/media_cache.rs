@@ -223,7 +223,7 @@ pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
             let data = data.into();
             // This function just simply copy from `insert_from_cache`,
             // only here is different, we just post an action on getting the image data.
-            Cx::post_action(ImageViewerAction::Show(data.clone()));
+            Cx::post_action(ImageViewerAction::MakeItClearer(data.clone()));
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {

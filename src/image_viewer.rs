@@ -61,7 +61,17 @@ pub struct ImageViewer {
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
+    // We need to distinct these two similar actions because a potential bug.
+    // if we combine these 2 actions into 1, will appear a rare bug-condition:
+    //
+    // User click some image and **quickly close** the image viewer,
+    // firstly, the `_ & File` version image has not been fetched, `try_get_image_or_fetch` would return the matching thumbnail to as temporariness,
+    // Once the `_ & File` version image is beening fetched, it would autoly open image viewer and show the image,
+    // but image viewer was already closed by user.
+    // That is, image viewer will show up for no reason in users' view.
+    // feel free to modify comments.
     Show(Arc<[u8]>),
+    MakeItClearer(Arc<[u8]>),
     None,
 }
 
@@ -85,6 +95,13 @@ impl MatchEvent for ImageViewer {
             if let Some(ImageViewerAction::Show(data)) = action.downcast_ref() {
                 self.open(cx);
                 self.load_with_data(cx, data);
+            }
+            if let Some(ImageViewerAction::MakeItClearer(data)) = action.downcast_ref() {
+                // Handled the potential bug here
+                // feel free to modify comments.
+                if self.visible {
+                    self.load_with_data(cx, data);
+                }
             }
         }
     }
