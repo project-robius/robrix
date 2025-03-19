@@ -42,6 +42,8 @@ linkify = "0.10.0"
 # matrix-sdk-ui = { git = "https://github.com/matrix-org/matrix-rust-sdk", default-features = false, features = [ "rustls-tls" ] }
 matrix-sdk = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption", "automatic-room-key-forwarding", "markdown", "sqlite", "rustls-tls", "bundled-sqlite", "sso-login" ] }
 matrix-sdk-ui = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "rustls-tls" ] }
+matrix-sdk-base = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false, features = [ "e2e-encryption" ] }
+matrix-sdk-sqlite = { git = "https://github.com/project-robius/matrix-rust-sdk/", branch = "reduce_log_verbosity_to_trace", default-features = false }
 rand = "0.8.5"
 rangemap = "1.5.0"
 serde = "1.0"

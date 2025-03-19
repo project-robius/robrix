@@ -5,8 +5,12 @@
 //! * preview of a message being replied to above the message input box
 //! * previews of each room's latest message in the rooms list
 
-use matrix_sdk::ruma::events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent};
+use std::sync::Arc;
+
+use matrix_sdk::ruma::{events::{room::{guest_access::GuestAccess, history_visibility::HistoryVisibility, join_rules::JoinRule, message::{MessageFormat, MessageType}}, AnySyncMessageLikeEvent, AnySyncTimelineEvent, FullStateEventContent, SyncMessageLikeEvent}, OwnedUserId};
 use matrix_sdk_ui::timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MemberProfileChange, MembershipChange, RoomMembershipChange, TimelineItemContent};
+use ruma_events::room::{message::RoomMessageEventContent, redaction::RoomRedactionEventContent};
+use serde::Serialize;
 
 use crate::utils;
 
@@ -44,7 +48,6 @@ impl TextPreview {
         }
     }
 }
-
 /// Returns a text preview of the given timeline event as an Html-formatted string.
 pub fn text_preview_of_timeline_item(
     content: &TimelineItemContent,
@@ -106,12 +109,18 @@ pub fn text_preview_of_timeline_item(
     }
 }
 
-
+pub fn text_preview_of_timeline_item_offline(
+    content: &TimelineItemContent,
+    sender_username: &str,
+) {
+    
+}
 
 /// Returns the plaintext `body` of the given timeline event.
 pub fn body_of_timeline_item(
     event_tl_item: &EventTimelineItem,
 ) -> String {
+    
     match event_tl_item.content() {
         TimelineItemContent::Message(m) => m.body().into(),
         TimelineItemContent::RedactedMessage => "[Message was deleted]".into(),
@@ -249,24 +258,119 @@ pub fn text_preview_of_message(
     TextPreview::from((text, BeforeText::UsernameWithColon))
 }
 
-
+/// Returns a text preview of the given message as an Html-formatted string.
+pub fn text_preview_of_offline_message(
+    message: &RoomMessageEventContent,
+    sender_username: &str,
+) -> TextPreview {
+    let text = match &message.msgtype {
+        MessageType::Audio(audio) => format!(
+            "[Audio]: <i>{}</i>",
+            if let Some(formatted_body) = audio.formatted.as_ref() {
+                &formatted_body.body
+            } else {
+                &audio.body
+            }
+        ),
+        MessageType::Emote(emote) => format!(
+            "* {} {}",
+            sender_username,
+            if let Some(formatted_body) = emote.formatted.as_ref() {
+                &formatted_body.body
+            } else {
+                &emote.body
+            }
+        ),
+        MessageType::File(file) => format!(
+            "[File]: <i>{}</i>",
+            if let Some(formatted_body) = file.formatted.as_ref() {
+                &formatted_body.body
+            } else {
+                &file.body
+            }
+        ),
+        MessageType::Image(image) => format!(
+            "[Image]: <i>{}</i>",
+            if let Some(formatted_body) = image.formatted.as_ref() {
+                &formatted_body.body
+            } else {
+                &image.body
+            }
+        ),
+        MessageType::Location(location) => format!(
+            "[Location]: <i>{}</i>",
+            location.body,
+        ),
+        MessageType::Notice(notice) => format!("<i>{}</i>",
+            if let Some(formatted_body) = notice.formatted.as_ref() {
+                utils::trim_start_html_whitespace(&formatted_body.body)
+            } else {
+                &notice.body
+            }
+        ),
+        MessageType::ServerNotice(notice) => format!(
+            "[Server Notice]: <i>{} -- {}</i>",
+            notice.server_notice_type.as_str(),
+            notice.body,
+        ),
+        MessageType::Text(text) => {
+            text.formatted
+                .as_ref()
+                .and_then(|fb|
+                    (fb.format == MessageFormat::Html).then(||
+                        utils::linkify(
+                            utils::trim_start_html_whitespace(&fb.body),
+                            true,
+                        )
+                        .to_string()
+                    )
+                )
+                .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
+        }
+        MessageType::VerificationRequest(verification) => format!(
+            "[Verification Request] <i>to user {}</i>",
+            verification.to,
+        ),
+        MessageType::Video(video) => format!(
+            "[Video]: <i>{}</i>",
+            if let Some(formatted_body) = video.formatted.as_ref() {
+                &formatted_body.body
+            } else {
+                &video.body
+            }
+        ),
+        MessageType::_Custom(custom) => format!(
+            "[Custom message]: {:?}",
+            custom,
+        ),
+        other => format!(
+            "[Unknown message type]: {}",
+            other.body(),
+        )
+    };
+    TextPreview::from((text, BeforeText::UsernameWithColon))
+}
 /// Returns a text preview of a redacted message of the given event as an Html-formatted string.
 pub fn text_preview_of_redacted_message(
-    event_tl_item: &EventTimelineItem,
+    any_sync_timeline_event: &AnySyncTimelineEvent,
+    sender: Option<OwnedUserId>,
     original_sender: &str,
 ) -> TextPreview {
     let redactor_and_reason = {
         let mut rr = None;
-        if let Some(redacted_msg) = event_tl_item.latest_json() {
-            if let Ok(AnySyncTimelineEvent::MessageLike(
+        match any_sync_timeline_event{
+            AnySyncTimelineEvent::MessageLike(
                 AnySyncMessageLikeEvent::RoomMessage(
                     SyncMessageLikeEvent::Redacted(redaction)
                 )
-            )) = redacted_msg.deserialize() {
+            ) => {
                 rr = Some((
-                    redaction.unsigned.redacted_because.sender,
-                    redaction.unsigned.redacted_because.content.reason,
+                    redaction.unsigned.redacted_because.sender.clone(),
+                    redaction.unsigned.redacted_because.content.reason.clone(),
                 ));
+            }
+            _ => {
+
             }
         }
         rr
@@ -277,7 +381,44 @@ pub fn text_preview_of_redacted_message(
             format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
         }
         Some((redactor, None)) => {
-            if redactor == event_tl_item.sender() {
+            if let Some(sender) = sender {
+                if redactor == sender {
+                    format!("{} deleted their own message.", original_sender)
+                } else {
+                    format!("{} deleted {}'s message.", redactor, original_sender)
+                }
+            } else {
+                String::new()
+            }
+        }
+        None => {
+            format!("{}'s message was deleted.", original_sender)
+        }
+    };
+    TextPreview::from((text, BeforeText::Nothing))
+}
+
+/// Returns a text preview of a redacted message of the given event as an Html-formatted string.
+pub fn text_preview_of_redacted_message_offline(
+    sender: OwnedUserId,
+    redaction: RoomRedactionEventContent,
+    original_sender: &str,
+) -> TextPreview {
+    let redactor_and_reason = {
+        let mut rr = None;
+        rr = Some((
+            sender.clone(),
+            redaction.reason,
+        ));
+        rr
+    };
+    let text = match redactor_and_reason {
+        Some((redactor, Some(reason))) => {
+            // TODO: get the redactor's display name if possible
+            format!("{} deleted {}'s message: {:?}.", redactor, original_sender, reason)
+        }
+        Some((redactor, None)) => {
+            if redactor == sender {
                 format!("{} deleted their own message.", original_sender)
             } else {
                 format!("{} deleted {}'s message.", redactor, original_sender)

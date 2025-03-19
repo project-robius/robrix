@@ -111,11 +111,11 @@ live_design! {
                     flow: Overlay,
 
                     home_screen_view = <View> {
-                        visible: false
+                        visible: true
                         home_screen = <HomeScreen> {}
                     }
                     login_screen_view = <View> {
-                        visible: true
+                        visible: false
                         login_screen = <LoginScreen> {}
                     }
                     app_tooltip = <CalloutTooltip> {}
@@ -192,6 +192,7 @@ impl MatchEvent for App {
 
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
+        self.app_state.offline = true;
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -388,14 +389,14 @@ impl AppMain for App {
 
 impl App {
     fn update_login_visibility(&self, cx: &mut Cx) {
-        let show_login = !self.app_state.logged_in;
-        if !show_login {
-            self.ui
-                .modal(id!(login_screen_view.login_screen.login_status_modal))
-                .close(cx);
-        }
-        self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
-        self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
+        // let show_login = !self.app_state.logged_in;
+        // if !show_login {
+        //     self.ui
+        //         .modal(id!(login_screen_view.login_screen.login_status_modal))
+        //         .close(cx);
+        // }
+        // self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        // self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
 }
 
@@ -405,6 +406,8 @@ pub struct AppState {
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
+    /// Whether the app is running in offline mode
+    pub offline: bool,
 }
 
 #[derive(Default, Debug)]

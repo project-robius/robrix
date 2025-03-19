@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
+use ruma_events::AnySyncTimelineEvent;
 use std::cmp;
 
 
@@ -224,13 +225,14 @@ pub fn populate_read_receipts(
     item: &WidgetRef,
     cx: &mut Cx,
     room_id: &RoomId,
-    event_tl_item: &EventTimelineItem,
+    event_tl_item: &AnySyncTimelineEvent,
+    read_receipts: &IndexMap<OwnedUserId, Receipt>,
 ) {
     item.avatar_row(id!(avatar_row)).set_avatar_row(
         cx,
         room_id,
-        event_tl_item.event_id(),
-        event_tl_item.read_receipts(),
+        Some(event_tl_item.event_id()),
+        read_receipts,
     );
 }
 

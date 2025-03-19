@@ -5,6 +5,7 @@ use bitflags::bitflags;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk_ui::timeline::EventTimelineItem;
+use ruma_events::AnySyncTimelineEvent;
 
 use crate::sliding_sync::UserPowerLevels;
 
