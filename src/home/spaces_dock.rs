@@ -147,11 +147,11 @@ live_design! {
 
             <Filler> {}
 
-            <Home> {}
+            <HomeButton> {}
 
             <Filler> {}
 
-            <Settings> {}
+            <SettingButton> {}
 
             <Filler> {}
         }
