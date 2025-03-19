@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, offline_sync::start_base_client, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -287,7 +287,7 @@ pub enum MatrixRequest {
     FetchMedia {
         media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
-        destination: Arc<Mutex<MediaCacheEntry>>,
+        destination: MediaCacheEntryRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -780,16 +780,15 @@ async fn async_worker(
                             if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(event_id.clone(),receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
-                            while (update_receiver.next().await).is_some() {
-                                if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
-                                    if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(event_id.clone(),receipt)) {
-                                        error!("Failed to get own user read receipt: {e:?}");
-                                    }
+                        }
+
+                        while (update_receiver.next().await).is_some() {
+                            if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
+                                if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
+                                    error!("Failed to get own user read receipt: {e:?}");
                                 }
                             }
                         }
-                        
-                        
                     }
                 });
                 tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
@@ -1010,11 +1009,10 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
-
+    
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
-
     let (login_sender, login_receiver) = tokio::sync::mpsc::channel(1);
     // Start a high-level async task that will start and monitor all other tasks.
     let _monitor = rt.spawn(async move {
@@ -1023,7 +1021,11 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+        // Start the base client in the background
+        rt.spawn(async move {
+            let _ = start_base_client().await;
+        });
+        return;
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1322,7 +1324,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -1740,7 +1742,7 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
 /// If the sender profile of the event is not yet available, this function will
 /// generate a preview using the sender's user ID instead of their display name,
 /// and will submit a background async request to fetch the details for this event.
-fn get_latest_event_details(
+pub fn get_latest_event_details(
     latest_event: &EventTimelineItem,
     room_id: &OwnedRoomId,
 ) -> (MilliSecondsSinceUnixEpoch, String) {
@@ -2213,7 +2215,7 @@ async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvat
 }
 
 /// Returns a text avatar string containing the first character of the room name.
-fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
+pub fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
         room_name
             .graphemes(true)
@@ -2257,7 +2259,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.

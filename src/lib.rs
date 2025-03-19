@@ -25,6 +25,7 @@ pub mod sliding_sync;
 pub mod avatar_cache;
 pub mod media_cache;
 pub mod verification;
+pub mod offline_sync;
 
 pub mod utils;
 pub mod temp_storage;

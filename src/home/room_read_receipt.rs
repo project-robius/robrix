@@ -91,24 +91,30 @@ impl Widget for AvatarRow {
         }
         let uid: WidgetUid = self.widget_uid();
         let widget_rect = self.area.rect(cx);
-        match event.hits(cx, self.area) {
-            Hit::FingerHoverIn(_) | Hit::FingerHoverOver(_) | Hit::FingerUp(_) => {
-                if let Some(read_receipts) = &self.read_receipts {
-                    cx.widget_action(
-                        uid,
-                        &scope.path,
-                        RoomScreenTooltipActions::HoverInReadReceipt {
-                            widget_rect,
-                            bg_color: None,
-                            read_receipts: read_receipts.clone(),
-                        },
-                    );
-                }
-            }
+
+        let should_hover_in = match event.hits(cx, self.area) {
+            Hit::FingerLongPress(_)
+            | Hit::FingerHoverOver(..) // TODO: remove once CalloutTooltip bug is fixed
+            | Hit::FingerHoverIn(..) => true,
+            Hit::FingerUp(fue) if fue.is_over && fue.is_primary_hit() => true,
             Hit::FingerHoverOut(_) => {
                 cx.widget_action(uid, &scope.path, RoomScreenTooltipActions::HoverOut);
+                false
             }
-            _ => {}
+            _ => false,
+        };
+        if should_hover_in {
+            if let Some(read_receipts) = &self.read_receipts {
+                cx.widget_action(
+                    uid,
+                    &scope.path,
+                    RoomScreenTooltipActions::HoverInReadReceipt {
+                        widget_rect,
+                        bg_color: None,
+                        read_receipts: read_receipts.clone(),
+                    },
+                );
+            }
         }
     }
 
