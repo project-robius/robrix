@@ -80,7 +80,20 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
     Ok(())
 }
 
-
+pub async fn fetch_previous_session(user_id: Option<OwnedUserId>) -> anyhow::Result<FullSessionPersisted> {
+    let Some(user_id) = user_id.or_else(most_recent_user_id) else {
+        log!("Could not find previous latest User ID");
+        bail!("Could not find previous latest User ID");
+    };
+    let session_file = session_file_path(&user_id);
+    if !session_file.exists() {
+        log!("Could not find previous session file for user {user_id}");
+        bail!("Could not find previous session file");
+    }
+    // The session was serialized as JSON in a file.
+    let serialized_session = fs::read_to_string(session_file).await?;
+    serde_json::from_str(&serialized_session).map_err(|er| anyhow::anyhow!(er))
+}
 /// Restores the given user's previous session from the filesystem.
 ///
 /// If no User ID is specified, the ID of the most recently-logged in user
