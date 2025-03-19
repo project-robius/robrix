@@ -1480,20 +1480,20 @@ impl RoomScreen {
                     let Some((latest_read_receipt, r)) = latest_read_receipt else {
                         return;
                     };
-                    tl.latest_own_user_receipt = Some((latest_read_receipt, r));
+                    tl.latest_own_user_receipt = Some(r);
                     let mut first_unread = 1;
-                    for item in initial_items.iter() {
-                        if let Some(event_id) = item.as_event().and_then(|f|{
-                            f.event_id().and_then(|f|{
-                                Some(f.to_owned())
-                            })
-                        }) {
-                            first_unread += 1;
-                            if event_id == latest_read_receipt {
-                                break
-                            }
-                        }
-                    }
+                    // for item in initial_items.iter() {
+                    //     if let Some(event_id) = item.as_event().and_then(|f|{
+                    //         f.event_id().and_then(|f|{
+                    //             Some(f.to_owned())
+                    //         })
+                    //     }) {
+                    //         first_unread += 1;
+                    //         if event_id == latest_read_receipt {
+                    //             break
+                    //         }
+                    //     }
+                    // }
                     println!("first_unread {:?}", first_unread);
                     self.first_unread = Some(first_unread);
                     portal_list.set_first_id_and_scroll(first_unread, 0.0);
@@ -1751,8 +1751,8 @@ impl RoomScreen {
                         .set_visible(cx, !can_send_message);
                 }
 
-                TimelineUpdate::OwnUserReadReceipt(event , ownership) => {
-                    tl.latest_own_user_receipt = Some((event,ownership));
+                TimelineUpdate::OwnUserReadReceipt(ownership) => {
+                    tl.latest_own_user_receipt = Some(ownership);
                 }
             }
         }
@@ -2552,28 +2552,30 @@ impl RoomScreen {
                             event_id: last_event_id.to_owned(),
                         });
                     } else {
-                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
-                        .and_then(|(_e, receipt )| {
-                            let Some((_first_event_id, first_timestamp)) = tl_state
-                                .items
-                                .get(first_index)
-                                .and_then(|f| f.as_event())
-                                .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
-                                else {
-                                    *index = first_index;
+                        // if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
+                        // .and_then(|(_e, receipt )| {
+                        //     let Some((_first_event_id, first_timestamp)) = tl_state
+                        //         .items
+                        //         .get(first_index)
+                        //         .and_then(|f| f.as_event())
+                        //         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                        //         else {
+                        //             *index = first_index;
                                     
-                                };
-                            if own_user_receipt_timestamp >= &first_timestamp
-                                && own_user_receipt_timestamp <= &last_timestamp
-                            {
-                                tl_state.scrolled_past_read_marker = true;
-                                submit_async_request(MatrixRequest::FullyReadReceipt {
-                                    room_id: tl_state.room_id.clone(),
-                                    event_id: last_event_id.to_owned(),
-                                });
-                            }
+                        //         };
+                        //     if own_user_receipt_timestamp >= &first_timestamp
+                        //         && own_user_receipt_timestamp <= &last_timestamp
+                        //     {
+                        //         tl_state.scrolled_past_read_marker = true;
+                        //         submit_async_request(MatrixRequest::FullyReadReceipt {
+                        //             room_id: tl_state.room_id.clone(),
+                        //             event_id: last_event_id.to_owned(),
+                        //         });
+                        //     }
 
-                        })
+                        // }) {
+
+                        // }
                     }
                 }
                 *index = first_index;
@@ -2727,7 +2729,7 @@ pub enum TimelineUpdate {
     /// An update containing the currently logged-in user's power levels for this room.
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
-    OwnUserReadReceipt(OwnedEventId, Receipt),
+    OwnUserReadReceipt(Receipt),
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2829,7 +2831,7 @@ struct TimelineUiState {
     ///
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
-    latest_own_user_receipt: Option<(OwnedEventId,Receipt)>,
+    latest_own_user_receipt: Option<Receipt>,
 }
 
 #[derive(Default, Debug)]

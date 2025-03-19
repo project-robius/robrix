@@ -777,7 +777,7 @@ async fn async_worker(
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                             log!("Received own user read receipt: {receipt:?} {event_id:?}");
-                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(event_id.clone(),receipt)) {
+                            if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
@@ -1022,10 +1022,10 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         // Start the base client in the background
-        rt.spawn(async move {
-            let _ = start_base_client().await;
-        });
-        return;
+        // rt.spawn(async move {
+        //     let _ = start_base_client().await;
+        // });
+        //return;
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {

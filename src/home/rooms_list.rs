@@ -163,6 +163,7 @@ pub struct RoomsListEntry {
     pub tags: Option<Tags>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    //pub new_latest: Option<()>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub avatar: RoomPreviewAvatar,
