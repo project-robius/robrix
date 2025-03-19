@@ -106,10 +106,10 @@ impl Widget for Avatar {
         let area = self.view.area();
         let widget_uid = self.widget_uid();
         match event.hits(cx, area) {
-            Hit::FingerDown(_fde) => {
+            Hit::FingerDown(_fde, _) => {
                 cx.set_key_focus(area);
             }
-            Hit::FingerUp(fue) => if fue.is_over && fue.was_tap() {
+            Hit::FingerUp(fue) => if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
@@ -211,22 +211,7 @@ impl Avatar {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns a hit event based on user interaction with the avatar
-    /// 
-    /// # Parameters
-    /// - `cx`: The draw context
-    /// - `event`: The input event
-    /// - `sweep_area`: The area to check for hits
-    /// 
-    /// # Returns
-    /// A `Hit` representing the type of interaction (hover, click, etc.)
-    fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
-        
-        event.hits_with_options(
-            cx,
-            self.area(),
-            HitOptions::default().with_sweep_area(sweep_area))
-    }
+
     /// Sets the given avatar and returns a displayable username based on the
     /// given profile and user ID of the sender of the event with the given event ID.
     ///
@@ -391,11 +376,6 @@ impl AvatarRef {
         } else {
             AvatarDisplayStatus::Text
         }
-    }
-    
-    /// See [`Avatar::hit()`].
-    pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
-        self.borrow_mut().map(|mut inner| inner.hit(cx, event, sweep_area))
     }
     
     /// See [`Avatar::set_avatar_and_get_username()`].
