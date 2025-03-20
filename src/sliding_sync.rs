@@ -1022,10 +1022,10 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         // Start the base client in the background
-        rt.spawn(async move {
-            let _ = start_base_client().await;
-        });
-        return;
+        // rt.spawn(async move {
+        //     let _ = start_base_client().await;
+        // });
+        //return;
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {

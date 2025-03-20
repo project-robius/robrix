@@ -11,7 +11,7 @@ use ruma_events::{location, message::MessageEventContent, room::message::{Messag
 use tokio::{runtime::Handle, time::sleep};
 use matrix_sdk::ruma::{room_id};
 use crate::{
-    event_preview::{text_preview_of_message, text_preview_of_offline_message, BeforeText, TextPreview}, home::rooms_list::{self, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}, media_cache::{self, MediaCache}, persistent_state::fetch_previous_session, sliding_sync::{avatar_from_room_name, get_latest_event_details}, utils::{self, AVATAR_THUMBNAIL_FORMAT}
+    event_preview::{text_preview_of_message, text_preview_of_offline_message, BeforeText, TextPreview}, home::rooms_list::{self, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}, media_cache::{self, fetch_from_cache, MediaCache}, persistent_state::fetch_previous_session, sliding_sync::{avatar_from_room_name, get_latest_event_details}, utils::{self, AVATAR_THUMBNAIL_FORMAT}
 };
 
 static BASE_CLIENT: OnceLock<BaseClient> = OnceLock::new();
@@ -104,7 +104,6 @@ pub async fn start_base_client() -> Result<()> {
         println!("room name {:?}", room_name);
         println!("latest {:?}", latest);
         println!("latest_sync_time_event {:?}", latest_sync_time_event);
-        MediaCache::new(Some(update_sender))
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
             room_id: room_id.clone(),
             latest,
@@ -131,6 +130,7 @@ fn spawn_fetch_room_avatar(room: Room) {
     let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
     Handle::current().spawn(async move {
         let avatar = room_avatar(&room, &room_name_str).await;
+        println!("avatar {:?}", avatar);
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
@@ -140,10 +140,15 @@ fn spawn_fetch_room_avatar(room: Room) {
 
 // Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: &Option<String>, media_cache: MediaCache) -> RoomPreviewAvatar {
+async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
     if let Some(mxc_uri)  = room.avatar_url() {
-        media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::Thumbnail(MediaThumbnailSettings::))
+        println!("mxc_uri {:?}",mxc_uri);
+        if let Ok(data) = fetch_from_cache(&mxc_uri) {
+            return RoomPreviewAvatar::Image(data)
+        }
     }
-    
-    
+    if let Some(room_name) = room_name {
+        return avatar_from_room_name(room_name)
+    } 
+    avatar_from_room_name(room.room_id().to_string().as_str())
 }

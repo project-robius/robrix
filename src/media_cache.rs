@@ -1,4 +1,4 @@
-use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{collections::{btree_map::Entry, BTreeMap}, io::Read, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
 use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, MxcUri, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
@@ -177,7 +177,7 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             let data = data.into();
 
             // debugging: dump out the media image to disk
-            if false {
+            if true {
                 if let MediaSource::Plain(mxc_uri) = _request.source {
                     log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
@@ -208,6 +208,15 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
     SignalToUI::set_ui_signal();
 }
 
-pub fn fetch_from_cache(mxc_uri: MxcUri, update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,) {
-    
+pub fn fetch_from_cache(mxc_uri: &OwnedMxcUri)->anyhow::Result<Vec<u8>> {
+    let mut path = crate::temp_storage::get_temp_dir_path().clone();
+    let filename = format!("{}_{}_{}",
+        SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_millis(),
+        mxc_uri.server_name().unwrap(), mxc_uri.media_id().unwrap(),
+    );
+    path.push(filename);
+    let mut file = std::fs::File::open(path)?;
+    let mut buf = Vec::new();
+    file.read_to_end(&mut buf);
+    Ok(buf)
 }
