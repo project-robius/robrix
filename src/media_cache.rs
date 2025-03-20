@@ -132,9 +132,6 @@ impl MediaCache {
                     let entry_ref_mg = entry_ref.lock().unwrap();
 
                     match better_entry_ref_mg.clone() {
-                        MediaCacheEntry::Loaded(_) => {
-                            return better_entry_ref_mg.clone()
-                        }
                         MediaCacheEntry::NotInitialized => {
                             if let MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed = entry_ref_mg.clone() {
                                 ret = entry_ref_mg.clone()
@@ -143,8 +140,7 @@ impl MediaCache {
                             (true, better_entry_ref.clone(), MediaFormat::File)
                         }
                         _ => {
-                            // it would never run this case.
-                            panic!("")
+                            return better_entry_ref_mg.clone();
                         }
                     }
                     // Case4
