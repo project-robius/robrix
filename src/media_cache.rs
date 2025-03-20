@@ -1,6 +1,6 @@
 use std::{collections::{btree_map::Entry, BTreeMap}, ops::{Deref, DerefMut}, sync::{Arc, Mutex}, time::SystemTime};
 use makepad_widgets::{error, log, SignalToUI};
-use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, OwnedMxcUri}};
+use matrix_sdk::{media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, ruma::{events::room::MediaSource, MxcUri, OwnedMxcUri}};
 use crate::{home::room_screen::TimelineUpdate, sliding_sync::{self, MatrixRequest}};
 
 /// The value type in the media cache, one per Matrix URI.
@@ -206,4 +206,8 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
         let _ = sender.send(TimelineUpdate::MediaFetched);
     }
     SignalToUI::set_ui_signal();
+}
+
+pub fn fetch_from_cache(mxc_uri: MxcUri, update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,) {
+    
 }

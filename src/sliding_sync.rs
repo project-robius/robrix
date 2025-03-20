@@ -118,8 +118,8 @@ async fn build_client(
     builder = builder.request_config(
         RequestConfig::new()
             .timeout(std::time::Duration::from_secs(60))
+            .retry_limit(1)
     );
-
     let client = builder.build().await?;
     Ok((
         client,
@@ -1022,10 +1022,10 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         // Start the base client in the background
-        // rt.spawn(async move {
-        //     let _ = start_base_client().await;
-        // });
-        //return;
+        rt.spawn(async move {
+            let _ = start_base_client().await;
+        });
+        return;
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -2179,7 +2179,7 @@ fn update_latest_event(
 }
 
 /// Spawn a new async task to fetch the room's new avatar.
-fn spawn_fetch_room_avatar(room: Room) {
+pub fn spawn_fetch_room_avatar(room: Room) {
     let room_id = room.room_id().to_owned();
     let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
     Handle::current().spawn(async move {
@@ -2193,7 +2193,7 @@ fn spawn_fetch_room_avatar(room: Room) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
+pub async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
         _ => {

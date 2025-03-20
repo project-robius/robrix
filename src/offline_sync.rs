@@ -1,17 +1,17 @@
-use std::{collections::BTreeMap, sync::OnceLock, time::Duration};
+use std::{collections::BTreeMap, f64::consts::E, sync::OnceLock, time::Duration};
 
 use anyhow::{bail, Result};
 use matrix_sdk::{
-    deserialized_responses::{TimelineEvent, TimelineEventKind}, encryption::identities::ManualVerifyError, ruma::{user_id, OwnedDeviceId, OwnedRoomId}, store::StoreConfig, RoomInfo, SessionMeta
+    deserialized_responses::{TimelineEvent, TimelineEventKind}, encryption::identities::ManualVerifyError, media::{MediaFormat, MediaThumbnailSettings}, ruma::{user_id, OwnedDeviceId, OwnedRoomId}, store::StoreConfig, BaseRoom, RoomInfo, RoomMemberships, SessionMeta
 };
-use matrix_sdk_base::{BaseClient, RoomState};
+use matrix_sdk_base::{BaseClient, RoomState, Room};
 use matrix_sdk_sqlite::SqliteStateStore;
 use matrix_sdk_ui::timeline::Message;
-use ruma_events::{location, message::MessageEventContent, room::message::{MessageFormat, MessageType}, AnySyncTimelineEvent};
-use tokio::time::sleep;
-
+use ruma_events::{location, message::MessageEventContent, room::message::{MessageFormat, MessageType}, AnyFullStateEventContent, AnySyncStateEvent, AnySyncTimelineEvent};
+use tokio::{runtime::Handle, time::sleep};
+use matrix_sdk::ruma::{room_id};
 use crate::{
-    event_preview::text_preview_of_message, home::rooms_list::{self, RoomsListEntry, RoomsListUpdate}, persistent_state::fetch_previous_session, sliding_sync::{avatar_from_room_name, get_latest_event_details}, utils
+    event_preview::{text_preview_of_message, text_preview_of_offline_message, BeforeText, TextPreview}, home::rooms_list::{self, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}, media_cache::{self, MediaCache}, persistent_state::fetch_previous_session, sliding_sync::{avatar_from_room_name, get_latest_event_details}, utils::{self, AVATAR_THUMBNAIL_FORMAT}
 };
 
 static BASE_CLIENT: OnceLock<BaseClient> = OnceLock::new();
@@ -45,132 +45,66 @@ pub async fn start_base_client() -> Result<()> {
         .event_cache_store(event_store);
     let client = BaseClient::with_store_config(store_config);
     let session_meta = previous_session.user_session.meta;
+    
     client.set_session_meta(session_meta, None).await.unwrap();
+    
+    let room_id_to_watch = room_id!("!QQpfJfZvqxbCfeDgCj:matrix.org");
     for room in client.rooms() {
         //println!("set_session_meta room: {room:#?}");
         let room_id = room.room_id().to_owned();
+        // if room_id != room_id_to_watch {
+        //     continue
+        // }
         let room_name = room
             .display_name()
             .await
             .map(|room_name| room_name.to_string())
             .unwrap_or_default();
         let latest_event = room.latest_event().and_then(|f| Some(f.event().clone()));
-
-        let latest = latest_event.and_then(|f| f.raw().deserialize().ok().and_then(|f| {
-            let timestamp = f.origin_server_ts();
-            let content = match f {
+        let latest_sync_time_event = latest_event.and_then(|f| f.raw().deserialize().ok());
+        let latest = if let Some(latest_sync_time_event) = latest_sync_time_event.clone() {
+            let timestamp = latest_sync_time_event.origin_server_ts();
+            let content = match latest_sync_time_event {
                 AnySyncTimelineEvent::MessageLike(event) => {
-                    let sender_username = event.sender().to_string();
+                    let sender_id = event.sender();
+                    let sender_username = room.get_member(sender_id).await?
+                    .and_then(|rm| rm.display_name()
+                    .and_then(|f| Some(f.to_owned()))).unwrap_or_default();
                     if let Some(content) = event.original_content() {
-                        println!("content {:?}", content);
                         match content {
                             ruma_events::AnyMessageLikeEventContent::RoomMessage(msg) => {
-                                let text = match msg.msgtype {
-                                    MessageType::Audio(audio) => format!(
-                                        "[Audio]: <i>{}</i>",
-                                        if let Some(formatted_body) = audio.formatted.as_ref() {
-                                            &formatted_body.body
-                                        } else {
-                                            &audio.body
-                                        }
-                                    ),
-                                    MessageType::Emote(emote) => format!(
-                                        "* {} {}",
-                                        sender_username,
-                                        if let Some(formatted_body) = emote.formatted.as_ref() {
-                                            &formatted_body.body
-                                        } else {
-                                            &emote.body
-                                        }
-                                    ),
-                                    MessageType::File(file) => format!(
-                                        "[File]: <i>{}</i>",
-                                        if let Some(formatted_body) = file.formatted.as_ref() {
-                                            &formatted_body.body
-                                        } else {
-                                            &file.body
-                                        }
-                                    ),
-                                    MessageType::Image(image) => format!(
-                                        "[Image]: <i>{}</i>",
-                                        if let Some(formatted_body) = image.formatted.as_ref() {
-                                            &formatted_body.body
-                                        } else {
-                                            &image.body
-                                        }
-                                    ),
-                                    MessageType::Location(location) => format!(
-                                        "[Location]: <i>{}</i>",
-                                        location.body,
-                                    ),
-                                    MessageType::Notice(notice) => format!("<i>{}</i>",
-                                        if let Some(formatted_body) = notice.formatted.as_ref() {
-                                            utils::trim_start_html_whitespace(&formatted_body.body)
-                                        } else {
-                                            &notice.body
-                                        }
-                                    ),
-                                    MessageType::ServerNotice(notice) => format!(
-                                        "[Server Notice]: <i>{} -- {}</i>",
-                                        notice.server_notice_type.as_str(),
-                                        notice.body,
-                                    ),
-                                    MessageType::Text(text) => {
-                                        text.formatted
-                                            .as_ref()
-                                            .and_then(|fb|
-                                                (fb.format == MessageFormat::Html).then(||
-                                                    utils::linkify(
-                                                        utils::trim_start_html_whitespace(&fb.body),
-                                                        true,
-                                                    )
-                                                    .to_string()
-                                                )
-                                            )
-                                            .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
-                                    }
-                                    MessageType::VerificationRequest(verification) => format!(
-                                        "[Verification Request] <i>to user {}</i>",
-                                        verification.to,
-                                    ),
-                                    MessageType::Video(video) => format!(
-                                        "[Video]: <i>{}</i>",
-                                        if let Some(formatted_body) = video.formatted.as_ref() {
-                                            &formatted_body.body
-                                        } else {
-                                            &video.body
-                                        }
-                                    ),
-                                    MessageType::_Custom(custom) => format!(
-                                        "[Custom message]: {:?}",
-                                        custom,
-                                    ),
-                                    other => format!(
-                                        "[Unknown message type]: {}",
-                                        other.body(),
-                                    )
-                                };
-                                text
+                                text_preview_of_offline_message(&msg, &sender_username).format_with(&sender_username)
                             }
-                            ruma_events::AnyMessageLikeEventContent::Message(msg) => {
-                                msg.text.find_plain().unwrap_or_default().to_owned()
+                            ruma_events::AnyMessageLikeEventContent::RoomRedaction(redaction) => {
+                                crate::event_preview::text_preview_of_redacted_message_offline(sender_id.to_owned(), redaction, "").format_with(&sender_username)
                             }
                             _ => {
-                                format!("{:?}", content)
+                                TextPreview::from((format!("{:?}", content), BeforeText::UsernameWithColon)).format_with(&sender_username)                         
                             }
-                        }                        
+                        }
                     } else {
-                        String::new()
+                        TextPreview::from((String::new(), BeforeText::Nothing)).format_with(&sender_username)
                     }
-                    
                 }
                 AnySyncTimelineEvent::State(event) => {
-                    format!("{:?}", event.content())
+                    match event.content() {
+                        AnyFullStateEventContent::RoomName(room_name) => {
+
+                        }
+                        _ => {
+                        }
+                    }
+                    TextPreview::from((format!("{:?}", event.content()), BeforeText::Nothing)).format_with("")
                 }
             };
-
-            Some((timestamp, content))}));
+            Some((timestamp, content))
+        } else {
+            None
+        };
+        println!("room name {:?}", room_name);
         println!("latest {:?}", latest);
+        println!("latest_sync_time_event {:?}", latest_sync_time_event);
+        MediaCache::new(Some(update_sender))
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
             room_id: room_id.clone(),
             latest,
@@ -185,7 +119,31 @@ pub async fn start_base_client() -> Result<()> {
             has_been_paginated: false,
             is_selected: false,
         }));
+        
+        spawn_fetch_room_avatar(room.clone());
+
     }
     sleep(Duration::new(8, 0)).await;
     Ok(())
+}
+fn spawn_fetch_room_avatar(room: Room) {
+    let room_id = room.room_id().to_owned();
+    let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
+    Handle::current().spawn(async move {
+        let avatar = room_avatar(&room, &room_name_str).await;
+        rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
+            room_id,
+            avatar,
+        });
+    });
+}
+
+// Fetches and returns the avatar image for the given room (if one exists),
+/// otherwise returns a text avatar string of the first character of the room name.
+async fn room_avatar(room: &Room, room_name: &Option<String>, media_cache: MediaCache) -> RoomPreviewAvatar {
+    if let Some(mxc_uri)  = room.avatar_url() {
+        media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::Thumbnail(MediaThumbnailSettings::))
+    }
+    
+    
 }
