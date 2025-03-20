@@ -192,7 +192,7 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
-        crate::sliding_sync::start_matrix_tokio().unwrap();
+        crate::sliding_sync::start_matrix_tokio(true).unwrap();
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -227,6 +227,12 @@ impl MatchEvent for App {
                     self.ui.popup_notification(id!(popup)).close(cx);
                 }
                 _ => {}
+            }
+
+            if let Some(LoginAction::LogoutSuccess) = action.downcast_ref() {
+                self.app_state.logged_in = false;
+                self.update_login_visibility(cx);
+                self.ui.redraw(cx);
             }
 
             match action.as_widget_action().cast() {
