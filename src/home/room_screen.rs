@@ -719,7 +719,15 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-
+            prompt_label = <Label> {
+                align: {x: 0.0, y: 0.5},
+                padding: {left: 5.0, right: 0.0}
+                draw_text: {
+                    color: (TYPING_NOTICE_TEXT_COLOR),
+                    text_style: <REGULAR_TEXT>{font_size: 9}
+                }
+                text: ""
+            }
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -946,6 +954,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// Draw text prompt if exist or else draw the timeline
+    #[rust] prompt: RoomScreenPrompt,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1279,6 +1289,12 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+        match self.prompt {
+            RoomScreenPrompt::Pending | RoomScreenPrompt::Timeout => {
+                return self.view.draw_walk(cx, scope, walk);
+            }
+            RoomScreenPrompt::None => {}
+        }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
@@ -2439,6 +2455,27 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
+    /// This sets the RoomScreen widget to display a text label in place of the timeline.
+    pub fn set_prompt(&mut self, cx: &mut Cx, prompt: RoomScreenPrompt) {
+        self.prompt = prompt;
+        match prompt {
+            RoomScreenPrompt::Pending => {
+                self.view
+                    .label(id!(prompt_label))
+                    .set_text(cx, "[Placeholder for Spinner]");
+            }
+            RoomScreenPrompt::Timeout => {
+                self.view
+                    .label(id!(prompt_label))
+                    .set_text(cx, "[Placeholder for Timeout]");
+            }
+            RoomScreenPrompt::None => {
+                self.view.label(id!(prompt_label)).set_text(cx, "");
+            }
+        }
+        self.redraw(cx);
+    }
+
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
@@ -2549,6 +2586,14 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+
+    /// See [`RoomScreen::set_prompt()`].
+    pub fn set_prompt(&self, cx: &mut Cx, prompt: RoomScreenPrompt) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.set_prompt(cx, prompt);
+    }
 }
 
 /// Actions for the room screen's tooltip.
@@ -2575,6 +2620,13 @@ pub enum RoomScreenTooltipActions {
     /// Mouse out event and clear tooltip.
     HoverOut,
     None,
+}
+
+#[derive(DefaultNone, Debug, Clone, Copy)]
+pub enum RoomScreenPrompt{
+    Pending,
+    Timeout,
+    None
 }
 
 /// A message that is sent from a background async task to a room's timeline view
