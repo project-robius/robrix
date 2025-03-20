@@ -59,18 +59,19 @@ impl MediaCache {
     }
 
     pub fn set_keys(&mut self, original_uri: &OwnedMxcUri, thumbnail_uri: Option<OwnedMxcUri>) {
-        if let Some(uri) = thumbnail_uri.clone() {
-            if let Entry::Vacant(v) = self.cache.entry(uri.clone()) {
-                v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::Null)), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+        match thumbnail_uri.clone() {
+            Some(uri) => {
+                if let Entry::Vacant(v) = self.cache.entry(uri.clone()) {
+                    v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::Null)), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+                }
+                if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
+                    v.insert((thumbnail_uri.clone(), Arc::new(Mutex::new(MediaCacheEntry::Null)), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+                }
             }
-
-            if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
-                v.insert((thumbnail_uri.clone(), Arc::new(Mutex::new(MediaCacheEntry::Null)), Arc::new(Mutex::new(MediaCacheEntry::default()))));
-            }
-
-        } else {
-            if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
-                v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::default())), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+            None => {
+                if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
+                    v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::default())), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+                }
             }
         }
     }
