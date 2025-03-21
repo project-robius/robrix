@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, offline_sync::start_base_client, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{self, MediaCache, MediaCacheEntry, MediaCacheEntryRef}, offline_sync::start_base_client, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -807,14 +807,15 @@ async fn async_worker(
             }
             MatrixRequest::FetchAvatar { mxc_uri, on_fetched } => {
                 let Some(client) = CLIENT.get() else { continue };
+
                 let _fetch_task = Handle::current().spawn(async move {
-                    // log!("Sending fetch avatar request for {mxc_uri:?}...");
+                    log!("Sending fetch avatar request for {mxc_uri:?}...");
                     let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
                         format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
                     let res = client.media().get_media_content(&media_request, true).await;
-                    // log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
+                    log!("Fetched avatar for {mxc_uri:?}, succeeded? {}", res.is_ok());
                     on_fetched(AvatarUpdate { mxc_uri, avatar_data: res.map(|v| v.into()) });
                 });
             }
@@ -1009,7 +1010,7 @@ static DEFAULT_SSO_CLIENT_NOTIFIER: LazyLock<Arc<Notify>> = LazyLock::new(
 pub fn start_matrix_tokio() -> Result<()> {
     // Create a Tokio runtime, and save it in a static variable to ensure it isn't dropped.
     let rt = TOKIO_RUNTIME.get_or_init(|| tokio::runtime::Runtime::new().unwrap());
-    
+
     // Create a channel to be used between UI thread(s) and the async worker thread.
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<MatrixRequest>();
     REQUEST_SENDER.set(sender).expect("BUG: REQUEST_SENDER already set!");
@@ -1025,7 +1026,8 @@ pub fn start_matrix_tokio() -> Result<()> {
         // rt.spawn(async move {
         //     let _ = start_base_client().await;
         // });
-        //return;
+        // 123
+        // return;
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -2193,27 +2195,61 @@ pub fn spawn_fetch_room_avatar(room: Room) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
+// pub async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
+//     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+//         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+//         _ => {
+//             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+//                 if room_members.len() == 2 {
+//                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
+//                         return match non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+//                             Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+//                             _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+//                         };
+//                     }
+//                 } else {
+//                     return avatar_from_room_name(room_name.as_deref().unwrap_or_default());
+//                 }
+//             }
+//             avatar_from_room_name(room_name.as_deref().unwrap_or_default())
+//         }
+//     }
+// }
 pub async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
-    match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-        Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
-        _ => {
-            if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
-                if room_members.len() == 2 {
-                    if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        return match non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
-                            _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
-                        };
-                    }
-                } else {
-                    return avatar_from_room_name(room_name.as_deref().unwrap_or_default());
-                }
-            }
-            avatar_from_room_name(room_name.as_deref().unwrap_or_default())
-        }
+    if let Some(avatar_url) = room.avatar_url() {
+        let mut media_cache = MediaCache::new(None);
+        let avatar = media_cache.try_get_media_or_fetch(avatar_url, AVATAR_THUMBNAIL_FORMAT.into());
+        print!("avatar {:?}", avatar);
+        //  {
+        //     (MediaCacheEntry::Loaded(data), _media_format) => {
+        //         Some(data)
+        //     }
+        //     _ => None
+        // };
+        // if let Some(avatar) = avatar {
+        //     return RoomPreviewAvatar::Image(avatar.to_vec())
+        // }
     }
+    return avatar_from_room_name(room_name.as_deref().unwrap_or_default())
+    // match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+    //     Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+    //     _ => {
+    //         if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
+    //             if room_members.len() == 2 {
+    //                 if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
+    //                     return match non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+    //                         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+    //                         _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+    //                     };
+    //                 }
+    //             } else {
+    //                 return avatar_from_room_name(room_name.as_deref().unwrap_or_default());
+    //             }
+    //         }
+    //         avatar_from_room_name(room_name.as_deref().unwrap_or_default())
+    //     }
+    // }
 }
-
 /// Returns a text avatar string containing the first character of the room name.
 pub fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
     RoomPreviewAvatar::Text(
