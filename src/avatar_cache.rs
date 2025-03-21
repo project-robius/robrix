@@ -68,6 +68,7 @@ pub fn get_or_fetch_avatar(
     _cx: &mut Cx,
     mxc_uri: OwnedMxcUri,
 ) -> AvatarCacheEntry {
+    println!("get_or_fetch_avatar {:?}", mxc_uri);
     AVATAR_NEW_CACHE.with_borrow_mut(|cache| {
         match cache.entry(mxc_uri.clone()) {
             Entry::Vacant(vacant) => {
