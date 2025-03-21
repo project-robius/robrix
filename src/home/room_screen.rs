@@ -3536,7 +3536,7 @@ fn populate_link_preview_card(
     card_cache: &mut CardCache,
 ) -> bool {
 
-    match card_cache.try_get_card_or_fetch(url.clone(), body.to_string()) {
+    match card_cache.try_get_card_or_fetch(url.clone()) {
         CardCacheEntry::Loaded(card) => {
             //log!("Link Preview Card Loaded: {:?}; Fetching {:?}", url, card.url);
             if card.title.is_some() {

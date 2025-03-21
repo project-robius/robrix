@@ -85,10 +85,7 @@ impl CardCache {
     /// This method *does not* block or wait for the media to be fetched,
     /// and will return `CardCache::Requested` while the async request is in flight.
     /// If a request is already in flight, this will not issue a new redundant request.
-    pub fn try_get_card_or_fetch(
-        &mut self,
-        url: String,
-    ) -> CardCacheEntry {
+    pub fn try_get_card_or_fetch( &mut self, url: String,) -> CardCacheEntry {
         let value_ref = match self.entry(url.clone()) {
             Entry::Vacant(vacant) => vacant.insert(
                 Arc::new(Mutex::new(CardCacheEntry::Requested))
