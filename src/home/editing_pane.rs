@@ -57,8 +57,6 @@ live_design! {
                 text: "Editing message:"
             }
 
-            // filler = <View> {width: Fill, height: Fill}
-
             cancel_button = <RobrixIconButton> {
                 width: Fit,
                 height: Fit,
@@ -99,7 +97,7 @@ live_design! {
         <LineH> {
             draw_bg: {color: (COLOR_DIVIDER_DARK)}
         }
-        
+
         edit_text_input = <RobrixTextInput> {
             width: Fill, height: Fit,
             margin: { bottom: 5 }

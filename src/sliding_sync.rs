@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::{edit::EditedContent, RoomMember}, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -190,9 +190,9 @@ async fn login(
 /// Which direction to paginate in.
 ///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
-///    which only works if the timeline is *focused* on a specific event.
+///   which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
-///    (towards the start of the timeline), which works in  both live mode and focused mode.
+///   (towards the start of the timeline), which works in  both live mode and focused mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaginationDirection {
     Forwards,
@@ -210,7 +210,7 @@ impl std::fmt::Display for PaginationDirection {
 /// The function signature for the callback that gets invoked when media is fetched.
 pub type OnMediaFetchedFn = fn(
     &Mutex<MediaCacheEntry>,
-    MediaRequest,
+    MediaRequestParameters,
     matrix_sdk::Result<Vec<u8>>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
@@ -283,9 +283,9 @@ pub enum MatrixRequest {
     /// will be invoked with four arguments: the `destination`, the `media_request`,
     /// the result of the media fetch, and the `update_sender`.
     FetchMedia {
-        media_request: MediaRequest,
+        media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
-        destination: Arc<Mutex<MediaCacheEntry>>,
+        destination: MediaCacheEntryRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -423,7 +423,7 @@ async fn async_worker(
                     SignalToUI::set_ui_signal();
 
                     let res = if direction == PaginationDirection::Forwards {
-                        timeline.focused_paginate_forwards(num_events).await
+                        timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
@@ -762,7 +762,7 @@ async fn async_worker(
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
-                        
+
                         while (update_receiver.next().await).is_some() {
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
@@ -790,7 +790,7 @@ async fn async_worker(
                 let Some(client) = CLIENT.get() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
-                    let media_request = MediaRequest {
+                    let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
                         format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
@@ -1003,7 +1003,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1302,7 +1302,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -1481,7 +1481,7 @@ async fn update_room(
             spawn_fetch_room_avatar(new_room.inner_room().clone());
         }
 
-        if let Ok(new_room_name) = new_room.compute_display_name().await {
+        if let Ok(new_room_name) = new_room.display_name().await {
             let new_room_name = new_room_name.to_string();
             if old_room.cached_display_name().as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
@@ -1594,9 +1594,8 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
 
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
-    let room_name = room
-        .compute_display_name()
-        .await
+    let room_name = room.display_name().await
+
         .map(|n| n.to_string())
         .ok();
 
@@ -1807,7 +1806,7 @@ async fn timeline_subscriber_handler(
 
     let room_id = room.room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}...");
-    let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
+    let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
     timeline_update_sender.send(TimelineUpdate::FirstUpdate {
@@ -2247,7 +2246,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.
