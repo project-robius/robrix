@@ -14,7 +14,7 @@ use crate::{
     event_preview::{text_preview_of_message, text_preview_of_offline_message, BeforeText, TextPreview}, home::rooms_list::{self, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}, media_cache::{self, fetch_from_cache, MediaCache, MediaCacheEntry}, persistent_state::fetch_previous_session, sliding_sync::{avatar_from_room_name, get_latest_event_details}, utils::{self, AVATAR_THUMBNAIL_FORMAT}
 };
 
-static BASE_CLIENT: OnceLock<BaseClient> = OnceLock::new();
+pub static BASE_CLIENT: OnceLock<BaseClient> = OnceLock::new();
 /// Initializes and starts the base client for offline synchronization.
 ///
 /// This function sets up the necessary components and configurations
@@ -47,15 +47,36 @@ pub async fn start_base_client() -> Result<()> {
     let session_meta = previous_session.user_session.meta;
     
     client.set_session_meta(session_meta, None).await.unwrap();
-    
+    BASE_CLIENT.set(client.clone()).unwrap();
     let room_id_to_watch = room_id!("!QQpfJfZvqxbCfeDgCj:matrix.org");
     for room in client.rooms() {
+        println!("is_sync {:?} encrypt {:?}", room.is_state_fully_synced(), room.is_encryption_state_synced());
         //println!("set_session_meta room: {room:#?}");
         let room_id = room.room_id().to_owned();
         // if room_id != room_id_to_watch {
         //     continue
         // }
+        let mut length = 0;
+        let room_offline = room.clone();
         
+        for timeline_item in room_offline.latest_encrypted_events.try_read().unwrap().iter() {
+            length += 1;
+            match timeline_item.deserialize() {
+                Ok(time_line_event) => {
+                    println!("room_id {:?} time_line_event {:?}", room_offline.room_id(), time_line_event);
+                }
+                Err(e) => {
+                    println!("Failed to deserialize event: {}", e);
+                }
+            }
+
+        }
+        println!("length {:?}", length);
+        lazy_loader::from_all_chunks::<3, _, _>
+        if let Some(c) = client.event_cache_store().lock().await.unwrap().find_event(room_id, event_id) {
+            println!("mmm {:?}", c.content);
+        }
+
         let room_name = room
             .display_name()
             .await
@@ -131,7 +152,6 @@ fn spawn_fetch_room_avatar(room: Room) {
     let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
     Handle::current().spawn(async move {
         let avatar = room_avatar(&room, &room_name_str).await;
-        println!("avatar {:?}", avatar);
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
@@ -144,10 +164,14 @@ fn spawn_fetch_room_avatar(room: Room) {
 async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
     
     if let Some(mxc_uri)  = room.avatar_url() {
-        println!("mxc_uri {:?}", mxc_uri);
-        if let Ok(data) = fetch_from_cache(&mxc_uri) {
-            return RoomPreviewAvatar::Image(data)
-        }
+        match fetch_from_cache(&mxc_uri) {
+            Ok(data) => {
+                return RoomPreviewAvatar::Image(data)
+            }
+            Err(e) => {
+                println!("Failed to fetch room avatar: {}", e);
+            }
+        }   
     }
     if let Some(room_name) = room_name {
         return avatar_from_room_name(room_name)

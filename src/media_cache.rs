@@ -180,14 +180,14 @@ fn insert_into_cache<D: Into<Arc<[u8]>>>(
             // debugging: dump out the media image to disk
             if true {
                 if let MediaSource::Plain(mxc_uri) = _request.source {
-                    log!("Fetched media for {mxc_uri}");
+                    //log!("Fetched media for {mxc_uri}");
                     let mut path = crate::temp_storage::get_temp_dir_path().clone();
                     let filename = format!("{}_{}",
                         mxc_uri.server_name().unwrap().to_string().replace(".", "_"), mxc_uri.media_id().unwrap(),
                     );
                     path.push(filename);
                     path.set_extension("png");
-                    log!("Writing user media image to disk: {:?}", path);
+                    //log!("Writing user media image to disk: {:?}", path);
                     std::fs::write(path, &data)
                         .expect("Failed to write user media image to disk");
                 }
@@ -214,6 +214,7 @@ pub fn fetch_from_cache(mxc_uri: &OwnedMxcUri)->anyhow::Result<Vec<u8>> {
         mxc_uri.server_name().unwrap().to_string().replace(".", "_"), mxc_uri.media_id().unwrap(),
     );
     path.push(filename);
+    path.set_extension("png");
     let mut file = std::fs::File::open(path)?;
     let mut buf = Vec::new();
     file.read_to_end(&mut buf)?;

@@ -30,10 +30,11 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{self, MediaCache, MediaCacheEntry, MediaCacheEntryRef}, offline_sync::start_base_client, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{self, MediaCache, MediaCacheEntry, MediaCacheEntryRef}, offline_sync::{start_base_client, BASE_CLIENT}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client,
+
 };
 
 #[derive(Parser, Debug, Default)]
@@ -1023,11 +1024,11 @@ pub fn start_matrix_tokio() -> Result<()> {
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
         // Start the base client in the background
-        // rt.spawn(async move {
-        //     let _ = start_base_client().await;
-        // });
+        rt.spawn(async move {
+            let _ = start_base_client().await;
+        });
         // 123
-        // return;
+        return;
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1818,7 +1819,6 @@ async fn timeline_subscriber_handler(
     let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     println!("timeline_items activity {:?}", timeline_items.len());
     let Ok(read_receipt) = room.load_user_receipt(ruma_events::receipt::ReceiptType::Read, ReceiptThread::Unthreaded, &current_user_id().unwrap()).await else {return;};
-    //# 123
     // println!("timeline_items {:?} room_id {:?} unread_notification_counts {:?}",timeline_items.len(), room_id, room.unread_notification_counts());
     // let mut timeline_items_clone = timeline_items.clone();
     // let final_length = timeline_items.len().saturating_sub(room.unread_notification_counts().notification_count as usize - 1);

@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, offline_sync::BASE_CLIENT, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -2320,7 +2320,22 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
+        //123
+        // let room_offline = BASE_CLIENT.get().unwrap().get_room(&room_id).unwrap();
+        // let mut length = 0;
+        // for timeline_item in room_offline.latest_encrypted_events.try_read().unwrap().iter() {
+        //     length += 1;
+        //     match timeline_item.deserialize() {
+        //         Ok(time_line_event) => {
+        //             println!("room_id {:?} time_line_event {:?}", room_offline.room_id(), time_line_event);
+        //         }
+        //         Err(e) => {
+        //             println!("Failed to deserialize event: {}", e);
+        //         }
+        //     }
 
+        // }
+        //println!("length {:?}", length);
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
         //submit_async_request(MatrixRequest::GetNumberUnreadMessages { room_id: room_id.clone() });
@@ -2328,8 +2343,11 @@ impl RoomScreen {
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
-                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+                return;
+            };
+            // let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
+            //     .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid
