@@ -426,9 +426,6 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::LogoutSuccess) => {
                     login_status_modal_inner.set_text(cx, "");
                     login_status_modal_inner.set_title(cx, "");
-                    // let login_status_modal_button = login_status_modal_inner.button_ref();
-                    // login_status_modal_button.set_text(cx, "Okay");
-                    // login_status_modal_button.set_enabled(cx, true);
                 }
                 _ => { }
             }

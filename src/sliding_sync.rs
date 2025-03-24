@@ -2592,16 +2592,40 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     }
 
     // abort long term core async_tasks
-    abort_core_tasks().await;
-
-    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-
-    if client.logged_in() {
-        if let Err(e) = client.matrix_auth().logout().await {
-            Cx::post_action(LoginAction::LogoutFailure("Logout failed (possibly due to invalid token)".to_string()));
-            log!("Warning: Logout failed (possibly due to invalid token): {}", e);
-        }
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(3),
+        abort_core_tasks()
+    ).await {
+        Ok(_) => {},
+        Err(_) => log!("Warning: Aborting core tasks timed out"),
     }
+
+    let _logout_result = if client.logged_in() {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            client.matrix_auth().logout()
+        ).await {
+            Ok(Ok(_)) => {
+                log!("Logout successful");
+                Ok(())
+            },
+            Ok(Err(e)) => {
+                let error_msg = format!("Logout failed: {}", e);
+                log!("Warning: {}", error_msg);
+                Cx::post_action(LoginAction::LogoutFailure(error_msg));
+                Err(anyhow::anyhow!("Logout failed: {}", e))
+            },
+            Err(_) => {
+                let error_msg = "Logout request timed out".to_string();
+                log!("Warning: {}", error_msg);
+                Cx::post_action(LoginAction::LogoutFailure(error_msg));
+                Err(anyhow::anyhow!("Logout request timed out"))
+            }
+        }
+    } else {
+        log!("Client not logged in, skipping server logout");
+        Ok(())
+    };
 
     // clean CLIENT and sync_service
     take_client();  
@@ -2614,6 +2638,10 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     // not the first time to login, so we need to restart matrix tokio and wait for login
     if let Err(e) = start_matrix_tokio(false) {
         log!("Warning: Failed to restart matrix tokio: {}", e);
+        Cx::post_action(LoginAction::LogoutFailure(
+            "Failed to restart system. Please restart the application.".to_string()
+        ));
+        return Err(anyhow::anyhow!("Failed to restart matrix tokio: {}", e));
     }
 
     Cx::post_action(LoginAction::LogoutSuccess);

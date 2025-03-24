@@ -107,7 +107,6 @@ live_design! {
                 svg_file: (ICON_LOGOUT),
                 fn get_color(self) -> vec4 {
                     return (COLOR_DANGER_RED);
-                    // return #x566287; // grayed-out #1C274C until enabled
                 }
             }
 
