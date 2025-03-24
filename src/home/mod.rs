@@ -8,6 +8,7 @@ pub mod main_desktop_ui;
 pub mod main_mobile_ui;
 pub mod room_preview;
 pub mod room_screen;
+pub mod room_screen_offline;
 pub mod room_read_receipt;
 pub mod rooms_list;
 pub mod rooms_sidebar;

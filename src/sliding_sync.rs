@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, room::{edit::EditedContent, RoomMember}, ruma::{
+    config::RequestConfig, deserialized_responses::TimelineEvent, event_handler::EventHandlerDropGuard, linked_chunk::{ChunkContent, ChunkIdentifier}, media::{MediaFormat, MediaRequestParameters, MediaThumbnailSettings}, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -15,6 +15,7 @@ use matrix_sdk::{
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
 };
+use matrix_sdk_base::event_cache::store::EventCacheStoreLockGuard;
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{self, AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
@@ -25,7 +26,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, f32::consts::E, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time};
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -291,6 +292,10 @@ pub enum MatrixRequest {
         destination: MediaCacheEntryRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
+    FetchOfflineTimelineEventChunk {
+        room_id: OwnedRoomId,
+        chunk_identifier: Option<ChunkIdentifier>
+    },
     /// Request to send a message to the given room.
     SendMessage {
         room_id: OwnedRoomId,
@@ -418,6 +423,10 @@ async fn async_worker(
                     let sender = room_info.timeline_update_sender.clone();
                     (timeline_ref, sender)
                 };
+                let Some(timeline) = timeline else {
+                    error!("Error sending {direction} pagination request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 if use_cache {
                     let Ok((room_event_cache, _event_cache_drop_handler))  = timeline.room().event_cache().await else {
                         continue;
@@ -479,7 +488,10 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error sending edit message request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 // Spawn a new async task that will make the actual edit request.
                 let _edit_task = Handle::current().spawn(async move {
                     log!("Sending request to edit message {timeline_event_id:?} in room {room_id}...");
@@ -506,7 +518,10 @@ async fn async_worker(
 
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error fetch details for event request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending request to fetch details for event {event_id} in room {room_id}...");
@@ -537,7 +552,10 @@ async fn async_worker(
 
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error fetch room members request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
                     log!("Sending fetch room members request for room {room_id}...");
@@ -625,6 +643,10 @@ async fn async_worker(
                     };
 
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+                let Some(timeline) = timeline else {
+                    error!("Error fetch room members request for room {room_id}: There is no timeline for this room");
+                    continue;
                 };
                 let _get_unreads_task = Handle::current().spawn(async move {
                     match sender.send(TimelineUpdate::NewUnreadMessagesCount(
@@ -771,7 +793,10 @@ async fn async_worker(
                     };
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error subscribe to own read receipts changed for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
                     pin_mut!(update_receiver);
@@ -841,7 +866,10 @@ async fn async_worker(
                     };
                     room_info.timeline.clone()
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error sending message request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
                     log!("Sending message to room {room_id}: {message:?}...");
@@ -875,6 +903,10 @@ async fn async_worker(
                     };
                     room_info.timeline.clone()
                 };
+                let Some(timeline) = timeline else {
+                    error!("Error reading read receipt request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 let _send_rr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::Read, ReceiptThread::Unthreaded, event_id.clone()).await {
                         Ok(sent) => log!("{} read receipt to room {room_id} for event {event_id}", if sent { "Sent" } else { "Already sent" }),
@@ -897,6 +929,10 @@ async fn async_worker(
                         continue;
                     };
                     room_info.timeline.clone()
+                };
+                let Some(timeline) = timeline else {
+                    error!("Error sending single receipt request for room {room_id}: There is no timeline for this room");
+                    continue;
                 };
                 let _send_frr_task = Handle::current().spawn(async move {
                     match timeline.send_single_receipt(ReceiptType::FullyRead, ReceiptThread::Unthreaded, event_id.clone()).await {
@@ -926,7 +962,10 @@ async fn async_worker(
                 };
 
                 let Some(user_id) = current_user_id() else { continue };
-
+                let Some(timeline) = timeline else {
+                    error!("Error getting room power levels request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 let _power_levels_task = Handle::current().spawn(async move {
                     match timeline.room().power_levels().await {
                         Ok(power_levels) => {
@@ -953,7 +992,10 @@ async fn async_worker(
                     };
                     room_info.timeline.clone()
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error fetch room members request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 let _toggle_reaction_task = Handle::current().spawn(async move {
                     log!("Toggle Reaction to room {room_id}: ...");
                     match timeline.toggle_reaction(&timeline_event_id, &reaction).await {
@@ -974,7 +1016,10 @@ async fn async_worker(
                     };
                     room_info.timeline.clone()
                 };
-
+                let Some(timeline) = timeline else {
+                    error!("Error redact message request for room {room_id}: There is no timeline for this room");
+                    continue;
+                };
                 let _redact_task = Handle::current().spawn(async move {
                     match timeline.redact(&timeline_event_id, reason.as_deref()).await {
                         Ok(()) => log!("Successfully redacted message in room {room_id}."),
@@ -985,6 +1030,72 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::FetchOfflineTimelineEventChunk { room_id, chunk_identifier } => {
+                let client = BASE_CLIENT.get().unwrap();
+                let ec_store = client.event_cache_store().lock().await.unwrap();
+                async fn load_all_chunk (ec_store: EventCacheStoreLockGuard<'_>, room_id: &OwnedRoomId, chunk_identifier: Option<ChunkIdentifier>) -> Result<(Vec<TimelineEvent>, Option<ChunkIdentifier>)> {
+                    if let Some(chunk_identifier) = chunk_identifier {
+                        match ec_store.load_previous_chunk(&room_id, chunk_identifier).await {
+                            Ok(timeline_event) => {
+                                if let Some(timeline_event) = timeline_event {
+                                    match timeline_event.content {
+                                        ChunkContent::Items(items) => {
+                                            return Ok((items, None));
+                                        }
+                                        ChunkContent::Gap(_gap) => {
+                                        
+                                        }
+                                    }
+                                }
+                                
+                            }
+                            Err(e) => {
+                                anyhow::bail!(e);
+                            }
+                        }
+                    } else {
+                        match ec_store.load_last_chunk(&room_id).await {
+                            Ok((timeline_event, chunk_generator)) => {
+                                if let Some(timeline_event) = timeline_event {
+                                    match timeline_event.content {
+                                        ChunkContent::Items(items) => {
+                                            return Ok((items, Some(chunk_generator.current())));
+                                        }
+                                        ChunkContent::Gap(_ignored) => {}
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                anyhow::bail!(e);
+                            }
+                        }
+                    }
+                    
+                    Ok((vec![], None))
+                }
+                Handle::current().spawn(async move {
+                    match load_all_chunk(ec_store, &room_id, chunk_identifier).await {
+                        Ok((initial_items, _chunk_identifier)) => {
+                            let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                            let Some(room_info) = all_room_info.get(&room_id) else {
+                                log!("BUG: room info not found for redact message {room_id}");
+                                return;
+                            };
+                            let num_unread = 0;
+                            let latest_read_receipt = None;
+                            let mut vector_initial_items = Vector::new();
+                            for item in initial_items {
+                                vector_initial_items.push_back(Arc::new(item));
+                            }
+                            room_info.timeline_update_sender.send(TimelineUpdate::FirstUpdateFromCache { initial_items: vector_initial_items, num_unread, latest_read_receipt });
+
+                        },
+                        Err(e) => {
+                            error!("Failed to load chunk: {e:?}");
+                        }
+                    }
+                });
+            }
         }
     }
 
@@ -1099,7 +1210,7 @@ struct RoomInfo {
     #[allow(unused)]
     room_id: OwnedRoomId,
     /// A reference to this room's timeline of events.
-    timeline: Arc<Timeline>,
+    timeline: Option<Arc<Timeline>>,
     /// An instance of the clone-able sender that can be used to send updates to this room's timeline.
     timeline_update_sender: crossbeam_channel::Sender<TimelineUpdate>,
     /// A tuple of two separate channel endpoints that can only be taken *once* by the main UI thread.
@@ -1642,7 +1753,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         room_id.clone(),
         RoomInfo {
             room_id,
-            timeline,
+            timeline: Some(timeline),
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
             timeline_update_sender,
             timeline_subscriber_handler_task,
@@ -1823,13 +1934,13 @@ async fn timeline_subscriber_handler(
     // let mut timeline_items_clone = timeline_items.clone();
     // let final_length = timeline_items.len().saturating_sub(room.unread_notification_counts().notification_count as usize - 1);
     // timeline_items_clone.truncate(final_length);
-    timeline_update_sender.send(TimelineUpdate::FirstUpdate {
-        initial_items: timeline_items.clone(),
-        num_unread: room.unread_notification_counts().notification_count as usize,
-        latest_read_receipt: read_receipt
-    }).unwrap_or_else(
-        |_e| panic!("Error: timeline update sender couldn't send first update ({} items) to room {room_id}!", timeline_items.len())
-    );
+    // timeline_update_sender.send(TimelineUpdate::FirstUpdate {
+    //     initial_items: timeline_items.clone(),
+    //     num_unread: room.unread_notification_counts().notification_count as usize,
+    //     latest_read_receipt: read_receipt
+    // }).unwrap_or_else(
+    //     |_e| panic!("Error: timeline update sender couldn't send first update ({} items) to room {room_id}!", timeline_items.len())
+    // );
 
     let mut latest_event = timeline.latest_event().await;
 

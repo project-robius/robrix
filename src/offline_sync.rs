@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, f64::consts::E, sync::OnceLock, time::Duration}
 
 use anyhow::{bail, Result};
 use matrix_sdk::{
-    deserialized_responses::{TimelineEvent, TimelineEventKind}, encryption::identities::ManualVerifyError, media::{MediaFormat, MediaThumbnailSettings}, ruma::{user_id, OwnedDeviceId, OwnedRoomId}, store::StoreConfig, BaseRoom, RoomInfo, RoomMemberships, SessionMeta
+    deserialized_responses::{TimelineEvent, TimelineEventKind}, encryption::identities::ManualVerifyError, linked_chunk::ChunkContent, media::{MediaFormat, MediaThumbnailSettings}, ruma::{user_id, OwnedDeviceId, OwnedRoomId}, store::StoreConfig, BaseRoom, RoomInfo, RoomMemberships, SessionMeta
 };
 use matrix_sdk_base::{BaseClient, RoomState, Room};
 use matrix_sdk_sqlite::SqliteStateStore;
@@ -53,30 +53,6 @@ pub async fn start_base_client() -> Result<()> {
         println!("is_sync {:?} encrypt {:?}", room.is_state_fully_synced(), room.is_encryption_state_synced());
         //println!("set_session_meta room: {room:#?}");
         let room_id = room.room_id().to_owned();
-        // if room_id != room_id_to_watch {
-        //     continue
-        // }
-        let mut length = 0;
-        let room_offline = room.clone();
-        
-        for timeline_item in room_offline.latest_encrypted_events.try_read().unwrap().iter() {
-            length += 1;
-            match timeline_item.deserialize() {
-                Ok(time_line_event) => {
-                    println!("room_id {:?} time_line_event {:?}", room_offline.room_id(), time_line_event);
-                }
-                Err(e) => {
-                    println!("Failed to deserialize event: {}", e);
-                }
-            }
-
-        }
-        println!("length {:?}", length);
-        lazy_loader::from_all_chunks::<3, _, _>
-        if let Some(c) = client.event_cache_store().lock().await.unwrap().find_event(room_id, event_id) {
-            println!("mmm {:?}", c.content);
-        }
-
         let room_name = room
             .display_name()
             .await

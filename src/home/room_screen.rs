@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    deserialized_responses::TimelineEvent, ruma::{
+    deserialized_responses::TimelineEvent, linked_chunk::ChunkContent, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -1470,49 +1470,28 @@ impl RoomScreen {
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::FirstUpdate { initial_items, num_unread , latest_read_receipt} => {
+                TimelineUpdate::FirstUpdateFromCache { initial_items,num_unread, latest_read_receipt } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
-                    let p = tl.latest_own_user_receipt.clone();
-                    println!("p {:?}", p);
-                    println!("FirstUpdate num_unread {:?} latest_read_receipt {:?} initial_items {:?}", num_unread, latest_read_receipt,initial_items.len());
-                    let Some((latest_read_receipt, r)) = latest_read_receipt else {
-                        return;
-                    };
-                    tl.latest_own_user_receipt = Some(r);
-                    let mut first_unread = 1;
-                    // for item in initial_items.iter() {
-                    //     if let Some(event_id) = item.as_event().and_then(|f|{
-                    //         f.event_id().and_then(|f|{
-                    //             Some(f.to_owned())
-                    //         })
-                    //     }) {
-                    //         first_unread += 1;
-                    //         if event_id == latest_read_receipt {
-                    //             break
-                    //         }
-                    //     }
-                    // }
-                    println!("first_unread {:?}", first_unread);
-                    self.first_unread = Some(first_unread);
-                    portal_list.set_first_id_and_scroll(first_unread, 0.0);
-                    self.view.redraw(cx);
-                    cx.action(ScrollAction::PENDING);
                     // Set the portal list to the very bottom of the timeline.
-                    // #123
-                    //portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
-                    //portal_list.set_tail_range(true);
-                    //portal_list.set_tail_range(true);
-                    // if num_unread > 0 {
-                    //     portal_list.set_first_id_and_scroll(first_unread, 0.0);
-                    //     self.view.redraw(cx);
-                    //     cx.action(ScrollAction::PENDING);
-                    //     self.first_unread = Some(first_unread);
-                    // } else {
-                    //     portal_list.set_first_id_and_scroll(portal_list.first_id().saturating_sub(num_unread), 0.0);
-                    // }
-                    jump_to_bottom.update_visibility(cx, true);                    
+                    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
+                    portal_list.set_tail_range(true);
+                    jump_to_bottom.update_visibility(cx, true);
+
+                    tl.cached_items = initial_items;
+                    done_loading = true;
+                }
+                TimelineUpdate::FirstUpdate { initial_items,num_unread, latest_read_receipt } => {
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
+                    tl.fully_paginated = false;
+                    // Set the portal list to the very bottom of the timeline.
+                    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
+                    portal_list.set_tail_range(true);
+                    jump_to_bottom.update_visibility(cx, true);
+
+                    tl.items = initial_items;
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
@@ -2321,6 +2300,8 @@ impl RoomScreen {
             Did you forget to save the timeline state back to the global map of states?",
         );
         //123
+        submit_async_request(MatrixRequest::FetchOfflineTimelineEventChunk { room_id: room_id.clone(), chunk_identifier: None });
+
         // let room_offline = BASE_CLIENT.get().unwrap().get_room(&room_id).unwrap();
         // let mut length = 0;
         // for timeline_item in room_offline.latest_encrypted_events.try_read().unwrap().iter() {
@@ -2357,6 +2338,7 @@ impl RoomScreen {
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
+                cached_items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
@@ -2673,6 +2655,12 @@ pub enum RoomScreenTooltipActions {
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
+    FirstUpdateFromCache {
+        /// The initial list of timeline items (events) for a room.
+        initial_items: Vector<Arc<TimelineEvent>>,
+        num_unread: usize,
+        latest_read_receipt: Option<(OwnedEventId, Receipt)>
+    },
     /// The very first update a given room's timeline receives.
     FirstUpdate {
         /// The initial list of timeline items (events) for a room.
@@ -2775,7 +2763,7 @@ struct TimelineUiState {
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
-
+    cached_items: Vector<Arc<TimelineEvent>>,
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
