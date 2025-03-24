@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    ruma::{
+    deserialized_responses::TimelineEvent, linked_chunk::ChunkContent, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, offline_sync::BASE_CLIENT, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -946,6 +946,9 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    #[rust] first_unread: Option<usize>,
+    #[rust] is_scrolling: bool,
+    
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1075,6 +1078,20 @@ impl Widget for RoomScreen {
                         );
                     }
                 }
+                if let (Some(ScrollAction::DONE), Some(first_unread)) = (action.downcast_ref::<ScrollAction>(), self.first_unread) {
+                    let pl = self.view.portal_list(id!(list));
+                    if let Some(h) = pl.position_of_item(cx, first_unread - 1) {
+                        println!("a pl.first_id() {:?} - pl.visible_items() {:?}, - h {:?}",pl.first_id() , pl.visible_items(), - h );
+                        pl.set_first_id_and_scroll(pl.first_id(), h);
+                    } else {
+                        println!("cannot find");
+                    }
+                }
+                if let Some(ScrollAction::PENDING) = action.downcast_ref::<ScrollAction>(){
+                    println!("is_scrolling");
+                    self.is_scrolling = true;
+                }
+                
             }
 
             /*
@@ -1304,6 +1321,14 @@ impl Widget for RoomScreen {
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
+                if let Some(first_unread) = self.first_unread {
+                    println!("item_id {:?} first_unread {:?}", item_id,first_unread);
+                    if item_id == first_unread && self.is_scrolling {
+
+                        Cx::post_action(ScrollAction::DONE);
+                        self.is_scrolling = false;
+                    }
+                }
                 let item = {
                     let tl_idx = item_id;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
@@ -1445,7 +1470,19 @@ impl RoomScreen {
         while let Ok(update) = tl.update_receiver.try_recv() {
             num_updates += 1;
             match update {
-                TimelineUpdate::FirstUpdate { initial_items } => {
+                TimelineUpdate::FirstUpdateFromCache { initial_items,num_unread, latest_read_receipt } => {
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
+                    tl.fully_paginated = false;
+                    // Set the portal list to the very bottom of the timeline.
+                    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
+                    portal_list.set_tail_range(true);
+                    jump_to_bottom.update_visibility(cx, true);
+
+                    tl.cached_items = initial_items;
+                    done_loading = true;
+                }
+                TimelineUpdate::FirstUpdate { initial_items,num_unread, latest_read_receipt } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
@@ -1458,6 +1495,7 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    println!("TimelineUpdate::NewItems ");
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1503,12 +1541,12 @@ impl RoomScreen {
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
-                            portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
-                            tl.prev_first_index = Some(new_item_idx);
-                            // Set scrolled_past_read_marker false when we jump to a new event
-                            tl.scrolled_past_read_marker = false;
-                            // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
-                            cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
+                            // portal_list.set_first_id_and_scroll(new_item_idx, new_item_scroll);
+                            // tl.prev_first_index = Some(new_item_idx);
+                            // // Set scrolled_past_read_marker false when we jump to a new event
+                            // tl.scrolled_past_read_marker = false;
+                            // // When the tooltip is up, the timeline may jump. This may take away the hover out event to required to clear the tooltip
+                            // cx.widget_action(ui, &Scope::empty().path, RoomScreenTooltipActions::HoverOut);
 
                         }
                     }
@@ -1562,6 +1600,17 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
+                    println!("unread_message_count {:?}", unread_messages_count);
+                    if let UnreadMessageCount::Known(unread_message_count) = unread_messages_count {
+                        let first_index = portal_list.first_id();
+                        //portal_list.set_first_id(first_index.saturating_sub(unread_message_count as usize));
+                        //println!("first_index {:?}", first_index);
+                        portal_list.set_tail_range(false);
+                        portal_list.set_first_id_and_scroll(first_index.saturating_sub(unread_message_count as usize), 0.0);
+
+                        tl.prev_first_index = Some(first_index.saturating_sub(unread_message_count as usize));
+                    }
+
                     jump_to_bottom.show_unread_message_badge(cx, unread_messages_count);
                 }
                 TimelineUpdate::TargetEventFound { target_event_id, index } => {
@@ -1681,8 +1730,8 @@ impl RoomScreen {
                         .set_visible(cx, !can_send_message);
                 }
 
-                TimelineUpdate::OwnUserReadReceipt(receipt) => {
-                    tl.latest_own_user_receipt = Some(receipt);
+                TimelineUpdate::OwnUserReadReceipt(ownership) => {
+                    tl.latest_own_user_receipt = Some(ownership);
                 }
             }
         }
@@ -1692,6 +1741,7 @@ impl RoomScreen {
                 room_id: tl.room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: false
             });
         }
 
@@ -2249,16 +2299,36 @@ impl RoomScreen {
             "BUG: tried to show_timeline() into a timeline with existing state. \
             Did you forget to save the timeline state back to the global map of states?",
         );
+        //123
+        submit_async_request(MatrixRequest::FetchOfflineTimelineEventChunk { room_id: room_id.clone(), chunk_identifier: None });
 
+        // let room_offline = BASE_CLIENT.get().unwrap().get_room(&room_id).unwrap();
+        // let mut length = 0;
+        // for timeline_item in room_offline.latest_encrypted_events.try_read().unwrap().iter() {
+        //     length += 1;
+        //     match timeline_item.deserialize() {
+        //         Ok(time_line_event) => {
+        //             println!("room_id {:?} time_line_event {:?}", room_offline.room_id(), time_line_event);
+        //         }
+        //         Err(e) => {
+        //             println!("Failed to deserialize event: {}", e);
+        //         }
+        //     }
+
+        // }
+        //println!("length {:?}", length);
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
-
+        //submit_async_request(MatrixRequest::GetNumberUnreadMessages { room_id: room_id.clone() });
         let state_opt = TIMELINE_STATES.lock().unwrap().remove(&room_id);
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
-                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+                return;
+            };
+            // let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
+            //     .expect("BUG: couldn't get timeline state for first-viewed room.");
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid
@@ -2268,6 +2338,7 @@ impl RoomScreen {
                 // We assume timelines being viewed for the first time haven't been fully paginated.
                 fully_paginated: false,
                 items: Vector::new(),
+                cached_items: Vector::new(),
                 content_drawn_since_last_update: RangeSet::new(),
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
@@ -2303,6 +2374,7 @@ impl RoomScreen {
                 room_id: room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: true
             });
 
             // Even though we specify that room member profiles should be lazy-loaded,
@@ -2480,28 +2552,30 @@ impl RoomScreen {
                             event_id: last_event_id.to_owned(),
                         });
                     } else {
-                        if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
-                        .and_then(|receipt| receipt.ts) {
-                            let Some((_first_event_id, first_timestamp)) = tl_state
-                                .items
-                                .get(first_index)
-                                .and_then(|f| f.as_event())
-                                .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
-                                else {
-                                    *index = first_index;
-                                    return;
-                                };
-                            if own_user_receipt_timestamp >= &first_timestamp
-                                && own_user_receipt_timestamp <= &last_timestamp
-                            {
-                                tl_state.scrolled_past_read_marker = true;
-                                submit_async_request(MatrixRequest::FullyReadReceipt {
-                                    room_id: tl_state.room_id.clone(),
-                                    event_id: last_event_id.to_owned(),
-                                });
-                            }
+                        // if let Some(own_user_receipt_timestamp) = &tl_state.latest_own_user_receipt.clone()
+                        // .and_then(|(_e, receipt )| {
+                        //     let Some((_first_event_id, first_timestamp)) = tl_state
+                        //         .items
+                        //         .get(first_index)
+                        //         .and_then(|f| f.as_event())
+                        //         .and_then(|f| f.event_id().map(|e| (e, f.timestamp())))
+                        //         else {
+                        //             *index = first_index;
+                                    
+                        //         };
+                        //     if own_user_receipt_timestamp >= &first_timestamp
+                        //         && own_user_receipt_timestamp <= &last_timestamp
+                        //     {
+                        //         tl_state.scrolled_past_read_marker = true;
+                        //         submit_async_request(MatrixRequest::FullyReadReceipt {
+                        //             room_id: tl_state.room_id.clone(),
+                        //             event_id: last_event_id.to_owned(),
+                        //         });
+                        //     }
 
-                        }
+                        // }) {
+
+                        // }
                     }
                 }
                 *index = first_index;
@@ -2532,6 +2606,7 @@ impl RoomScreen {
                 room_id: tl.room_id.clone(),
                 num_events: 50,
                 direction: PaginationDirection::Backwards,
+                use_cache: false
             });
         }
         tl.last_scrolled_index = first_index;
@@ -2580,10 +2655,18 @@ pub enum RoomScreenTooltipActions {
 /// A message that is sent from a background async task to a room's timeline view
 /// for the purpose of update the Timeline UI contents or metadata.
 pub enum TimelineUpdate {
+    FirstUpdateFromCache {
+        /// The initial list of timeline items (events) for a room.
+        initial_items: Vector<Arc<TimelineEvent>>,
+        num_unread: usize,
+        latest_read_receipt: Option<(OwnedEventId, Receipt)>
+    },
     /// The very first update a given room's timeline receives.
     FirstUpdate {
         /// The initial list of timeline items (events) for a room.
         initial_items: Vector<Arc<TimelineItem>>,
+        num_unread: usize,
+        latest_read_receipt: Option<(OwnedEventId, Receipt)>
     },
     /// The content of a room's timeline was updated in the background.
     NewItems {
@@ -2680,7 +2763,7 @@ struct TimelineUiState {
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
-
+    cached_items: Vector<Arc<TimelineEvent>>,
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -4359,4 +4442,10 @@ impl MessageRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
     }
+}
+
+#[derive(Debug)]
+pub enum ScrollAction {
+    PENDING,
+    DONE
 }
