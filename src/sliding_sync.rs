@@ -30,7 +30,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_last_user_id, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -2635,12 +2635,35 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
 
+    // When a user logs out, their access token is invalidated on the server side.
+    // We delete last_login.txt here for the following reasons:
+    //
+    // 1. Preventing Invalid Token Errors:
+    //    - If last_login.txt remains after logout, and the user closes and reopens the app,
+    //    - The app would attempt to auto-login using the stored credentials
+    //    - This would result in "Invalid access token" errors since the token was invalidated during logout
+    //
+    // 2. Consistent User Experience:
+    //    - This behavior matches other Matrix clients like Element Desktop
+    //    - After logout + app restart, users expect to see the login screen
+    //    - They shouldn't encounter error messages about invalid tokens
+    //
+    // 3. Clean State Management:
+    //    - While we preserve the session data for faster future logins,
+    //    - Removing LATEST_USER_ID_FILE_NAME ensures the next app start begins in a clean, logged-out state
+    //    - This prevents the confusion of auto-login attempts with invalid credentials
+    //
+    // Note: We only remove LATEST_USER_ID_FILE_NAME, not the entire session data.
+    // This way, when users log in again, they can still benefit from cached data
+    // while avoiding the invalid token errors.
+    if let Err(e) = delete_last_user_id().await {
+        log!("Warning: Failed to delete LATEST_USER_ID_FILE_NAME file: {}",  e);
+    }
+
     // not the first time to login, so we need to restart matrix tokio and wait for login
     if let Err(e) = start_matrix_tokio(false) {
-        log!("Warning: Failed to restart matrix tokio: {}", e);
-        Cx::post_action(LoginAction::LogoutFailure(
-            "Failed to restart system. Please restart the application.".to_string()
-        ));
+        log!("Warning: Failed to restart matrix tokio: {}", e);        
+        Cx::post_action(LoginAction::LogoutFailure("Failed to restart system. Please restart the application.".to_string()));
         return Err(anyhow::anyhow!("Failed to restart matrix tokio: {}", e));
     }
 

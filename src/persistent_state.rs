@@ -201,3 +201,30 @@ pub async fn delete_session(user_id: Option<OwnedUserId>) -> anyhow::Result<()> 
     }
     Ok(())
 }
+
+/// Remove the LATEST_USER_ID_FILE_NAME file if it exists
+/// 
+/// Returns:
+/// - Ok(true) if file was found and deleted
+/// - Ok(false) if file didn't exist
+/// - Err if deletion failed
+pub async fn delete_last_user_id() -> anyhow::Result<bool> {
+    let last_login_path = app_data_dir().join(LATEST_USER_ID_FILE_NAME);
+    
+    if last_login_path.exists() {
+        match std::fs::remove_file(&last_login_path) {
+            Ok(_) => {
+                log!("Successfully deleted last_login.txt");
+                Ok(true)
+            }
+            Err(e) => {
+                let err_msg = format!("Failed to remove {LATEST_USER_ID_FILE_NAME}: {e}");
+                log!("{}", err_msg);
+                Err(anyhow::anyhow!(err_msg))
+            }
+        }
+    } else {
+        log!("{LATEST_USER_ID_FILE_NAME} not found, nothing to delete");
+        Ok(false)
+    }
+}
