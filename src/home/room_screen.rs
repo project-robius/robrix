@@ -1049,7 +1049,7 @@ impl Widget for RoomScreen {
                 let Some(tl) = self.tl_state.as_mut() else { return };
 
                 if let Some(TextOrImageAction::Click(mxc_uri)) = action.downcast_ref() {
-                    if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, false, image_viewer_insert_into_cache) {
+                    if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, image_viewer_insert_into_cache) {
                         Cx::post_action(ImageViewerAction::Show(data));
                     }
                 }
@@ -3545,7 +3545,7 @@ fn populate_image_message_content(
 
         media_cache.set_keys(original_mxc_uri, thumbnail_mxc_uri);
 
-        match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, true, insert_into_cache) {
+        match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, insert_into_cache) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
