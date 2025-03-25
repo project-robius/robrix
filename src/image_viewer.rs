@@ -71,7 +71,7 @@ pub enum ImageViewerAction {
     // That is, image viewer will show up for no reason in users' view.
     // feel free to modify comments.
     Show(Arc<[u8]>),
-    MakeItClearer(Arc<[u8]>),
+    ReplaceImage(Arc<[u8]>),
     None,
 }
 
@@ -96,7 +96,7 @@ impl MatchEvent for ImageViewer {
                 self.open(cx);
                 self.load_with_data(cx, data);
             }
-            if let Some(ImageViewerAction::MakeItClearer(data)) = action.downcast_ref() {
+            if let Some(ImageViewerAction::ReplaceImage(data)) = action.downcast_ref() {
                 // Handled the potential bug here
                 // feel free to modify comments.
                 if self.visible {

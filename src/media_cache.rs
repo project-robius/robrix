@@ -65,7 +65,7 @@ impl MediaCache {
 
         if let Some(thumbnail_uri) = thumbnail_uri {
             if let Entry::Vacant(v) = self.cache.entry(thumbnail_uri.clone()) {
-                v.insert((Some(thumbnail_uri), Arc::new(Mutex::new(MediaCacheEntry::default()))));
+                v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::default()))));
             }
         }
     }
@@ -84,7 +84,7 @@ impl MediaCache {
                 }
                 Entry::Occupied(mut o) => {
                     let (thumbnail_uri, entry_ref) = o.get().clone();
-                    let er = entry_ref.lock().unwrap();
+                    let er = entry_ref.lock().unwrap().clone();
 
                     match er.clone() {
                         MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed => {
@@ -189,7 +189,8 @@ pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
             let data = data.into();
             // This function just simply copy from `insert_from_cache`,
             // only here is different, we just post an action on getting the image data.
-            Cx::post_action(ImageViewerAction::MakeItClearer(data.clone()));
+            Cx::post_action(ImageViewerAction::ReplaceImage(data.clone()));
+            log!("thumbnail data len: {}", data.len());
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {
