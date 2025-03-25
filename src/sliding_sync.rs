@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{html_or_plaintext::MatrixLinkPillAction, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillInfo, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -357,7 +357,7 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
-    GetRoomPreview {
+    GetMatrixLinkPillInfo {
         room_or_alias_id: OwnedRoomOrAliasId,
         via: Vec<OwnedServerName>
     },
@@ -968,13 +968,14 @@ async fn async_worker(
                     }
                 });
             },
-            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
+            MatrixRequest::GetMatrixLinkPillInfo { room_or_alias_id, via } => {
                 let Some(client) = CLIENT.get() else { continue };
                 let _room_preview_task = Handle::current().spawn(async move {
                     if let Ok(preview) = client.get_room_preview(&room_or_alias_id, via).await {
-                        Cx::post_action(MatrixLinkPillAction::RoomPillLoaded {
+                        log!("Got room preview for {room_or_alias_id:?}: {preview:?}");
+                        Cx::post_action(MatrixLinkPillInfo::Loaded {
                             room_or_alias_id: room_or_alias_id.clone(),
-                            display_name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                            name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
                             avatar_url: preview.avatar_url,
                         });
                     } else {
