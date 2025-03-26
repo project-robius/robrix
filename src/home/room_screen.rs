@@ -3543,7 +3543,7 @@ fn populate_image_message_content(
 
         let mxc_uri_for_timeline = thumbnail_mxc_uri.clone().unwrap_or(original_mxc_uri.clone());
 
-        media_cache.set_keys(original_mxc_uri, thumbnail_mxc_uri);
+        media_cache.image_set_keys(original_mxc_uri, thumbnail_mxc_uri);
 
         match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, insert_into_cache) {
             MediaCacheEntry::Loaded(data) => {

@@ -73,24 +73,23 @@ pub struct TextOrImage {
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // We only handle events if the status is `Image`.
-        if TextOrImageStatus::Image != self.status() { return };
-
-        let image_area = self.view.image(id!(image_view.image)).area();
-
-        match event.hits(cx, image_area) {
-            Hit::FingerDown(_, _) => {
-                cx.set_key_focus(image_area);
-            }
-            Hit::FingerUp(fe) => {
-                if fe.was_tap() {
-                    // We run the check to see if the original image was already fetched or not.
-                    if let Some(image_value) = self.image_value.as_ref() {
-                        Cx::post_action(TextOrImageAction::Click(image_value.original_uri.clone()));
+        // We handle hit events if the status is `Image`.
+        if let TextOrImageStatus::Image = self.status {
+            let image_area = self.view.image(id!(image_view.image)).area();
+            match event.hits(cx, image_area) {
+                Hit::FingerDown(_, _) => {
+                    cx.set_key_focus(image_area);
+                }
+                Hit::FingerUp(fe) => {
+                    if fe.was_tap() {
+                        // We run the check to see if the original image was already fetched or not.
+                        if let Some(image_value) = self.image_value.as_ref() {
+                            Cx::post_action(TextOrImageAction::Click(image_value.original_uri.clone()));
+                        }
                     }
                 }
+                _ => (),
             }
-            _ => (),
         }
         self.view.handle_event(cx, event, scope);
     }

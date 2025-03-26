@@ -58,7 +58,9 @@ impl MediaCache {
         }
     }
 
-    pub fn set_keys(&mut self, original_uri: &OwnedMxcUri, thumbnail_uri: Option<OwnedMxcUri>) {
+    /// This function only for images or stickers.
+    /// Never call this function on populating audio, video, etc.
+    pub fn image_set_keys(&mut self, original_uri: &OwnedMxcUri, thumbnail_uri: Option<OwnedMxcUri>) {
         if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
             v.insert((thumbnail_uri.clone(), Arc::new(Mutex::new(MediaCacheEntry::default()))));
         }
