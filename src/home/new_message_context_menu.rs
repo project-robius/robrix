@@ -145,7 +145,7 @@ live_design! {
 
             // TODO: change text to "Unpin Message" if the message is already pinned,
             //       using https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk/struct.RoomInfo.html#method.is_pinned_event.
-            //       The caller of `show()` will also need to check if the current user is allowed to 
+            //       The caller of `show()` will also need to check if the current user is allowed to
             //       pin/unpin messages using: https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event
             pin_button = <RobrixIconButton> {
                 height: (BUTTON_HEIGHT)
@@ -320,8 +320,9 @@ pub struct MessageDetails {
     pub related_event_id: Option<OwnedEventId>,
     /// The widget ID of the RoomScreen that contains this message.
     pub room_screen_widget_uid: WidgetUid,
-    /// Whether this message mentions the current user.
-    pub mentions_user: bool,
+    /// Whether this message should be highlighted, i.e.,
+    /// if it mentions the room/current user or is a reply to the current user.
+    pub should_be_highlighted: bool,
     /// The abilities that the user has on this message.
     pub abilities: MessageAbilities,
 }
@@ -377,7 +378,7 @@ impl Widget for NewMessageContextMenu {
             return;
         }
 
-        self.widget_match_event(cx, event, scope); 
+        self.widget_match_event(cx, event, scope);
     }
 }
 
@@ -613,7 +614,7 @@ impl NewMessageContextMenu {
 
         self.redraw(cx);
 
-        let num_visible_buttons = 
+        let num_visible_buttons =
             show_react as u8
             + show_reply_to as u8
             + show_edit as u8

@@ -26,7 +26,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -3410,7 +3410,7 @@ fn populate_message_view(
             &message,
             has_html_body,
         ),
-        mentions_user: does_message_mention_current_user(&message),
+        should_be_highlighted: event_tl_item.is_highlighted()
     });
 
     // Set the timestamp.
@@ -3428,26 +3428,6 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
-}
-
-
-/// Returns `true` if the given message mentions the current user or is a room mention.
-fn does_message_mention_current_user(
-    message: &MessageOrSticker,
-) -> bool {
-    let Some(current_user_id) = sliding_sync::current_user_id() else {
-        return false;
-    };
-
-    match message {
-        // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
-        MessageOrSticker::Message(msg) => {
-            msg.mentions().is_some_and(|mentions|
-                mentions.room || mentions.user_ids.contains(&current_user_id)
-            )
-        }
-        MessageOrSticker::Sticker(_) => false, // Stickers can't mention users.
-    }
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3877,12 +3857,12 @@ trait SmallStateEventContent {
     ///
     /// ## Arguments
     /// * `item`: a `SmallStateEvent` widget that has already been added to
-    ///    the given `PortalList` at the given `item_id`.
-    ///    This function may either modify that item or completely replace it
-    ///    with a different widget if needed.
+    ///   the given `PortalList` at the given `item_id`.
+    ///   This function may either modify that item or completely replace it
+    ///   with a different widget if needed.
     /// * `item_drawn_status`: the old (prior) drawn status of the item.
     /// * `new_drawn_status`: the new drawn status of the item, which may have already
-    ///    been updated to reflect the item's profile having been drawn right before this function.
+    ///   been updated to reflect the item's profile having been drawn right before this function.
     ///
     /// ## Return
     /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
@@ -4371,8 +4351,7 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mentions_user = self.details.as_ref().is_some_and(|d| d.mentions_user);
-        if mentions_user {
+        if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
