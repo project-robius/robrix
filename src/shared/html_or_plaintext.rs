@@ -213,6 +213,7 @@ impl Widget for RobrixHtmlLink {
         // TODO: this is currently disabled because Makepad doesn't yet support
         // partial vertical alignment of inline Html subwidgets with the surrounding text.
         // Once makepad supports that, we can re-enable this to show the Pill widgets.
+        log!("RobrixHtmlLink::draw_walk() is disabled");
         if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
             self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
         } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
@@ -295,6 +296,20 @@ impl Widget for MatrixLinkPill {
                 match action.downcast_ref() {
                     Some(MatrixLinkPillInfo::Loaded { room_or_alias_id, name, avatar_url } ) => {
                         log!("MatrixLinkPillInfo::Loaded: {:?}, {:?}, {:?}", room_or_alias_id, name, avatar_url);
+                        if let Some(matrix_id) = &self.matrix_id {
+                            let id: OwnedRoomOrAliasId = match matrix_id {
+                                MatrixId::Room(room_id) => room_id.clone().into(),
+                                MatrixId::RoomAlias(room_alias) => room_alias.clone().into(),
+                                MatrixId::Event(room_or_alias_id, _event_id) => room_or_alias_id.clone(),
+                                _ => return,
+                            };
+
+                            if id == *room_or_alias_id {
+                                self.set_name(cx, name);
+                                self.set_avatar(cx, avatar_url.clone());
+                                self.redraw(cx);
+                            }
+                        }
                     }
                     _ => { }
                 }
