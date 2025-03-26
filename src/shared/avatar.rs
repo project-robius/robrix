@@ -106,7 +106,7 @@ impl Widget for Avatar {
         let area = self.view.area();
         let widget_uid = self.widget_uid();
         match event.hits(cx, area) {
-            Hit::FingerDown(_fde, _) => {
+            Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
             Hit::FingerUp(fue) => if fue.is_over && fue.is_primary_hit() && fue.was_tap() {

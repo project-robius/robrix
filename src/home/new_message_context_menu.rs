@@ -356,7 +356,7 @@ impl Widget for NewMessageContextMenu {
             event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
-                Hit::FingerDown(fde, _) => {
+                Hit::FingerDown(fde) => {
                     let reaction_text_input = self.view.text_input(id!(reaction_input_view.reaction_text_input));
                     if reaction_text_input.area().rect(cx).contains(fde.abs) {
                         reaction_text_input.set_key_focus(cx);

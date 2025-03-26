@@ -4281,16 +4281,48 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        // We *first* forward the event to the child view such that it has the chance
+        // We first handle a click on the replied-to message preview, if present,
+        // because we don't want any widgets within the replied-to message to be
+        // clickable or otherwise interactive.
+        match event.hits(cx, self.view(id!(replied_to_message)).area()) {
+            Hit::FingerDown(fe) => {
+                cx.set_key_focus(self.view(id!(replied_to_message)).area());
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::OpenMessageContextMenu {
+                            details: details.clone(),
+                            abs_pos: fe.abs,
+                        }
+                    );
+                }
+            }
+            // If the hit occurred on the replied-to message preview, jump to it.
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                // TODO: move this to the event handler for any reply preview content,
+                //       since we also want this jump-to-reply behavior for the reply preview
+                //       that appears above the message input box when you click the reply button.
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::JumpToRelated(details.clone()),
+                );
+            }
+            _ => { }
+        }
+
+        // Next, we forward the event to the child view such that it has the chance
         // to handle it before the Message widget handles it.
         // This ensures that events like right-clicking/long-pressing a reaction button
         // or a link within a message will be treated as an action upon that child view
         // rather than an action upon the message itself.
         self.view.handle_event(cx, event, scope);
 
+        // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
         match event.hits(cx, message_view_area) {
-            Hit::FingerDown(fe, _) => {
+            Hit::FingerDown(fe) => {
                 cx.set_key_focus(message_view_area);
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
@@ -4313,20 +4345,6 @@ impl Widget for Message {
                         abs_pos: lp.abs,
                     }
                 );
-            }
-            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
-                // If the hit occurred on the replied-to message preview, jump to it.
-                //
-                // TODO: move this to the event handler for any reply preview content,
-                //       since we also want this jump-to-reply behavior for the reply preview
-                //       that appears above the message input box when you click the reply button.
-                if fe.is_primary_hit() && self.view(id!(replied_to_message)).area().rect(cx).contains(fe.abs) {
-                    cx.widget_action(
-                        details.room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::JumpToRelated(details.clone()),
-                    );
-                }
             }
             Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
