@@ -2,7 +2,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, SelectedRoom}, sliding_sync::{is_room_known, submit_async_request}};
+use crate::{app::{AppState, SelectedRoom, UpdateDockState}, sliding_sync::{is_room_known, submit_async_request, MatrixRequest}};
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
@@ -89,7 +89,6 @@ impl Widget for MainDesktopUI {
             for action in actions {
                 match action.downcast_ref() {
                     Some(RoomsPanelAction::DockLoadAll) => {
-                        println!("RoomsPanelAction::DockLoadAll");
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
 
                         self.room_order = app_state.rooms_panel.room_order.clone();
@@ -117,8 +116,8 @@ impl Widget for MainDesktopUI {
                                     } else {
                                         widget
                                             .as_room_screen()
-                                            .set_notice(cx, crate::app::UpdateDockState::Pending(room.room_id.clone()));
-                                        submit_async_request(crate::sliding_sync::MatrixRequest::DockWaitForRoomReady { room_id: room.room_id.clone() });
+                                            .set_notice(cx, UpdateDockState::Pending(room.room_id.clone()));
+                                        submit_async_request(MatrixRequest::DockWaitForRoomReady { room_id: room.room_id.clone() });
                                     }
                                 }
                             });
@@ -175,7 +174,7 @@ impl Widget for MainDesktopUI {
                                     if &room.room_id == room_id {
                                         widget
                                             .as_room_screen()
-                                            .set_notice(cx, crate::app::UpdateDockState::Failure(room_id.clone(), reason.clone()));
+                                            .set_notice(cx, UpdateDockState::Failure(room_id.clone(), reason.clone()));
                                         break;
                                     }
                                 }
@@ -195,7 +194,6 @@ impl Widget for MainDesktopUI {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
         if !self.drawn_previously {
-            println!("MainDesktopUI::drawn_previously");
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.rooms_panel.open_rooms.is_empty() {
                 cx.action(RoomsPanelAction::DockLoadAll);
