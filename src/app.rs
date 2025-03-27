@@ -368,9 +368,6 @@ impl AppMain for App {
                         self.app_state.rooms_panel = rooms_panel_state;
                         cx.action(RoomsPanelAction::DockLoadAll);
                     }
-                    UpdateDockState::Pending(room_id) => {
-                        cx.action(RoomsPanelAction::DockPending(room_id));
-                    }
                     UpdateDockState::Success(room_id) => {
                         cx.action(RoomsPanelAction::DockSuccess(room_id));
                         cx.action(RoomsPanelAction::DockLoadAll);

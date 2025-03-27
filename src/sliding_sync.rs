@@ -969,7 +969,6 @@ async fn async_worker(
                 });
             },
             MatrixRequest::DockWaitForRoomReady { room_id } => {
-                enqueue_dock_state_update(UpdateDockState::Pending(room_id.clone()));
                 Handle::current().spawn(async move {
                     let time = Instant::now();
                     loop {

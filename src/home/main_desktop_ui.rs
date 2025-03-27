@@ -2,9 +2,9 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{enqueue_dock_state_update, AppState, SelectedRoom}, sliding_sync::{is_room_known, submit_async_request}};
+use crate::{app::{AppState, SelectedRoom}, sliding_sync::{is_room_known, submit_async_request}};
 
-use super::room_screen::{RoomScreenNotice, RoomScreenWidgetRefExt};
+use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -85,20 +85,6 @@ pub struct MainDesktopUI {
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let dock = self.view.dock(id!(dock));
-        if let Event::Signal = event {
-            // while let Some(rooms_panel_state) = crate::app::LOAD_ALL_DOCK_STATE_UPDATES.pop() {
-            //     let app_state = scope.data.get_mut::<crate::app::AppState>().unwrap();
-            //     app_state.rooms_panel = rooms_panel_state.clone();
-            //     cx.action(super::main_desktop_ui::RoomsPanelAction::DockLoadAll);
-            // }
-            // while let Some((room_id, rooms_panel_state)) = crate::app::PENDING_DOCK_STATE_UPDATES.pop() {
-            //     if let Some() = room_id {}
-            //     match rooms_panel_state {
-                    
-            //     }
-            //     cx.action(RoomsPanelAction::DockPending(room_id));
-            // }
-        }
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
@@ -129,6 +115,9 @@ impl Widget for MainDesktopUI {
                                             room.room_name.clone().unwrap_or_default(),
                                         );
                                     } else {
+                                        widget
+                                            .as_room_screen()
+                                            .set_notice(cx, crate::app::UpdateDockState::Pending(room.room_id.clone()));
                                         submit_async_request(crate::sliding_sync::MatrixRequest::DockWaitForRoomReady { room_id: room.room_id.clone() });
                                     }
                                 }
@@ -139,24 +128,6 @@ impl Widget for MainDesktopUI {
 
                         if let Some(ref selected_room) = &app_state.rooms_panel.selected_room {
                             self.focus_or_create_tab(cx, selected_room.clone());
-                        }
-                    }
-                    Some(RoomsPanelAction::DockPending(room_id)) => {
-                        let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        if let Some(mut dock) = dock.borrow_mut() {
-                            for (head_liveid, (_, widget)) in dock.items().iter() {
-                                if let Some(room) =
-                                    app_state.rooms_panel.open_rooms.get(&head_liveid.0)
-                                {
-                                    if &room.room_id == room_id {
-                                        widget
-                                            .as_room_screen()
-                                            .set_notice(cx, crate::app::UpdateDockState::Pending(room_id.clone()));
-                                    }
-                                }
-                            }
-                        } else {
-                            return;
                         }
                     }
                     Some(RoomsPanelAction::DockSave) => {
@@ -194,25 +165,25 @@ impl Widget for MainDesktopUI {
                             return;
                         }
                     }
-                    // Some(RoomsPanelAction::DockFailure(room_id, reason)) => {
-                    //     let app_state = scope.data.get_mut::<AppState>().unwrap();
-                    //     if let Some(mut dock) = dock.borrow_mut() {
-                    //         for (head_liveid, (_, widget)) in dock.items().iter() {
-                    //             if let Some(room) =
-                    //                 app_state.rooms_panel.open_rooms.get(&head_liveid.0)
-                    //             {
-                    //                 if &room.room_id == room_id {
-                    //                     widget
-                    //                         .as_room_screen()
-                    //                         .set_notice(cx, RoomScreenNotice::Failure(reason.clone()));
-                    //                     break;
-                    //                 }
-                    //             }
-                    //         }
-                    //     } else {
-                    //         return;
-                    //     }
-                    // }
+                    Some(RoomsPanelAction::DockFailure(room_id, reason)) => {
+                        let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        if let Some(mut dock) = dock.borrow_mut() {
+                            for (head_liveid, (_, widget)) in dock.items().iter() {
+                                if let Some(room) =
+                                    app_state.rooms_panel.open_rooms.get(&head_liveid.0)
+                                {
+                                    if &room.room_id == room_id {
+                                        widget
+                                            .as_room_screen()
+                                            .set_notice(cx, crate::app::UpdateDockState::Failure(room_id.clone(), reason.clone()));
+                                        break;
+                                    }
+                                }
+                            }
+                        } else {
+                            return;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -429,8 +400,6 @@ pub enum RoomsPanelAction {
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoadAll,
-    /// Display a spinner widget to show the room screen is loading.
-    DockPending(OwnedRoomId),
     /// Display timeline in the room screen
     DockSuccess(OwnedRoomId),
     /// Display failure message and its reason

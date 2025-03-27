@@ -4,7 +4,6 @@
 use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
 
 use bytesize::ByteSize;
-use futures_util::TryFutureExt;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
@@ -22,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    app::{enqueue_dock_state_update, UpdateDockState, PENDING_DOCK_STATE_UPDATES}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::UpdateDockState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -980,8 +979,6 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            // #123
-            self.handle_dock_load_pending(cx, scope);
             self.process_timeline_updates(cx, &portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
@@ -2577,21 +2574,6 @@ impl RoomScreen {
         tl.last_scrolled_index = first_index;
     }
 
-    fn handle_dock_load_pending(&mut self, cx: &mut Cx, scope: &mut Scope) {
-        // if self.room_id.is_none() { return }
-        // while let Some((room_id, update_state)) = PENDING_DOCK_STATE_UPDATES.pop() {
-        //     println!("handle_dock_load_pending {:?}  room_id {:?} update_state {:?}", self.room_id, room_id,  update_state);
-            
-        //     if room_id != self.room_id {
-        //         //enqueue_dock_state_update(room_id, update_state);
-        //         continue
-        //     }
-        //     if let Some(room_id) = room_id {
-        //         cx.action(crate::home::main_desktop_ui::RoomsPanelAction::DockPending(room_id));
-        //     }
-            
-        // }
-    }
 }
 
 impl RoomScreenRef {
