@@ -60,7 +60,7 @@ pub struct ImageValue {
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
-/// This is useful for displaying alternate text when an image is not (yet) available
+/// This is useful for displaying alternate text when an image is not (y680-121-263et) available
 /// or fails to load. It can also be used to display a loading message while an image
 /// is being fetched.
 #[derive(Live, Widget, LiveHook)]
@@ -116,12 +116,12 @@ impl TextOrImage {
     ///
     /// ## Arguments
     /// * `image_set_function`: this function will be called with an [ImageRef] argument,
-    ///    which refers to the image that will be displayed within this `TextOrImage`.
-    ///    This allows the caller to set the image contents in any way they want.
-    ///    * If successful, the `image_set_function` should return the size of the image
-    ///      in pixels as a tuple, `(width, height)`.
-    ///    * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
-    fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
+    ///   which refers to the image that will be displayed within this `TextOrImage`.
+    ///   This allows the caller to set the image contents in any way they want.
+    ///   * If successful, the `image_set_function` should return the size of the image
+    ///     in pixels as a tuple, `(width, height)`.
+    ///   * If `image_set_function` returns an error, no change is made to this `TextOrImage`.
+    pub fn show_image<F, E>(&mut self, cx: &mut Cx, image_set_function: F) -> Result<(), E>
         where F: FnOnce(&mut Cx, ImageRef) -> Result<(usize, usize), E>
     {
         let image_ref = self.view.image(id!(image_view.image));
