@@ -103,6 +103,7 @@ live_design! {
     App = {{App}} {
         ui: <Window> {
             window: {inner_size: vec2(1280, 800), title: "Robrix"},
+            caption_bar = {caption_label = {label = {text: "Robrix"}}}
             pass: {clear_color: #2A}
 
             body = {

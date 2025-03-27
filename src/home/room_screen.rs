@@ -26,7 +26,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -3463,7 +3463,7 @@ fn populate_message_view(
             &message,
             has_html_body,
         ),
-        mentions_user: does_message_mention_current_user(&message),
+        should_be_highlighted: event_tl_item.is_highlighted()
     });
 
     // Set the timestamp.
@@ -3481,26 +3481,6 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
-}
-
-
-/// Returns `true` if the given message mentions the current user or is a room mention.
-fn does_message_mention_current_user(
-    message: &MessageOrSticker,
-) -> bool {
-    let Some(current_user_id) = sliding_sync::current_user_id() else {
-        return false;
-    };
-
-    match message {
-        // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
-        MessageOrSticker::Message(msg) => {
-            msg.mentions().is_some_and(|mentions|
-                mentions.room || mentions.user_ids.contains(&current_user_id)
-            )
-        }
-        MessageOrSticker::Sticker(_) => false, // Stickers can't mention users.
-    }
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3930,12 +3910,12 @@ trait SmallStateEventContent {
     ///
     /// ## Arguments
     /// * `item`: a `SmallStateEvent` widget that has already been added to
-    ///    the given `PortalList` at the given `item_id`.
-    ///    This function may either modify that item or completely replace it
-    ///    with a different widget if needed.
+    ///   the given `PortalList` at the given `item_id`.
+    ///   This function may either modify that item or completely replace it
+    ///   with a different widget if needed.
     /// * `item_drawn_status`: the old (prior) drawn status of the item.
     /// * `new_drawn_status`: the new drawn status of the item, which may have already
-    ///    been updated to reflect the item's profile having been drawn right before this function.
+    ///   been updated to reflect the item's profile having been drawn right before this function.
     ///
     /// ## Return
     /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
@@ -4335,16 +4315,48 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        // We *first* forward the event to the child view such that it has the chance
+        // We first handle a click on the replied-to message preview, if present,
+        // because we don't want any widgets within the replied-to message to be
+        // clickable or otherwise interactive.
+        match event.hits(cx, self.view(id!(replied_to_message)).area()) {
+            Hit::FingerDown(fe) => {
+                cx.set_key_focus(self.view(id!(replied_to_message)).area());
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::OpenMessageContextMenu {
+                            details: details.clone(),
+                            abs_pos: fe.abs,
+                        }
+                    );
+                }
+            }
+            // If the hit occurred on the replied-to message preview, jump to it.
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                // TODO: move this to the event handler for any reply preview content,
+                //       since we also want this jump-to-reply behavior for the reply preview
+                //       that appears above the message input box when you click the reply button.
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::JumpToRelated(details.clone()),
+                );
+            }
+            _ => { }
+        }
+
+        // Next, we forward the event to the child view such that it has the chance
         // to handle it before the Message widget handles it.
         // This ensures that events like right-clicking/long-pressing a reaction button
         // or a link within a message will be treated as an action upon that child view
         // rather than an action upon the message itself.
         self.view.handle_event(cx, event, scope);
 
+        // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
         match event.hits(cx, message_view_area) {
-            Hit::FingerDown(fe, _) => {
+            Hit::FingerDown(fe) => {
                 cx.set_key_focus(message_view_area);
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
@@ -4367,20 +4379,6 @@ impl Widget for Message {
                         abs_pos: lp.abs,
                     }
                 );
-            }
-            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
-                // If the hit occurred on the replied-to message preview, jump to it.
-                //
-                // TODO: move this to the event handler for any reply preview content,
-                //       since we also want this jump-to-reply behavior for the reply preview
-                //       that appears above the message input box when you click the reply button.
-                if fe.is_primary_hit() && self.view(id!(replied_to_message)).area().rect(cx).contains(fe.abs) {
-                    cx.widget_action(
-                        details.room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::JumpToRelated(details.clone()),
-                    );
-                }
             }
             Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
@@ -4407,8 +4405,7 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mentions_user = self.details.as_ref().is_some_and(|d| d.mentions_user);
-        if mentions_user {
+        if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
