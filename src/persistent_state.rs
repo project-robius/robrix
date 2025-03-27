@@ -13,10 +13,10 @@ use matrix_sdk::{
     Client,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, io::Read, path::PathBuf};
-use tokio::{fs, io};
+use std::{collections::HashMap, path::PathBuf};
+use tokio::{fs, io::{self, AsyncReadExt}};
 
-use crate::{app::SelectedRoom, app_data_dir, login::login_screen::LoginAction};
+use crate::{app::RoomsPanelState, app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,7 +69,7 @@ const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
 
-const OPEN_ROOMS_FILE_NAME: &str = "open_rooms.json";
+const ROOMS_PANEL_STATE_NAME: &str = "rooms_panel_state.json";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
@@ -195,53 +195,46 @@ pub async fn save_session(
 
 /// Save the current display state of the room panel to persistent storage.
 pub fn save_room_panel(
-    dock_state: &HashMap<LiveId, DockItem>,
-    open_rooms: &HashMap<LiveId, SelectedRoom>,
+    rooms_panel_state: &RoomsPanelState,
     user_id: &UserId,
 ) -> anyhow::Result<()> {
     std::fs::write(
         persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-        dock_state.serialize_ron(),
+        rooms_panel_state.dock_state.serialize_ron(),
     )?;
-    let open_rooms_serialized: HashMap<u64, SelectedRoom> =
-        HashMap::from_iter(open_rooms.iter().map(|(k, v)| (k.0, v.clone())));
     std::fs::write(
-        persistent_state_dir(user_id).join(OPEN_ROOMS_FILE_NAME),
-        serde_json::to_string(&open_rooms_serialized)?,
+        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME),
+        serde_json::to_string(&rooms_panel_state)?,
     )?;
     Ok(())
 }
 
-/// Fetches the room panel's state from persistent storage.
-pub fn fetch_room_panel_state(
+/// Read the rooms panel's state from persistent storage.
+pub async fn read_rooms_panel_state(
     user_id: &UserId,
-) -> anyhow::Result<(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>)> {
-    let mut file = match std::fs::File::open(
+) -> anyhow::Result<RoomsPanelState> {
+    let mut file = match tokio::fs::File::open(
         persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-    ) {
+    ).await {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Ok((HashMap::new(), HashMap::new()))
+            return Ok(RoomsPanelState::default())
         }
         Err(e) => return Err(e.into()),
     };
     // Read the file contents into a String
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
+    let mut contents = String::from("");
+    file.read_to_string(&mut contents).await?;
     let dock_state: HashMap<LiveId, DockItem> =
         HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-    let file = match std::fs::File::open(persistent_state_dir(user_id).join(OPEN_ROOMS_FILE_NAME)) {
+    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME)) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Ok((HashMap::new(), HashMap::new()))
+            return Ok(RoomsPanelState::default())
         }
         Err(e) => return Err(e.into()),
     };
-    let open_rooms_serialized: HashMap<u64, SelectedRoom> = serde_json::from_reader(file)?;
-    let open_rooms: HashMap<LiveId, SelectedRoom> = HashMap::from_iter(
-        open_rooms_serialized
-            .iter()
-            .map(|(k, v)| (LiveId(*k), v.clone())),
-    );
-    Ok((dock_state, open_rooms))
+    let mut rooms_panel_state: RoomsPanelState = serde_json::from_reader(file)?;
+    rooms_panel_state.dock_state = dock_state;
+    Ok(rooms_panel_state)
 }

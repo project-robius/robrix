@@ -4,6 +4,7 @@
 use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
 
 use bytesize::ByteSize;
+use futures_util::TryFutureExt;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
@@ -21,7 +22,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::{enqueue_dock_state_update, UpdateDockState, PENDING_DOCK_STATE_UPDATES}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -719,7 +720,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-            prompt_label = <Label> {
+            notice_label = <Label> {
                 align: {x: 0.0, y: 0.5},
                 padding: {left: 5.0, right: 0.0}
                 draw_text: {
@@ -954,8 +955,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// Draw text prompt if exist or else draw the timeline
-    #[rust] prompt: RoomScreenPrompt,
+    /// Draw text notice if exist or else draw the timeline
+    #[rust] notice: UpdateDockState,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -979,6 +980,8 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
+            // #123
+            self.handle_dock_load_pending(cx, scope);
             self.process_timeline_updates(cx, &portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
@@ -1289,11 +1292,11 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
-        match self.prompt {
-            RoomScreenPrompt::Pending | RoomScreenPrompt::Timeout => {
+        match &self.notice {
+            UpdateDockState::Pending(_) | UpdateDockState::Failure(_, _) => {
                 return self.view.draw_walk(cx, scope, walk);
             }
-            RoomScreenPrompt::None => {}
+            _=> {}
         }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
@@ -2456,23 +2459,23 @@ impl RoomScreen {
     }
 
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
-    pub fn set_prompt(&mut self, cx: &mut Cx, prompt: RoomScreenPrompt) {
-        self.prompt = prompt;
-        match prompt {
-            RoomScreenPrompt::Pending => {
+    pub fn set_notice(&mut self, cx: &mut Cx, notice: UpdateDockState) {
+        match &notice {
+            UpdateDockState::Pending(_) => {
                 self.view
-                    .label(id!(prompt_label))
+                    .label(id!(notice_label))
                     .set_text(cx, "[Placeholder for Spinner]");
             }
-            RoomScreenPrompt::Timeout => {
+            UpdateDockState::Failure(_, reason) => {
                 self.view
-                    .label(id!(prompt_label))
-                    .set_text(cx, "[Placeholder for Timeout]");
+                    .label(id!(notice_label))
+                    .set_text(cx, &format!("[Placeholder for {}]", reason));
             }
-            RoomScreenPrompt::None => {
-                self.view.label(id!(prompt_label)).set_text(cx, "");
+            _ => {
+                self.view.label(id!(notice_label)).set_text(cx, "");
             }
         }
+        self.notice = notice;
         self.redraw(cx);
     }
 
@@ -2573,6 +2576,22 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+
+    fn handle_dock_load_pending(&mut self, cx: &mut Cx, scope: &mut Scope) {
+        // if self.room_id.is_none() { return }
+        // while let Some((room_id, update_state)) = PENDING_DOCK_STATE_UPDATES.pop() {
+        //     println!("handle_dock_load_pending {:?}  room_id {:?} update_state {:?}", self.room_id, room_id,  update_state);
+            
+        //     if room_id != self.room_id {
+        //         //enqueue_dock_state_update(room_id, update_state);
+        //         continue
+        //     }
+        //     if let Some(room_id) = room_id {
+        //         cx.action(crate::home::main_desktop_ui::RoomsPanelAction::DockPending(room_id));
+        //     }
+            
+        // }
+    }
 }
 
 impl RoomScreenRef {
@@ -2587,12 +2606,12 @@ impl RoomScreenRef {
         inner.set_displayed_room(cx, room_id, room_name);
     }
 
-    /// See [`RoomScreen::set_prompt()`].
-    pub fn set_prompt(&self, cx: &mut Cx, prompt: RoomScreenPrompt) {
+    /// See [`RoomScreen::set_notice()`].
+    pub fn set_notice(&self, cx: &mut Cx, notice: UpdateDockState) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.set_prompt(cx, prompt);
+        inner.set_notice(cx, notice);
     }
 }
 
@@ -2622,10 +2641,10 @@ pub enum RoomScreenTooltipActions {
     None,
 }
 
-#[derive(DefaultNone, Debug, Clone, Copy)]
-pub enum RoomScreenPrompt{
+#[derive(DefaultNone, Debug, Clone)]
+pub enum RoomScreenNotice{
     Pending,
-    Timeout,
+    Failure(String),
     None
 }
 
@@ -4152,6 +4171,7 @@ struct LocationPreview {
 impl Widget for LocationPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let mut needs_redraw = false;
+        
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {

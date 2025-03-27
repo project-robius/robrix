@@ -350,8 +350,7 @@ impl AppMain for App {
         }
         if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
             if let Err(e) = save_room_panel(
-                &self.app_state.rooms_panel.dock_state,
-                &self.app_state.rooms_panel.open_rooms,
+                &self.app_state.rooms_panel,
                 &user_id,
             ) {
                 log!("Bug! Failed to save save_room_panel: {}", e);
@@ -365,19 +364,21 @@ impl AppMain for App {
         if matches!(event, Event::Signal) {
             while let Some(update) = PENDING_DOCK_STATE_UPDATES.pop() {
                 match update {
-                    LoadDockState::LoadAll(dock_state, open_rooms) => {
-                        self.app_state.rooms_panel.dock_state = dock_state;
-                        self.app_state.rooms_panel.open_rooms = open_rooms;
+                    UpdateDockState::LoadAll(rooms_panel_state) => {
+                        self.app_state.rooms_panel = rooms_panel_state;
+                        cx.action(RoomsPanelAction::DockLoadAll);
                     }
-                    LoadDockState::Pending(room_id) => {
+                    UpdateDockState::Pending(room_id) => {
                         cx.action(RoomsPanelAction::DockPending(room_id));
                     }
-                    LoadDockState::Success(room_id) => {
+                    UpdateDockState::Success(room_id) => {
                         cx.action(RoomsPanelAction::DockSuccess(room_id));
+                        cx.action(RoomsPanelAction::DockLoadAll);
                     }
-                    LoadDockState::Timeout(room_id) => {
-                        cx.action(RoomsPanelAction::DockTimeout(room_id));
+                    UpdateDockState::Failure(room_id, reason) => {
+                        cx.action(RoomsPanelAction::DockFailure(room_id, reason));
                     }
+                    _ => {}
                 }
             }
         }
@@ -436,15 +437,19 @@ pub struct AppState {
     pub window_geom: Option<event::WindowGeom>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize )]
+/// The state of the rooms panel
 pub struct RoomsPanelState {
+    /// The selected room for displaying the room screen
     pub selected_room: Option<SelectedRoom>,
-    /// The saved dock state
-    pub dock_state: HashMap<LiveId, DockItem>,
-    /// The rooms that are currently open, keyed by the LiveId of their tab.
-    pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened
     pub room_order: Vec<SelectedRoom>,
+    /// The saved dock state created by makepad's dock widget
+    #[serde(skip_serializing)]
+    #[serde(skip_deserializing)]
+    pub dock_state: HashMap<LiveId, DockItem>,
+    /// The rooms that are currently open, keyed by the LiveId of their tab.
+    pub open_rooms: HashMap<u64, SelectedRoom>,
 }
 
 /// Represents a room currently or previously selected by the user.
@@ -462,18 +467,26 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-pub enum LoadDockState {
-    LoadAll(HashMap<LiveId, DockItem>, HashMap<LiveId, SelectedRoom>),
+/// The different types of dock state updates that can be enqueued.
+#[derive(DefaultNone, Clone, Debug)]
+pub enum UpdateDockState {
+    // /// Load the dock from the saved state.
+    LoadAll(RoomsPanelState),
+    /// Each room screen will allow handle its own pending status.
     Pending(OwnedRoomId),
+    /// Room was successfully loaded
     Success(OwnedRoomId),
-    Timeout(OwnedRoomId),
+    /// Room failed to load with the given reason
+    Failure(OwnedRoomId, String),
+    None
 }
-pub static PENDING_DOCK_STATE_UPDATES: SegQueue<LoadDockState> = SegQueue::new();
+pub static PENDING_DOCK_STATE_UPDATES: SegQueue<UpdateDockState> = SegQueue::new();
+
 
 /// Enqueue a dock state update for loading the dock.
 /// 
 /// Signals the UI that a new update is available to be handled.
-pub fn enqueue_dock_state_update(update: LoadDockState) {
+pub fn enqueue_dock_state_update(update: UpdateDockState) {
     PENDING_DOCK_STATE_UPDATES.push(update);
     SignalToUI::set_ui_signal();
 }

@@ -28,9 +28,9 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
 use crate::{
-    app::{enqueue_dock_state_update, LoadDockState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::{enqueue_dock_state_update, UpdateDockState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, fetch_room_panel_state, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, read_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -357,7 +357,7 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
-    /// Spawns a thread to wait for room is loaded in the roomscreen page
+    /// Spawns an async task to wait for room is loaded in the roomscreen page
     DockWaitForRoomReady{
         room_id: OwnedRoomId,
     }
@@ -969,17 +969,17 @@ async fn async_worker(
                 });
             },
             MatrixRequest::DockWaitForRoomReady { room_id } => {
-                enqueue_dock_state_update(LoadDockState::Pending(room_id.clone()));
+                enqueue_dock_state_update(UpdateDockState::Pending(room_id.clone()));
                 Handle::current().spawn(async move {
                     let time = Instant::now();
                     loop {
                         if ALL_ROOM_INFO.lock().unwrap().contains_key(&room_id) {
-                            enqueue_dock_state_update(LoadDockState::Success(room_id));
+                            enqueue_dock_state_update(UpdateDockState::Success(room_id));
                             break;
                         }
                         sleep(Duration::from_millis(1000)).await;
                         if time.elapsed() > Duration::from_secs(10) {
-                            enqueue_dock_state_update(LoadDockState::Timeout(room_id));
+                            enqueue_dock_state_update(UpdateDockState::Failure(room_id, String::from("Timeout")));
                             break;
                         }
                     }
@@ -1207,7 +1207,7 @@ pub fn take_timeline_endpoints(
 ///
 /// Note that this does not necessarily mean that the given room ID is a valid room ID,
 /// only that we have some information about it stored in the `ALL_ROOM_INFO` map.
-pub fn check_room_in_all_room_info(room_id: &OwnedRoomId) -> bool {
+pub fn is_room_known(room_id: &OwnedRoomId) -> bool {
     ALL_ROOM_INFO.lock().unwrap().contains_key(room_id)
 }
 
@@ -1338,22 +1338,7 @@ async fn async_main_loop(
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
-    
-    if let Some(current_user_id) = current_user_id() {
-        match fetch_room_panel_state(&current_user_id) {
-            Ok((dock_state, open_rooms)) => {
-                if !open_rooms.is_empty() && !dock_state.is_empty() {
-                    enqueue_dock_state_update(LoadDockState::LoadAll(dock_state, open_rooms));
-                    log!("Fetching room panel state from App data Directory");
-                }
-            }
-            Err(e) => {
-                log!("Fetching Room Panel State error {:?}", e);
-            }
-        }
-    } else {
-        log!("Cannot find current user id to fetch room panel state");
-    }
+
 
     add_verification_event_handlers_and_sync_client(client.clone());
 
@@ -1363,6 +1348,24 @@ async fn async_main_loop(
     let sync_service = SyncService::builder(client.clone())
         .build()
         .await?;
+    if let Some(current_user_id) = current_user_id() {
+        Handle::current().spawn(async move {
+            //tokio::time::sleep(Duration::new(10, 0)).await;
+            match read_rooms_panel_state(&current_user_id).await {
+                Ok(rooms_panel_state) => {
+                    if !rooms_panel_state.open_rooms.is_empty() && !rooms_panel_state.dock_state.is_empty() {
+                        enqueue_dock_state_update(UpdateDockState::LoadAll(rooms_panel_state));
+                        log!("Fetching room panel state from App data Directory");
+                    }
+                }
+                Err(e) => {
+                    log!("Fetching Room Panel State error {:?}", e);
+                }
+            }
+        });
+    } else {
+        log!("Cannot find current user id to fetch room panel state");
+    }
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
@@ -1383,6 +1386,7 @@ async fn async_main_loop(
 
     let mut all_known_rooms = Vector::new();
     pin_mut!(room_diff_stream);
+
     while let Some(batch) = room_diff_stream.next().await {
         let mut peekable_diffs = batch.into_iter().peekable();
         while let Some(diff) = peekable_diffs.next() {
