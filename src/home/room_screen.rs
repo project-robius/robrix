@@ -21,12 +21,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, image_viewer::ImageViewerAction, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{image_viewer_insert_into_cache, insert_into_cache, MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -1047,6 +1047,13 @@ impl Widget for RoomScreen {
             for action in actions {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
+
+                if let Some(TextOrImageAction::Click(mxc_uri)) = action.downcast_ref() {
+                    if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, image_viewer_insert_into_cache) {
+                        Cx::post_action(ImageViewerAction::Show(data));
+                    }
+                }
+
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -3490,11 +3497,36 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
+    let handle_encrypted = |cx: &mut Cx2d, media_source: &MediaSource| -> Option<OwnedMxcUri> {
+        match media_source {
+            MediaSource::Encrypted(encrypted) => {
+                text_or_image_ref.show_text(
+                    cx,
+                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
+                );
+                None
+            }
+            MediaSource::Plain(mxc_uri) => {
+                Some(mxc_uri.clone())
+            }
+        }
+    };
+
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
-    let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
-            (MediaCacheEntry::Loaded(data), _media_format) => {
+    //
+    // I refactor those two closure here, feel free to renamed it.
+    let mut closure = |cx: &mut Cx2d, original_source: &MediaSource, image_info: Option<&ImageInfo>| {
+        let thumbnail_mxc_uri = image_info.and_then(|info|{info.thumbnail_source.as_ref()}).and_then(|source|{handle_encrypted(cx, source)});
+
+        let MediaSource::Plain(original_mxc_uri) = original_source else { return };
+
+        let mxc_uri_for_timeline = thumbnail_mxc_uri.clone().unwrap_or(original_mxc_uri.clone());
+
+        media_cache.image_set_keys(original_mxc_uri, thumbnail_mxc_uri);
+
+        match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, insert_into_cache) {
+            MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
@@ -3505,10 +3537,12 @@ fn populate_image_message_content(
                     text_or_image_ref.show_text(cx, &err_str);
                 }
 
+                text_or_image_ref.set_original_uri_and_thumbnail_data(original_mxc_uri, Some(data.clone()));
+
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
             }
-            (MediaCacheEntry::Requested, _media_format) => {
+            MediaCacheEntry::Requested => {
                 if let Some(image_info) = image_info {
                     if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                         let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3532,38 +3566,20 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            (MediaCacheEntry::Failed, _media_format) => {
+            MediaCacheEntry::Failed => {
                 text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
+                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri_for_timeline));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;
             }
-        }
-    };
-
-    let mut fetch_and_show_media_source = |cx: &mut Cx2d, media_source: MediaSource, image_info: Option<&ImageInfo>| {
-        match media_source {
-            MediaSource::Encrypted(encrypted) => {
-                // We consider this as "fully drawn" since we don't yet support encryption.
-                text_or_image_ref.show_text(
-                    cx,
-                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
-                );
-            },
-            MediaSource::Plain(mxc_uri) => {
-                fetch_and_show_image_uri(cx, mxc_uri, image_info)
-            }
+            _ => { }
         }
     };
 
     match image_info_source {
         Some((image_info, original_source)) => {
-            // Use the provided thumbnail URI if it exists; otherwise use the original URI.
-            let media_source = image_info.clone()
-                .and_then(|image_info| image_info.thumbnail_source)
-                .unwrap_or(original_source);
-            fetch_and_show_media_source(cx, media_source, image_info.as_ref());
+            closure(cx, &original_source, image_info.as_ref());
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
