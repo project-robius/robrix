@@ -131,7 +131,6 @@ impl Widget for MainDesktopUI {
                     }
                     Some(RoomsPanelAction::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        
                         if let Some(dock_state) = dock.clone_state() {
                             app_state.rooms_panel.dock_state = dock_state;
                         }
@@ -141,7 +140,6 @@ impl Widget for MainDesktopUI {
                         }
                         app_state.rooms_panel.room_order = self.room_order.clone();
                         app_state.rooms_panel.selected_room = self.most_recently_selected_room.clone();
-                        
                     }
                     Some(RoomsPanelAction::DockSuccess(room_id)) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();

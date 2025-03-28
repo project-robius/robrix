@@ -1338,7 +1338,6 @@ async fn async_main_loop(
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
-
     add_verification_event_handlers_and_sync_client(client.clone());
 
     // Listen for updates to the ignored user list.
@@ -1385,7 +1384,6 @@ async fn async_main_loop(
 
     let mut all_known_rooms = Vector::new();
     pin_mut!(room_diff_stream);
-
     while let Some(batch) = room_diff_stream.next().await {
         let mut peekable_diffs = batch.into_iter().peekable();
         while let Some(diff) = peekable_diffs.next() {

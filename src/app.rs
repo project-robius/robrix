@@ -480,7 +480,6 @@ pub enum UpdateDockState {
 }
 pub static PENDING_DOCK_STATE_UPDATES: SegQueue<UpdateDockState> = SegQueue::new();
 
-
 /// Enqueue a dock state update for loading the dock.
 /// 
 /// Signals the UI that a new update is available to be handled.

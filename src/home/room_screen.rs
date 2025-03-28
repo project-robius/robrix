@@ -2573,7 +2573,6 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
-
 }
 
 impl RoomScreenRef {
@@ -4133,7 +4132,6 @@ struct LocationPreview {
 impl Widget for LocationPreview {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let mut needs_redraw = false;
-        
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
