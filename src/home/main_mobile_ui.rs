@@ -45,7 +45,6 @@ impl Widget for MainMobileUI {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get::<AppState>().unwrap();
-
         if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
             let displayed_room_name = room.room_name.clone().unwrap_or_else(|| format!("Room ID {}", &room.room_id));
             

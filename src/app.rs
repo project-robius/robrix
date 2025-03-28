@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
+use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-
+use serde::{Deserialize, Serialize};
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -348,11 +349,37 @@ impl AppMain for App {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
+        if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
+            if let Err(e) = save_room_panel(
+                &self.app_state.rooms_panel,
+                &user_id,
+            ) {
+                log!("Bug! Failed to save save_room_panel: {}", e);
+            }
+        }
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
+        if matches!(event, Event::Signal) {
+            while let Some(update) = PENDING_DOCK_STATE_UPDATES.pop() {
+                match update {
+                    UpdateDockState::LoadAll(rooms_panel_state) => {
+                        self.app_state.rooms_panel = rooms_panel_state;
+                        cx.action(RoomsPanelAction::DockLoadAll);
+                    }
+                    UpdateDockState::Success(room_id) => {
+                        cx.action(RoomsPanelAction::DockSuccess(room_id));
+                        cx.action(RoomsPanelAction::DockLoadAll);
+                    }
+                    UpdateDockState::Failure(room_id, reason) => {
+                        cx.action(RoomsPanelAction::DockFailure(room_id, reason));
+                    }
+                    _ => {}
+                }
+            }
+        }
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
@@ -408,21 +435,25 @@ pub struct AppState {
     pub window_geom: Option<event::WindowGeom>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize )]
+/// The state of the rooms panel
 pub struct RoomsPanelState {
+    /// The selected room for displaying the room screen
     pub selected_room: Option<SelectedRoom>,
-    /// The saved dock state
-    pub dock_state: HashMap<LiveId, DockItem>,
-    /// The rooms that are currently open, keyed by the LiveId of their tab.
-    pub open_rooms: HashMap<LiveId, SelectedRoom>,
     /// The order in which the rooms were opened
     pub room_order: Vec<SelectedRoom>,
+    /// The saved dock state created by makepad's dock widget
+    #[serde(skip_serializing)]
+    #[serde(skip_deserializing)]
+    pub dock_state: HashMap<LiveId, DockItem>,
+    /// The rooms that are currently open, keyed by the LiveId of their tab.
+    pub open_rooms: HashMap<u64, SelectedRoom>,
 }
 
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SelectedRoom {
     pub room_id: OwnedRoomId,
     pub room_name: Option<String>,
@@ -433,3 +464,26 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
+
+/// The different types of dock state updates that can be enqueued.
+#[derive(DefaultNone, Clone, Debug)]
+pub enum UpdateDockState {
+    // /// Load the dock from the saved state.
+    LoadAll(RoomsPanelState),
+    /// Each room screen will allow handle its own pending status.
+    Pending(OwnedRoomId),
+    /// Room was successfully loaded
+    Success(OwnedRoomId),
+    /// Room failed to load with the given reason
+    Failure(OwnedRoomId, String),
+    None
+}
+pub static PENDING_DOCK_STATE_UPDATES: SegQueue<UpdateDockState> = SegQueue::new();
+
+/// Enqueue a dock state update for loading the dock.
+/// 
+/// Signals the UI that a new update is available to be handled.
+pub fn enqueue_dock_state_update(update: UpdateDockState) {
+    PENDING_DOCK_STATE_UPDATES.push(update);
+    SignalToUI::set_ui_signal();
+}

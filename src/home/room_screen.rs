@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::UpdateDockState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, main_desktop_ui::RoomsPanelAction, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -719,7 +719,15 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-
+            notice_label = <Label> {
+                align: {x: 0.0, y: 0.5},
+                padding: {left: 5.0, right: 0.0}
+                draw_text: {
+                    color: (TYPING_NOTICE_TEXT_COLOR),
+                    text_style: <REGULAR_TEXT>{font_size: 9}
+                }
+                text: ""
+            }
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -946,6 +954,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
+    /// Draw text notice if exist or else draw the timeline
+    #[rust] notice: UpdateDockState,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1043,6 +1053,8 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             let message_input = self.text_input(id!(message_input));
+            
+            self.handle_rooms_panel_actions(cx, actions);
 
             for action in actions {
                 // Handle the highlight animation.
@@ -1279,6 +1291,12 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+        match &self.notice {
+            UpdateDockState::Pending(_) | UpdateDockState::Failure(_, _) => {
+                return self.view.draw_walk(cx, scope, walk);
+            }
+            _=> {}
+        }
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
@@ -2439,6 +2457,28 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
+    /// This sets the RoomScreen widget to display a text label in place of the timeline.
+    pub fn set_notice(&mut self, cx: &mut Cx, notice: UpdateDockState) {
+        match &notice {
+            UpdateDockState::Pending(room_id) => {
+                self.room_id = Some(room_id.clone());
+                self.view
+                    .label(id!(notice_label))
+                    .set_text(cx, "[Placeholder for Spinner]");
+            }
+            UpdateDockState::Failure(_, reason) => {
+                self.view
+                    .label(id!(notice_label))
+                    .set_text(cx, &format!("[Placeholder for {}]", reason));
+            }
+            _ => {
+                self.view.label(id!(notice_label)).set_text(cx, "");
+            }
+        }
+        self.notice = notice;
+        self.redraw(cx);
+    }
+
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
@@ -2536,6 +2576,32 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+    // Handles any [`RoomsPanelAction`]s received by this RoomScreen.
+    fn handle_rooms_panel_actions(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+    ) {
+        for action in actions.iter() {
+            match action.downcast_ref() {
+                Some(RoomsPanelAction::DockSuccess(room_id)) => {
+                    if let Some(ref self_room_id) = self.room_id {
+                        if self_room_id == room_id {
+                            self.set_notice(cx, UpdateDockState::Success(room_id.clone()));
+                        }
+                    }
+                }
+                Some(RoomsPanelAction::DockFailure(room_id, reason)) => {
+                    if let Some(ref self_room_id) = self.room_id {
+                        if self_room_id == room_id {
+                            self.set_notice(cx, UpdateDockState::Failure(room_id.clone(), reason.clone()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2548,6 +2614,14 @@ impl RoomScreenRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
+    }
+
+    /// See [`RoomScreen::set_notice()`].
+    pub fn set_notice(&self, cx: &mut Cx, notice: UpdateDockState) {
+        let Some(mut inner) = self.borrow_mut() else {
+            return;
+        };
+        inner.set_notice(cx, notice);
     }
 }
 
@@ -2575,6 +2649,13 @@ pub enum RoomScreenTooltipActions {
     /// Mouse out event and clear tooltip.
     HoverOut,
     None,
+}
+
+#[derive(DefaultNone, Debug, Clone)]
+pub enum RoomScreenNotice{
+    Pending,
+    Failure(String),
+    None
 }
 
 /// A message that is sent from a background async task to a room's timeline view

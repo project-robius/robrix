@@ -1,15 +1,22 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
 
-use std::path::PathBuf;
 use anyhow::{anyhow, bail};
-use makepad_widgets::{log, Cx};
+use makepad_widgets::{
+    log,
+    makepad_micro_serde::{DeRon, SerRon},
+    Cx, DockItem, LiveId,
+};
 use matrix_sdk::{
-    authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
+    authentication::matrix::MatrixSession,
+    ruma::{OwnedUserId, UserId},
+    sliding_sync::VersionBuilder,
+    Client,
 };
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use std::{collections::HashMap, path::PathBuf};
+use tokio::{fs, io::{self, AsyncReadExt}};
 
-use crate::{app_data_dir, login::login_screen::LoginAction};
+use crate::{app::RoomsPanelState, app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +67,10 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
+const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
+
+const ROOMS_PANEL_STATE_NAME: &str = "rooms_panel_state.json";
+
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
     std::fs::read_to_string(
@@ -79,7 +90,6 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
     ).await?;
     Ok(())
 }
-
 
 /// Restores the given user's previous session from the filesystem.
 ///
@@ -181,4 +191,50 @@ pub async fn save_session(
     // `cross_signing_bootstrap` example).
 
     Ok(())
+}
+
+/// Save the current display state of the room panel to persistent storage.
+pub fn save_room_panel(
+    rooms_panel_state: &RoomsPanelState,
+    user_id: &UserId,
+) -> anyhow::Result<()> {
+    std::fs::write(
+        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
+        rooms_panel_state.dock_state.serialize_ron(),
+    )?;
+    std::fs::write(
+        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME),
+        serde_json::to_string(&rooms_panel_state)?,
+    )?;
+    Ok(())
+}
+
+/// Read the rooms panel's state from persistent storage.
+pub async fn read_rooms_panel_state(
+    user_id: &UserId,
+) -> anyhow::Result<RoomsPanelState> {
+    let mut file = match tokio::fs::File::open(
+        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
+    ).await {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Ok(RoomsPanelState::default())
+        }
+        Err(e) => return Err(e.into()),
+    };
+    // Read the file contents into a String
+    let mut contents = String::from("");
+    file.read_to_string(&mut contents).await?;
+    let dock_state: HashMap<LiveId, DockItem> =
+        HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
+    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME)) {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            return Ok(RoomsPanelState::default())
+        }
+        Err(e) => return Err(e.into()),
+    };
+    let mut rooms_panel_state: RoomsPanelState = serde_json::from_reader(file)?;
+    rooms_panel_state.dock_state = dock_state;
+    Ok(rooms_panel_state)
 }
