@@ -141,46 +141,6 @@ impl Widget for MainDesktopUI {
                         app_state.rooms_panel.room_order = self.room_order.clone();
                         app_state.rooms_panel.selected_room = self.most_recently_selected_room.clone();
                     }
-                    Some(RoomsPanelAction::DockSuccess(room_id)) => {
-                        let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        if let Some(mut dock) = dock.borrow_mut() {
-                            for (head_liveid, (_, widget)) in dock.items().iter() {
-                                if let Some(room) =
-                                    app_state.rooms_panel.open_rooms.get(&head_liveid.0)
-                                {
-                                    if &room.room_id == room_id {
-                                        widget.as_room_screen().set_displayed_room(
-                                            cx,
-                                            room.room_id.clone(),
-                                            room.room_name.clone().unwrap_or_default(),
-                                        );
-                                        break;
-                                    }
-                                }
-                            }
-                        } else {
-                            return;
-                        }
-                    }
-                    Some(RoomsPanelAction::DockFailure(room_id, reason)) => {
-                        let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        if let Some(mut dock) = dock.borrow_mut() {
-                            for (head_liveid, (_, widget)) in dock.items().iter() {
-                                if let Some(room) =
-                                    app_state.rooms_panel.open_rooms.get(&head_liveid.0)
-                                {
-                                    if &room.room_id == room_id {
-                                        widget
-                                            .as_room_screen()
-                                            .set_notice(cx, UpdateDockState::Failure(room_id.clone(), reason.clone()));
-                                        break;
-                                    }
-                                }
-                            }
-                        } else {
-                            return;
-                        }
-                    }
                     _ => {}
                 }
             }

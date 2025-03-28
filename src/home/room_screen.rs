@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, main_desktop_ui::RoomsPanelAction, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -1053,6 +1053,8 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             let message_input = self.text_input(id!(message_input));
+            
+            self.handle_rooms_panel_actions(cx, actions);
 
             for action in actions {
                 // Handle the highlight animation.
@@ -2458,7 +2460,8 @@ impl RoomScreen {
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
     pub fn set_notice(&mut self, cx: &mut Cx, notice: UpdateDockState) {
         match &notice {
-            UpdateDockState::Pending(_) => {
+            UpdateDockState::Pending(room_id) => {
+                self.room_id = Some(room_id.clone());
                 self.view
                     .label(id!(notice_label))
                     .set_text(cx, "[Placeholder for Spinner]");
@@ -2572,6 +2575,32 @@ impl RoomScreen {
             });
         }
         tl.last_scrolled_index = first_index;
+    }
+    // Handles any [`RoomsPanelAction`]s received by this RoomScreen.
+    fn handle_rooms_panel_actions(
+        &mut self,
+        cx: &mut Cx,
+        actions: &ActionsBuf,
+    ) {
+        for action in actions.iter() {
+            match action.downcast_ref() {
+                Some(RoomsPanelAction::DockSuccess(room_id)) => {
+                    if let Some(ref self_room_id) = self.room_id {
+                        if self_room_id == room_id {
+                            self.set_notice(cx, UpdateDockState::Success(room_id.clone()));
+                        }
+                    }
+                }
+                Some(RoomsPanelAction::DockFailure(room_id, reason)) => {
+                    if let Some(ref self_room_id) = self.room_id {
+                        if self_room_id == room_id {
+                            self.set_notice(cx, UpdateDockState::Failure(room_id.clone(), reason.clone()));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 
