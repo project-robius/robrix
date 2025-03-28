@@ -102,7 +102,7 @@ async fn build_client(
         // .unwrap_or("https://matrix.org/");
 
     let mut builder = Client::builder()
-        .server_name_or_homeserver_url(homeserver_url)
+        .homeserver_url(homeserver_url)
         // Use a sqlite database to persist the client's encryption setup.
         .sqlite_store(&db_path, Some(&passphrase))
         // The sliding sync proxy has now been deprecated in favor of native sliding sync.
@@ -1234,6 +1234,7 @@ async fn async_main_loop(
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
         if let Ok(session) = persistent_state::restore_session(specified_username).await {
+            println!("persistent_state::restore_session");
             Some(session)
         } else {
             let status_err = "Could not restore previous user session.\n\nPlease login again.";
@@ -1308,6 +1309,9 @@ async fn async_main_loop(
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
     // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
+
+    client.event_cache().enable_storage().expect("BUG: CLIENT's event cache unable to enable storage");
+    client.event_cache().subscribe().expect("BUG: CLIENT's event cache unable to subscribe");
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
 
