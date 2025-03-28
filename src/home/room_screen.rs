@@ -511,6 +511,23 @@ live_design! {
         }
     }
 
+    SmallStateEventsSummary = <View> {
+        width: Fill,
+        height: Fit,
+        margin: 0.0
+        cursor: Default
+        flow: Right,
+        padding: { top: 1.0, bottom: 1.0, right: 10.0 }
+        spacing: 0.0
+        margin: { left: 2.5, top: 4.0, bottom: 4.0}
+
+        summary = <View> {
+            visible: false,
+        }
+
+        // when the summary is epanded, hide the summary view and show the full view, it will be shown in the portal list
+        // portal_list = <PortalList> {}
+    }
 
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
@@ -1303,6 +1320,9 @@ impl Widget for RoomScreen {
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
+            let mut merged_small_events: Vec<(usize, Vec<&TimelineItem>)> = Vec::new();
+            let mut current_merge_group: Option<(usize, Vec<&TimelineItem>)> = None;
+
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
@@ -1312,6 +1332,63 @@ impl Widget for RoomScreen {
                         list.item(cx, item_id, live_id!(Empty));
                         continue;
                     };
+
+                    // Check for small state events eligible for merging.
+                    let is_small_state_event = match timeline_item.kind() {
+                        TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
+                            TimelineItemContent::MembershipChange(_)
+                            | TimelineItemContent::ProfileChange(_)
+                            | TimelineItemContent::OtherState(_) => true,
+                            _ => false,
+                        },
+                        _ => false,
+                    };
+
+                    if is_small_state_event {
+                        if let Some(ref mut merge_group) = current_merge_group {
+                            let can_merge = match(merge_group.1.last(), timeline_item) {
+                                (Some(last), current) => {
+                                    let same_type = match (last.kind(), current.kind()) {
+                                        (
+                                            TimelineItemKind::Event(last_event),
+                                            TimelineItemKind::Event(current_event)
+                                        ) => {
+                                            match (last_event.content(), current_event.content()) {
+                                                (TimelineItemContent::MembershipChange(_), TimelineItemContent::MembershipChange(_))
+                                                | (TimelineItemContent::ProfileChange(_), TimelineItemContent::ProfileChange(_))
+                                                | (TimelineItemContent::OtherState(_), TimelineItemContent::OtherState(_)) => true,
+                                                _ => false,
+                                            }
+                                        },
+                                        _ => false
+                                    };
+
+                                    same_type
+                                },
+                                _ => false,
+                            };
+
+                            if can_merge {
+                                merge_group.1.push(timeline_item);
+                            } else {
+                                // Finalize current merge group and start a new one
+                                if merge_group.1.len() > 1 {
+                                    merged_small_events.push(merge_group.clone());
+                                }
+                                current_merge_group = Some((tl_idx, vec![timeline_item]));
+                            }
+                        } else {
+                            // Start a new merge group
+                            current_merge_group = Some((tl_idx, vec![timeline_item]));
+                        }
+                    } else {
+                        // Non-small event: finalize any ongoing merge group
+                        if let Some(merge_group) = current_merge_group.take() {
+                            if merge_group.1.len() > 1 {
+                                merged_small_events.push(merge_group);
+                            }
+                        }
+                    }
 
                     // Determine whether this item's content and profile have been drawn since the last update.
                     // Pass this state to each of the `populate_*` functions so they can attempt to re-use
@@ -1354,42 +1431,50 @@ impl Widget for RoomScreen {
                                     room_screen_widget_uid,
                                 )
                             }
-                            TimelineItemContent::RedactedMessage => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                &RedactedMessageEventMarker,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                membership_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                profile_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::OtherState(other) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                other,
-                                item_drawn_status,
-                            ),
+                            TimelineItemContent::RedactedMessage => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    &RedactedMessageEventMarker,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::MembershipChange(membership_change) => {
+                                populate_merged_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    membership_change,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::ProfileChange(profile_change) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    profile_change,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::OtherState(other) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    other,
+                                    item_drawn_status,
+                                )
+                            }
                             unhandled => {
                                 let item = list.item(cx, item_id, live_id!(SmallStateEvent));
                                 item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
@@ -4041,6 +4126,28 @@ fn populate_small_state_event(
         item_drawn_status,
         new_drawn_status,
     )
+}
+
+fn populate_merged_small_state_event(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: usize,
+    room_id: &OwnedRoomId,
+    event_tl_item: &EventTimelineItem,
+    event_content: &impl SmallStateEventContent,
+    item_drawn_status: ItemDrawnStatus,
+) -> (WidgetRef, ItemDrawnStatus) {
+    // 如果event是small state event，如果下面的两个或者两个以上的event还是small state event， 则合并显示
+    // 记录small event 的数量，如果数量大于2，则合并显示。
+    return populate_small_state_event(
+        cx,
+        list,
+        item_id,
+        room_id,
+        event_tl_item,
+        event_content,
+        item_drawn_status,
+    );
 }
 
 /// Sets the text of the `Label` at the given `item`'s live ID path
