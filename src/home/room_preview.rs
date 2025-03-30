@@ -237,16 +237,19 @@ impl Widget for RoomPreview {
         let uid = self.widget_uid();
         let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 
+        // We handle hits on this widget first to ensure that any clicks on it
+        // will just select the room, rather than resulting in a click on any child view
+        // within the room preview content itself, such as links or avatars.
         match event.hits(cx, self.view.area()) {
-            Hit::FingerDown(_fe) => {
+            Hit::FingerDown(..) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) if !rooms_list_props.was_scrolling &&
-                fe.is_over && fe.is_primary_hit() && fe.was_tap() =>
-            {
-                cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
+            Hit::FingerUp(fe) => {
+                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
+                }
             }
-            _ => (),
+            _ => { }
         }
 
         self.view.handle_event(cx, event, scope);

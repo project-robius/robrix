@@ -31,7 +31,7 @@ use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -191,9 +191,9 @@ async fn login(
 /// Which direction to paginate in.
 ///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
-///    which only works if the timeline is *focused* on a specific event.
+///   which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
-///    (towards the start of the timeline), which works in  both live mode and focused mode.
+///   (towards the start of the timeline), which works in  both live mode and focused mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaginationDirection {
     Forwards,
@@ -292,7 +292,7 @@ pub enum MatrixRequest {
     FetchMedia {
         media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
-        destination: Arc<Mutex<MediaCacheEntry>>,
+        destination: MediaCacheEntryRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -777,7 +777,7 @@ async fn async_worker(
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
-                        
+
                         while (update_receiver.next().await).is_some() {
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {

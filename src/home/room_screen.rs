@@ -21,12 +21,12 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        audio_player::{AudioPlayerRef, AudioPlayerWidgetRefExt}, avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT}
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -1129,7 +1129,7 @@ impl Widget for RoomScreen {
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
-                || message_input.escape(actions) 
+                || message_input.escape(actions)
             {
                 self.clear_replying_to(cx);
                 self.redraw(cx);
@@ -1170,12 +1170,11 @@ impl Widget for RoomScreen {
                 }
             }
 
-            // Handle the send message button being clicked and enter key being pressed.
-            let send_message_shortcut_pressed = message_input
-                .key_down_unhandled(actions)
-                .is_some_and(|ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary());
-            if send_message_shortcut_pressed
-                || self.button(id!(send_message_button)).clicked(actions)
+            // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
+            if self.button(id!(send_message_button)).clicked(actions)
+                || message_input.key_down_unhandled(actions).is_some_and(
+                    |ke| ke.key_code == KeyCode::ReturnKey && ke.modifiers.is_primary()
+                )
             {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
@@ -1792,7 +1791,7 @@ impl RoomScreen {
                         }
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                             log!("TODO: jump to known room {}", room_id);
@@ -1804,7 +1803,7 @@ impl RoomScreen {
                     MatrixId::RoomAlias(room_alias) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open room alias {}", room_alias);
                         // TODO: open a room loading screen that shows a spinner
@@ -1842,7 +1841,7 @@ impl RoomScreen {
                     MatrixId::Event(room_id, event_id) => {
                         if let Err(e) = robius_open::Uri::new(&url).open() {
                             error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification("Could not open URL: {url}".to_string());
+                            enqueue_popup_notification(format!("Could not open URL: {url}"));
                         }
                         log!("TODO: open event {} in room {}", event_id, room_id);
                         // TODO: this requires the same first step as the `MatrixId::Room` case above,
@@ -1866,7 +1865,7 @@ impl RoomScreen {
                 log!("Opening URL \"{}\"", url);
                 if let Err(e) = robius_open::Uri::new(&url).open() {
                     error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                    enqueue_popup_notification("Could not open URL: {url}".to_string());
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
                 }
             }
             true
@@ -2309,7 +2308,7 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender)),
+                media_cache: MediaCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2437,7 +2436,7 @@ impl RoomScreen {
         let saved_message_input_state = std::mem::take(message_input_state);
         self.text_input(id!(message_input))
             .restore_state(saved_message_input_state);
-        
+
         // 3. Restore the state of the replying-to preview.
         if let Some(replying_to_event) = replying_to.take() {
             self.show_replying_to(cx, replying_to_event);
@@ -3450,7 +3449,7 @@ fn populate_message_view(
             &message,
             has_html_body,
         ),
-        mentions_user: does_message_mention_current_user(&message),
+        should_be_highlighted: event_tl_item.is_highlighted()
     });
 
     // Set the timestamp.
@@ -3468,26 +3467,6 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
-}
-
-
-/// Returns `true` if the given message mentions the current user or is a room mention.
-fn does_message_mention_current_user(
-    message: &MessageOrSticker,
-) -> bool {
-    let Some(current_user_id) = sliding_sync::current_user_id() else {
-        return false;
-    };
-
-    match message {
-        // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
-        MessageOrSticker::Message(msg) => {
-            msg.mentions().is_some_and(|mentions|
-                mentions.room || mentions.user_ids.contains(&current_user_id)
-            )
-        }
-        MessageOrSticker::Sticker(_) => false, // Stickers can't mention users.
-    }
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3553,8 +3532,8 @@ fn populate_image_message_content(
     // A closure that fetches and shows the image from the given `mxc_uri`,
     // marking it as fully drawn if the image was available.
     let mut fetch_and_show_image_uri = |cx: &mut Cx2d, mxc_uri: OwnedMxcUri, image_info: Option<&ImageInfo>| {
-        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), Some(MEDIA_THUMBNAIL_FORMAT.into())) {
-            MediaCacheEntry::Loaded(data) => {
+        match media_cache.try_get_media_or_fetch(mxc_uri.clone(), MEDIA_THUMBNAIL_FORMAT.into()) {
+            (MediaCacheEntry::Loaded(data), _media_format) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
@@ -3568,7 +3547,7 @@ fn populate_image_message_content(
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
             }
-            MediaCacheEntry::Requested => {
+            (MediaCacheEntry::Requested, _media_format) => {
                 if let Some(image_info) = image_info {
                     if let (Some(ref blurhash), Some(width), Some(height)) = (image_info.blurhash.clone(), image_info.width, image_info.height) {
                         let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
@@ -3592,7 +3571,7 @@ fn populate_image_message_content(
                 }
                 fully_drawn = false;
             }
-            MediaCacheEntry::Failed => {
+            (MediaCacheEntry::Failed, _media_format) => {
                 text_or_image_ref
                     .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
@@ -3936,12 +3915,12 @@ trait SmallStateEventContent {
     ///
     /// ## Arguments
     /// * `item`: a `SmallStateEvent` widget that has already been added to
-    ///    the given `PortalList` at the given `item_id`.
-    ///    This function may either modify that item or completely replace it
-    ///    with a different widget if needed.
+    ///   the given `PortalList` at the given `item_id`.
+    ///   This function may either modify that item or completely replace it
+    ///   with a different widget if needed.
     /// * `item_drawn_status`: the old (prior) drawn status of the item.
     /// * `new_drawn_status`: the new drawn status of the item, which may have already
-    ///    been updated to reflect the item's profile having been drawn right before this function.
+    ///   been updated to reflect the item's profile having been drawn right before this function.
     ///
     /// ## Return
     /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
@@ -4317,22 +4296,11 @@ pub enum MessageAction {
     None,
 }
 
-#[derive(Debug, Clone, Default)]
-enum LongPressState {
-    Pressing(DVec2),
-    #[default]
-    None,
-}
-
+/// A widget representing a single message of any kind within a room timeline.
 #[derive(Live, LiveHook, Widget)]
 pub struct Message {
     #[deref] view: View,
     #[animator] animator: Animator,
-
-    /// A timer used to detect long presses on the message body.
-    #[rust] long_press_timer: Timer,
-    /// The current status of the long-press gesture on the message body.
-    #[rust] long_press_state: LongPressState,
 
     #[rust] details: Option<MessageDetails>,
 }
@@ -4351,85 +4319,49 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        /// 500ms long press is default on Android/iOS
-        const LONG_PRESS_DURATION: f64 = 0.500;
-
-        // Here, we handle bringing up the context menu for a message,
-        // which occurs upon a long press or a right-click event on the message body itself.
-        //
-        // We first check if the timer is up, indicating a prior long press has completed.
-        // Then, we handle other context menu events: a long press start/end, and right-click.
-        if let LongPressState::Pressing(abs_pos) = &self.long_press_state {
-            if self.long_press_timer.is_event(event).is_some() {
+        // We first handle a click on the replied-to message preview, if present,
+        // because we don't want any widgets within the replied-to message to be
+        // clickable or otherwise interactive.
+        match event.hits(cx, self.view(id!(replied_to_message)).area()) {
+            Hit::FingerDown(fe) => {
+                cx.set_key_focus(self.view(id!(replied_to_message)).area());
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::OpenMessageContextMenu {
+                            details: details.clone(),
+                            abs_pos: fe.abs,
+                        }
+                    );
+                }
+            }
+            // If the hit occurred on the replied-to message preview, jump to it.
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                // TODO: move this to the event handler for any reply preview content,
+                //       since we also want this jump-to-reply behavior for the reply preview
+                //       that appears above the message input box when you click the reply button.
                 cx.widget_action(
                     details.room_screen_widget_uid,
                     &scope.path,
-                    MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
-                        abs_pos: *abs_pos,
-                    }
+                    MessageAction::JumpToRelated(details.clone()),
                 );
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
             }
+            _ => { }
         }
 
-        // This closure is passed into the below `hits()` function,
-        // which is used to determine if a hit should be marked as handled.
-        // If this closure returns `true`, the hit is marked as handled,
-        // which means that this hit will *not* propagate to the child widgets.
-        let mark_as_handled_fn = |hit: &Hit| match hit {
-            // We must ensure that this Message's child widgets *do* receive `FingerDown` hits,
-            // because future `FingerUp` hits won't work if a prior `FingerDown` hit didn't occur.
-            Hit::FingerDown(_fd) => {
-                false
-            }
-            // a right-click event
-            Hit::FingerUp(fe) if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) => {
-                // Mark this hit as handled, such that a right-click event
-                // doesn't propagate to the child widget view.
-                true
-            }
-            // A long press was released
-            Hit::FingerUp(_) => {
-                // If we're ending a long press, then we should mark this hit as handled,
-                // such that the end of the long press event doesn't propagate to the child widget view.
-                let val = matches!(self.long_press_state, LongPressState::Pressing(_));
-                val
-            }
-            // Finger movements should always be propagated to the child widget view
-            // such that hover events always work.
-            Hit::FingerMove(_) => {
-                false
-            }
-            _other => {
-                // Don't mark this hit as handled, such that this event will
-                // propagate to the child widget view.
-                false
-            }
-        };
+        // Next, we forward the event to the child view such that it has the chance
+        // to handle it before the Message widget handles it.
+        // This ensures that events like right-clicking/long-pressing a reaction button
+        // or a link within a message will be treated as an action upon that child view
+        // rather than an action upon the message itself.
+        self.view.handle_event(cx, event, scope);
 
+        // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
-        let hit = event.hits_with_mark_as_handled_fn(
-            cx,
-            message_view_area,
-            // self.view(id!(body)).area(),
-            mark_as_handled_fn,
-        );
-        match hit {
-            // a long press has started
+        match event.hits(cx, message_view_area) {
             Hit::FingerDown(fe) => {
                 cx.set_key_focus(message_view_area);
-                if matches!(self.long_press_state, LongPressState::None) {
-                    self.long_press_state = LongPressState::Pressing(fe.abs);
-                    self.long_press_timer = cx.start_interval(LONG_PRESS_DURATION);
-                }
-            }
-            // A click/touch event has occurred somewhere within this Message's entire view area.
-            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
-
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
                     cx.widget_action(
@@ -4441,25 +4373,18 @@ impl Widget for Message {
                         }
                     );
                 }
-                // If the hit occurred on the replied-to message preview, jump to it.
-                //
-                // TODO: move this to the event handler for any reply preview content,
-                //       since we also want this jump-to-reply behavior for the reply preview
-                //       that appears above the message input box when you click the reply button.
-                if fe.is_primary_hit() && self.view(id!(replied_to_message)).area().rect(cx).contains(fe.abs) {
-                    cx.widget_action(
-                        details.room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::JumpToRelated(details.clone()),
-                    );
-                }
             }
-            // a long press has ended
-            Hit::FingerUp(_) | Hit::FingerMove(_) => {
-                cx.stop_timer(self.long_press_timer);
-                self.long_press_state = LongPressState::None;
+            Hit::FingerLongPress(lp) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: lp.abs,
+                    }
+                );
             }
-            Hit::FingerHoverIn(_fhi) => {
+            Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
                 // TODO: here, show the "action bar" buttons upon hover-in
             }
@@ -4481,13 +4406,10 @@ impl Widget for Message {
                 }
             }
         }
-
-        self.view.handle_event(cx, event, scope);
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mentions_user = self.details.as_ref().is_some_and(|d| d.mentions_user);
-        if mentions_user {
+        if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {
