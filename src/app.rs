@@ -453,7 +453,10 @@ pub enum UpdateDockState {
     /// Load the previously-saved dock state and restore it to the dock.
     /// This will be handled by the top-level App and by each RoomScreen in the dock.
     LoadAll(RoomsPanelState),
-    /// Each room screen will allow handle its own pending status.
+    /// The given room has not yet been loaded from the homeserver
+    /// and is waiting to be known by our client so that it can be displayed.
+    /// Each RoomScreen widget will handle and update its own status
+    /// to be pending, and should thus display a loading spinner / notice.
     Pending(OwnedRoomId),
     /// Room was successfully loaded
     Success(OwnedRoomId),
