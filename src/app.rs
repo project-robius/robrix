@@ -450,7 +450,8 @@ impl Eq for SelectedRoom {}
 /// The different types of dock state updates that can be posted as actioon.
 #[derive(DefaultNone, Clone, Debug)]
 pub enum UpdateDockState {
-    // /// Load the dock from the saved state.
+    /// Load the previously-saved dock state and restore it to the dock.
+    /// This will be handled by the top-level App and by each RoomScreen in the dock.
     LoadAll(RoomsPanelState),
     /// Each room screen will allow handle its own pending status.
     Pending(OwnedRoomId),
