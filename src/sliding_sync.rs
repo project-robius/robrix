@@ -10,7 +10,7 @@ use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
-            message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
@@ -1640,6 +1640,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
         .remove(&room_id);
+
     DOCK_WAITING_ROOMS.lock().unwrap().remove(&room_id);
     log!("Adding new room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
     ALL_ROOM_INFO.lock().unwrap().insert(

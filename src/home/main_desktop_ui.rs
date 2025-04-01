@@ -83,6 +83,7 @@ pub struct MainDesktopUI {
 
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+
         let dock = self.view.dock(id!(dock));
         if let Event::Actions(actions) = event {
             for action in actions {

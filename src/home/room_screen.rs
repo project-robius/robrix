@@ -719,6 +719,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
+
             notice_label = <Label> {
                 align: {x: 0.0, y: 0.5},
                 padding: {left: 5.0, right: 0.0}
