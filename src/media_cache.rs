@@ -88,12 +88,12 @@ impl MediaCache {
                 let (thumbnail_uri, entry_ref) = o.get().clone();
                 let er = entry_ref.lock().unwrap().clone();
 
-                match er.clone() {
+                match &er {
                     MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed => {
-                        return er.clone();
+                        return er;
                     }
                     MediaCacheEntry::NotInitialized | MediaCacheEntry::Requested => {
-                        if let MediaCacheEntry::NotInitialized = er.clone() {
+                        if let MediaCacheEntry::NotInitialized = &er {
                             *o.get_mut().1.lock().unwrap() = MediaCacheEntry::Requested
                         }
                         match thumbnail_uri.as_ref() {
