@@ -1050,7 +1050,7 @@ impl Widget for RoomScreen {
 
                 if let Some(TextOrImageAction::Click(mxc_uri)) = action.downcast_ref() {
                     if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, image_viewer_insert_into_cache) {
-                        Cx::post_action(ImageViewerAction::Show(data));
+                        cx.action(ImageViewerAction::Show(data));
                     }
                 }
 

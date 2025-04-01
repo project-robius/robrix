@@ -85,14 +85,17 @@ impl MatchEvent for ImageViewer {
         }
 
         for action in actions {
-            if let Some(ImageViewerAction::Show(data)) = action.downcast_ref() {
-                self.open(cx);
-                self.load_with_data(cx, data);
-            }
-            if let Some(ImageViewerAction::ReplaceImage(data)) = action.downcast_ref() {
-                if self.visible {
+            match action.downcast_ref::<ImageViewerAction>() {
+                Some(ImageViewerAction::Show(data)) => {
+                    self.open(cx);
                     self.load_with_data(cx, data);
                 }
+                Some(ImageViewerAction::ReplaceImage(data)) => {
+                    if self.visible {
+                        self.load_with_data(cx, data);
+                    }
+                }
+                _ => {}
             }
         }
     }
