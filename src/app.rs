@@ -426,8 +426,7 @@ pub struct RoomsPanelState {
     /// The order in which the rooms were opened
     pub room_order: Vec<SelectedRoom>,
     /// The saved dock state created by makepad's dock widget
-    #[serde(skip_serializing)]
-    #[serde(skip_deserializing)]
+    #[serde(skip_serializing, skip_deserializing)]
     pub dock_state: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     pub open_rooms: HashMap<u64, SelectedRoom>,
