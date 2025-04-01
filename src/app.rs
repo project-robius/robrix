@@ -462,7 +462,8 @@ pub enum UpdateDockState {
     /// and is known to our client.
     /// The RoomScreen for this room can now fully display the room's timeline.
     Success(OwnedRoomId),
-    /// Room failed to load with the given reason
+    /// The given room was not successfully loaded from the homeserver.
+    /// The given String includes the reason for the failure.
     Failure(OwnedRoomId, String),
     None
 }
