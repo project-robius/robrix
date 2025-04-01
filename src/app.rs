@@ -447,7 +447,7 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-/// The different types of dock state updates that can be posted as actioon.
+/// The possible actions that can result in updates to the dock of rooms tabs.
 #[derive(DefaultNone, Clone, Debug)]
 pub enum UpdateDockState {
     /// Load the previously-saved dock state and restore it to the dock.
