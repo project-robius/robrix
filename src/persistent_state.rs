@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{log, Cx};
 use matrix_sdk::{
-    authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, Client
+    authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync, Client
 };
 use serde::{Deserialize, Serialize};
 use tokio::fs;
@@ -40,6 +40,19 @@ pub struct FullSessionPersisted {
     /// again.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sync_token: Option<String>,
+
+    /// The serializable version of the sliding_sync::Version.
+    /// 
+    /// If it is Native, it will use sliding sync.
+    /// If it is None, it will not use sliding sync.
+    /// This is set to the Matrix Client after being built.
+    pub sliding_sync_version: SlidingSyncVersion,
+}
+/// The serializable version of the sliding_sync::Version
+#[derive(Debug, Serialize, Deserialize)]
+pub enum SlidingSyncVersion {
+    None,
+    Native,
 }
 
 fn user_id_to_file_name(user_id: &UserId) -> String {
@@ -106,7 +119,7 @@ pub async fn restore_session(
 
     // The session was serialized as JSON in a file.
     let serialized_session = fs::read_to_string(session_file).await?;
-    let FullSessionPersisted { client_session, user_session, sync_token } =
+    let FullSessionPersisted { client_session, user_session, sync_token, sliding_sync_version } =
         serde_json::from_str(&serialized_session)?;
 
     let status_str = format!(
@@ -123,10 +136,15 @@ pub async fn restore_session(
     let client = Client::builder()
         .homeserver_url(client_session.homeserver)
         .sqlite_store(client_session.db_path, Some(&client_session.passphrase))
+        //.sliding_sync_version_builder(VersionBuilder::DiscoverNative)
         .handle_refresh_tokens()
         .build()
         .await?;
-
+    let sliding_sync_version = match sliding_sync_version {
+        SlidingSyncVersion::None => sliding_sync::Version::None,
+        SlidingSyncVersion::Native => sliding_sync::Version::Native
+    };
+    client.set_sliding_sync_version(sliding_sync_version);
     let status_str = format!("Authenticating previous login session for {}...", user_session.meta.user_id);
     log!("{status_str}");
     Cx::post_action(LoginAction::Status {
@@ -158,13 +176,18 @@ pub async fn save_session(
         .ok_or_else(|| anyhow!("A logged-in client should have a session"))?;
 
     save_latest_user_id(&user_session.meta.user_id).await?;
-
+    let sliding_sync_version = client.sliding_sync_version();
+    let sliding_sync_version = match sliding_sync_version {
+        sliding_sync::Version::None => SlidingSyncVersion::None,
+        sliding_sync::Version::Native => SlidingSyncVersion::Native
+    };
     // Save that user's session.
     let session_file = session_file_path(&user_session.meta.user_id);
     let serialized_session = serde_json::to_string(&FullSessionPersisted {
         client_session,
         user_session,
         sync_token: None,
+        sliding_sync_version
     })?;
     if let Some(parent) = session_file.parent() {
         fs::create_dir_all(parent).await?;
