@@ -458,7 +458,9 @@ pub enum UpdateDockState {
     /// Each RoomScreen widget will handle and update its own status
     /// to be pending, and should thus display a loading spinner / notice.
     Pending(OwnedRoomId),
-    /// Room was successfully loaded
+    /// The given room was successfully loaded from the homeserver
+    /// and is known to our client.
+    /// The RoomScreen for this room can now fully display the room's timeline.
     Success(OwnedRoomId),
     /// Room failed to load with the given reason
     Failure(OwnedRoomId, String),
