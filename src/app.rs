@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use serde::{Deserialize, Serialize};
@@ -229,6 +228,10 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+            if let Some(UpdateDockState::LoadAll(rooms_panel_state)) = action.downcast_ref() {
+                self.app_state.rooms_panel = rooms_panel_state.clone();
+                cx.action(RoomsPanelAction::DockLoadAll);
+            }
 
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
@@ -263,7 +266,7 @@ impl MatchEvent for App {
                 RoomsPanelAction::None => { }
                 _ => {}
             }
-            
+
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,
@@ -350,10 +353,7 @@ impl AppMain for App {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
         if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
-            if let Err(e) = save_room_panel(
-                &self.app_state.rooms_panel,
-                &user_id,
-            ) {
+            if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
                 log!("Bug! Failed to save save_room_panel: {}", e);
             }
         }
@@ -362,24 +362,6 @@ impl AppMain for App {
         let scope = &mut Scope::with_data(&mut self.app_state);
         self.ui.handle_event(cx, event, scope);
 
-        if matches!(event, Event::Signal) {
-            while let Some(update) = PENDING_DOCK_STATE_UPDATES.pop() {
-                match update {
-                    UpdateDockState::LoadAll(rooms_panel_state) => {
-                        self.app_state.rooms_panel = rooms_panel_state;
-                        cx.action(RoomsPanelAction::DockLoadAll);
-                    }
-                    UpdateDockState::Success(room_id) => {
-                        cx.action(RoomsPanelAction::DockSuccess(room_id));
-                        cx.action(RoomsPanelAction::DockLoadAll);
-                    }
-                    UpdateDockState::Failure(room_id, reason) => {
-                        cx.action(RoomsPanelAction::DockFailure(room_id, reason));
-                    }
-                    _ => {}
-                }
-            }
-        }
         /*
          * TODO: I'd like for this to work, but it doesn't behave as expected.
          *       The context menu fails to draw properly when a draw event is passed to it.
@@ -465,7 +447,7 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-/// The different types of dock state updates that can be enqueued.
+/// The different types of dock state updates that can be posted as actioon.
 #[derive(DefaultNone, Clone, Debug)]
 pub enum UpdateDockState {
     // /// Load the dock from the saved state.
@@ -477,13 +459,4 @@ pub enum UpdateDockState {
     /// Room failed to load with the given reason
     Failure(OwnedRoomId, String),
     None
-}
-pub static PENDING_DOCK_STATE_UPDATES: SegQueue<UpdateDockState> = SegQueue::new();
-
-/// Enqueue a dock state update for loading the dock.
-/// 
-/// Signals the UI that a new update is available to be handled.
-pub fn enqueue_dock_state_update(update: UpdateDockState) {
-    PENDING_DOCK_STATE_UPDATES.push(update);
-    SignalToUI::set_ui_signal();
 }

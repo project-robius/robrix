@@ -10,7 +10,7 @@ use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
-                message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
+            message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
@@ -28,7 +28,7 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
 use std::io;
 use crate::{
-    app::{enqueue_dock_state_update, UpdateDockState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::UpdateDockState, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, read_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
@@ -357,10 +357,6 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
-    /// Spawns an async task to wait for room is loaded in the roomscreen page
-    DockWaitForRoomReady{
-        room_id: OwnedRoomId,
-    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -968,22 +964,6 @@ async fn async_worker(
                     }
                 });
             },
-            MatrixRequest::DockWaitForRoomReady { room_id } => {
-                Handle::current().spawn(async move {
-                    let time = Instant::now();
-                    loop {
-                        if ALL_ROOM_INFO.lock().unwrap().contains_key(&room_id) {
-                            enqueue_dock_state_update(UpdateDockState::Success(room_id));
-                            break;
-                        }
-                        sleep(Duration::from_millis(1000)).await;
-                        if time.elapsed() > Duration::from_secs(10) {
-                            enqueue_dock_state_update(UpdateDockState::Failure(room_id, String::from("Timeout")));
-                            break;
-                        }
-                    }
-                });
-            }
         }
     }
 
@@ -1141,6 +1121,9 @@ static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeM
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
 static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
+/// Time instants of all the opened rooms in the dock that are waiting to be added to ALL_ROOM_INFO.
+static DOCK_WAITING_ROOMS: Mutex<BTreeMap<OwnedRoomId, Instant>> = Mutex::new(BTreeMap::new());
+
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
@@ -1201,13 +1184,6 @@ pub fn take_timeline_endpoints(
                 (ri.timeline_update_sender.clone(), receiver, request_sender)
             })
         )
-}
-/// Returns whether we have any information stored about the given room ID.
-///
-/// Note that this does not necessarily mean that the given room ID is a valid room ID,
-/// only that we have some information about it stored in the `ALL_ROOM_INFO` map.
-pub fn is_room_known(room_id: &OwnedRoomId) -> bool {
-    ALL_ROOM_INFO.lock().unwrap().contains_key(room_id)
 }
 
 const DEFAULT_HOMESERVER: &str = "matrix.org";
@@ -1348,12 +1324,21 @@ async fn async_main_loop(
         .await?;
     if let Some(current_user_id) = current_user_id() {
         Handle::current().spawn(async move {
-            //tokio::time::sleep(Duration::new(10, 0)).await;
             match read_rooms_panel_state(&current_user_id).await {
                 Ok(rooms_panel_state) => {
-                    if !rooms_panel_state.open_rooms.is_empty() && !rooms_panel_state.dock_state.is_empty() {
-                        enqueue_dock_state_update(UpdateDockState::LoadAll(rooms_panel_state));
+                    if !rooms_panel_state.open_rooms.is_empty()
+                        && !rooms_panel_state.dock_state.is_empty()
+                    {
                         log!("Fetching room panel state from App data Directory");
+                        let len = rooms_panel_state.open_rooms.len();
+                        let mut not_loaded_rooms = Vec::with_capacity(len);
+                        for (_, room) in &rooms_panel_state.open_rooms {
+                            if !ALL_ROOM_INFO.lock().unwrap().contains_key(&room.room_id) {
+                                not_loaded_rooms.push(room.room_id.clone());
+                            }
+                        }
+                        Cx::post_action(UpdateDockState::LoadAll(rooms_panel_state));
+                        handle_opened_tab_waiting_to_be_synced(not_loaded_rooms).await;
                     }
                 }
                 Err(e) => {
@@ -1655,7 +1640,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
         .remove(&room_id);
-
+    DOCK_WAITING_ROOMS.lock().unwrap().remove(&room_id);
     log!("Adding new room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
@@ -1669,6 +1654,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
         },
     );
+    Cx::post_action(UpdateDockState::Success(room.room_id().to_owned()));
     Ok(())
 }
 
@@ -1756,6 +1742,48 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
             }
         }
     });
+}
+
+/// Handles the synchronization of room tabs in the dock that are waiting to be added to `ALL_ROOM_INFO`.
+///
+/// This function is responsible for managing rooms that have been opened in the dock but are
+/// still pending synchronization. It initializes the waiting state for each room and enters a loop
+/// to periodically check if any room has exceeded the waiting time limit. Rooms that have been
+/// waiting for more than 10 seconds trigger a failure update and are removed from the waiting list.
+/// The function continues to check and update the waiting state every 3 seconds until no rooms are left.
+
+//
+async fn handle_opened_tab_waiting_to_be_synced(not_loaded_rooms: Vec<OwnedRoomId>) {
+    if not_loaded_rooms.is_empty() {
+        return;
+    }
+    for room_id in not_loaded_rooms {
+        DOCK_WAITING_ROOMS
+            .lock()
+            .unwrap()
+            .insert(room_id, Instant::now());
+    }
+    loop {
+        {
+            let mut dock_waiting_rooms = DOCK_WAITING_ROOMS.lock().unwrap();
+            if dock_waiting_rooms.is_empty() {
+                break;
+            }
+            // Retain only the rooms that haven't been waiting for more than 10 seconds
+            dock_waiting_rooms.retain(|room_id, start_time| {
+                if start_time.elapsed() > Duration::from_secs(10) {
+                    Cx::post_action(UpdateDockState::Failure(
+                        room_id.to_owned(),
+                        String::from("Timeout"),
+                    ));
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        sleep(Duration::from_secs(3)).await;
+    }
 }
 
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.

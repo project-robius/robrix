@@ -1,8 +1,7 @@
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
 use std::collections::HashMap;
 
-use crate::{app::{AppState, SelectedRoom, UpdateDockState}, sliding_sync::{is_room_known, submit_async_request, MatrixRequest}};
+use crate::app::{AppState, SelectedRoom};
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
@@ -107,18 +106,11 @@ impl Widget for MainDesktopUI {
                                 if let Some(room) =
                                     app_state.rooms_panel.open_rooms.get(&head_liveid.0)
                                 {
-                                    if is_room_known(&room.room_id) {
-                                        widget.as_room_screen().set_displayed_room(
-                                            cx,
-                                            room.room_id.clone(),
-                                            room.room_name.clone().unwrap_or_default(),
-                                        );
-                                    } else {
-                                        widget
-                                            .as_room_screen()
-                                            .set_notice(cx, UpdateDockState::Pending(room.room_id.clone()));
-                                        submit_async_request(MatrixRequest::DockWaitForRoomReady { room_id: room.room_id.clone() });
-                                    }
+                                    widget.as_room_screen().set_displayed_room(
+                                        cx,
+                                        room.room_id.clone(),
+                                        room.room_name.clone().unwrap_or_default(),
+                                    );
                                 }
                             });
                         } else {
@@ -356,8 +348,4 @@ pub enum RoomsPanelAction {
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoadAll,
-    /// Display timeline in the room screen
-    DockSuccess(OwnedRoomId),
-    /// Display failure message and its reason
-    DockFailure(OwnedRoomId, String)
 }

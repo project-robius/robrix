@@ -32,7 +32,7 @@ use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, main_desktop_ui::RoomsPanelAction, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -2275,8 +2275,10 @@ impl RoomScreen {
         let (mut tl_state, first_time_showing_room) = if let Some(existing) = state_opt {
             (existing, false)
         } else {
-            let (update_sender, update_receiver, request_sender) = take_timeline_endpoints(&room_id)
-                .expect("BUG: couldn't get timeline state for first-viewed room.");
+            let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+                self.set_notice(cx, UpdateDockState::Pending(room_id.clone()));
+                return;
+            };
             let new_tl_state = TimelineUiState {
                 room_id: room_id.clone(),
                 // We assume the user has all power levels by default, just to avoid
@@ -2461,6 +2463,7 @@ impl RoomScreen {
     pub fn set_notice(&mut self, cx: &mut Cx, notice: UpdateDockState) {
         match &notice {
             UpdateDockState::Pending(room_id) => {
+                // Update the room_id so that we can handle the `UpdateDockState::Success` case based on room_id
                 self.room_id = Some(room_id.clone());
                 self.view
                     .label(id!(notice_label))
@@ -2584,14 +2587,14 @@ impl RoomScreen {
     ) {
         for action in actions.iter() {
             match action.downcast_ref() {
-                Some(RoomsPanelAction::DockSuccess(room_id)) => {
+                Some(UpdateDockState::Success(room_id)) => {
                     if let Some(ref self_room_id) = self.room_id {
                         if self_room_id == room_id {
                             self.set_notice(cx, UpdateDockState::Success(room_id.clone()));
                         }
                     }
                 }
-                Some(RoomsPanelAction::DockFailure(room_id, reason)) => {
+                Some(UpdateDockState::Failure(room_id, reason)) => {
                     if let Some(ref self_room_id) = self.room_id {
                         if self_room_id == room_id {
                             self.set_notice(cx, UpdateDockState::Failure(room_id.clone(), reason.clone()));
@@ -2649,13 +2652,6 @@ pub enum RoomScreenTooltipActions {
     /// Mouse out event and clear tooltip.
     HoverOut,
     None,
-}
-
-#[derive(DefaultNone, Debug, Clone)]
-pub enum RoomScreenNotice{
-    Pending,
-    Failure(String),
-    None
 }
 
 /// A message that is sent from a background async task to a room's timeline view

@@ -91,6 +91,7 @@ async fn save_latest_user_id(user_id: &UserId) -> anyhow::Result<()> {
     Ok(())
 }
 
+
 /// Restores the given user's previous session from the filesystem.
 ///
 /// If no User ID is specified, the ID of the most recently-logged in user
@@ -210,16 +211,14 @@ pub fn save_room_panel(
 }
 
 /// Read the rooms panel's state from persistent storage.
-pub async fn read_rooms_panel_state(
-    user_id: &UserId,
-) -> anyhow::Result<RoomsPanelState> {
+pub async fn read_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPanelState> {
     let mut file = match tokio::fs::File::open(
         persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-    ).await {
+    )
+    .await
+    {
         Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Ok(RoomsPanelState::default())
-        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
         Err(e) => return Err(e.into()),
     };
     // Read the file contents into a String
@@ -227,11 +226,10 @@ pub async fn read_rooms_panel_state(
     file.read_to_string(&mut contents).await?;
     let dock_state: HashMap<LiveId, DockItem> =
         HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME)) {
+    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME))
+    {
         Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Ok(RoomsPanelState::default())
-        }
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
         Err(e) => return Err(e.into()),
     };
     let mut rooms_panel_state: RoomsPanelState = serde_json::from_reader(file)?;
