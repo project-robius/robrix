@@ -1049,8 +1049,8 @@ impl Widget for RoomScreen {
                 let Some(tl) = self.tl_state.as_mut() else { return };
 
                 if let Some(TextOrImageAction::Click(mxc_uri)) = action.downcast_ref() {
-                    if let MediaCacheEntry::Loaded(data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, image_viewer_insert_into_cache) {
-                        cx.action(ImageViewerAction::Show(data));
+                    if let MediaCacheEntry::Loaded(image_viewer_image_data) = tl.media_cache.try_get_media_or_fetch(mxc_uri, image_viewer_insert_into_cache) {
+                        cx.action(ImageViewerAction::Show(image_viewer_image_data));
                     }
                 }
 
@@ -3515,14 +3515,14 @@ fn populate_image_message_content(
 
         let MediaSource::Plain(original_mxc_uri) = original_source else { return };
 
-        let mxc_uri_for_timeline = thumbnail_mxc_uri.unwrap_or(original_mxc_uri);
+        let timeline_mxc_uri = thumbnail_mxc_uri.unwrap_or(original_mxc_uri);
 
         media_cache.image_set_keys(original_mxc_uri, thumbnail_mxc_uri);
 
-        match media_cache.try_get_media_or_fetch(mxc_uri_for_timeline, insert_into_cache) {
-            MediaCacheEntry::Loaded(data) => {
+        match media_cache.try_get_media_or_fetch(timeline_mxc_uri, insert_into_cache) {
+            MediaCacheEntry::Loaded(timeline_image_data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
-                    utils::load_png_or_jpg(&img, cx, &data)
+                    utils::load_png_or_jpg(&img, cx, &timeline_image_data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
                 });
                 if let Err(e) = show_image_result {
@@ -3531,7 +3531,7 @@ fn populate_image_message_content(
                     text_or_image_ref.show_text(cx, &err_str);
                 }
 
-                text_or_image_ref.set_original_uri_and_thumbnail_data(original_mxc_uri, Some(data.clone()));
+                text_or_image_ref.set_original_mxc_uri_and_timeline_image_data(original_mxc_uri, timeline_image_data.clone());
 
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
@@ -3562,7 +3562,7 @@ fn populate_image_message_content(
             }
             MediaCacheEntry::Failed => {
                 text_or_image_ref
-                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", mxc_uri_for_timeline));
+                    .show_text(cx, format!("{body}\n\nFailed to fetch image from {:?}", timeline_mxc_uri));
                 // For now, we consider this as being "complete". In the future, we could support
                 // retrying to fetch thumbnail of the image on a user click/tap.
                 fully_drawn = true;

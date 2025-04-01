@@ -54,8 +54,8 @@ pub enum TextOrImageAction {
 
 #[derive(Clone)]
 pub struct ImageValue {
-    pub original_uri: OwnedMxcUri,
-    pub thumbnail_data: Option<Arc<[u8]>>,
+    pub original_mxc_uri: OwnedMxcUri,
+    pub timeline_image_data: Arc<[u8]>,
 }
 
 /// A view that holds an image or text content, and can switch between the two.
@@ -88,7 +88,7 @@ impl Widget for TextOrImage {
                         // user actually clicks the blurhash,
                         // so we do nothing this condition.
                         if let Some(image_value) = self.image_value.as_ref() {
-                            Cx::post_action(TextOrImageAction::Click(image_value.original_uri.clone()));
+                            Cx::post_action(TextOrImageAction::Click(image_value.original_mxc_uri.clone()));
                         }
                     }
                 }
@@ -178,9 +178,9 @@ impl TextOrImageRef {
         }
     }
 
-    pub fn set_original_uri_and_thumbnail_data(&self, original_uri: &OwnedMxcUri, thumbnail_data: Option<Arc<[u8]>>) {
+    pub fn set_original_mxc_uri_and_timeline_image_data(&self, original_mxc_uri: &OwnedMxcUri, timeline_image_data: Arc<[u8]>) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.image_value= Some(ImageValue { original_uri: original_uri.clone(), thumbnail_data});
+        inner.image_value= Some(ImageValue { original_mxc_uri: original_mxc_uri.clone(), timeline_image_data});
     }
 }
 
