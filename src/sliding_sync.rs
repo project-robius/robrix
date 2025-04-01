@@ -1332,7 +1332,7 @@ async fn async_main_loop(
                         log!("Fetching room panel state from App data Directory");
                         let len = rooms_panel_state.open_rooms.len();
                         let mut not_loaded_rooms = Vec::with_capacity(len);
-                        for (_, room) in &rooms_panel_state.open_rooms {
+                        for room in rooms_panel_state.open_rooms.values() {
                             if !ALL_ROOM_INFO.lock().unwrap().contains_key(&room.room_id) {
                                 not_loaded_rooms.push(room.room_id.clone());
                             }
@@ -1751,8 +1751,6 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
 /// to periodically check if any room has exceeded the waiting time limit. Rooms that have been
 /// waiting for more than 10 seconds trigger a failure update and are removed from the waiting list.
 /// The function continues to check and update the waiting state every 3 seconds until no rooms are left.
-
-//
 async fn handle_opened_tab_waiting_to_be_synced(not_loaded_rooms: Vec<OwnedRoomId>) {
     if not_loaded_rooms.is_empty() {
         return;
