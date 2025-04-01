@@ -12,7 +12,7 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
@@ -3497,35 +3497,29 @@ fn populate_image_message_content(
 
     let mut fully_drawn = false;
 
-    let handle_encrypted = |cx: &mut Cx2d, media_source: &MediaSource| -> Option<OwnedMxcUri> {
-        match media_source {
-            MediaSource::Encrypted(encrypted) => {
-                text_or_image_ref.show_text(
-                    cx,
-                    format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
-                );
-                None
+    let mut fetch_and_handle_image = |cx: &mut Cx2d, original_source: &MediaSource, image_info: Option<&ImageInfo>| {
+        let thumbnail_mxc_uri = image_info.and_then(|info|{info.thumbnail_source.as_ref()}).and_then(|source|{
+            match source {
+                MediaSource::Encrypted(encrypted) => {
+                    text_or_image_ref.show_text(
+                        cx,
+                        format!("{body}\n\n[TODO] fetch encrypted image at {:?}", encrypted.url)
+                    );
+                    None
+                }
+                MediaSource::Plain(mxc_uri) => {
+                    Some(mxc_uri)
+                }
             }
-            MediaSource::Plain(mxc_uri) => {
-                Some(mxc_uri.clone())
-            }
-        }
-    };
-
-    // A closure that fetches and shows the image from the given `mxc_uri`,
-    // marking it as fully drawn if the image was available.
-    //
-    // I refactor those two closure here, feel free to renamed it.
-    let mut closure = |cx: &mut Cx2d, original_source: &MediaSource, image_info: Option<&ImageInfo>| {
-        let thumbnail_mxc_uri = image_info.and_then(|info|{info.thumbnail_source.as_ref()}).and_then(|source|{handle_encrypted(cx, source)});
+        });
 
         let MediaSource::Plain(original_mxc_uri) = original_source else { return };
 
-        let mxc_uri_for_timeline = thumbnail_mxc_uri.clone().unwrap_or(original_mxc_uri.clone());
+        let mxc_uri_for_timeline = thumbnail_mxc_uri.unwrap_or(original_mxc_uri);
 
         media_cache.image_set_keys(original_mxc_uri, thumbnail_mxc_uri);
 
-        match media_cache.try_get_media_or_fetch(&mxc_uri_for_timeline, insert_into_cache) {
+        match media_cache.try_get_media_or_fetch(mxc_uri_for_timeline, insert_into_cache) {
             MediaCacheEntry::Loaded(data) => {
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &data)
@@ -3579,7 +3573,7 @@ fn populate_image_message_content(
 
     match image_info_source {
         Some((image_info, original_source)) => {
-            closure(cx, &original_source, image_info.as_ref());
+            fetch_and_handle_image(cx, &original_source, image_info.as_ref());
         }
         None => {
             text_or_image_ref.show_text(cx, "{body}\n\nImage message had no source URL.");
