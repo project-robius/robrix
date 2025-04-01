@@ -421,7 +421,7 @@ pub struct AppState {
 #[derive(Default, Debug, Clone, Serialize, Deserialize )]
 /// The state of the rooms panel
 pub struct RoomsPanelState {
-    /// The selected room for displaying the room screen
+    /// The most-recently selected room, which is highlighted in the rooms list panel.
     pub selected_room: Option<SelectedRoom>,
     /// The order in which the rooms were opened
     pub room_order: Vec<SelectedRoom>,
