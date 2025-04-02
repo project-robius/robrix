@@ -21,11 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::{sleep, Instant},
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::Instant,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}, time::Duration};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app::UpdateDockState, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -1322,7 +1322,9 @@ async fn async_main_loop(
     let sync_service = SyncService::builder(client.clone())
         .build()
         .await?;
+    let room_panel_open_rooms_mutex = Arc::new(Mutex::new(HashMap::new()));
     if let Some(current_user_id) = current_user_id() {
+        let room_panel_open_rooms_mutex_c = room_panel_open_rooms_mutex.clone();
         Handle::current().spawn(async move {
             match read_rooms_panel_state(&current_user_id).await {
                 Ok(rooms_panel_state) => {
@@ -1330,18 +1332,12 @@ async fn async_main_loop(
                         && !rooms_panel_state.dock_state.is_empty()
                     {
                         log!("Fetching room panel state from App data Directory");
-                        let len = rooms_panel_state.open_rooms.len();
-                        let mut not_loaded_rooms = Vec::with_capacity(len);
-                        for room in rooms_panel_state.open_rooms.values() {
-                            if !ALL_ROOM_INFO.lock().unwrap().contains_key(&room.room_id) {
-                                not_loaded_rooms.push(room.room_id.clone());
-                            }
-                        }
+                        *room_panel_open_rooms_mutex_c.lock().unwrap() = rooms_panel_state.open_rooms.clone();
                         Cx::post_action(UpdateDockState::LoadAll(rooms_panel_state));
-                        handle_opened_tab_waiting_to_be_synced(not_loaded_rooms).await;
                     }
                 }
                 Err(e) => {
+                    enqueue_popup_notification(format!("Fetching Room Panel State encountered {:?}", e));
                     log!("Fetching Room Panel State error {:?}", e);
                 }
             }
@@ -1355,7 +1351,8 @@ async fn async_main_loop(
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
     let all_rooms_list = room_list_service.all_rooms().await?;
-    handle_room_list_service_loading_state(all_rooms_list.loading_state());
+    let max_num_of_rooms_mutex = Arc::new(Mutex::new(Some(0usize)));
+    handle_room_list_service_loading_state(all_rooms_list.loading_state(), max_num_of_rooms_mutex.clone());
 
     let (room_diff_stream, room_list_dynamic_entries_controller) =
         // TODO: paginate room list to avoid loading all rooms at once
@@ -1421,6 +1418,27 @@ async fn async_main_loop(
                     let old_room = all_known_rooms.get(index).expect("BUG: Set index out of bounds");
                     update_room(old_room, &changed_room, &room_list_service).await?;
                     all_known_rooms.set(index, changed_room);
+                    // Check if all the rooms have been loaded from the server.
+                    // Compare the known rooms with the loaded open rooms from persistent storage
+                    let mut max_num_of_rooms_guard = max_num_of_rooms_mutex.lock().unwrap();
+                    if let Some(max_num_of_rooms) = *max_num_of_rooms_guard {
+                        if all_known_rooms.len() == max_num_of_rooms {
+                            room_panel_open_rooms_mutex.lock().unwrap().values().for_each(|room| {
+                                let known_rooms: Vec<OwnedRoomId> = all_known_rooms.iter().map(|r|r.room_id().to_owned()).collect();
+                                // If the loaded open rooms from persistent storage contains a room that is not in the known rooms list, set failure state to Timeout.
+                                // This is because the room might have been deleted on the server, or the user might have left the room while the 
+                                // room is saved in dock state in persistent storage.
+                                if !known_rooms.contains(&room.room_id.to_owned()) {
+                                    Cx::post_action(UpdateDockState::Failure(
+                                        room.room_id.to_owned(),
+                                        crate::app::UpdateDockError::Timeout,
+                                    ));
+                                }
+                            });
+                            // Set max_num_of_rooms_guard to be none after loading all rooms to stop checking.
+                            *max_num_of_rooms_guard = None;
+                        }
+                    }
                 }
                 VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
@@ -1728,7 +1746,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 }
 
 
-fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
+fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>, max_num_rooms: Arc<Mutex<Option<usize>>>) {
     log!("Initial room list loading state is {:?}", loading_state.get());
     Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
@@ -1739,50 +1757,14 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
                     enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms });
+                    if let Some(max_num_of_rooms) = maximum_number_of_rooms {
+                        let mut max_num_rooms_guard = max_num_rooms.lock().unwrap();
+                        *max_num_rooms_guard = Some(max_num_of_rooms as usize);
+                    }
                 }
             }
         }
     });
-}
-
-/// Handles the synchronization of room tabs in the dock that are waiting to be added to `ALL_ROOM_INFO`.
-///
-/// This function is responsible for managing rooms that have been opened in the dock but are
-/// still pending synchronization. It initializes the waiting state for each room and enters a loop
-/// to periodically check if any room has exceeded the waiting time limit. Rooms that have been
-/// waiting for more than 10 seconds trigger a failure update and are removed from the waiting list.
-/// The function continues to check and update the waiting state every 3 seconds until no rooms are left.
-async fn handle_opened_tab_waiting_to_be_synced(not_loaded_rooms: Vec<OwnedRoomId>) {
-    if not_loaded_rooms.is_empty() {
-        return;
-    }
-    for room_id in not_loaded_rooms {
-        DOCK_WAITING_ROOMS
-            .lock()
-            .unwrap()
-            .insert(room_id, Instant::now());
-    }
-    loop {
-        {
-            let mut dock_waiting_rooms = DOCK_WAITING_ROOMS.lock().unwrap();
-            if dock_waiting_rooms.is_empty() {
-                break;
-            }
-            // Retain only the rooms that haven't been waiting for more than 10 seconds
-            dock_waiting_rooms.retain(|room_id, start_time| {
-                if start_time.elapsed() > Duration::from_secs(10) {
-                    Cx::post_action(UpdateDockState::Failure(
-                        room_id.to_owned(),
-                        String::from("Timeout"),
-                    ));
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-        sleep(Duration::from_secs(3)).await;
-    }
 }
 
 /// Returns the timestamp and text preview of the given `latest_event` timeline item.
