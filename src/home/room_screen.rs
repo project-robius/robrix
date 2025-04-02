@@ -19,20 +19,21 @@ use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
+use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Categories, Criteria}}, events::AnyTimelineEvent};
 
 use crate::{
     avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, search_bar::SearchBarAction, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -937,15 +938,17 @@ live_design! {
 /// The main widget that displays a single Matrix room.
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomScreen {
-    #[deref] view: View,
+    #[deref] pub view: View,
     #[animator] animator: Animator,
 
     /// The room ID of the currently-shown room.
-    #[rust] room_id: Option<OwnedRoomId>,
+    #[rust] pub room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room.
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
-    #[rust] tl_state: Option<TimelineUiState>,
+    #[rust] pub tl_state: Option<TimelineUiState>,
+    /// By typing inside the Search input, search result
+    #[rust] pub other_display: RoomScreenOtherDisplay,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1043,7 +1046,6 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             let message_input = self.text_input(id!(message_input));
-
             for action in actions {
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1084,12 +1086,14 @@ impl Widget for RoomScreen {
                 message_action_bar_popup.close(cx);
             }
             */
+            if let RoomScreenOtherDisplay::None = self.other_display {
+                // Set visibility of loading message banner based of pagination logic
+                self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
+                // Handle sending any read receipts for the current logged-in user.
+                self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
+            }
 
-            // Set visibility of loading message banner based of pagination logic
-            self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
-            // Handle sending any read receipts for the current logged-in user.
-            self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
-
+            self.handle_search(cx, actions);
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
@@ -1283,6 +1287,9 @@ impl Widget for RoomScreen {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
+        }
+        if let RoomScreenOtherDisplay::SearchResult = self.other_display {
+            return room_search_result::draw_walk(self, cx, scope, walk);
         }
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
@@ -1683,6 +1690,21 @@ impl RoomScreen {
 
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
+                }
+
+                TimelineUpdate::SearchResult(result) => {
+                    tl.content_drawn_since_last_update.clear();
+                    tl.profile_drawn_since_last_update.clear();
+                    tl.fully_paginated = false;
+                    // Set the portal list to the very bottom of the timeline.
+                    portal_list.set_first_id_and_scroll(result.len().saturating_sub(1), 0.0);
+                    portal_list.set_tail_range(true);
+                    jump_to_bottom.update_visibility(cx, true);
+                    println!("TimelineUpdate::FirstUpdateFromCache initial_items {:?}", result);
+
+                    tl.searched_results = result;
+                    done_loading = true;
+                    
                 }
             }
         }
@@ -2280,6 +2302,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
+                searched_results: Vector::new()
             };
             (new_tl_state, true)
         };
@@ -2536,6 +2559,36 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+    /// Handles any search-related actions received by this RoomScreen.
+    ///
+    /// See `SearchBarAction` for the possible actions.
+    fn handle_search(
+        &mut self,
+        _cx: &mut Cx,
+        actions: &ActionsBuf
+    ) {
+        for action in actions {
+            match action.as_widget_action().cast() {
+                SearchBarAction::Search(keywords) => {
+                    let Some(room_id) = self.room_id.clone() else { return };
+                    let mut search_categories = Categories::new();
+                    let mut room_filter = RoomEventFilter::empty();
+                    room_filter.rooms = Some(vec![self.tl_state.as_ref().unwrap().room_id.clone()]);
+                    let mut criteria = Criteria::new(keywords);
+                    criteria.filter = room_filter;
+                    search_categories.room_events = Some(criteria);
+                    submit_async_request(MatrixRequest::Search {
+                        room_id,
+                        search_categories
+                    });
+                    self.other_display = RoomScreenOtherDisplay::SearchResult;
+                }
+                _ => {
+                    println!("none");
+                }
+            }
+        }
+    }
 }
 
 impl RoomScreenRef {
@@ -2549,6 +2602,17 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
+}
+
+/// Various display types other than timeline in the room screen  
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomScreenOtherDisplay{
+    /// Display Search Result
+    SearchResult,
+    /// Display spinner animation
+    SearchPending,
+    /// Display timeline
+    None
 }
 
 /// Actions for the room screen's tooltip.
@@ -2653,6 +2717,8 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
+    /// Display Search result in Makepad's widget
+    SearchResult(Vector<AnyTimelineEvent>),
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2664,12 +2730,12 @@ static TIMELINE_STATES: Mutex<BTreeMap<OwnedRoomId, TimelineUiState>> = Mutex::n
 /// across multiple `Hide`/`Show` cycles of that room's timeline within a RoomScreen.
 /// If a state is more temporary and shouldn't be persisted when the timeline is hidden,
 /// then it should be stored in the RoomScreen widget itself, not in this struct.
-struct TimelineUiState {
+pub struct TimelineUiState {
     /// The ID of the room that this timeline is for.
-    room_id: OwnedRoomId,
+    pub room_id: OwnedRoomId,
 
     /// The power levels of the currently logged-in user in this room.
-    user_power: UserPowerLevels,
+    pub user_power: UserPowerLevels,
 
     /// Whether this room's timeline has been fully paginated, which means
     /// that the oldest (first) event in the timeline is locally synced and available.
@@ -2681,6 +2747,8 @@ struct TimelineUiState {
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
 
+    /// The list of searched events in this room
+    pub searched_results: Vector<AnyTimelineEvent>,
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -2694,10 +2762,10 @@ struct TimelineUiState {
     ///
     /// Upon a background update, only item indices greater than or equal to the
     /// `index_of_first_change` are removed from this set.
-    content_drawn_since_last_update: RangeSet<usize>,
+    pub content_drawn_since_last_update: RangeSet<usize>,
 
     /// Same as `content_drawn_since_last_update`, but for the event **profiles** (avatar, username).
-    profile_drawn_since_last_update: RangeSet<usize>,
+    pub profile_drawn_since_last_update: RangeSet<usize>,
 
     /// The channel receiver for timeline updates for this room.
     ///
@@ -2713,7 +2781,7 @@ struct TimelineUiState {
     /// The cache of media items (images, videos, etc.) that appear in this timeline.
     ///
     /// Currently this excludes avatars, as those are shared across multiple rooms.
-    media_cache: MediaCache,
+    pub media_cache: MediaCache,
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
@@ -2841,11 +2909,11 @@ fn find_new_item_matching_current_item(
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct ItemDrawnStatus {
+pub struct ItemDrawnStatus {
     /// Whether the profile info (avatar and displayable username) were drawn for this item.
-    profile_drawn: bool,
+    pub profile_drawn: bool,
     /// Whether the content of the item was drawn (e.g., the message text, image, video, sticker, etc).
-    content_drawn: bool,
+    pub content_drawn: bool,
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
@@ -3431,7 +3499,7 @@ fn populate_message_view(
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
-fn populate_text_message_content(
+pub fn populate_text_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
@@ -3461,7 +3529,7 @@ fn populate_text_message_content(
 /// Draws the given image message's content into the `message_content_widget`.
 ///
 /// Returns whether the image message content was fully drawn.
-fn populate_image_message_content(
+pub fn populate_image_message_content(
     cx: &mut Cx2d,
     text_or_image_ref: &TextOrImageRef,
     image_info_source: Option<(Option<ImageInfo>, MediaSource)>,
@@ -3578,7 +3646,7 @@ fn populate_image_message_content(
 /// Draws a file message's content into the given `message_content_widget`.
 ///
 /// Returns whether the file message content was fully drawn.
-fn populate_file_message_content(
+pub fn populate_file_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     file_content: &FileMessageEventContent,
@@ -3608,7 +3676,7 @@ fn populate_file_message_content(
 /// Draws an audio message's content into the given `message_content_widget`.
 ///
 /// Returns whether the audio message content was fully drawn.
-fn populate_audio_message_content(
+pub fn populate_audio_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     audio: &AudioMessageEventContent,
@@ -3649,7 +3717,7 @@ fn populate_audio_message_content(
 /// Draws a video message's content into the given `message_content_widget`.
 ///
 /// Returns whether the video message content was fully drawn.
-fn populate_video_message_content(
+pub fn populate_video_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     video: &VideoMessageEventContent,
@@ -3694,7 +3762,7 @@ fn populate_video_message_content(
 /// Draws the given location message's content into the `message_content_widget`.
 ///
 /// Returns whether the location message content was fully drawn.
-fn populate_location_message_content(
+pub fn populate_location_message_content(
     cx: &mut Cx,
     message_content_widget: &HtmlOrPlaintextRef,
     location: &LocationMessageEventContent,
@@ -4373,8 +4441,15 @@ impl Message {
 }
 
 impl MessageRef {
-    fn set_data(&self, details: MessageDetails) {
+    pub fn set_data(&self, details: MessageDetails) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_data(details);
     }
+}
+
+/// Actions related to a specific message within a room timeline.
+#[derive(Clone, DefaultNone, Debug)]
+pub enum SearchResultAction {
+    Success(String),
+    None
 }

@@ -9,6 +9,7 @@ pub mod main_mobile_ui;
 pub mod room_preview;
 pub mod room_screen;
 pub mod room_read_receipt;
+pub mod room_search_result;
 pub mod rooms_list;
 pub mod rooms_sidebar;
 pub mod spaces_dock;
