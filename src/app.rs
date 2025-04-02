@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use thiserror::Error;
+use thiserror::Error;
 
 use crate::{
     home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
