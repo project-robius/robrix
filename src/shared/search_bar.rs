@@ -24,9 +24,9 @@ live_design! {
         align: {x: 0.0, y: 0.5},
 
         draw_bg: {
-            radius: 0.0,
+            border_radius: 0.0,
             border_color: #d8d8d8,
-            border_width: 0.6,
+            border_size: 0.6,
         }
 
         <Icon> {

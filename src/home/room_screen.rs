@@ -169,7 +169,7 @@ live_design! {
             draw_bg: {
                 instance vertical_bar_color: (USERNAME_TEXT_COLOR)
                 instance vertical_bar_width: 2.0
-                instance radius: 0.0
+                instance border_radius: 0.0
 
                 fn get_color(self) -> vec4 {
                     return self.color;
@@ -183,7 +183,7 @@ live_design! {
                         0.0,
                         self.rect_size.x,
                         self.rect_size.y,
-                        max(1.0, self.radius)
+                        max(1.0, self.border_radius)
                     );
                     sdf.fill(self.get_color());
 
@@ -800,7 +800,7 @@ live_design! {
                             draw_bg: {
                                 border_color: (COLOR_DANGER_RED),
                                 color: #fff0f0 // light red
-                                radius: 5
+                                border_radius: 5
                             }
                             draw_icon: {
                                 svg_file: (ICON_CLOSE),

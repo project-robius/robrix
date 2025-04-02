@@ -69,10 +69,10 @@ live_design! {
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
-            instance border_width: 0.0
+            instance border_size: 0.0
             instance border_color: #0000
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-            instance radius: 4.0
+            instance border_radius: 4.0
 
             fn get_color(self) -> vec4 {
                 return self.color
@@ -85,15 +85,15 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_width,
-                    self.inset.y + self.border_width,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                    max(1.0, self.radius)
+                    self.inset.x + self.border_size,
+                    self.inset.y + self.border_size,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_size)
                 }
                 return sdf.result;
             }
@@ -116,17 +116,17 @@ live_design! {
                 instance highlight: 0.0,
                 instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
                 instance default_color: (UNREAD_DEFAULT_COLOR),
-                instance radius: 4.0
-                // Adjust this border_width to larger value to make oval smaller 
-                instance border_width: 2.0
+                instance border_radius: 4.0
+                // Adjust this border_size to larger value to make oval smaller 
+                instance border_size: 2.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                     sdf.box(
-                        self.border_width,
+                        self.border_size,
                         1.0,
-                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.x - (self.border_size * 2.0),
                         self.rect_size.y - 2.0,
-                        max(1.0, self.radius)
+                        max(1.0, self.border_radius)
                     )
                     sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
                     return sdf.result;
@@ -331,7 +331,7 @@ impl Widget for RoomPreviewContent {
                     .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_mentions, 99)));
                 unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
                     draw_bg: {
-                        border_width: (border_size),
+                        border_size: (border_size),
                         highlight: 1.0
                     }
                 });
@@ -344,7 +344,7 @@ impl Widget for RoomPreviewContent {
                     .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_messages, 99)));
                 unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
                     draw_bg: {
-                        border_width: (border_size),
+                        border_size: (border_size),
                         highlight: 0.0
                     }
                 });

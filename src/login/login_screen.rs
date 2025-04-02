@@ -28,7 +28,7 @@ live_design! {
         padding: 10,
         margin: { left: 16.6, right: 16.6, top: 10, bottom: 10}
         draw_bg: {
-            border_width: 0.5,
+            border_size: 0.5,
             border_color: (#6c6c6c),
             color: (COLOR_PRIMARY)
         }
@@ -73,7 +73,7 @@ live_design! {
                 show_bg: true,
                 draw_bg: {
                     color: (COLOR_SECONDARY)
-                    radius: 6.0
+                    border_radius: 6.0
                 }
 
                 <View> {
@@ -158,7 +158,7 @@ live_design! {
                         margin: {top: 5, bottom: 10}
                         align: {x: 0.5, y: 0.5}
                         draw_bg: {
-                            color: (COLOR_SELECTED_PRIMARY)
+                            color: (COLOR_ACTIVE_PRIMARY)
                         }
                         draw_text: {
                             color: (COLOR_PRIMARY)
@@ -250,7 +250,7 @@ live_design! {
                         margin: {bottom: 5}
                         align: {x: 0.5, y: 0.5}
                         draw_bg: {
-                            color: (COLOR_SELECTED_PRIMARY)
+                            color: (COLOR_ACTIVE_PRIMARY)
                         }
                         draw_text: {
                             color: (COLOR_PRIMARY)

@@ -34,19 +34,19 @@ live_design! {
         cursor: Hand
         draw_bg: {
             color: #fff,
-            uniform radius: 6.0,
+            uniform border_radius: 6.0,
             instance hover: 0.0,
             instance selected: 0.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 // Draw rounded rectangle with configurable radius
-                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
                 if self.selected > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
+                    sdf.fill(KEYBOARD_FOCUS_OR_color_hover)
                 } else if self.hover > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
+                    sdf.fill(KEYBOARD_FOCUS_OR_color_hover)
                 } else {
                     sdf.fill(self.color)
                 }
@@ -91,14 +91,16 @@ live_design! {
         }
     }
 
+    pub FOCUS_HOVER_COLOR = #eaecf0
+
     pub MentionableTextInput = {{MentionableTextInput}} {
         width: Fill,
         height: Fit
         trigger: "@"
         inline_search: true
 
-        keyboard_focus_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR),
-        pointer_hover_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
+        color_focus: (FOCUS_HOVER_COLOR),
+        color_hover: (FOCUS_HOVER_COLOR)
 
         popup = {
             spacing: 0.0
@@ -124,8 +126,8 @@ live_design! {
                     empty_message: "Start typing..."
                     draw_bg: {
                         color: (COLOR_PRIMARY)
-                        instance radius: 2.0
-                        instance border_width: 0.0
+                        instance border_radius: 2.0
+                        instance border_size: 0.0
                         instance border_color: #D0D5DD
                         instance inset: vec4(0.0, 0.0, 0.0, 0.0)
 
@@ -140,15 +142,15 @@ live_design! {
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                             sdf.box(
-                                self.inset.x + self.border_width,
-                                self.inset.y + self.border_width,
-                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                                max(1.0, self.radius)
+                                self.inset.x + self.border_size,
+                                self.inset.y + self.border_size,
+                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                                max(1.0, self.border_radius)
                             )
                             sdf.fill_keep(self.get_color())
-                            if self.border_width > 0.0 {
-                                sdf.stroke(self.get_border_color(), self.border_width)
+                            if self.border_size > 0.0 {
+                                sdf.stroke(self.get_border_color(), self.border_size)
                             }
                             return sdf.result
                         }
@@ -173,7 +175,7 @@ live_design! {
                         }
                     }
 
-                    draw_selection: {
+                    draw_highlight: {
                         instance hover: 0.0
                         instance focus: 0.0
                         uniform border_radius: 2.0
