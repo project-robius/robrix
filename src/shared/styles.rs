@@ -86,8 +86,8 @@ live_design! {
     pub COLOR_PRIMARY_DARKER = #fefefe
     pub COLOR_SECONDARY = #eef2f4
 
-    pub COLOR_SELECTED_PRIMARY = #0f88fe
-    pub COLOR_SELECTED_PRIMARY_DARKER = #106fcc
+    pub COLOR_ACTIVE_PRIMARY = #0f88fe
+    pub COLOR_ACTIVE_PRIMARY_DARKER = #106fcc
 
     pub COLOR_AVATAR_BG = #52b2ac
     pub COLOR_AVATAR_BG_IDLE = #d8d8d8
@@ -100,8 +100,6 @@ live_design! {
 
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
-    pub KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR = #eaecf0
-
 
     // A text input widget styled for Robrix.
     pub RobrixTextInput = <TextInput> {
@@ -111,8 +109,8 @@ live_design! {
         empty_message: "Enter text..."
         draw_bg: {
             color: (COLOR_PRIMARY)
-            instance radius: 2.0
-            instance border_width: 0.0
+            instance border_radius: 2.0
+            instance border_size: 0.0
             instance border_color: #D0D5DD
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
 
@@ -127,15 +125,15 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_width,
-                    self.inset.y + self.border_width,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                    max(1.0, self.radius)
+                    self.inset.x + self.border_size,
+                    self.inset.y + self.border_size,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_size)
                 }
                 return sdf.result;
             }
@@ -174,7 +172,7 @@ live_design! {
         }
 
         // TODO find a way to override colors
-        draw_selection: {
+        draw_highlight: {
             instance hover: 0.0
             instance focus: 0.0
             uniform border_radius: 2.0

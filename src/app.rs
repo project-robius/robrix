@@ -24,7 +24,7 @@ live_design! {
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
-    APP_TAB_COLOR_SELECTED = #091
+    APP_TAB_COLOR_ACTIVE = #091
 
     AppTab = <RadioButton> {
         width: Fit,
@@ -35,7 +35,7 @@ live_design! {
         icon_walk: {width: 20, height: 20, margin: 0.0}
         label_walk: {margin: 0.0}
 
-        draw_radio: {
+        draw_bg: {
             radio_type: Tab,
 
             // Draws a horizontal line under the tab when selected or hovered.
@@ -55,8 +55,8 @@ live_design! {
                             (APP_TAB_COLOR_HOVER),
                             self.hover
                         ),
-                        (APP_TAB_COLOR_SELECTED),
-                        self.selected
+                        (APP_TAB_COLOR_ACTIVE),
+                        self.active
                     )
                 );
                 return sdf.result;
@@ -64,35 +64,35 @@ live_design! {
         }
 
         draw_text: {
-            color_unselected: (APP_TAB_COLOR)
-            color_unselected_hover: (APP_TAB_COLOR_HOVER)
-            color_selected: (APP_TAB_COLOR_SELECTED)
+            color: (APP_TAB_COLOR)
+            color_hover: (APP_TAB_COLOR_HOVER)
+            color_active: (APP_TAB_COLOR_ACTIVE)
 
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        self.color_unselected,
-                        self.color_unselected_hover,
+                        self.color,
+                        self.color_hover,
                         self.hover
                     ),
-                    self.color_selected,
-                    self.selected
+                    self.color_active,
+                    self.active
                 )
             }
         }
 
         draw_icon: {
-            instance color_unselected: (APP_TAB_COLOR)
-            instance color_unselected_hover: (APP_TAB_COLOR_HOVER)
-            instance color_selected: (APP_TAB_COLOR_SELECTED)
+            instance color: (APP_TAB_COLOR)
+            instance color_hover: (APP_TAB_COLOR_HOVER)
+            instance color_active: (APP_TAB_COLOR_ACTIVE)
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        self.color_unselected,
-                        self.color_unselected_hover,
+                        self.color,
+                        self.color_hover,
                         self.hover
                     ),
-                    self.color_selected,
+                    self.color_active,
                     self.selected
                 )
             }
