@@ -100,6 +100,8 @@ live_design! {
 
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
+    pub KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR = #eaecf0
+
 
     // A text input widget styled for Robrix.
     pub RobrixTextInput = <TextInput> {
