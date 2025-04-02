@@ -161,26 +161,26 @@ impl Widget for RoomInputBar {
                     self.create_room_subscription(cx, room_id.clone());
                 }
 
-                // Check for text input actions
-                if let Some(text_action) = action.as_widget_action().cast() {
-                    match text_action {
-                        MentionableTextInputAction::TextChanged(text) => {
-                            cx.widget_action(
-                                self.widget_uid(),
-                                &scope.path,
-                                RoomInputBarAction::MessageChanged(text),
-                            );
-                        },
-                        MentionableTextInputAction::UserMentioned(username) => {
-                            cx.widget_action(
-                                self.widget_uid(),
-                                &scope.path,
-                                RoomInputBarAction::UserMentioned(username),
-                            );
-                        },
-                        _ => {},
-                    }
-                }
+                // // Check for text input actions
+                // if let Some(text_action) = action.as_widget_action().cast() {
+                //     match text_action {
+                //         MentionableTextInputAction::TextChanged(text) => {
+                //             cx.widget_action(
+                //                 self.widget_uid(),
+                //                 &scope.path,
+                //                 RoomInputBarAction::MessageChanged(text),
+                //             );
+                //         },
+                //         MentionableTextInputAction::UserMentioned(username) => {
+                //             cx.widget_action(
+                //                 self.widget_uid(),
+                //                 &scope.path,
+                //                 RoomInputBarAction::UserMentioned(username),
+                //             );
+                //         },
+                //         _ => {},
+                //     }
+                // }
 
                 if let Some(widget_action) =
                     action.as_widget_action().widget_uid_eq(self.widget_uid())

@@ -197,10 +197,6 @@ live_design! {
 #[allow(dead_code)]
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MentionableTextInputAction {
-    /// Triggered when text content changes
-    TextChanged(String),
-    /// Triggered when a user is specifically mentioned
-    UserMentioned(String),
     /// Room members list has been updated
     RoomMembersUpdated(Arc<Vec<RoomMember>>),
     /// Room ID has been updated (new)
@@ -289,11 +285,6 @@ impl MentionableTextInput {
 
             self.view.text_input_ref().set_cursor(new_pos, new_pos);
 
-            cx.widget_action(
-                self.widget_uid(),
-                &scope.path,
-                MentionableTextInputAction::UserMentioned(username),
-            );
         }
 
         self.close_mention_popup(cx);
@@ -319,12 +310,6 @@ impl MentionableTextInput {
         } else if self.is_searching {
             self.close_mention_popup(cx);
         }
-
-        cx.widget_action(
-            self.widget_uid(),
-            &scope.path,
-            MentionableTextInputAction::TextChanged(text),
-        );
     }
 
     // Updates the mention suggestion list based on search
