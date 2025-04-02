@@ -222,7 +222,7 @@ pub async fn read_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPan
         Err(e) => return Err(e.into()),
     };
     // Read the file contents into a String
-    let mut contents = String::from("");
+    let mut contents = String::with_capacity(file.metadata().await?.len() as usize);
     file.read_to_string(&mut contents).await?;
     let dock_state: HashMap<LiveId, DockItem> =
         HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
