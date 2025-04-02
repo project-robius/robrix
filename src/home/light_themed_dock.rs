@@ -98,7 +98,7 @@ live_design! {
         draw_button: {
 
             instance hover: float;
-            instance selected: float;
+            instance active: float;
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -146,16 +146,16 @@ live_design! {
         padding: <THEME_MSPACE_3> { }
 
         close_button: <TabCloseButton> {}
-        draw_name: {
+        draw_text: {
             text_style: <THEME_FONT_REGULAR> {}
             instance hover: 0.0
-            instance selected: 0.0
+            instance active: 0.0
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
                         #x0, // THEME_COLOR_TEXT_INACTIVE,
                         #xf, // THEME_COLOR_TEXT_SELECTED,
-                        self.selected
+                        self.active
                     ),
                     THEME_COLOR_TEXT_HOVER,
                     self.hover
@@ -165,7 +165,7 @@ live_design! {
 
         draw_bg: {
             instance hover: float
-            instance selected: float
+            instance active: float
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -180,7 +180,7 @@ live_design! {
                     mix(
                         (COLOR_SECONDARY) * 0.95,
                         (COLOR_SELECTED_PRIMARY),
-                        self.selected
+                        self.active
                     )
                 )
                 return sdf.result
@@ -194,7 +194,7 @@ live_design! {
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {hover: 0.0}
-                        draw_name: {hover: 0.0}
+                        draw_text: {hover: 0.0}
                     }
                 }
 
@@ -203,28 +203,28 @@ live_design! {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
                         draw_bg: {hover: [{time: 0.0, value: 1.0}]}
-                        draw_name: {hover: [{time: 0.0, value: 1.0}]}
+                        draw_text: {hover: [{time: 0.0, value: 1.0}]}
                     }
                 }
             }
 
-            selected = {
+            active = {
                 default: off
                 off = {
                     from: {all: Forward {duration: 0.3}}
                     apply: {
-                        close_button: {draw_button: {selected: 0.0}}
-                        draw_bg: {selected: 0.0}
-                        draw_name: {selected: 0.0}
+                        close_button: {draw_button: {active: 0.0}}
+                        draw_bg: {active: 0.0}
+                        draw_text: {active: 0.0}
                     }
                 }
 
                 on = {
                     from: {all: Snap}
                     apply: {
-                        close_button: {draw_button: {selected: 1.0}}
-                        draw_bg: {selected: 1.0}
-                        draw_name: {selected: 1.0}
+                        close_button: {draw_button: {active: 1.0}}
+                        draw_bg: {active: 1.0}
+                        draw_text: {active: 1.0}
                     }
                 }
             }
@@ -249,7 +249,7 @@ live_design! {
             show_scroll_x: true
             show_scroll_y: false
             scroll_bar_x: {
-                draw_bar: {bar_width: 3.0}
+                draw_bg: {bar_width: 3.0}
                 bar_size: 4
                 use_vertical_finger_scroll: true
             }
@@ -283,11 +283,12 @@ live_design! {
                 return sdf.result
             }
         }
-        border_size: (THEME_DOCK_BORDER_SIZE)
+        //border_size: (THEME_DOCK_BORDER_SIZE) //removed as it's not supported in new dock
 
         padding: {left: (THEME_DOCK_BORDER_SIZE), top: 0, right: (THEME_DOCK_BORDER_SIZE), bottom: (THEME_DOCK_BORDER_SIZE)}
-        padding_fill: {color: (THEME_COLOR_BG_APP)} // TODO: unclear what this does
-        drag_quad: {
+        // padding_fill: {color: (THEME_COLOR_BG_APP)} // TODO: unclear what this does
+        //padding_fill_color: (THEME_COLOR_BG_APP) // removed as it's not supported in new dock
+        drag_target_preview: {
             draw_depth: 10.0
             color: (mix((COLOR_SECONDARY), #FFFFFF00, pow(0.25, THEME_COLOR_CONTRAST)))
         }

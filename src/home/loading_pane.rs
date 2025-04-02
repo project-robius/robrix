@@ -20,7 +20,7 @@ live_design! {
             instance opacity: 1.0
 
             fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
+                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift);
                 return Pal::premul(vec4(color.xyz, color.w * self.opacity))
             }
         }
@@ -50,7 +50,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 3.0
+                border_radius: 3.0
             }
 
             title_view = <View> {

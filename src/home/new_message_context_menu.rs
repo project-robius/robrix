@@ -55,8 +55,8 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 5.0
-                border_width: 0.5
+                border_radius: 5.0
+                border_size: 0.5
                 border_color: #888
             }
 

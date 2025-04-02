@@ -34,16 +34,16 @@ live_design! {
         cursor: Hand
         draw_bg: {
             color: #fff,
-            uniform radius: 6.0,
+            uniform border_radius: 6.0,
             instance hover: 0.0,
-            instance selected: 0.0
+            instance active: 0.0
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 // Draw rounded rectangle with configurable radius
-                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.radius);
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
-                if self.selected > 0.0 {
+                if self.active > 0.0 {
                     sdf.fill(KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
                 } else if self.hover > 0.0 {
                     sdf.fill(KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
@@ -97,8 +97,7 @@ live_design! {
         trigger: "@"
         inline_search: true
 
-        keyboard_focus_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR),
-        pointer_hover_color: (KEYBOARD_FOCUS_OR_POINTER_HOVER_COLOR)
+        // keyboard_focus_color and pointer_hover_color removed as they're no longer supported
 
         popup = {
             spacing: 0.0
@@ -124,8 +123,8 @@ live_design! {
                     empty_message: "Start typing..."
                     draw_bg: {
                         color: (COLOR_PRIMARY)
-                        instance radius: 2.0
-                        instance border_width: 0.0
+                        instance border_radius: 2.0
+                        instance border_size: 0.0
                         instance border_color: #D0D5DD
                         instance inset: vec4(0.0, 0.0, 0.0, 0.0)
 
@@ -140,15 +139,15 @@ live_design! {
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                             sdf.box(
-                                self.inset.x + self.border_width,
-                                self.inset.y + self.border_width,
-                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                                max(1.0, self.radius)
+                                self.inset.x + self.border_size,
+                                self.inset.y + self.border_size,
+                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                                max(1.0, self.border_radius)
                             )
                             sdf.fill_keep(self.get_color())
-                            if self.border_width > 0.0 {
-                                sdf.stroke(self.get_border_color(), self.border_width)
+                            if self.border_size > 0.0 {
+                                sdf.stroke(self.get_border_color(), self.border_size)
                             }
                             return sdf.result
                         }
@@ -173,7 +172,7 @@ live_design! {
                         }
                     }
 
-                    draw_selection: {
+                    draw_highlight: {
                         instance hover: 0.0
                         instance focus: 0.0
                         uniform border_radius: 2.0
@@ -229,6 +228,19 @@ pub struct MentionableTextInput {
 
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // 特殊处理键盘事件，当弹出框打开时优先处理上下键
+        if self.is_searching && self.view.view(id!(popup)).visible() {
+            if let Event::KeyDown(ke) = event {
+                if ke.key_code == KeyCode::ArrowUp || ke.key_code == KeyCode::ArrowDown {
+                    // 先尝试让底层组件处理（CommandTextInput）
+                    self.view.handle_event(cx, event, scope);
+                    // 确保文本框不会捕获这些键盘事件
+                    return;
+                }
+            }
+        }
+
+        // 默认事件处理
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
@@ -423,9 +435,11 @@ impl MentionableTextInput {
             }
 
             self.view.view(id!(popup)).set_visible(cx, true);
-            if self.is_searching {
-                self.view.text_input_ref().set_key_focus(cx);
-            }
+            // 不要再重新设置文本输入的焦点，这可能会干扰列表项的键盘导航
+            // 解注释下行代码可能会导致焦点冲突
+            // if self.is_searching {
+            //     self.view.text_input_ref().set_key_focus(cx);
+            // }
         }
     }
 

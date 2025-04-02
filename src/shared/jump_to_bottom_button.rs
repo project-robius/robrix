@@ -10,7 +10,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
 
-    ICO_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
+    ICON_JUMP_TO_BOTTOM = dep("crate://self/resources/icon_jump_to_bottom.svg")
 
     // A jump to bottom button that appears when the timeline is not at the bottom.
     pub JumpToBottomButton = {{JumpToBottomButton}} {
@@ -26,7 +26,7 @@ live_design! {
             jump_to_bottom_button = <IconButton> {
                 width: 50, height: 50,
                 margin: {bottom: 8},
-                draw_icon: {svg_file: (ICO_JUMP_TO_BOTTOM)},
+                draw_icon: {svg_file: (ICON_JUMP_TO_BOTTOM)},
                 icon_walk: {width: 20, height: 20, margin: {top: 10, right: 4.5} }
                 // draw a circular background for the button
                 draw_bg: {

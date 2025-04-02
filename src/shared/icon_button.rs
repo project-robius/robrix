@@ -14,7 +14,7 @@ live_design! {
     pub IconButton = <Button> {
         draw_text: {
             instance hover: 0.0
-            instance pressed: 0.0
+            instance down: 0.0
             text_style: {
                 font_size: 11.0
             }
@@ -26,7 +26,7 @@ live_design! {
                         self.hover
                     ),
                     (COLOR_BRAND_HOVER),
-                    self.pressed
+                    self.down
                 )
             }
         }
@@ -39,7 +39,7 @@ live_design! {
                         self.hover
                     ),
                     (COLOR_BRAND_HOVER),
-                    self.pressed
+                    self.down
                 )
             }
         }

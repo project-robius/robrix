@@ -19,8 +19,10 @@ live_design! {
     use crate::shared::icon_button::*;
     use crate::shared::mentionable_text_input::MentionableTextInput;
 
-    ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
-    ICO_SEND = dep("crate://self/resources/icon_send.svg")
+    // 使用共享样式中定义的图标
+    use crate::shared::styles::ICON_SEND;
+    // 为位置图标定义一个新常量
+    ICON_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
     pub RoomInputBar = {{RoomInputBar}} {
         width: Fill,
@@ -34,7 +36,7 @@ live_design! {
         draw_bg: {color: (COLOR_PRIMARY)}
 
         location_button = <IconButton> {
-            draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
+            draw_icon: {svg_file: (ICON_LOCATION_PERSON)},
             icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5}},
             text: "",
         }
@@ -55,7 +57,7 @@ live_design! {
         }
 
         send_message_button = <IconButton> {
-            draw_icon: {svg_file: (ICO_SEND)},
+            draw_icon: {svg_file: (ICON_SEND)},
             icon_walk: {width: 18.0, height: Fit},
         }
     }

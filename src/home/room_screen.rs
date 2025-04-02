@@ -68,7 +68,7 @@ live_design! {
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
-    ICO_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
+    ICON_LOCATION_PERSON = dep("crate://self/resources/icons/location-person.svg")
 
     COLOR_BG = #xfff8ee
     COLOR_OVERLAY_BG = #x000000d8

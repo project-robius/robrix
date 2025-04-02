@@ -37,7 +37,7 @@ live_design! {
             instance opacity: 1.0
 
             fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
+                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift);
                 return Pal::premul(vec4(color.xyz, color.w * self.opacity))
             }
         }
@@ -82,7 +82,7 @@ live_design! {
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),
                     color: #fff0f0 // light red
-                    radius: 5
+                    border_radius: 5.0
                 }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
@@ -100,7 +100,7 @@ live_design! {
                 draw_bg: {
                     border_color: (COLOR_ACCEPT_GREEN),
                     color: #f0fff0 // light green
-                    radius: 5
+                    border_radius: 5.0
                 }
                 draw_icon: {
                     svg_file: (ICON_CHECKMARK)

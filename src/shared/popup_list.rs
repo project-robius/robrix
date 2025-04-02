@@ -19,7 +19,7 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::icon_button::RobrixIconButton;
-    ICO_CLOSE = dep("crate://self/resources/icons/close.svg")
+    use crate::shared::styles::ICON_CLOSE;
 
     PopupDialog = <RoundedView> {
         width: 275

@@ -26,7 +26,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #CCC
-                radius: 3.0
+                border_radius: 3.0
             }
 
             <View> {
