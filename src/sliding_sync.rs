@@ -1234,7 +1234,6 @@ async fn async_main_loop(
             specified_username.as_ref().or(most_recent_user_id.as_ref())
         );
         if let Ok(session) = persistent_state::restore_session(specified_username).await {
-            println!("persistent_state::restore_session");
             Some(session)
         } else {
             let status_err = "Could not restore previous user session.\n\nPlease login again.";
