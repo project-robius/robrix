@@ -259,7 +259,7 @@ impl Widget for MentionableTextInput {
 
 impl MentionableTextInput {
     // Handles user selection from mention popup
-    fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
+    fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
         let username = selected.label(id!(user_info.label)).text();
 
         if let Some(start_idx) = self.mention_start_index {
@@ -291,7 +291,7 @@ impl MentionableTextInput {
     }
 
     // Core text change handler that manages mention context
-    fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+    fn handle_text_change(&mut self, cx: &mut Cx, _scope: &mut Scope, text: String) {
         let cursor_pos =
             self.view.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
 
