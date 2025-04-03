@@ -169,7 +169,7 @@ impl MainDesktopUI {
 
         // create a new tab for the room
         let (tab_bar, _pos) = dock.find_tab_bar_of_tab(live_id!(home_tab)).unwrap();
-        let kind = live_id!(room_screen);
+        let kind: LiveId = live_id!(room_screen);
 
         let result = dock.create_and_select_tab(
             cx,

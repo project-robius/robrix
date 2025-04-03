@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, search::search_events::v3::Categories}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
@@ -27,6 +27,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
+use ruma::{api::client::search::search_events::v3::Request, events::AnyTimelineEvent};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
@@ -357,6 +358,11 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
+    /// General Matrix Search API with given categorie
+    Search {
+        room_id: OwnedRoomId,
+        search_categories: Categories,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -415,7 +421,6 @@ async fn async_worker(
                     let sender = room_info.timeline_update_sender.clone();
                     (timeline_ref, sender)
                 };
-
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
                     log!("Starting {direction} pagination request for room {room_id}...");
@@ -964,6 +969,33 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::Search { room_id, search_categories } => {
+                let client = CLIENT.get().unwrap();
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        log!("Skipping pagination request for not-yet-known room {room_id}");
+                        continue;
+                    };
+
+                    let timeline_ref = room_info.timeline.clone();
+                    let sender = room_info.timeline_update_sender.clone();
+                    (timeline_ref, sender)
+                };
+                Handle::current().spawn(async move {
+                    match client.send(Request::new(search_categories)).await {
+                        Ok(response) => {
+                            match sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
+                                Ok(_v) => {
+                                    SignalToUI::set_ui_signal();
+                                }
+                                Err(e) => {}
+                            }
+                        }
+                        Err(e) => {}
+                    }
+                });
+            }
         }
     }
 
