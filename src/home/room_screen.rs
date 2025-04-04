@@ -1450,6 +1450,11 @@ impl RoomScreen {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                            // For now, we paginate a cleared timeline in order to be able to show something at least.
+                            // A proper solution would be what's described below, which would be to save a few event IDs
+                            // and then either focus on them (if we're not close to the end of the timeline)
+                            // or paginate backwards until we find them (only if we are close the end of the timeline).
+                            should_continue_backwards_pagination = true;
                         }
 
                         // If the bottom of the timeline (the last event) is visible, then we should
@@ -4284,6 +4289,16 @@ impl Widget for Message {
                         }
                     );
                 }
+            }
+            Hit::FingerLongPress(lp) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: lp.abs,
+                    }
+                );
             }
             // If the hit occurred on the replied-to message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
