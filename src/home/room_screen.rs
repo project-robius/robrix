@@ -25,7 +25,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, link_preview_card::{LinkPreviewCardRef, LinkPreviewCardWidgetRefExt}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, link_preview_card::LinkPreviewCardWidgetRefExt, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -2954,19 +2954,18 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                populate_text_message_content(
+                let link_list = populate_text_message_content(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
                     body,
                     formatted.as_ref(),
                 );
-                use linkify::{LinkFinder, LinkKind};
-                let mut links = LinkFinder::new().links(body);
-                if let Some(url) = links.find(|l| l.kind() == &LinkKind::Url) {
+                if !link_list.is_empty() {
                     populate_link_preview_card(
                         cx,
                         &item.view(id!(content.link_preview_card)),
-                        url.as_str().to_string(),
+                        link_list.last().unwrap().to_owned(), // TODO just display last url as link preview card,
+                                                              //     because I don't know how to add node dynamically -_-!!
                         body,
                         link_preview_cache,
                     );
@@ -3387,25 +3386,26 @@ fn populate_text_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
-) {
+) -> Vec<String> {
     // The message was HTML-formatted rich text.
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        message_content_widget.show_html(
-            cx,
-            utils::linkify(
-                utils::trim_start_html_whitespace(&fb.body),
-                true,
-            )
+        let (linkified_text, link_list) = utils::linkify(
+            utils::trim_start_html_whitespace(&fb.body),
+            true
         );
+        message_content_widget.show_html(cx, &linkified_text);
+        link_list
     }
     // The message was non-HTML plaintext.
     else {
-        match utils::linkify(body, false) {
+        let (linkified_text, link_list) = utils::linkify(body, false);
+        match linkified_text {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
-            Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
-        }
+            Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext)
+        };
+        link_list
     }
 }
 
@@ -3823,7 +3823,8 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                return
             }
             _ => { } // fall through to the general case for all timeline items below.
         }

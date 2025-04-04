@@ -250,13 +250,16 @@ pub fn trim_start_html_whitespace(mut text: &str) -> &str {
 }
 
 /// Looks for bare links in the given `text` and converts them into proper HTML links.
-pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
+pub fn linkify(text: &str, is_html: bool) -> (Cow<'_, str>, Vec<String>) {
+
+    let mut link_list: Vec<String> = Vec::new();
+
     use linkify::{LinkFinder, LinkKind};
     let mut links = LinkFinder::new()
         .links(text)
         .peekable();
     if links.peek().is_none() {
-        return Cow::Borrowed(text);
+        return (Cow::Borrowed(text), link_list);
     }
 
     // A closure to escape text if it's not HTML.
@@ -279,17 +282,21 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
             .is_some_and(|after| after.trim_end().starts_with("</a>"));
 
         if is_link_within_href_attr || is_link_within_html_tag {
+            let link_str = text.get(last_end_index..link.end()).unwrap_or_default();
+            link_list.push(String::from(link_str));
             linkified_text = format!(
                 "{linkified_text}{}",
-                text.get(last_end_index..link.end()).unwrap_or_default(),
+                link_str,
             );
         } else {
             match link.kind() {
                 LinkKind::Url => {
+                    let link_str = htmlize::escape_attribute(link_txt);
+                    link_list.push(String::from(link_str.clone()));
                     linkified_text = format!(
                         "{linkified_text}{}<a href=\"{}\">{}</a>",
                         escaped(text.get(last_end_index..link.start()).unwrap_or_default()),
-                        htmlize::escape_attribute(link_txt),
+                        link_str,
                         htmlize::escape_text(link_txt),
                     );
                 }
@@ -301,7 +308,7 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
                         htmlize::escape_text(link_txt),
                     );
                 }
-                _ => return Cow::Borrowed(text), // unreachable
+                _ => return (Cow::Borrowed(text), link_list), // unreachableb
             }
         }
         last_end_index = link.end();
@@ -310,7 +317,7 @@ pub fn linkify(text: &str, is_html: bool) -> Cow<'_, str> {
         &escaped(text.get(last_end_index..).unwrap_or_default())
     );
     // makepad_widgets::log!("Original text:\n{:?}\nLinkified text:\n{:?}", text, linkified_text);
-    Cow::Owned(linkified_text)
+    (Cow::Owned(linkified_text), link_list)
 }
 
 

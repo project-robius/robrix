@@ -110,7 +110,6 @@ impl LinkPreviewCache {
 /// Insert data into a previously-requested card cache entry.
 fn insert_into_cache(
     value_ref: &Mutex<LinkPreviewCacheEntry>,
-    url: String,
     data: LinkPreviewResult,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
@@ -119,7 +118,7 @@ fn insert_into_cache(
             let data = data.into();
             LinkPreviewCacheEntry::Loaded(data)
         }
-        Err(e) => {
+        Err(_) => {
             LinkPreviewCacheEntry::Failed
         }
     };

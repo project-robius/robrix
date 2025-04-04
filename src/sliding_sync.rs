@@ -222,7 +222,6 @@ pub type OnMediaFetchedFn = fn(
 /// The function signature for the callback that gets invoked when LinkPreviewCard data is fetched.
 pub type OnLinkPreviewCardFetchedFn = fn(
     &Mutex<LinkPreviewCacheEntry>,
-    String,
     LinkPreviewResult,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
@@ -818,7 +817,7 @@ async fn async_worker(
                         Ok(preview) => {
                             if let None = preview.title {
                                 log!("Failed to fetch link preview card for {url}: no title");
-                                on_fetched(&destination, url.clone(), Err(url_preview::PreviewError::FetchError("No title".to_string())), update_sender);
+                                on_fetched(&destination, Err(url_preview::PreviewError::FetchError("No title".to_string())), update_sender);
                             } else {
                                 let image = if let Some(image_url) = preview.image_url {
                                     match reqwest::get(image_url.to_string()).await {
@@ -837,7 +836,7 @@ async fn async_worker(
                                 } else {
                                     None
                                 };
-                                on_fetched(&destination, url.clone(), Ok(LinkPreview{
+                                on_fetched(&destination, Ok(LinkPreview{
                                     url: preview.url,
                                     title: preview.title,
                                     description: preview.description,
@@ -847,7 +846,7 @@ async fn async_worker(
                         },
                         Err(e) => {
                             log!("Failed to fetch link preview card for {url}: {e}");
-                            on_fetched(&destination, url.clone(), Err(e), update_sender);
+                            on_fetched(&destination, Err(e), update_sender);
                         }
                     };
                 });
