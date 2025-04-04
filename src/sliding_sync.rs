@@ -815,7 +815,7 @@ async fn async_worker(
                     let preview_service = url_preview::PreviewService::with_no_cache();
                     match preview_service.generate_preview(&url).await {
                         Ok(preview) => {
-                            if let None = preview.title {
+                            if preview.title.is_none() {
                                 log!("Failed to fetch link preview card for {url}: no title");
                                 on_fetched(&destination, Err(url_preview::PreviewError::FetchError("No title".to_string())), update_sender);
                             } else {
