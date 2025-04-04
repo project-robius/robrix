@@ -2,7 +2,7 @@
 
 use makepad_widgets::*;
 
-use crate::card_cache::LinkPreviewCard as LinkPreviewCardData;
+use crate::link_preview_cache::LinkPreview as LinkPreviewData;
 use crate::shared::html_or_plaintext::HtmlOrPlaintextWidgetExt;
 use crate::utils;
 
@@ -106,7 +106,7 @@ impl LinkPreviewCard {
 
     /// Sets the link preview card content, making the preview card visible and the plaintext invisible.
     pub fn show_card(
-        &mut self, cx: &mut Cx, card: &LinkPreviewCardData
+        &mut self, cx: &mut Cx, card: &LinkPreviewData
     )
     {
         let title = format!("<a href='{}'>{}</a>", card.url, card.title.as_ref().unwrap());
@@ -133,7 +133,7 @@ impl LinkPreviewCard {
 impl LinkPreviewCardRef {
 
     /// See [`LinkPreviewCard::show_card()`].
-    pub fn show_card(&self, cx: &mut Cx, card: &LinkPreviewCardData) {
+    pub fn show_card(&self, cx: &mut Cx, card: &LinkPreviewData) {
         if let Some(mut inner) = self.borrow_mut() {
             inner.show_card(cx, card);
         }

@@ -13,11 +13,11 @@ use crate::{
 
 use url_preview;
 
-pub type LinkPreviewResult = Result<LinkPreviewCard, url_preview::PreviewError>;
+pub type LinkPreviewResult = Result<LinkPreview, url_preview::PreviewError>;
 
 // Link preview card data
 #[derive(Clone, Debug)]
-pub struct LinkPreviewCard {
+pub struct LinkPreview {
     pub url: String,
     pub title: Option<String>,
     pub description: Option<String>,
@@ -26,42 +26,43 @@ pub struct LinkPreviewCard {
 
 /// An entry in the avatar cache.
 #[derive(Clone, Debug)]
-pub enum CardCacheEntry {
-    Loaded(Arc<LinkPreviewCard>),
+pub enum LinkPreviewCacheEntry {
+    Loaded(Arc<LinkPreview>),
     Requested,
     Failed,
 }
 
-pub type CardCacheEntryRef = Arc<Mutex<CardCacheEntry>>;
+pub type LinkPreviewCacheEntryRef = Arc<Mutex<LinkPreviewCacheEntry>>;
 
 thread_local! {
-    /// A cache of LinkPreviewCard, indexed by url.
+    /// A cache of LinkPreview, indexed by url.
     ///
     /// To be of any use, this cache must only be accessed by the main UI thread.
-    static CARD_CACHE: RefCell<BTreeMap<String, CardCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
+    static CARD_CACHE: RefCell<BTreeMap<String, LinkPreviewCacheEntry>> = const { RefCell::new(BTreeMap::new()) };
 }
 
 
 /// A cache of fetched card. Keys are url, values are references to byte arrays.
-pub struct CardCache {
+#[derive(Default, Debug)]
+pub struct LinkPreviewCache {
     /// The actual cached data.
-    cache: BTreeMap<String, CardCacheEntryRef>,
+    cache: BTreeMap<String, LinkPreviewCacheEntryRef>,
     /// A channel to send updates to a particular timeline when a request has completed.
     timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
-impl Deref for CardCache {
-    type Target = BTreeMap<String, CardCacheEntryRef>;
+impl Deref for LinkPreviewCache {
+    type Target = BTreeMap<String, LinkPreviewCacheEntryRef>;
     fn deref(&self) -> &Self::Target {
         &self.cache
     }
 }
-impl DerefMut for CardCache {
+impl DerefMut for LinkPreviewCache {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.cache
     }
 }
 
-impl CardCache {
+impl LinkPreviewCache {
     /// Creates a new LinkPreviewCard cache that will use the given url
     /// when fetching data from the server.
     ///
@@ -76,19 +77,19 @@ impl CardCache {
         }
     }
 
-    pub fn try_get_card(&self, url: String) -> Option<CardCacheEntry> {
+    pub fn try_get_card(&self, url: String) -> Option<LinkPreviewCacheEntry> {
         self.get(&url).map(|v| v.lock().unwrap().deref().clone())
     }
 
     /// Tries to get the LinkPreviewCard from the cache, or submits an async request to fetch it.
     ///
     /// This method *does not* block or wait for the media to be fetched,
-    /// and will return `CardCache::Requested` while the async request is in flight.
+    /// and will return `LinkPreviewCache::Requested` while the async request is in flight.
     /// If a request is already in flight, this will not issue a new redundant request.
-    pub fn try_get_card_or_fetch( &mut self, url: String,) -> CardCacheEntry {
+    pub fn try_get_card_or_fetch( &mut self, url: String,) -> LinkPreviewCacheEntry {
         let value_ref = match self.entry(url.clone()) {
             Entry::Vacant(vacant) => vacant.insert(
-                Arc::new(Mutex::new(CardCacheEntry::Requested))
+                Arc::new(Mutex::new(LinkPreviewCacheEntry::Requested))
             ),
             Entry::Occupied(occupied) => return occupied.get().lock().unwrap().deref().clone(),
         };
@@ -102,13 +103,13 @@ impl CardCache {
                 update_sender: self.timeline_update_sender.clone(),
             }
         );
-        CardCacheEntry::Requested
+        LinkPreviewCacheEntry::Requested
     }
 }
 
 /// Insert data into a previously-requested card cache entry.
 fn insert_into_cache(
-    value_ref: &Mutex<CardCacheEntry>,
+    value_ref: &Mutex<LinkPreviewCacheEntry>,
     url: String,
     data: LinkPreviewResult,
     update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -116,10 +117,10 @@ fn insert_into_cache(
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
-            CardCacheEntry::Loaded(data)
+            LinkPreviewCacheEntry::Loaded(data)
         }
         Err(e) => {
-            CardCacheEntry::Failed
+            LinkPreviewCacheEntry::Failed
         }
     };
     *value_ref.lock().unwrap() = new_value;

@@ -21,11 +21,11 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, card_cache::{CardCache, CardCacheEntry}, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, link_preview_cache::{LinkPreviewCache, LinkPreviewCacheEntry}, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, link_preview::{LinkPreviewCardRef, LinkPreviewCardWidgetRefExt}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, link_preview_card::{LinkPreviewCardRef, LinkPreviewCardWidgetRefExt}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MediaFormatConst, MEDIA_THUMBNAIL_FORMAT},
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -51,7 +51,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
-    use crate::shared::link_preview::*;
+    use crate::shared::link_preview_card::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
@@ -1308,7 +1308,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Message(message),
                                     prev_event,
                                     &mut tl_state.media_cache,
-                                    &mut tl_state.card_cache,
+                                    &mut tl_state.link_preview_cache,
                                     &tl_state.user_power,
                                     item_drawn_status,
                                     room_screen_widget_uid,
@@ -1325,7 +1325,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Sticker(sticker.content()),
                                     prev_event,
                                     &mut tl_state.media_cache,
-                                    &mut tl_state.card_cache,
+                                    &mut tl_state.link_preview_cache,
                                     &tl_state.user_power,
                                     item_drawn_status,
                                     room_screen_widget_uid,
@@ -2213,7 +2213,7 @@ impl RoomScreen {
                 update_receiver,
                 request_sender,
                 media_cache: MediaCache::new(MediaFormatConst::File, Some(update_sender.clone())),
-                card_cache: CardCache::new(Some(update_sender)),
+                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2637,7 +2637,7 @@ struct TimelineUiState {
     media_cache: MediaCache,
 
     /// The cache of link preview card that appear in this timeline.
-    card_cache: CardCache,
+    link_preview_cache: LinkPreviewCache,
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
@@ -2910,7 +2910,7 @@ fn populate_message_view(
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
-    card_cache: &mut CardCache,
+    link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -2968,7 +2968,7 @@ fn populate_message_view(
                         &item.view(id!(content.link_preview_card)),
                         url.as_str().to_string(),
                         body,
-                        card_cache,
+                        link_preview_cache,
                     );
                 };
 
@@ -3533,11 +3533,11 @@ fn populate_link_preview_card(
     card_ref: &ViewRef,
     url: String,
     body: &str,
-    card_cache: &mut CardCache,
+    link_preview_cache: &mut LinkPreviewCache,
 ) -> bool {
 
-    match card_cache.try_get_card_or_fetch(url.clone()) {
-        CardCacheEntry::Loaded(card) => {
+    match link_preview_cache.try_get_card_or_fetch(url.clone()) {
+        LinkPreviewCacheEntry::Loaded(card) => {
             //log!("Link Preview Card Loaded: {:?}; Fetching {:?}", url, card.url);
             if card.title.is_some() {
                 card_ref.link_preview_card(id!(body)).show_card(cx, &card);
@@ -3545,12 +3545,12 @@ fn populate_link_preview_card(
             card_ref.set_visible(cx, true);
             true
         },
-        CardCacheEntry::Requested => {
+        LinkPreviewCacheEntry::Requested => {
             log!("Link Preview Card Requested: {body}; Fetching {:?}", url);
             card_ref.set_visible(cx, false);
             false
         },
-        CardCacheEntry::Failed => {
+        LinkPreviewCacheEntry::Failed => {
             log!("Link Preview Card Failed: {body}; Fetching {:?}", url);
             card_ref.set_visible(cx, false);
             true

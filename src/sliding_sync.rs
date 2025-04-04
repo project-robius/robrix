@@ -32,7 +32,7 @@ use std::io;
 use url_preview;
 
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, card_cache::{CardCacheEntry, LinkPreviewCard, LinkPreviewResult}, event_preview::text_preview_of_timeline_item, home::{
+    app_data_dir, avatar_cache::AvatarUpdate, link_preview_cache::{LinkPreview, LinkPreviewCacheEntry, LinkPreviewResult}, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
@@ -221,7 +221,7 @@ pub type OnMediaFetchedFn = fn(
 
 /// The function signature for the callback that gets invoked when LinkPreviewCard data is fetched.
 pub type OnLinkPreviewCardFetchedFn = fn(
-    &Mutex<CardCacheEntry>,
+    &Mutex<LinkPreviewCacheEntry>,
     String,
     LinkPreviewResult,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
@@ -299,7 +299,7 @@ pub enum MatrixRequest {
     FetchLinkPreviewCard {
         url: String,
         on_fetched: OnLinkPreviewCardFetchedFn,
-        destination: Arc<Mutex<CardCacheEntry>>,
+        destination: Arc<Mutex<LinkPreviewCacheEntry>>,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
@@ -837,7 +837,7 @@ async fn async_worker(
                                 } else {
                                     None
                                 };
-                                on_fetched(&destination, url.clone(), Ok(LinkPreviewCard{
+                                on_fetched(&destination, url.clone(), Ok(LinkPreview{
                                     url: preview.url,
                                     title: preview.title,
                                     description: preview.description,
