@@ -455,7 +455,7 @@ impl MentionableTextInput {
             .enumerate()
             .filter(|(_, g)| **g == "@")
             .map(|(i, _)| i)
-            .last();
+            .next_back();
 
         if let Some(at_idx) = last_at_pos {
             // Extract the text after the @ symbol up to the cursor position
