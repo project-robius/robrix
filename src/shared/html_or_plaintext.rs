@@ -201,13 +201,13 @@ impl Widget for MatrixHtmlSpan {
         let mut needs_redraw = false;
         for area in self.drawn_areas.clone().into_iter() {
             match event.hits(cx, area) {
-                Hit::FingerDown(_fe) if self.grab_key_focus => {
+                Hit::FingerDown(..) if self.grab_key_focus => {
                     cx.set_key_focus(self.area());
                 }
-                Hit::FingerHoverIn(_) if self.spoiler.is_some() => {
+                Hit::FingerHoverIn(..) if self.spoiler.is_some() => {
                     cx.set_cursor(MouseCursor::Hand);
                 }
-                Hit::FingerUp(fe) if fe.is_over => {
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                     self.spoiler.toggle();
                     needs_redraw = true;
                 }

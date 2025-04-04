@@ -26,7 +26,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #CCC
-                radius: 3.0
+                border_radius: 3.0
             }
 
             <View> {
@@ -70,7 +70,7 @@ live_design! {
                     width: Fit, height: Fit
                     padding: 10
                     draw_bg: {
-                        color: (COLOR_SELECTED_PRIMARY)
+                        color: (COLOR_ACTIVE_PRIMARY)
                     }
                     draw_text: {
                         color: (COLOR_PRIMARY)

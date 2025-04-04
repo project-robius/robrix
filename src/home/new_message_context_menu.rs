@@ -55,8 +55,8 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 5.0
-                border_width: 0.5
+                border_radius: 5.0
+                border_size: 0.5
                 border_color: #888
             }
 
@@ -145,7 +145,7 @@ live_design! {
 
             // TODO: change text to "Unpin Message" if the message is already pinned,
             //       using https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk/struct.RoomInfo.html#method.is_pinned_event.
-            //       The caller of `show()` will also need to check if the current user is allowed to 
+            //       The caller of `show()` will also need to check if the current user is allowed to
             //       pin/unpin messages using: https://matrix-org.github.io/matrix-rust-sdk/matrix_sdk_base/struct.RoomMember.html#method.can_pin_or_unpin_event
             pin_button = <RobrixIconButton> {
                 height: (BUTTON_HEIGHT)
@@ -266,22 +266,20 @@ bitflags! {
     /// This is used to determine which buttons to show in the message context menu.
     #[derive(Copy, Clone, Debug)]
     pub struct MessageAbilities: u8 {
-        /// Whether this message was sent by the current logged-in user.
-        const IsOwn = 1 << 0;
-        /// Whether the user can edit this message.
-        const CanEdit = 1 << 1;
+        /// Whether the user can react to this message.
+        const CanReact = 1 << 0;
         /// Whether the user can reply to this message.
-        const CanReplyTo = 1 << 2;
+        const CanReplyTo = 1 << 1;
+        /// Whether the user can edit this message.
+        const CanEdit = 1 << 2;
         /// Whether the user can pin this message.
         const CanPin = 1 << 3;
         /// Whether the user can unpin this message.
         const CanUnpin = 1 << 4;
         /// Whether the user can delete/redact this message.
         const CanDelete = 1 << 5;
-        /// Whether the user can react to this message.
-        const CanReact = 1 << 6;
         /// Whether this message contains HTML content that the user can copy.
-        const HasHtml = 1 << 7;
+        const HasHtml = 1 << 6;
     }
 }
 impl MessageAbilities {
@@ -292,11 +290,9 @@ impl MessageAbilities {
         has_html: bool,
     ) -> Self {
         let mut abilities = Self::empty();
-        let is_own = event_tl_item.is_own();
-        abilities.set(Self::IsOwn, is_own);
-        // Currently we only support deleting and editing one's own messages.
-        if is_own {
-            abilities.set(Self::CanEdit, true);
+        abilities.set(Self::CanEdit, event_tl_item.is_editable());
+        // Currently we only support deleting one's own messages.
+        if event_tl_item.is_own() {
             abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
         }
         abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
@@ -324,8 +320,9 @@ pub struct MessageDetails {
     pub related_event_id: Option<OwnedEventId>,
     /// The widget ID of the RoomScreen that contains this message.
     pub room_screen_widget_uid: WidgetUid,
-    /// Whether this message mentions the current user.
-    pub mentions_user: bool,
+    /// Whether this message should be highlighted, i.e.,
+    /// if it mentions the room/current user or is a reply to the current user.
+    pub should_be_highlighted: bool,
     /// The abilities that the user has on this message.
     pub abilities: MessageAbilities,
 }
@@ -356,30 +353,32 @@ impl Widget for NewMessageContextMenu {
         // 2. The escape key is pressed if this menu has key focus,
         // 3. The user clicks/touches outside the main_content view area.
         // 4. The user scrolls anywhere.
-        let close_menu = matches!(event, Event::BackPressed)                    // 1
-        || match event.hits_with_capture_overload(cx, area, true) {
-            Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                 // 2
-            Hit::FingerDown(fde) => {
-                let reaction_text_input = self.view.text_input(id!(reaction_input_view.reaction_text_input));
-                if reaction_text_input.area().rect(cx).contains(fde.abs) {
-                    reaction_text_input.set_key_focus(cx);
-                } else {
-                    cx.set_key_focus(area);
+        let close_menu = {
+            event.back_pressed()
+            || match event.hits_with_capture_overload(cx, area, true) {
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::FingerDown(fde) => {
+                    let reaction_text_input = self.view.text_input(id!(reaction_input_view.reaction_text_input));
+                    if reaction_text_input.area().rect(cx).contains(fde.abs) {
+                        reaction_text_input.set_key_focus(cx);
+                    } else {
+                        cx.set_key_focus(area);
+                    }
+                    false
                 }
-                false
+                Hit::FingerUp(fue) if fue.is_over => {
+                    !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)
+                }
+                Hit::FingerScroll(_) => true,
+                _ => false,
             }
-            Hit::FingerUp(fue) if fue.is_over => {
-                !self.view(id!(main_content)).area().rect(cx).contains(fue.abs) // 3
-            }
-            Hit::FingerScroll(_) => true,                                       // 4
-            _ => false,
         };
         if close_menu {
             self.close(cx);
             return;
         }
 
-        self.widget_match_event(cx, event, scope); 
+        self.widget_match_event(cx, event, scope);
     }
 }
 
@@ -615,7 +614,7 @@ impl NewMessageContextMenu {
 
         self.redraw(cx);
 
-        let num_visible_buttons = 
+        let num_visible_buttons =
             show_react as u8
             + show_reply_to as u8
             + show_edit as u8

@@ -7,7 +7,7 @@ use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
-    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequest, room::RoomMember, ruma::{
+    config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
@@ -34,7 +34,7 @@ use url_preview;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, link_preview_cache::{LinkPreview, LinkPreviewCacheEntry, LinkPreviewResult}, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::MediaCacheEntry, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -194,9 +194,9 @@ async fn login(
 /// Which direction to paginate in.
 ///
 /// * `Forwards` will retrieve later events (towards the end of the timeline),
-///    which only works if the timeline is *focused* on a specific event.
+///   which only works if the timeline is *focused* on a specific event.
 /// * `Backwards`: the more typical choice, in which earlier events are retrieved
-///    (towards the start of the timeline), which works in  both live mode and focused mode.
+///   (towards the start of the timeline), which works in  both live mode and focused mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaginationDirection {
     Forwards,
@@ -214,7 +214,7 @@ impl std::fmt::Display for PaginationDirection {
 /// The function signature for the callback that gets invoked when media is fetched.
 pub type OnMediaFetchedFn = fn(
     &Mutex<MediaCacheEntry>,
-    MediaRequest,
+    MediaRequestParameters,
     matrix_sdk::Result<Vec<u8>>,
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
@@ -239,6 +239,12 @@ pub enum MatrixRequest {
         num_events: u16,
         direction: PaginationDirection,
     },
+    /// Request to edit the content of an event in the given room's timeline.
+    EditMessage {
+        room_id: OwnedRoomId,
+        timeline_event_item_id: TimelineEventItemId,
+        edited_content: EditedContent,
+    },
     /// Request to fetch the full details of the given event in the given room's timeline.
     FetchDetailsForEvent {
         room_id: OwnedRoomId,
@@ -246,8 +252,17 @@ pub enum MatrixRequest {
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
-    FetchRoomMembers {
+    SyncRoomMemberList {
         room_id: OwnedRoomId,
+    },
+    /// Request to get the actual list of members in a room.
+    /// This returns the list of members that can be displayed in the UI.
+    GetRoomMembers {
+        room_id: OwnedRoomId,
+        memberships: RoomMemberships,
+        /// * If `true` (not recommended), only the local cache will be accessed.
+        /// * If `false` (recommended), details will be fetched from the server.
+        local_only: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -289,9 +304,9 @@ pub enum MatrixRequest {
     /// will be invoked with four arguments: the `destination`, the `media_request`,
     /// the result of the media fetch, and the `update_sender`.
     FetchMedia {
-        media_request: MediaRequest,
+        media_request: MediaRequestParameters,
         on_fetched: OnMediaFetchedFn,
-        destination: Arc<Mutex<MediaCacheEntry>>,
+        destination: MediaCacheEntryRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to fetch a url and return the card style preview data
@@ -405,7 +420,7 @@ async fn async_worker(
     login_sender: Sender<LoginRequest>,
 ) -> Result<()> {
     log!("Started async_worker task.");
-    let subscribe_to_current_user_read_receipt_changed: std::sync::Arc<tokio::sync::Mutex<BTreeMap<OwnedRoomId, bool>>> = Arc::new(tokio::sync::Mutex::new(BTreeMap::new()));
+    let mut tasks_list: BTreeMap<OwnedRoomId, JoinHandle<()>> = BTreeMap::new();
     while let Some(request) = request_receiver.recv().await {
         match request {
             MatrixRequest::Login(login_request) => {
@@ -436,7 +451,7 @@ async fn async_worker(
                     SignalToUI::set_ui_signal();
 
                     let res = if direction == PaginationDirection::Forwards {
-                        timeline.focused_paginate_forwards(num_events).await
+                        timeline.paginate_forwards(num_events).await
                     } else {
                         timeline.paginate_backwards(num_events).await
                     };
@@ -465,11 +480,37 @@ async fn async_worker(
                 });
             }
 
+            MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
+                let (timeline, sender) = {
+                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                        error!("BUG: room info not found for edit request, room {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                // Spawn a new async task that will make the actual edit request.
+                let _edit_task = Handle::current().spawn(async move {
+                    log!("Sending request to edit message {timeline_event_id:?} in room {room_id}...");
+                    let result = timeline.edit(&timeline_event_id, edited_content).await;
+                    match result {
+                        Ok(_) => log!("Successfully edited message {timeline_event_id:?} in room {room_id}."),
+                        Err(ref e) => error!("Error editing message {timeline_event_id:?} in room {room_id}: {e:?}"),
+                    }
+                    sender.send(TimelineUpdate::MessageEdited {
+                        timeline_event_id,
+                        result,
+                    }).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
             MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("BUG: room info not found for fetch details for event request {room_id}");
+                        error!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
                     };
 
@@ -496,11 +537,11 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchRoomMembers { room_id } => {
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
-                        log!("BUG: room info not found for fetch members request {room_id}");
+                        error!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
 
@@ -509,10 +550,43 @@ async fn async_worker(
 
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch room members request for room {room_id}...");
+                    log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    log!("Completed fetch room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    log!("Completed sync room members request for room {room_id}.");
+                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for get room members request {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _get_members_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+
+                    if local_only {
+                        if let Ok(members) = room.members_no_sync(memberships).await {
+                            log!("Got {} members from cache for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    } else {
+                        if let Ok(members) = room.members(memberships).await {
+                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    }
+
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -724,7 +798,12 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SubscribeToOwnUserReadReceiptsChanged { room_id, subscribe } => {
-
+                if !subscribe {
+                    if let Some(task_handler) = tasks_list.remove(&room_id) {
+                        task_handler.abort();
+                    }
+                    continue;
+                }
                 let (timeline, sender) = {
                     let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -734,19 +813,8 @@ async fn async_worker(
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
-                let subscribe_to_current_user_read_receipt_changed = subscribe_to_current_user_read_receipt_changed.clone();
-
-                let _to_updates_task = Handle::current().spawn(async move {
+                let subscribe_own_read_receipt_task = Handle::current().spawn(async move {
                     let update_receiver = timeline.subscribe_own_user_read_receipts_changed().await;
-                    let read_receipt_change_mutex = subscribe_to_current_user_read_receipt_changed.clone();
-                    let mut read_receipt_change_mutex_guard = read_receipt_change_mutex.lock().await;
-                    if let Some(subscription) = read_receipt_change_mutex_guard.get(&room_id) {
-                        if *subscription && subscribe {
-                            return
-                        }
-                    } else if subscribe {
-                        read_receipt_change_mutex_guard.insert(room_id.clone(), true);
-                    }
                     pin_mut!(update_receiver);
                     if let Some(client_user_id) = current_user_id() {
                         if let Some((event_id, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
@@ -755,13 +823,8 @@ async fn async_worker(
                                 error!("Failed to get own user read receipt: {e:?}");
                             }
                         }
+
                         while (update_receiver.next().await).is_some() {
-                            let read_receipt_change = subscribe_to_current_user_read_receipt_changed.clone();
-                            let read_receipt_change = read_receipt_change.lock().await;
-                            let Some(subscribed_to_user_read_receipt) = read_receipt_change.get(&room_id) else { continue; };
-                            if !subscribed_to_user_read_receipt {
-                                break;
-                            }
                             if let Some((_, receipt)) = timeline.latest_user_read_receipt(&client_user_id).await {
                                 if let Err(e) = sender.send(TimelineUpdate::OwnUserReadReceipt(receipt)) {
                                     error!("Failed to get own user read receipt: {e:?}");
@@ -770,6 +833,7 @@ async fn async_worker(
                         }
                     }
                 });
+                tasks_list.insert(room_id.clone(), subscribe_own_read_receipt_task);
             }
             MatrixRequest::SpawnSSOServer { brand, homeserver_url, identity_provider_id} => {
                 spawn_sso_server(brand, homeserver_url, identity_provider_id, login_sender.clone()).await;
@@ -787,7 +851,7 @@ async fn async_worker(
                 let Some(client) = CLIENT.get() else { continue };
                 let _fetch_task = Handle::current().spawn(async move {
                     // log!("Sending fetch avatar request for {mxc_uri:?}...");
-                    let media_request = MediaRequest {
+                    let media_request = MediaRequestParameters {
                         source: MediaSource::Plain(mxc_uri.clone()),
                         format: AVATAR_THUMBNAIL_FORMAT.into(),
                     };
@@ -1044,7 +1108,7 @@ pub fn start_matrix_tokio() -> Result<()> {
 
         // Start the main loop that drives the Matrix client SDK.
         let mut main_loop_join_handle = rt.spawn(async_main_loop(login_receiver));
-        
+
         // Build a Matrix Client in the background so that SSO Server starts earlier.
         rt.spawn(async move {
             match build_client(&Cli::default(), app_data_dir()).await {
@@ -1343,7 +1407,7 @@ async fn async_main_loop(
     if let Ok(mut client_opt) = DEFAULT_SSO_CLIENT.lock() {
         let _ = client_opt.take();
     }
-    
+
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
@@ -1521,7 +1585,7 @@ async fn update_room(
             spawn_fetch_room_avatar(new_room.inner_room().clone());
         }
 
-        if let Ok(new_room_name) = new_room.compute_display_name().await {
+        if let Ok(new_room_name) = new_room.display_name().await {
             let new_room_name = new_room_name.to_string();
             if old_room.cached_display_name().as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
@@ -1615,7 +1679,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
-    let room_name = room.compute_display_name().await
+    let room_name = room.display_name().await
         .map(|n| n.to_string())
         .ok();
 
@@ -1823,7 +1887,7 @@ async fn timeline_subscriber_handler(
 
     let room_id = room.room_id().to_owned();
     log!("Starting timeline subscriber for room {room_id}...");
-    let (mut timeline_items, mut subscriber) = timeline.subscribe_batched().await;
+    let (mut timeline_items, mut subscriber) = timeline.subscribe().await;
     log!("Received initial timeline update of {} items for room {room_id}.", timeline_items.len());
 
     timeline_update_sender.send(TimelineUpdate::FirstUpdate {
@@ -2261,7 +2325,7 @@ async fn spawn_sso_server(
         // Try to use the DEFAULT_SSO_CLIENT that we proactively created
         // during initialization (to speed up opening the SSO browser window).
         let mut client_and_session = client_and_session_opt;
-        
+
         // If the DEFAULT_SSO_CLIENT is none (meaning it failed to build),
         // or if the homeserver_url is *not* empty and isn't the default,
         // we cannot use the DEFAULT_SSO_CLIENT, so we must build a new one.

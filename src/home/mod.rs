@@ -1,5 +1,6 @@
 use makepad_widgets::Cx;
 
+pub mod editing_pane;
 pub mod home_screen;
 pub mod light_themed_dock;  
 pub mod loading_pane;
@@ -20,6 +21,7 @@ pub fn live_design(cx: &mut Cx) {
     loading_pane::live_design(cx);
     rooms_list::live_design(cx);
     room_preview::live_design(cx);
+    editing_pane::live_design(cx);
     new_message_context_menu::live_design(cx);
     room_screen::live_design(cx);
     room_read_receipt::live_design(cx);

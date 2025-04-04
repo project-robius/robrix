@@ -109,7 +109,7 @@ impl Widget for Avatar {
             Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
-            Hit::FingerUp(fue) => if fue.is_over && fue.was_tap() {
+            Hit::FingerUp(fue) => if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
                 cx.widget_action(
                     widget_uid,
                     &scope.path,
@@ -139,11 +139,11 @@ impl Avatar {
     ///
     /// ## Arguments
     /// * `info`: information about the user represented by this avatar, including a tuple of
-    ///    the user ID, displayable user name, and room ID.
-    ///    * Set this to `Some` to enable a user to click/tap on the Avatar itself.
-    ///    * Set this to `None` to disable the click/tap action.
+    ///   the user ID, displayable user name, and room ID.
+    ///   * Set this to `Some` to enable a user to click/tap on the Avatar itself.
+    ///   * Set this to `None` to disable the click/tap action.
     /// * `username`: the displayable text for this avatar, either a user name or user ID.
-    ///    Only the first non-`@` letter (Unicode grapheme) is displayed.
+    ///   Only the first non-`@` letter (Unicode grapheme) is displayed.
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
@@ -168,13 +168,13 @@ impl Avatar {
     ///
     /// ## Arguments
     /// * `info`: information about the user represented by this avatar:
-    ///    the user name, user ID, room ID, and avatar image data.
-    ///    * Set this to `Some` to enable a user to click/tap on the Avatar itself.
-    ///    * Set this to `None` to disable the click/tap action.
+    ///   the user name, user ID, room ID, and avatar image data.
+    ///   * Set this to `Some` to enable a user to click/tap on the Avatar itself.
+    ///   * Set this to `None` to disable the click/tap action.
     /// * `image_set_function`: - a function that is passed in the `&mut Cx`
-    ///    and an [ImageRef] that refers to the image that will be displayed in this avatar.
-    ///    This allows the caller to set the image contents in any way they want.
-    ///    If `image_set_function` returns an error, no change is made to the avatar.
+    ///   and an [ImageRef] that refers to the image that will be displayed in this avatar.
+    ///   This allows the caller to set the image contents in any way they want.
+    ///   If `image_set_function` returns an error, no change is made to the avatar.
     pub fn show_image<F, E>(
         &mut self,
         cx: &mut Cx,
@@ -211,22 +211,7 @@ impl Avatar {
             AvatarDisplayStatus::Text
         }
     }
-    /// Returns a hit event based on user interaction with the avatar
-    /// 
-    /// # Parameters
-    /// - `cx`: The draw context
-    /// - `event`: The input event
-    /// - `sweep_area`: The area to check for hits
-    /// 
-    /// # Returns
-    /// A `Hit` representing the type of interaction (hover, click, etc.)
-    fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Hit {
-        
-        event.hits_with_options(
-            cx,
-            self.area(),
-            HitOptions::default().with_sweep_area(sweep_area))
-    }
+
     /// Sets the given avatar and returns a displayable username based on the
     /// given profile and user ID of the sender of the event with the given event ID.
     ///
@@ -391,11 +376,6 @@ impl AvatarRef {
         } else {
             AvatarDisplayStatus::Text
         }
-    }
-    
-    /// See [`Avatar::hit()`].
-    pub fn hit(&mut self, cx: &mut Cx, event: &Event, sweep_area: Area) -> Option<Hit> {
-        self.borrow_mut().map(|mut inner| inner.hit(cx, event, sweep_area))
     }
     
     /// See [`Avatar::set_avatar_and_get_username()`].

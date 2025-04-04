@@ -13,6 +13,8 @@ pub mod typing_animation;
 pub mod popup_list;
 pub mod verification_badge;
 pub mod callout_tooltip;
+pub mod mentionable_text_input;
+
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
@@ -29,4 +31,5 @@ pub fn live_design(cx: &mut Cx) {
     popup_list::live_design(cx);
     verification_badge::live_design(cx);
     callout_tooltip::live_design(cx);
+    mentionable_text_input::live_design(cx);
 }

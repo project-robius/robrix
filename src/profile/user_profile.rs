@@ -102,18 +102,6 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    // Copied from Moxin
-    FadeView = <CachedView> {
-        draw_bg: {
-            instance opacity: 1.0
-
-            fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
-                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
-            }
-        }
-    }
-
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
 
     UserProfileView = <ScrollXYView> {
@@ -441,21 +429,24 @@ impl Widget for UserProfileSlidingPane {
         // 3. The escape key is pressed if this pane has key focus,
         // 4. The back mouse button is clicked within this view,
         // 5. The user clicks/touches outside the main_content view area.
-        let close_pane = match event {
-            Event::Actions(actions) => self.button(id!(close_button)).clicked(actions),  // 1
-            Event::BackPressed => true,                                                  // 2
-            _ => false,
-        } || match event.hits_with_capture_overload(cx, area, true) {
-            Hit::KeyUp(key) => key.key_code == KeyCode::Escape,                          // 3
-            Hit::FingerDown(_fde) => {
-                cx.set_key_focus(area);
-                false
+        let close_pane = {
+            matches!(
+                event,
+                Event::Actions(actions) if self.button(id!(close_button)).clicked(actions)
+            )
+            || event.back_pressed()
+            || match event.hits_with_capture_overload(cx, area, true) {
+                Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
+                Hit::FingerDown(_fde) => {
+                    cx.set_key_focus(area);
+                    false
+                }
+                Hit::FingerUp(fue) if fue.is_over => {
+                    fue.mouse_button().is_some_and(|b| b.is_back())
+                    || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)
+                }
+                _ => false,
             }
-            Hit::FingerUp(fue) if fue.is_over => {
-                fue.mouse_button().is_some_and(|b| b.is_back())                          // 4
-                || !self.view(id!(main_content)).area().rect(cx).contains(fue.abs)       // 5
-            }
-            _ => false,
         };
         if close_pane {
             self.animator_play(cx, id!(panel.hide));

@@ -1,3 +1,7 @@
+use std::{borrow::Cow, time::SystemTime};
+
+use unicode_segmentation::UnicodeSegmentation;
+
 use chrono::{DateTime, Duration, Local, TimeZone};
 use imghdr;
 
@@ -5,7 +9,7 @@ use std::{
     borrow::Cow, time::SystemTime
 };
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings, MediaThumbnailSize}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
 
@@ -172,21 +176,6 @@ impl From<MediaFormatConst> for MediaFormat {
 /// A const-compatible version of [`MediaThumbnailSettings`].
 #[derive(Clone, Debug)]
 pub struct MediaThumbnailSettingsConst {
-    pub size: MediaThumbnailSizeConst,
-    pub animated: bool,
-}
-impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
-    fn from(constant: MediaThumbnailSettingsConst) -> Self {
-        Self {
-            size: constant.size.into(),
-            animated: constant.animated,
-        }
-    }
-}
-
-/// A const-compatible version of [`MediaThumbnailSize`].
-#[derive(Clone, Debug)]
-pub struct MediaThumbnailSizeConst {
     /// The desired resizing method.
     pub method: Method,
     /// The desired width of the thumbnail. The actual thumbnail may not match
@@ -195,25 +184,32 @@ pub struct MediaThumbnailSizeConst {
     /// The desired height of the thumbnail. The actual thumbnail may not match
     /// the size specified.
     pub height: u32,
+    /// If we want to request an animated thumbnail from the homeserver.
+    ///
+    /// If it is `true`, the server should return an animated thumbnail if
+    /// the media supports it.
+    ///
+    /// Defaults to `false`.
+    pub animated: bool,
 }
-impl From<MediaThumbnailSizeConst> for MediaThumbnailSize {
-    fn from(constant: MediaThumbnailSizeConst) -> Self {
+impl From<MediaThumbnailSettingsConst> for MediaThumbnailSettings {
+    fn from(constant: MediaThumbnailSettingsConst) -> Self {
         Self {
             method: constant.method,
             width: constant.width.into(),
             height: constant.height.into(),
+            animated: constant.animated,
         }
     }
 }
 
+
 /// The thumbnail format to use for user and room avatars.
 pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
-        size: MediaThumbnailSizeConst {
-            method: Method::Scale,
-            width: 40,
-            height: 40,
-        },
+        method: Method::Scale,
+        width: 40,
+        height: 40,
         animated: false,
     }
 );
@@ -221,11 +217,9 @@ pub const AVATAR_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnai
 /// The thumbnail format to use for regular media images.
 pub const MEDIA_THUMBNAIL_FORMAT: MediaFormatConst = MediaFormatConst::Thumbnail(
     MediaThumbnailSettingsConst {
-        size: MediaThumbnailSizeConst {
-            method: Method::Scale,
-            width: 400,
-            height: 400,
-        },
+        method: Method::Scale,
+        width: 400,
+        height: 400,
         animated: false,
     }
 );
@@ -437,6 +431,65 @@ pub fn get_or_fetch_event_sender(
     }
     .unwrap_or_else(|| event_tl_item.sender().as_str());
     sender_username.to_owned()
+}
+
+/// Converts a byte index in a string to the corresponding grapheme index
+pub fn byte_index_to_grapheme_index(text: &str, byte_idx: usize) -> usize {
+    let mut current_byte_pos = 0;
+    for (i, g) in text.graphemes(true).enumerate() {
+        if current_byte_pos <= byte_idx && current_byte_pos + g.len() > byte_idx {
+            return i;
+        }
+        current_byte_pos += g.len();
+    }
+    // If byte_idx is at end of string or past it, return grapheme count
+    text.graphemes(true).count()
+}
+
+/// Safely extracts a substring between two byte indices, ensuring proper
+/// grapheme boundaries are respected
+pub fn safe_substring_by_byte_indices(text: &str, start_byte: usize, end_byte: usize) -> String {
+    if start_byte >= end_byte || start_byte >= text.len() {
+        return String::new();
+    }
+
+    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
+    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
+
+    text.graphemes(true)
+        .enumerate()
+        .filter(|(i, _)| *i >= start_grapheme_idx && *i < end_grapheme_idx)
+        .map(|(_, g)| g)
+        .collect()
+}
+
+/// Safely replaces text between byte indices with a new string,
+/// ensuring proper grapheme boundaries are respected
+pub fn safe_replace_by_byte_indices(text: &str, start_byte: usize, end_byte: usize, replacement: &str) -> String {
+    let text_graphemes: Vec<&str> = text.graphemes(true).collect();
+
+    let start_grapheme_idx = byte_index_to_grapheme_index(text, start_byte);
+    let end_grapheme_idx = byte_index_to_grapheme_index(text, end_byte);
+
+    let before = text_graphemes[..start_grapheme_idx].join("");
+    let after = text_graphemes[end_grapheme_idx..].join("");
+
+    format!("{before}{replacement}{after}")
+}
+
+/// Builds a mapping array from graphemes to byte positions in the string
+pub fn build_grapheme_byte_positions(text: &str) -> Vec<usize> {
+    let mut positions = Vec::with_capacity(text.graphemes(true).count() + 1);
+    let mut byte_pos = 0;
+
+    positions.push(0);
+
+    for g in text.graphemes(true) {
+        byte_pos += g.len();
+        positions.push(byte_pos);
+    }
+
+    positions
 }
 
 
