@@ -5,9 +5,6 @@ use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
 use imghdr;
 
-use std::{
-    borrow::Cow, time::SystemTime
-};
 use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
 use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
