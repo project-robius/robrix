@@ -1632,6 +1632,9 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         |ev| get_latest_event_details(ev, &room_id)
     );
 
+    // We judge whether the given room is direct here.
+    let is_direct = room.is_direct().await.unwrap_or(false);
+
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
         room_id: room_id.clone(),
         latest,
@@ -1645,6 +1648,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
+        is_direct,
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
