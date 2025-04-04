@@ -13,7 +13,7 @@ use matrix_sdk::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
             }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+        }, sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
     }, OwnedServerName
 };
 use matrix_sdk_ui::timeline::{
@@ -1101,7 +1101,6 @@ impl Widget for RoomScreen {
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
-                        // TODO: support attaching mentions, etc.
                     });
 
                     self.clear_replying_to(cx);
@@ -1120,21 +1119,34 @@ impl Widget for RoomScreen {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
-                    log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        RoomMessageEventContent::text_html(html_text, html_text)
+                    let (message, mentions) = if let Some(html_text) = entered_text.strip_prefix("/html") {
+                        (
+                            RoomMessageEventContent::text_html(html_text, html_text),
+                            self.view.room_input_bar(id!(input_bar))
+                                .mentionable_text_input(id!(message_input))
+                                .get_real_mentions_in_html_text(html_text),
+                        )
                     } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        RoomMessageEventContent::text_plain(plain_text)
+                        (
+                            RoomMessageEventContent::text_plain(plain_text),
+                            Default::default(),
+                        )
                     } else {
-                        RoomMessageEventContent::text_markdown(entered_text)
+                        (
+                            RoomMessageEventContent::text_markdown(&entered_text),
+                            self.view.room_input_bar(id!(input_bar))
+                                .mentionable_text_input(id!(message_input))
+                                .get_real_mentions_in_markdown_text(&entered_text),
+                        )
                     };
+                    log!("Sending message to room {}: {:?}, mentions: {:?}", room_id, entered_text, mentions);
+                    let message = message.add_mentions(Mentions::with_user_ids(mentions));
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
-                        // TODO: support attaching mentions, etc.
                     });
 
                     self.clear_replying_to(cx);
@@ -1438,11 +1450,6 @@ impl RoomScreen {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
-                            // For now, we paginate a cleared timeline in order to be able to show something at least.
-                            // A proper solution would be what's described below, which would be to save a few event IDs
-                            // and then either focus on them (if we're not close to the end of the timeline)
-                            // or paginate backwards until we find them (only if we are close the end of the timeline).
-                            should_continue_backwards_pagination = true;
                         }
 
                         // If the bottom of the timeline (the last event) is visible, then we should
@@ -4277,16 +4284,6 @@ impl Widget for Message {
                         }
                     );
                 }
-            }
-            Hit::FingerLongPress(lp) => {
-                cx.widget_action(
-                    details.room_screen_widget_uid,
-                    &scope.path,
-                    MessageAction::OpenMessageContextMenu {
-                        details: details.clone(),
-                        abs_pos: lp.abs,
-                    }
-                );
             }
             // If the hit occurred on the replied-to message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {

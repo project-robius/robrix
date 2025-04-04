@@ -13,7 +13,8 @@ use crate::utils;
 
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -71,7 +72,7 @@ live_design! {
                 }}}
             }
 
-            label = <Label> {
+            username = <Label> {
                 height: Fit,
                 draw_text: {
                     color: #000,
@@ -82,7 +83,7 @@ live_design! {
             filler = <FillerX> {}
         }
 
-        matrix_url = <Label> {
+        user_id = <Label> {
             height: Fit,
             draw_text: {
                 color: #666,
@@ -108,7 +109,7 @@ live_design! {
 
             header_view = {
                 header_label = {
-                    text: "Users List"
+                    text: "Users in this Room"
                 }
             }
 
@@ -195,6 +196,13 @@ live_design! {
     }
 }
 
+// /// A special string used to denote the start of a mention within
+// /// the actual text being edited.
+// /// This is used to help easily locate and distinguish actual mentions
+// /// from normal `@` characters.
+// const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
+
+
 /// Actions emitted by the MentionableTextInput component
 #[allow(dead_code)]
 #[derive(Clone, Debug, DefaultNone)]
@@ -211,41 +219,42 @@ pub enum MentionableTextInputAction {
 #[derive(Live, LiveHook, Widget)]
 pub struct MentionableTextInput {
     /// Base command text input
-    #[deref]
-    view: CommandTextInput,
+    #[deref] cmd_text_input: CommandTextInput,
     /// Template for user list items
-    #[live]
-    user_list_item: Option<LivePtr>,
+    #[live] user_list_item: Option<LivePtr>,
     /// List of available room members for mentions
-    #[rust]
-    room_members: Arc<Vec<RoomMember>>,
+    #[rust] room_members: Arc<Vec<RoomMember>>,
     /// Position where the @ mention starts
-    #[rust]
-    mention_start_index: Option<usize>,
+    #[rust] current_mention_start_index: Option<usize>,
+    /// The set of users that were mentioned (at one point) in this text input.
+    /// Due to characters being deleted/removed, this list is a *superset*
+    /// of possible users who may have been mentioned. 
+    /// All of these mentions may not exist in the final text input content;
+    /// this is just a list of users to search the final sent message for
+    /// when adding in new mentions.
+    #[rust] possible_mentions: BTreeMap<OwnedUserId, String>,
     /// Indicates if currently in mention search mode
-    #[rust]
-    is_searching: bool,
-    #[rust]
-    room_id: Option<OwnedRoomId>,
+    #[rust] is_searching: bool,
+    #[rust] room_id: Option<OwnedRoomId>,
 }
 
 impl Widget for MentionableTextInput {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        self.view.handle_event(cx, event, scope);
+        self.cmd_text_input.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            if let Some(selected) = self.view.item_selected(actions) {
+            if let Some(selected) = self.cmd_text_input.item_selected(actions) {
                 self.on_user_selected(cx, scope, selected);
                 return;
             }
 
-            if self.view.should_build_items(actions) {
-                let search_text = self.view.search_text().to_lowercase();
+            if self.cmd_text_input.should_build_items(actions) {
+                let search_text = self.cmd_text_input.search_text().to_lowercase();
                 self.update_user_list(cx, &search_text);
             }
 
             if let Some(action) =
-                actions.find_widget_action(self.view.text_input_ref().widget_uid())
+                actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
             {
                 if let TextInputAction::Change(text) = action.cast() {
                     self.handle_text_change(cx, scope, text);
@@ -255,38 +264,47 @@ impl Widget for MentionableTextInput {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
+        self.cmd_text_input.draw_walk(cx, scope, walk)
     }
 }
 
 impl MentionableTextInput {
     // Handles user selection from mention popup
     fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
-        let username = selected.label(id!(user_info.label)).text();
+        let username = selected.label(id!(user_info.username)).text();
+        let user_id_str = selected.label(id!(user_id)).text();
+        let Ok(user_id): Result<OwnedUserId, _> = user_id_str.try_into() else {
+            return;
+        };
 
-        if let Some(start_idx) = self.mention_start_index {
-            let current_text = self.view.text();
-            let head = self.view.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
+        if let Some(start_idx) = self.current_mention_start_index {
+            let text_input_ref = self.cmd_text_input.text_input_ref();
+            let current_text = text_input_ref.text();
+            let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
+
+            // For now, we insert the markdown link to the mentioned user directly
+            // instead of the user's display name because we don't yet have a way
+            // to track the mentioned display name and replace it later.
+            let mention_to_insert = format!(
+                "[{username}]({}) ",
+                user_id.matrix_to_uri(),
+            );
+            // let mention_to_insert = format!("@{username} ");
+
+            self.possible_mentions.insert(user_id, username);
 
             // Use utility function to safely replace text
-            let mention = utils::safe_replace_by_byte_indices(
+            let new_text = utils::safe_replace_by_byte_indices(
                 &current_text,
                 start_idx,
                 head,
-                &format!("@{username} ")
+                &mention_to_insert,
             );
 
-            self.view.set_text(cx, &mention);
-
+            self.cmd_text_input.set_text(cx, &new_text);
             // Calculate new cursor position
-            let before_and_insert = format!("{}@{} ",
-                &current_text[..start_idx],
-                username
-            );
-            let new_pos = before_and_insert.len();
-
-            self.view.text_input_ref().set_cursor(new_pos, new_pos);
-
+            let new_pos = start_idx + mention_to_insert.len();
+            text_input_ref.set_cursor(new_pos, new_pos);
         }
 
         self.close_mention_popup(cx);
@@ -294,11 +312,17 @@ impl MentionableTextInput {
 
     // Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, _scope: &mut Scope, text: String) {
-        let cursor_pos =
-            self.view.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
+        // Currently an inserted mention consists of a markdown link,
+        // which is "[USERNAME](matrix_to_uri)", so of course this must be at least 6 characters.
+        // (In reality it has to be a lot more, but whatever...)
+        if text.trim().len() < 6 {
+            self.possible_mentions.clear();
+        }
+
+        let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
 
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
-            self.mention_start_index = Some(trigger_pos);
+            self.current_mention_start_index = Some(trigger_pos);
             self.is_searching = true;
 
             let search_text = utils::safe_substring_by_byte_indices(
@@ -308,7 +332,7 @@ impl MentionableTextInput {
             ).to_lowercase();
 
             self.update_user_list(cx, &search_text);
-            self.view.view(id!(popup)).set_visible(cx, true);
+            self.cmd_text_input.view(id!(popup)).set_visible(cx, true);
         } else if self.is_searching {
             self.close_mention_popup(cx);
         }
@@ -316,7 +340,7 @@ impl MentionableTextInput {
 
     // Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str) {
-        self.view.clear_items();
+        self.cmd_text_input.clear_items();
 
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
@@ -335,15 +359,15 @@ impl MentionableTextInput {
 
             let member_count = matched_members.len();
             const MAX_VISIBLE_ITEMS: usize = 15;
-            let popup = self.view.view(id!(popup));
+            let popup = self.cmd_text_input.view(id!(popup));
 
             if member_count == 0 {
                 popup.apply_over(cx, live! { height: Fit });
-                self.view.view(id!(popup)).set_visible(cx, false);
+                self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
                 return;
             }
 
-            let header_view = self.view.view(id!(popup.header_view));
+            let header_view = self.cmd_text_input.view(id!(popup.header_view));
 
             let header_height = if header_view.area().rect(cx).size.y > 0.0 {
                 header_view.area().rect(cx).size.y
@@ -370,11 +394,11 @@ impl MentionableTextInput {
             for (index, (display_name, member)) in matched_members.into_iter().enumerate() {
                 let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
 
-                item.label(id!(user_info.label)).set_text(cx, &display_name);
+                item.label(id!(user_info.username)).set_text(cx, &display_name);
 
                 // Use the full user ID string
                 let user_id_str = member.user_id().as_str();
-                item.label(id!(matrix_url)).set_text(cx, user_id_str);
+                item.label(id!(user_id)).set_text(cx, user_id_str);
 
                 item.apply_over(cx, live! {
                     show_bg: true,
@@ -417,16 +441,16 @@ impl MentionableTextInput {
                     avatar.show_text(cx, None, &display_name);
                 }
 
-                self.view.add_item(item.clone());
+                self.cmd_text_input.add_item(item.clone());
 
                 if index == 0 {
-                    self.view.set_keyboard_focus_index(0);
+                    self.cmd_text_input.set_keyboard_focus_index(0);
                 }
             }
 
-            self.view.view(id!(popup)).set_visible(cx, true);
+            self.cmd_text_input.view(id!(popup)).set_visible(cx, true);
             if self.is_searching {
-                self.view.text_input_ref().set_key_focus(cx);
+                self.cmd_text_input.text_input_ref().set_key_focus(cx);
             }
         }
     }
@@ -490,22 +514,22 @@ impl MentionableTextInput {
 
     // Cleanup helper for closing mention popup
     fn close_mention_popup(&mut self, cx: &mut Cx) {
-        self.mention_start_index = None;
+        self.current_mention_start_index = None;
         self.is_searching = false;
 
-        self.view.view(id!(popup)).set_visible(cx, false);
-        self.view.request_text_input_focus();
+        self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+        self.cmd_text_input.request_text_input_focus();
         self.redraw(cx);
     }
 
     /// Returns the current text content
     pub fn text(&self) -> String {
-        self.view.text_input_ref().text()
+        self.cmd_text_input.text_input_ref().text()
     }
 
     /// Sets the text content
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
-        self.view.text_input_ref().set_text(cx, text);
+        self.cmd_text_input.text_input_ref().set_text(cx, text);
         self.redraw(cx);
     }
 
@@ -552,5 +576,37 @@ impl MentionableTextInputRef {
 
     pub fn get_room_id(&self) -> Option<OwnedRoomId> {
         self.borrow().and_then(|inner| inner.get_room_id())
+    }
+
+    /// Returns the list of users mentioned in the given html message content.
+    pub fn get_real_mentions_in_html_text(&self, html: &str) -> BTreeSet<OwnedUserId> {
+        let Some(inner) = self.borrow() else { return BTreeSet::new() };
+        let mut real_mentions = BTreeSet::new();
+        for (user_id, username) in &inner.possible_mentions {
+            if html.contains(&format!(
+                "<a href=\"{}\">{}</a>",
+                user_id.matrix_to_uri(),
+                username,
+            )) {
+                real_mentions.insert(user_id.clone());
+            }
+        }
+        real_mentions
+    }
+
+    /// Returns the list of users mentioned in the given markdown message content.
+    pub fn get_real_mentions_in_markdown_text(&self, markdown: &str) -> BTreeSet<OwnedUserId> {
+        let Some(inner) = self.borrow() else { return BTreeSet::new() };
+        let mut real_mentions = BTreeSet::new();
+        for (user_id, username) in &inner.possible_mentions {
+            if markdown.contains(&format!(
+                "[{}]({})",
+                username,
+                user_id.matrix_to_uri(),
+            )) {
+                real_mentions.insert(user_id.clone());
+            }
+        }
+        real_mentions
     }
 }
