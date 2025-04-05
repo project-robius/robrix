@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    app::UpdateDockState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppRestoreDockAction, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -955,8 +955,8 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// Draw text notice if exist or else draw the timeline
-    #[rust] notice: UpdateDockState,
+    /// RoomScreen will display the room timeline if this is not Pending or Failure.
+    #[rust] notice: AppRestoreDockAction,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1291,13 +1291,13 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let room_screen_widget_uid = self.widget_uid();
         match &self.notice {
-            UpdateDockState::Pending(_) | UpdateDockState::Failure(_, _) => {
+            AppRestoreDockAction::Pending(_) | AppRestoreDockAction::Failure(_, _) => {
                 return self.view.draw_walk(cx, scope, walk);
             }
             _=> {}
         }
+        let room_screen_widget_uid = self.widget_uid();
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
@@ -2277,7 +2277,7 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
-                self.set_notice(cx, UpdateDockState::Pending(room_id.clone()));
+                self.set_notice(cx, AppRestoreDockAction::Pending(room_id.clone()));
                 return;
             };
             let new_tl_state = TimelineUiState {
@@ -2461,19 +2461,19 @@ impl RoomScreen {
     }
 
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
-    pub fn set_notice(&mut self, cx: &mut Cx, notice: UpdateDockState) {
+    pub fn set_notice(&mut self, cx: &mut Cx, notice: AppRestoreDockAction) {
         match &notice {
-            UpdateDockState::Pending(room_id) => {
-                // Update the room_id so that we can handle the `UpdateDockState::Success` case based on room_id
+            AppRestoreDockAction::Pending(room_id) => {
+                // Update the room_id so that we can handle the `AppRestoreDockAction::Success` case based on room_id
                 self.room_id = Some(room_id.clone());
                 self.view
                     .label(id!(notice_label))
                     .set_text(cx, "[Placeholder for Spinner]");
             }
-            UpdateDockState::Failure(_, reason) => {
+            AppRestoreDockAction::Failure(_, _reason) => {
                 self.view
-                    .label(id!(notice_label))
-                    .set_text(cx, &format!("[Placeholder for {}]", reason));
+                .label(id!(notice_label))
+                .set_text(cx, "A room was not found in the homeserver's list of all known rooms.");
             }
             _ => {
                 self.view.label(id!(notice_label)).set_text(cx, "");
@@ -2588,17 +2588,17 @@ impl RoomScreen {
     ) {
         for action in actions.iter() {
             match action.downcast_ref() {
-                Some(UpdateDockState::Success(room_id)) => {
+                Some(AppRestoreDockAction::Success(room_id)) => {
                     if let Some(ref self_room_id) = self.room_id {
                         if self_room_id == room_id {
-                            self.set_notice(cx, UpdateDockState::Success(room_id.clone()));
+                            self.set_notice(cx, AppRestoreDockAction::Success(room_id.clone()));
                         }
                     }
                 }
-                Some(UpdateDockState::Failure(room_id, reason)) => {
+                Some(AppRestoreDockAction::Failure(room_id, reason)) => {
                     if let Some(ref self_room_id) = self.room_id {
                         if self_room_id == room_id {
-                            self.set_notice(cx, UpdateDockState::Failure(room_id.clone(), reason.clone()));
+                            self.set_notice(cx, AppRestoreDockAction::Failure(room_id.clone(), reason.clone()));
                         }
                     }
                 }
@@ -2621,7 +2621,7 @@ impl RoomScreenRef {
     }
 
     /// See [`RoomScreen::set_notice()`].
-    pub fn set_notice(&self, cx: &mut Cx, notice: UpdateDockState) {
+    pub fn set_notice(&self, cx: &mut Cx, notice: AppRestoreDockAction) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };

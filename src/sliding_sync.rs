@@ -28,7 +28,7 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
-    app::UpdateDockState, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::AppRestoreDockAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, read_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
@@ -1121,9 +1121,6 @@ static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeM
 /// This allows us to quickly query if a newly-encountered room is a replacement for an old tombstoned room.
 static TOMBSTONED_ROOMS: Mutex<BTreeMap<OwnedRoomId, OwnedRoomId>> = Mutex::new(BTreeMap::new());
 
-/// Time instants of all the opened rooms in the dock that are waiting to be added to ALL_ROOM_INFO.
-static DOCK_WAITING_ROOMS: Mutex<BTreeMap<OwnedRoomId, Instant>> = Mutex::new(BTreeMap::new());
-
 /// The logged-in Matrix client, which can be freely and cheaply cloned.
 static CLIENT: OnceLock<Client> = OnceLock::new();
 
@@ -1322,9 +1319,7 @@ async fn async_main_loop(
     let sync_service = SyncService::builder(client.clone())
         .build()
         .await?;
-    let room_panel_open_rooms_mutex = Arc::new(Mutex::new(HashMap::new()));
     if let Some(current_user_id) = current_user_id() {
-        let room_panel_open_rooms_mutex_c = room_panel_open_rooms_mutex.clone();
         Handle::current().spawn(async move {
             match read_rooms_panel_state(&current_user_id).await {
                 Ok(rooms_panel_state) => {
@@ -1332,8 +1327,7 @@ async fn async_main_loop(
                         && !rooms_panel_state.dock_state.is_empty()
                     {
                         log!("Fetching room panel state from App data Directory");
-                        *room_panel_open_rooms_mutex_c.lock().unwrap() = rooms_panel_state.open_rooms.clone();
-                        Cx::post_action(UpdateDockState::LoadAll(rooms_panel_state));
+                        Cx::post_action(AppRestoreDockAction::Restore(rooms_panel_state));
                     }
                 }
                 Err(e) => {
@@ -1418,27 +1412,6 @@ async fn async_main_loop(
                     let old_room = all_known_rooms.get(index).expect("BUG: Set index out of bounds");
                     update_room(old_room, &changed_room, &room_list_service).await?;
                     all_known_rooms.set(index, changed_room);
-                    // Check if all the rooms have been loaded from the server.
-                    // Compare the known rooms with the loaded open rooms from persistent storage
-                    let mut max_num_of_rooms_guard = max_num_of_rooms_mutex.lock().unwrap();
-                    if let Some(max_num_of_rooms) = *max_num_of_rooms_guard {
-                        if all_known_rooms.len() == max_num_of_rooms {
-                            room_panel_open_rooms_mutex.lock().unwrap().values().for_each(|room| {
-                                let known_rooms: Vec<OwnedRoomId> = all_known_rooms.iter().map(|r|r.room_id().to_owned()).collect();
-                                // If the loaded open rooms from persistent storage contains a room that is not in the known rooms list, set failure state to Timeout.
-                                // This is because the room might have been deleted on the server, or the user might have left the room while the 
-                                // room is saved in dock state in persistent storage.
-                                if !known_rooms.contains(&room.room_id.to_owned()) {
-                                    Cx::post_action(UpdateDockState::Failure(
-                                        room.room_id.to_owned(),
-                                        crate::app::UpdateDockError::Timeout,
-                                    ));
-                                }
-                            });
-                            // Set max_num_of_rooms_guard to be none after loading all rooms to stop checking.
-                            *max_num_of_rooms_guard = None;
-                        }
-                    }
                 }
                 VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
@@ -1659,7 +1632,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         .unwrap()
         .remove(&room_id);
 
-    DOCK_WAITING_ROOMS.lock().unwrap().remove(&room_id);
     log!("Adding new room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
@@ -1673,7 +1645,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
         },
     );
-    Cx::post_action(UpdateDockState::Success(room.room_id().to_owned()));
+    Cx::post_action(AppRestoreDockAction::Success(room.room_id().to_owned()));
     Ok(())
 }
 

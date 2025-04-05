@@ -54,7 +54,6 @@ bytesize = "1.3.0"
 bitflags = "2.6.0"
 indexmap = "2.6.0"
 blurhash = { version = "0.2.3", default-features = false }
-thiserror = "2.0.12"
 
 [package.metadata.docs.rs]
 all-features = true

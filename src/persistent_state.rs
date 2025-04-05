@@ -69,7 +69,7 @@ const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
 
-const ROOMS_PANEL_STATE_NAME: &str = "rooms_panel_state.json";
+const ROOMS_PANEL_STATE_FILE_NAME: &str = "rooms_panel_state.json";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
@@ -204,7 +204,7 @@ pub fn save_room_panel(
         rooms_panel_state.dock_state.serialize_ron(),
     )?;
     std::fs::write(
-        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME),
+        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
         serde_json::to_string(&rooms_panel_state)?,
     )?;
     Ok(())
@@ -226,7 +226,7 @@ pub async fn read_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPan
     file.read_to_string(&mut contents).await?;
     let dock_state: HashMap<LiveId, DockItem> =
         HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_NAME))
+    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME))
     {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),

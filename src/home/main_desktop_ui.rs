@@ -88,12 +88,12 @@ impl Widget for MainDesktopUI {
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
-                    Some(RoomsPanelAction::DockLoadAll) => {
+                    Some(MainDesktopUIDockActions::DockRestore) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
 
                         self.room_order = app_state.rooms_panel.room_order.clone();
                         self.most_recently_selected_room = app_state.rooms_panel.selected_room.clone();
-                        self.open_rooms = HashMap::new();
+                        self.open_rooms = HashMap::with_capacity(app_state.rooms_panel.open_rooms.len());
                         for (k, v) in app_state.rooms_panel.open_rooms.iter() {
                             self.open_rooms.insert(LiveId(*k), v.clone());
                         }
@@ -122,17 +122,21 @@ impl Widget for MainDesktopUI {
                             self.focus_or_create_tab(cx, selected_room.clone());
                         }
                     }
-                    Some(RoomsPanelAction::DockSave) => {
+                    Some(MainDesktopUIDockActions::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
                         if let Some(dock_state) = dock.clone_state() {
                             app_state.rooms_panel.dock_state = dock_state;
                         }
-                        app_state.rooms_panel.open_rooms = HashMap::new();
+                        app_state.rooms_panel.open_rooms = HashMap::with_capacity(self.open_rooms.len());
                         for (k, v) in self.open_rooms.iter() {
                             app_state.rooms_panel.open_rooms.insert(k.0, v.clone());
                         }
                         app_state.rooms_panel.room_order = self.room_order.clone();
                         app_state.rooms_panel.selected_room = self.most_recently_selected_room.clone();
+                        if let Some(window_geom) = &app_state.window_geom {
+                            app_state.rooms_panel.window_size = Some((window_geom.inner_size.x, window_geom.inner_size.y));
+                            app_state.rooms_panel.window_position = Some((window_geom.position.x, window_geom.position.y));
+                        }
                     }
                     _ => {}
                 }
@@ -147,7 +151,7 @@ impl Widget for MainDesktopUI {
         if !self.drawn_previously {
             let app_state = scope.data.get_mut::<AppState>().unwrap();
             if !app_state.rooms_panel.open_rooms.is_empty() {
-                cx.action(RoomsPanelAction::DockLoadAll);
+                cx.action(MainDesktopUIDockActions::DockRestore);
             }
             self.drawn_previously = true;
         }
@@ -201,7 +205,7 @@ impl MainDesktopUI {
                 room.room_id.clone(),
                 displayed_room_name,
             );
-            cx.action(RoomsPanelAction::DockSave);
+            cx.action(MainDesktopUIDockActions::DockSave);
         } else {
             error!("Failed to create tab for room {}, {:?}", room.room_id, room.room_name);
         }
@@ -319,7 +323,7 @@ impl MatchEvent for MainDesktopUI {
                 _ => (),
             }
             if should_save_dock_action {
-                cx.action(RoomsPanelAction::DockSave);
+                cx.action(MainDesktopUIDockActions::DockSave);
             }
             // Handle RoomsList actions
             if let super::rooms_list::RoomsListAction::Selected {
@@ -345,8 +349,15 @@ pub enum RoomsPanelAction {
     RoomFocused(SelectedRoom),
     /// Resets the focus to none, meaning that no room has focus.
     FocusNone,
+    
+}
+
+/// Actions sent to the main desktop UI that handles the dock
+#[derive(Clone, DefaultNone, Debug)]
+pub enum MainDesktopUIDockActions {
     /// Save the dock state from the dock to the AppState.
     DockSave,
-    /// Load the room panel state from the AppState to the dock.
-    DockLoadAll,
+    /// Restore the room panel state from the AppState to the dock.
+    DockRestore,
+    None
 }
