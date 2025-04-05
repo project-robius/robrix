@@ -27,6 +27,9 @@ pub mod avatar_cache;
 pub mod media_cache;
 pub mod verification;
 
+// Link Preview cache
+pub mod link_preview_cache;
+
 pub mod utils;
 pub mod temp_storage;
 pub mod location;

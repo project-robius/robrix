@@ -18,6 +18,7 @@ use matrix_sdk::{
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
+use reqwest;
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
@@ -25,10 +26,13 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock} };
 use std::io;
+
+use url_preview;
+
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app_data_dir, avatar_cache::AvatarUpdate, link_preview_cache::{LinkPreview, LinkPreviewCacheEntry, LinkPreviewResult}, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
@@ -215,6 +219,14 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
+/// The function signature for the callback that gets invoked when LinkPreviewCard data is fetched.
+pub type OnLinkPreviewCardFetchedFn = fn(
+    &Mutex<LinkPreviewCacheEntry>,
+    LinkPreviewResult,
+    //Option<crossbeam_channel::Sender<TimelineUpdate>>,
+);
+
+
 
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
@@ -296,6 +308,12 @@ pub enum MatrixRequest {
         on_fetched: OnMediaFetchedFn,
         destination: MediaCacheEntryRef,
         update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    },
+    /// Request to fetch a url and return the card style preview data
+    FetchLinkPreviewCard {
+        url: String,
+        on_fetched: OnLinkPreviewCardFetchedFn,
+        destination: Arc<Mutex<LinkPreviewCacheEntry>>,
     },
     /// Request to send a message to the given room.
     SendMessage {
@@ -850,6 +868,56 @@ async fn async_worker(
                     // log!("Sending fetch media request for {media_request:?}...");
                     let res = media.get_media_content(&media_request, true).await;
                     on_fetched(&destination, media_request, res, update_sender);
+                });
+            }
+
+            MatrixRequest::FetchLinkPreviewCard { url, on_fetched, destination } => {
+
+                log!("Start Fetch link preview card for {}", url);
+                Handle::current().spawn(async move {
+                    let preview_service = url_preview::PreviewService::with_no_cache();
+                    match preview_service.generate_preview(&url).await {
+                        Ok(preview) => {
+                            if preview.title.is_none() {
+                                log!("Failed to fetch link preview card for {url}: no title");
+                                on_fetched(
+                                    &destination,
+                                    Err(url_preview::PreviewError::FetchError("No title".to_string())),
+                                );
+                            } else {
+                                let image = if let Some(image_url) = preview.image_url {
+                                    match reqwest::get(image_url.to_string()).await {
+                                        Ok(r) => {    
+                                            let data = r.bytes().await.unwrap().to_vec();
+                                            match imghdr::from_bytes(data.clone()) {
+                                                Some(imghdr::Type::Png) | Some(imghdr::Type::Jpeg) => Some(Arc::new(data)),
+                                                _ => None
+                                            }
+                                        },
+                                        Err(e) => {
+                                            log!("Failed to fetch image for link preview card: {e}");
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    None
+                                };
+                                on_fetched(
+                                    &destination,
+                                    Ok(LinkPreview{
+                                        url: preview.url,
+                                        title: preview.title,
+                                        description: preview.description,
+                                        image,
+                                    }),
+                                );
+                            };
+                        },
+                        Err(e) => {
+                            log!("Failed to fetch link preview card for {url}: {e}");
+                            on_fetched( &destination, Err(e));
+                        }
+                    };
                 });
             }
 

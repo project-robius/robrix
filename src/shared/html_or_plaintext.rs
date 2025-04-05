@@ -62,7 +62,7 @@ live_design! {
             grab_key_focus: false,
             padding: {left: 1.0, right: 1.5},
         }
-
+        
         body: "[<i> HTML message placeholder</i>]",
     }
 
@@ -363,4 +363,5 @@ impl HtmlOrPlaintextRef {
             inner.show_html(cx, html_body);
         }
     }
+
 }

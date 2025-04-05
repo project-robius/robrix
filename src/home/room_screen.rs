@@ -22,11 +22,11 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppState, avatar_cache, link_preview_cache::{LinkPreviewCache, LinkPreviewCacheEntry}, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, link_preview_card::LinkPreviewCardWidgetRefExt, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -55,6 +55,7 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
+    use crate::shared::link_preview_card::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
     use crate::profile::user_profile::UserProfileSlidingPane;
@@ -366,7 +367,13 @@ live_design! {
                     }
                 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> { },
+                link_preview_card = <View> {
+                    width: Fill,
+                    height: Fit,
+                    visible: false,
+                    body = <LinkPreviewCard> {},
+                },
 
                 // <LineH> {
                 //     margin: {top: 13.0, bottom: 5.0}
@@ -408,7 +415,13 @@ live_design! {
                 flow: Down,
                 padding: { left: 10.0 }
 
-                message = <HtmlOrPlaintext> { }
+                message = <HtmlOrPlaintext> { },
+                link_preview_card = <View> {
+                    width: Fill,
+                    height: Fit,
+                    visible: false,
+                    body = <LinkPreviewCard> {},
+                },
                 <View> {
                     width: Fill,
                     height: Fit
@@ -1292,6 +1305,8 @@ impl Widget for RoomScreen {
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
@@ -1322,6 +1337,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Message(message),
                                     prev_event,
                                     &mut tl_state.media_cache,
+                                    &mut app_state.link_preview_cache,
                                     &tl_state.user_power,
                                     item_drawn_status,
                                     room_screen_widget_uid,
@@ -1338,6 +1354,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Sticker(sticker.content()),
                                     prev_event,
                                     &mut tl_state.media_cache,
+                                    &mut app_state.link_preview_cache,
                                     &tl_state.user_power,
                                     item_drawn_status,
                                     room_screen_widget_uid,
@@ -1655,11 +1672,20 @@ impl RoomScreen {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                },
+
+                TimelineUpdate::LinkPreviewCardFetched => {
+                    log!("Timeline::handle_event(): link fetched for room {}", tl.room_id);
+                    // Here, to be most efficient, we could redraw only the card items in the timeline,
+                    // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
+                    // GUI does not immediately display the Link Preview Card after the background process obtaining the data. Instead, the page needs to be scrolled to trigger a refresh. The relevant refresh code might need to be added here.
                 }
+
                 TimelineUpdate::MessageEdited { timeline_event_id, result } => {
                     self.view.editing_pane(id!(editing_pane))
                         .handle_edit_result(cx, timeline_event_id, result);
                 }
+
                 TimelineUpdate::TypingUsers { users } => {
                     // This update loop should be kept tight & fast, so all we do here is
                     // save the list of typing users for future use after the loop exits.
@@ -2271,7 +2297,7 @@ impl RoomScreen {
                 profile_drawn_since_last_update: RangeSet::new(),
                 update_receiver,
                 request_sender,
-                media_cache: MediaCache::new(Some(update_sender)),
+                media_cache: MediaCache::new(Some(update_sender.clone())),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2656,6 +2682,9 @@ pub enum TimelineUpdate {
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
+    /// A notice that one or more requested html data from link
+    /// that should be displayed in this timeline have now been fetched and are available.
+    LinkPreviewCardFetched,
     /// A notice that one or more members of a this room are currently typing.
     TypingUsers {
         /// The list of users (their displayable name) who are currently typing in this room.
@@ -2999,6 +3028,7 @@ fn populate_message_view(
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
+    link_preview_cache: &mut LinkPreviewCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
@@ -3042,12 +3072,23 @@ fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                populate_text_message_content(
+                let link_list = populate_text_message_content(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
                     body,
                     formatted.as_ref(),
                 );
+                if !link_list.is_empty() {
+                    populate_link_preview_card(
+                        cx,
+                        &item.view(id!(content.link_preview_card)),
+                        link_list.last().unwrap().to_owned(), // TODO just display last url as link preview card,
+                                                              //     because I don't know how to add node dynamically -_-!!
+                        body,
+                        link_preview_cache,
+                    );
+                };
+
                 new_drawn_status.content_drawn = true;
                 (item, false)
             }
@@ -3448,25 +3489,26 @@ fn populate_text_message_content(
     message_content_widget: &HtmlOrPlaintextRef,
     body: &str,
     formatted_body: Option<&FormattedBody>,
-) {
+) -> Vec<String> {
     // The message was HTML-formatted rich text.
     if let Some(fb) = formatted_body.as_ref()
         .and_then(|fb| (fb.format == MessageFormat::Html).then_some(fb))
     {
-        message_content_widget.show_html(
-            cx,
-            utils::linkify(
-                utils::trim_start_html_whitespace(&fb.body),
-                true,
-            )
+        let (linkified_text, link_list) = utils::linkify(
+            utils::trim_start_html_whitespace(&fb.body),
+            true
         );
+        message_content_widget.show_html(cx, &linkified_text);
+        link_list
     }
     // The message was non-HTML plaintext.
     else {
-        match utils::linkify(body, false) {
+        let (linkified_text, link_list) = utils::linkify(body, false);
+        match linkified_text {
             Cow::Owned(linkified_html) => message_content_widget.show_html(cx, &linkified_html),
-            Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext),
-        }
+            Cow::Borrowed(plaintext) => message_content_widget.show_plaintext(cx, plaintext)
+        };
+        link_list
     }
 }
 
@@ -3586,6 +3628,39 @@ fn populate_image_message_content(
     fully_drawn
 }
 
+/// Draws the link preview card by given link's content into the `message_content_widget`.
+///
+/// Returns whether the card was fully drawn.
+fn populate_link_preview_card(
+    cx: &mut Cx2d,
+    card_ref: &ViewRef,
+    url: String,
+    body: &str,
+    link_preview_cache: &mut LinkPreviewCache,
+) -> bool {
+
+    match link_preview_cache.try_get_card_or_fetch(url.clone()) {
+        LinkPreviewCacheEntry::Loaded(card) => {
+            //log!("Link Preview Card Loaded: {:?}; Fetching {:?}", url, card.url);
+            if card.title.is_some() {
+                card_ref.link_preview_card(id!(body)).show_card(cx, &card);
+            }
+            card_ref.set_visible(cx, true);
+            true
+        },
+        LinkPreviewCacheEntry::Requested => {
+            log!("Link Preview Card Requested: {body}; Fetching {:?}", url);
+            card_ref.set_visible(cx, false);
+            false
+        },
+        LinkPreviewCacheEntry::Failed => {
+            log!("Link Preview Card Failed: {body}; Fetching {:?}", url);
+            card_ref.set_visible(cx, false);
+            true
+        }
+    }
+}
+
 
 /// Draws a file message's content into the given `message_content_widget`.
 ///
@@ -3616,6 +3691,7 @@ fn populate_file_message_content(
     );
     true
 }
+
 
 /// Draws an audio message's content into the given `message_content_widget`.
 ///
@@ -3850,7 +3926,8 @@ fn populate_preview_of_timeline_item(
         match m.msgtype() {
             MessageType::Text(TextMessageEventContent { body, formatted, .. })
             | MessageType::Notice(NoticeMessageEventContent { body, formatted, .. }) => {
-                return populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                populate_text_message_content(cx, widget_out, body, formatted.as_ref());
+                return
             }
             _ => { } // fall through to the general case for all timeline items below.
         }
