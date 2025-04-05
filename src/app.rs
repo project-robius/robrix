@@ -471,6 +471,9 @@ pub enum UpdateDockState {
 /// The possible errors that can occur when updating the dock.
 #[derive(Error, Clone, Debug)]
 pub enum UpdateDockError {
-    #[error("Timeout occurred. The given room cannot be loaded before all known rooms are loaded")]
-    Timeout,
+    /// A room was not found in the homeserver's list of all known rooms.
+    ///
+    /// This will be sent to each unknown room _only after_ our local client
+    /// has received the _full_ list of rooms from the homeserver.
+    NotFound,
 }
