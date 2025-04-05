@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, link_preview_cache::LinkPreviewCache, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -192,8 +192,11 @@ impl MatchEvent for App {
 
         self.update_login_visibility(cx);
 
+        self.app_state.link_preview_cache = LinkPreviewCache::new();
+
         log!("App::handle_startup(): starting matrix sdk loop");
         crate::sliding_sync::start_matrix_tokio().unwrap();
+
     }
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
@@ -407,6 +410,10 @@ pub struct AppState {
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
+
+    /// link preview cache
+    pub link_preview_cache: LinkPreviewCache,
+    
 }
 
 #[derive(Default, Debug)]

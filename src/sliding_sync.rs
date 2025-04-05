@@ -223,7 +223,7 @@ pub type OnMediaFetchedFn = fn(
 pub type OnLinkPreviewCardFetchedFn = fn(
     &Mutex<LinkPreviewCacheEntry>,
     LinkPreviewResult,
-    Option<crossbeam_channel::Sender<TimelineUpdate>>,
+    //Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
 
@@ -314,7 +314,6 @@ pub enum MatrixRequest {
         url: String,
         on_fetched: OnLinkPreviewCardFetchedFn,
         destination: Arc<Mutex<LinkPreviewCacheEntry>>,
-        update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
     },
     /// Request to send a message to the given room.
     SendMessage {
@@ -872,7 +871,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchLinkPreviewCard { url, on_fetched, destination, update_sender } => {
+            MatrixRequest::FetchLinkPreviewCard { url, on_fetched, destination } => {
 
                 log!("Start Fetch link preview card for {}", url);
                 Handle::current().spawn(async move {
@@ -881,7 +880,10 @@ async fn async_worker(
                         Ok(preview) => {
                             if preview.title.is_none() {
                                 log!("Failed to fetch link preview card for {url}: no title");
-                                on_fetched(&destination, Err(url_preview::PreviewError::FetchError("No title".to_string())), update_sender);
+                                on_fetched(
+                                    &destination,
+                                    Err(url_preview::PreviewError::FetchError("No title".to_string())),
+                                );
                             } else {
                                 let image = if let Some(image_url) = preview.image_url {
                                     match reqwest::get(image_url.to_string()).await {
@@ -900,17 +902,20 @@ async fn async_worker(
                                 } else {
                                     None
                                 };
-                                on_fetched(&destination, Ok(LinkPreview{
-                                    url: preview.url,
-                                    title: preview.title,
-                                    description: preview.description,
-                                    image,
-                                }), update_sender);
+                                on_fetched(
+                                    &destination,
+                                    Ok(LinkPreview{
+                                        url: preview.url,
+                                        title: preview.title,
+                                        description: preview.description,
+                                        image,
+                                    }),
+                                );
                             };
                         },
                         Err(e) => {
                             log!("Failed to fetch link preview card for {url}: {e}");
-                            on_fetched(&destination, Err(e), update_sender);
+                            on_fetched( &destination, Err(e));
                         }
                     };
                 });

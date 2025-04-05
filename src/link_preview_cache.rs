@@ -4,12 +4,10 @@ use std::{
     collections::{BTreeMap, btree_map::Entry},
     ops::{Deref, DerefMut}
 };
-use makepad_widgets::SignalToUI;
 
-use crate::{
-    home::room_screen::TimelineUpdate,
-    sliding_sync::{self, MatrixRequest},
-};
+use makepad_widgets::{error, SignalToUI};
+
+use crate:: sliding_sync::{self, MatrixRequest};
 
 use url_preview;
 
@@ -47,8 +45,6 @@ thread_local! {
 pub struct LinkPreviewCache {
     /// The actual cached data.
     cache: BTreeMap<String, LinkPreviewCacheEntryRef>,
-    /// A channel to send updates to a particular timeline when a request has completed.
-    timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 }
 impl Deref for LinkPreviewCache {
     type Target = BTreeMap<String, LinkPreviewCacheEntryRef>;
@@ -68,12 +64,9 @@ impl LinkPreviewCache {
     ///
     /// It will also optionally send updates to the given timeline update sender
     /// when a request has completed.
-    pub const fn new(
-        timeline_update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
-    ) -> Self {
+    pub const fn new() -> Self {
         Self {
             cache: BTreeMap::new(),
-            timeline_update_sender,
         }
     }
 
@@ -100,7 +93,6 @@ impl LinkPreviewCache {
                 url,
                 on_fetched: insert_into_cache,
                 destination,
-                update_sender: self.timeline_update_sender.clone(),
             }
         );
         LinkPreviewCacheEntry::Requested
@@ -111,22 +103,19 @@ impl LinkPreviewCache {
 fn insert_into_cache(
     value_ref: &Mutex<LinkPreviewCacheEntry>,
     data: LinkPreviewResult,
-    update_sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
 ) {
     let new_value = match data {
         Ok(data) => {
             let data = data.into();
             LinkPreviewCacheEntry::Loaded(data)
         }
-        Err(_) => {
+        Err(e) => {
+            error!("Link Preview Card Fetch ERROR: {:}, ", e);
             LinkPreviewCacheEntry::Failed
         }
     };
     *value_ref.lock().unwrap() = new_value;
 
-    if let Some(sender) = update_sender {
-        let _ = sender.send(TimelineUpdate::LinkPreviewCardFetched);
-    }
     SignalToUI::set_ui_signal();
 }
 

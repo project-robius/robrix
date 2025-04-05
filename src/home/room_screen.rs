@@ -22,7 +22,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, link_preview_cache::{LinkPreviewCache, LinkPreviewCacheEntry}, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppState, avatar_cache, link_preview_cache::{LinkPreviewCache, LinkPreviewCacheEntry}, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1293,6 +1293,8 @@ impl Widget for RoomScreen {
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+
             while let Some(item_id) = list.next_visible_item(cx) {
                 let item = {
                     let tl_idx = item_id;
@@ -1323,7 +1325,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Message(message),
                                     prev_event,
                                     &mut tl_state.media_cache,
-                                    &mut tl_state.link_preview_cache,
+                                    &mut app_state.link_preview_cache,
                                     &tl_state.user_power,
                                     item_drawn_status,
                                     room_screen_widget_uid,
@@ -1340,7 +1342,7 @@ impl Widget for RoomScreen {
                                     MessageOrSticker::Sticker(sticker.content()),
                                     prev_event,
                                     &mut tl_state.media_cache,
-                                    &mut tl_state.link_preview_cache,
+                                    &mut app_state.link_preview_cache,
                                     &tl_state.user_power,
                                     item_drawn_status,
                                     room_screen_widget_uid,
@@ -2284,7 +2286,6 @@ impl RoomScreen {
                 update_receiver,
                 request_sender,
                 media_cache: MediaCache::new(Some(update_sender.clone())),
-                link_preview_cache: LinkPreviewCache::new(Some(update_sender)),
                 replying_to: None,
                 saved_state: SavedState::default(),
                 message_highlight_animation_state: MessageHighlightAnimationState::default(),
@@ -2742,9 +2743,6 @@ struct TimelineUiState {
     ///
     /// Currently this excludes avatars, as those are shared across multiple rooms.
     media_cache: MediaCache,
-
-    /// The cache of link preview card that appear in this timeline.
-    link_preview_cache: LinkPreviewCache,
 
     /// Info about the event currently being replied to, if any.
     replying_to: Option<(EventTimelineItem, RepliedToInfo)>,
