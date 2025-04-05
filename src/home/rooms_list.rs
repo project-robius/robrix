@@ -4,7 +4,7 @@ use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
-use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::{AppState, AppRestoreDockAction}, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -430,6 +430,8 @@ pub struct RoomsList {
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
+
+
 }
 
 impl RoomsList {
@@ -473,6 +475,17 @@ impl Widget for RoomsList {
                             }
                         }
                         self.update_status_rooms_count();
+                        if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
+                            let app_state = scope.data.get_mut::<AppState>().unwrap();
+                            for open_room in app_state.rooms_panel.open_rooms.values() {
+                                if !self.all_rooms.contains_key(&open_room.room_id) {
+                                    Cx::post_action(AppRestoreDockAction::Failure(
+                                        open_room.room_id.to_owned(),
+                                        crate::app::AppRestoreDockError::NotFound,
+                                    ));
+                                }
+                            }
+                        }
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {

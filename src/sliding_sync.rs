@@ -21,16 +21,16 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::Instant,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::AppRestoreDockAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, read_rooms_panel_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -1361,13 +1361,34 @@ async fn async_main_loop(
     let sync_service = SyncService::builder(client.clone())
         .build()
         .await?;
+    if let Some(current_user_id) = current_user_id() {
+        Handle::current().spawn(async move {
+            match read_rooms_panel_state(&current_user_id).await {
+                Ok(rooms_panel_state) => {
+                    if !rooms_panel_state.open_rooms.is_empty()
+                        && !rooms_panel_state.dock_state.is_empty()
+                    {
+                        log!("Fetching room panel state from App data Directory");
+                        Cx::post_action(AppRestoreDockAction::Restore(rooms_panel_state));
+                    }
+                }
+                Err(e) => {
+                    enqueue_popup_notification(format!("Fetching Room Panel State encountered {:?}", e));
+                    log!("Fetching Room Panel State error {:?}", e);
+                }
+            }
+        });
+    } else {
+        log!("Cannot find current user id to fetch room panel state");
+    }
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
     let all_rooms_list = room_list_service.all_rooms().await?;
-    handle_room_list_service_loading_state(all_rooms_list.loading_state());
+    let max_num_of_rooms_mutex = Arc::new(Mutex::new(Some(0usize)));
+    handle_room_list_service_loading_state(all_rooms_list.loading_state(), max_num_of_rooms_mutex.clone());
 
     let (room_diff_stream, room_list_dynamic_entries_controller) =
         // TODO: paginate room list to avoid loading all rooms at once
@@ -1666,6 +1687,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
         },
     );
+    Cx::post_action(AppRestoreDockAction::Success(room.room_id().to_owned()));
     Ok(())
 }
 
@@ -1738,7 +1760,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 }
 
 
-fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
+fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>, max_num_rooms: Arc<Mutex<Option<usize>>>) {
     log!("Initial room list loading state is {:?}", loading_state.get());
     Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
@@ -1749,6 +1771,10 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
                     enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms });
+                    if let Some(max_num_of_rooms) = maximum_number_of_rooms {
+                        let mut max_num_rooms_guard = max_num_rooms.lock().unwrap();
+                        *max_num_rooms_guard = Some(max_num_of_rooms as usize);
+                    }
                 }
             }
         }
