@@ -21,11 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle, time::Instant,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
     app::AppRestoreDockAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
@@ -1387,8 +1387,7 @@ async fn async_main_loop(
     SYNC_SERVICE.set(sync_service).unwrap_or_else(|_| panic!("BUG: SYNC_SERVICE already set!"));
 
     let all_rooms_list = room_list_service.all_rooms().await?;
-    let max_num_of_rooms_mutex = Arc::new(Mutex::new(Some(0usize)));
-    handle_room_list_service_loading_state(all_rooms_list.loading_state(), max_num_of_rooms_mutex.clone());
+    handle_room_list_service_loading_state(all_rooms_list.loading_state());
 
     let (room_diff_stream, room_list_dynamic_entries_controller) =
         // TODO: paginate room list to avoid loading all rooms at once
@@ -1760,7 +1759,7 @@ fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service:
 }
 
 
-fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>, max_num_rooms: Arc<Mutex<Option<usize>>>) {
+fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomListLoadingState>) {
     log!("Initial room list loading state is {:?}", loading_state.get());
     Handle::current().spawn(async move {
         while let Some(state) = loading_state.next().await {
@@ -1771,10 +1770,6 @@ fn handle_room_list_service_loading_state(mut loading_state: Subscriber<RoomList
                 }
                 RoomListLoadingState::Loaded { maximum_number_of_rooms } => {
                     enqueue_rooms_list_update(RoomsListUpdate::LoadedRooms { max_rooms: maximum_number_of_rooms });
-                    if let Some(max_num_of_rooms) = maximum_number_of_rooms {
-                        let mut max_num_rooms_guard = max_num_rooms.lock().unwrap();
-                        *max_num_rooms_guard = Some(max_num_of_rooms as usize);
-                    }
                 }
             }
         }

@@ -90,7 +90,6 @@ impl Widget for MainDesktopUI {
                 match action.downcast_ref() {
                     Some(MainDesktopUIDockActions::DockRestore) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-
                         self.room_order = app_state.rooms_panel.room_order.clone();
                         self.most_recently_selected_room = app_state.rooms_panel.selected_room.clone();
                         self.open_rooms = HashMap::with_capacity(app_state.rooms_panel.open_rooms.len());

@@ -430,8 +430,6 @@ pub struct RoomsList {
     #[rust] current_active_room_index: Option<usize>,
     /// The maximum number of rooms that will ever be loaded.
     #[rust] max_known_rooms: Option<u32>,
-
-
 }
 
 impl RoomsList {
@@ -481,7 +479,7 @@ impl Widget for RoomsList {
                                 if !self.all_rooms.contains_key(&open_room.room_id) {
                                     Cx::post_action(AppRestoreDockAction::Failure(
                                         open_room.room_id.to_owned(),
-                                        crate::app::AppRestoreDockError::NotFound,
+                                        crate::app::AppRestoringDockError::NotFound,
                                     ));
                                 }
                             }

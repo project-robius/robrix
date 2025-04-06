@@ -1,5 +1,5 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
-
+use std::{collections::HashMap, path::PathBuf};
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
     log,
@@ -13,7 +13,6 @@ use matrix_sdk::{
     Client,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
 use tokio::{fs, io::{self, AsyncReadExt}};
 
 use crate::{app::RoomsPanelState, app_data_dir, login::login_screen::LoginAction};

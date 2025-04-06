@@ -423,21 +423,21 @@ pub struct AppState {
     pub window_geom: Option<event::WindowGeom>,
 }
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize )]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 /// The state of the rooms panel
 pub struct RoomsPanelState {
     /// The most-recently selected room, which is highlighted in the rooms list panel.
     pub selected_room: Option<SelectedRoom>,
-    /// The order in which the rooms were opened
+    /// The order in which the rooms were opened.
     pub room_order: Vec<SelectedRoom>,
-    /// The saved dock state created by makepad's dock widget
+    /// The saved dock state created by makepad's dock widget.
     #[serde(skip_serializing, skip_deserializing)]
     pub dock_state: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     pub open_rooms: HashMap<u64, SelectedRoom>,
-    /// Window's inner size x and y
+    /// A tuple containing the window's width and height.
     pub window_size: Option<(f64, f64)>,
-    /// Window's position x and y
+    /// A tuple containing the window's x and y position.
     pub window_position: Option<(f64, f64)>
 }
 
@@ -473,13 +473,13 @@ pub enum AppRestoreDockAction {
     Success(OwnedRoomId),
     /// The given room was not successfully loaded from the homeserver.
     /// The given String includes the reason for the failure.
-    Failure(OwnedRoomId, AppRestoreDockError),
+    Failure(OwnedRoomId, AppRestoringDockError),
     None
 }
 
 /// The possible errors that can occur when updating the dock.
 #[derive(Clone, Debug)]
-pub enum AppRestoreDockError {
+pub enum AppRestoringDockError {
     /// A room was not found in the homeserver's list of all known rooms.
     ///
     /// This will be sent to each unknown room _only after_ our local client
