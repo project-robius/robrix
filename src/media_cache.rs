@@ -58,8 +58,8 @@ impl MediaCache {
         }
     }
 
-    /// This function only for images or stickers.
-    /// Never call this function on populating audio, video, etc.
+    /// This function only for images.
+    /// Never call this method on populating audio, video, etc.
     pub fn image_set_keys(&mut self, original_uri: &OwnedMxcUri, thumbnail_uri: Option<&OwnedMxcUri>) {
         if let Entry::Vacant(v) = self.cache.entry(original_uri.clone()) {
             v.insert((thumbnail_uri.cloned(), Arc::new(Mutex::new(MediaCacheEntry::NotInitialized))));
@@ -80,29 +80,31 @@ impl MediaCache {
     ) -> MediaCacheEntry {
         let mut ret = MediaCacheEntry::Requested;
 
-        let (should_fetch, destination, format_to_fetch ) = match self.cache.entry(mxc_uri.clone()) {
+        let (destination, format_to_fetch ) = match self.cache.entry(mxc_uri.clone()) {
             Entry::Vacant(v) => {
-                (true, v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::Requested)))).1.clone(), MediaFormat::File)
+                (v.insert((None, Arc::new(Mutex::new(MediaCacheEntry::Requested)))).1.clone(), MediaFormat::File)
             }
             Entry::Occupied(mut o) => {
                 let (thumbnail_uri, entry_ref) = o.get().clone();
                 let er = entry_ref.lock().unwrap().clone();
 
-                match &er {
+                match er {
                     MediaCacheEntry::Loaded(_) | MediaCacheEntry::Failed => {
                         return er;
                     }
                     MediaCacheEntry::NotInitialized | MediaCacheEntry::Requested => {
-                        if let MediaCacheEntry::NotInitialized = &er {
+                        if let MediaCacheEntry::NotInitialized = er {
                             *o.get_mut().1.lock().unwrap() = MediaCacheEntry::Requested
                         }
                         match thumbnail_uri.as_ref() {
                             Some(uri) => {
+                                // The first `unwrap` always gets `Some` because `timeline_image_data` was already fully fetched.
+                                // Note `ret` here is `timeline_image_data`, we return `timeline_image_data` to image viwer when full-size version is still in fetching.
                                 ret = self.cache.get(uri).unwrap().1.lock().unwrap().clone();
-                                (true, entry_ref.clone(), MediaFormat::File)
+                                (entry_ref.clone(), MediaFormat::File)
                             }
                             None => {
-                                (true, entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
+                                (entry_ref.clone(), MEDIA_THUMBNAIL_FORMAT.into())
                             }
                         }
                     }
@@ -110,19 +112,18 @@ impl MediaCache {
             }
         };
 
-        if should_fetch {
-            sliding_sync::submit_async_request(
-                MatrixRequest::FetchMedia {
-                    media_request: MediaRequestParameters {
-                        source: MediaSource::Plain(mxc_uri.clone()),
-                        format: format_to_fetch
-                    },
-                    on_fetched,
-                    destination,
-                    update_sender: self.timeline_update_sender.clone(),
-                }
-            );
-        }
+        sliding_sync::submit_async_request(
+            MatrixRequest::FetchMedia {
+                media_request: MediaRequestParameters {
+                    source: MediaSource::Plain(mxc_uri.clone()),
+                    format: format_to_fetch
+                },
+                on_fetched,
+                destination,
+                update_sender: self.timeline_update_sender.clone(),
+            }
+        );
+
         ret
     }
 }
@@ -183,7 +184,6 @@ pub fn image_viewer_insert_into_cache<D: Into<Arc<[u8]>>>(
             // This function just simply copy from `insert_from_cache`,
             // only here is different, we just post an action on getting the image data.
             Cx::post_action(ImageViewerAction::ReplaceImage(data.clone()));
-            log!("thumbnail data len: {}", data.len());
             MediaCacheEntry::Loaded(data)
         }
         Err(e) => {
