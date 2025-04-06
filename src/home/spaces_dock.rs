@@ -74,9 +74,9 @@ live_design! {
         show_bg: true
         draw_bg: {
             color: (COLOR_PRIMARY_DARKER)
-            radius: 4.0
-            border_color: (COLOR_SELECTED_PRIMARY)
-            border_width: 1.5
+            border_radius: 4.0
+            border_color: (COLOR_ACTIVE_PRIMARY)
+            border_size: 1.5
         }
 
         align: {x: 0.5, y: 0.5}

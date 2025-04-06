@@ -242,8 +242,17 @@ pub enum MatrixRequest {
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
-    FetchRoomMembers {
+    SyncRoomMemberList {
         room_id: OwnedRoomId,
+    },
+    /// Request to get the actual list of members in a room.
+    /// This returns the list of members that can be displayed in the UI.
+    GetRoomMembers {
+        room_id: OwnedRoomId,
+        memberships: RoomMemberships,
+        /// * If `true` (not recommended), only the local cache will be accessed.
+        /// * If `false` (recommended), details will be fetched from the server.
+        local_only: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -532,9 +541,8 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchRoomMembers { room_id } => {
-                let room_id_clone = room_id.clone();
 
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -546,11 +554,44 @@ async fn async_worker(
                 };
 
                 // Spawn a new async task that will make the actual fetch request.
-                let fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch room members request for room {room_id}...");
+                let _fetch_task = Handle::current().spawn(async move {
+                    log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    log!("Completed fetch room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    log!("Completed sync room members request for room {room_id}.");
+                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for get room members request {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _get_members_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+
+                    if local_only {
+                        if let Ok(members) = room.members_no_sync(memberships).await {
+                            log!("Got {} members from cache for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    } else {
+                        if let Ok(members) = room.members(memberships).await {
+                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    }
+
                     SignalToUI::set_ui_signal();
                 });
                 register_core_task(CoreTask::FetchRoomMembers(room_id_clone), fetch_task.abort_handle());
