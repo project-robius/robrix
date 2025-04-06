@@ -99,7 +99,7 @@ impl MediaCache {
                         match thumbnail_uri.as_ref() {
                             Some(uri) => {
                                 // The first `unwrap` always gets `Some` because `timeline_image_data` was already fully fetched.
-                                // Note `ret` here is `timeline_image_data`, we return `timeline_image_data` to image viwer when full-size version is still in fetching.
+                                // Note `ret` here is `timeline_image_data`, we return `timeline_image_data` to image viewer when full-size version is still in fetching.
                                 ret = self.cache.get(uri).unwrap().1.lock().unwrap().clone();
                                 (entry_ref.clone(), MediaFormat::File)
                             }
