@@ -1,2 +1,0 @@
-original 400x400 data len: 25679
-original File data len: 31485
