@@ -20,6 +20,7 @@ mod image_viewer;
 pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
+mod room;
 
 
 // Matrix stuff

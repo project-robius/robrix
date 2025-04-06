@@ -3,8 +3,21 @@ use makepad_widgets::*;
 live_design! {
     use link::theme::*;
     use link::widgets::*;
+    use link::shaders::*;
 
     use crate::shared::styles::*;
+
+    // Copied from Moly
+    pub FadeView = <CachedView> {
+        draw_bg: {
+            instance opacity: 1.0
+
+            fn pixel(self) -> vec4 {
+                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift);
+                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
+            }
+        }
+    }
 
     pub Divider = <View> {
         width: Fill, height: Fit

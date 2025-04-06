@@ -33,7 +33,7 @@ live_design! {
             instance border_radius: 4.0
             fn pixel(self) -> vec4 {
                 let border_color = #d4;
-                let border_width = 1;
+                let border_size = 1;
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
                 let body = #fff
 
@@ -48,7 +48,7 @@ live_design! {
 
                 sdf.stroke(
                     border_color,
-                    border_width
+                    border_size
                 )
                 return sdf.result
             }
