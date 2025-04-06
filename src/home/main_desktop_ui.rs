@@ -239,11 +239,41 @@ impl MainDesktopUI {
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
     }
+
+    /// Closes all tabs and selects the home tab
+    pub fn close_all_tabs(&mut self, cx: &mut Cx) {
+        log!("Closing all tabs");
+        let dock = self.view.dock(id!(dock));
+        let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
+        
+        for tab_id in tab_ids {
+            self.close_tab(cx, tab_id);
+        }
+        
+        dock.select_tab(cx, live_id!(home_tab));
+        self.most_recently_selected_room = None;
+        
+        cx.widget_action(
+            self.widget_uid(),
+            &HeapLiveIdPath::default(),
+            RoomsPanelAction::FocusNone,
+        );
+    }
+
 }
 
 impl MatchEvent for MainDesktopUI {
     fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
         let dock = self.view.dock(id!(dock));
+
+        // handle close all tabs action directly
+        if let Some(close_tabs) = action.downcast_ref::<RoomsPanelAction>() {
+            if matches!(close_tabs, RoomsPanelAction::CloseAllTabs) {
+                log!("Directly handling CloseAllTabs action");
+                self.close_all_tabs(cx);
+                return; 
+            }
+        }
 
         if let Some(action) = action.as_widget_action() {
             // Handle Dock actions
@@ -318,7 +348,8 @@ impl MatchEvent for MainDesktopUI {
                 // a redraw to be happening in order to draw the tab content.
                 self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name });
             }
-        }
+        } 
+
     }
 }
 
@@ -335,4 +366,6 @@ pub enum RoomsPanelAction {
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoad,
+    /// Close all tabs (used during logout)
+    CloseAllTabs,
 }

@@ -212,7 +212,7 @@ pub async fn delete_last_user_id() -> anyhow::Result<bool> {
     let last_login_path = app_data_dir().join(LATEST_USER_ID_FILE_NAME);
     
     if last_login_path.exists() {
-        match std::fs::remove_file(&last_login_path) {
+        match fs::remove_file(&last_login_path).await {
             Ok(_) => {
                 log!("Successfully deleted last_login.txt");
                 Ok(true)

@@ -426,7 +426,37 @@ impl MatchEvent for LoginScreen {
                 Some(LoginAction::LogoutSuccess) => {
                     login_status_modal_inner.set_text(cx, "");
                     login_status_modal_inner.set_title(cx, "");
-                }
+                    login_status_modal_inner.set_status(cx, "");
+                    login_status_modal_inner.button_ref().set_text(cx, "Okay");
+                    login_status_modal_inner.button_ref().set_enabled(cx, true);
+                    login_status_modal.close(cx);
+                    
+                    user_id_input.set_text(cx, "");
+                    password_input.set_text(cx, "");
+                    homeserver_input.set_text(cx, "");
+                    
+                    self.sso_pending = false;
+                    self.sso_redirect_url = None;
+                    
+                    for view_ref in self.view_set(button_set).iter() {
+                        let Some(mut view_mut) = view_ref.borrow_mut() else { continue };
+                        view_mut.apply_over(cx, live! {
+                            cursor: Hand,
+                            image = { draw_bg: { mask: 0.0 } }
+                        });
+                    }
+                    
+                    self.redraw(cx);
+                },
+                Some(LoginAction::LogoutFailure(error)) => {
+                    login_status_modal_inner.set_title(cx, "Logout Failed");
+                    login_status_modal_inner.set_status(cx, error);
+                    let login_status_modal_button = login_status_modal_inner.button_ref();
+                    login_status_modal_button.set_text(cx, "Okay");
+                    login_status_modal_button.set_enabled(cx, true);
+                    login_status_modal.open(cx);
+                    self.redraw(cx);
+                },
                 _ => { }
             }
         }

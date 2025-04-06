@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not,
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+        main_desktop_ui::RoomsPanelAction, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, delete_last_user_id, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -2576,66 +2576,109 @@ enum RefreshState {
 }
 
 async fn logout_and_refresh() -> Result<RefreshState> {
-    let client = get_client()
-        .ok_or_else(|| anyhow::anyhow!("No active client found"))?;
+    // Collect all errors encountered during the logout process
+    let mut errors = Vec::new();
+    
+    log!("Starting logout process...");
+    let client = match get_client() {
+        Some(client) => client,
+        None => {
+            let error_msg = "Logout failed: No active client found".to_string();
+            log!("Error: {}", error_msg);
+            Cx::post_action(LoginAction::LogoutFailure(error_msg.clone()));
+            return Err(anyhow::anyhow!(error_msg));
+        }
+    };
 
     if let Some(sync_service) = get_sync_service() {
-        // key exchange when you logout, you need to stop the sync service before logout
-        // see more detail in Matrix sdk doc about sync_service.stop
-        sync_service.stop().await;
+        log!("Stopping sync service...");
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            sync_service.stop()
+        ).await {
+            Ok(()) => log!("Sync service stopped successfully."),
+            Err(e) => { // Timeout
+                 let error_msg = format!("Stopping sync service timed out: {}", e);
+                 log!("Warning: {}", error_msg);
+                 errors.push(error_msg);
+            }
+        }
+    } else {
+        log!("No sync service found to stop.");
     }
 
-    // quit request sender
+    log!("Clearing request sender...");
     {
         let mut sender_guard = REQUEST_SENDER.lock().unwrap();
         *sender_guard = None;
+        log!("Request sender cleared.");
     }
 
-    // abort long term core async_tasks
+    // Abort core async tasks (with timeout)
+    log!("Aborting core async tasks...");
     match tokio::time::timeout(
         std::time::Duration::from_secs(3),
-        abort_core_tasks()
+        abort_core_tasks() // Assuming abort_core_tasks doesn't return Result
     ).await {
-        Ok(_) => {},
-        Err(_) => log!("Warning: Aborting core tasks timed out"),
+        Ok(_) => log!("Core async tasks aborted successfully."),
+        Err(e) => {
+            let error_msg = format!("Aborting core tasks timed out: {}", e);
+            log!("Warning: {}", error_msg);
+            errors.push(error_msg);
+        }
     }
 
-    let _logout_result = if client.logged_in() {
+    // Perform server-side logout (with timeout)
+
+    // Initialize as false
+    let mut logout_successful = false; 
+    if client.logged_in() {
+        log!("Performing server-side logout...");
         match tokio::time::timeout(
             std::time::Duration::from_secs(10),
             client.matrix_auth().logout()
         ).await {
             Ok(Ok(_)) => {
-                log!("Logout successful");
-                Ok(())
+                log!("Server-side logout successful.");
+                logout_successful = true;
             },
             Ok(Err(e)) => {
-                let error_msg = format!("Logout failed: {}", e);
+                let error_msg = format!("Server-side logout failed: {}", e);
                 log!("Warning: {}", error_msg);
-                Cx::post_action(LoginAction::LogoutFailure(error_msg));
-                Err(anyhow::anyhow!("Logout failed: {}", e))
+                errors.push(error_msg.clone());
             },
-            Err(_) => {
-                let error_msg = "Logout request timed out".to_string();
+            Err(e) => {
+                let error_msg = format!("Server-side logout request timed out: {}", e);
                 log!("Warning: {}", error_msg);
-                Cx::post_action(LoginAction::LogoutFailure(error_msg));
-                Err(anyhow::anyhow!("Logout request timed out"))
+                errors.push(error_msg.clone());
             }
         }
     } else {
-        log!("Client not logged in, skipping server logout");
-        Ok(())
+        log!("Client not logged in, skipping server-side logout.");
+        // If not logged in, consider this step successful
+        logout_successful = true; 
     };
 
-    // clean CLIENT and sync_service
-    take_client();  
+    // --- Local cleanup steps (execute regardless of server logout success) ---
+    log!("Performing local cleanup steps...");
+
+    // Clean up client state and caches
+    log!("Cleaning up client state and caches...");
+    take_client(); 
     take_sync_service();
+    // Note: unwrap() might panic if the lock is poisoned
     ALL_ROOM_INFO.lock().unwrap().clear();
     TOMBSTONED_ROOMS.lock().unwrap().clear();
     IGNORED_USERS.lock().unwrap().clear();
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
+    log!("Client state and caches cleared.");
 
-    // When a user logs out, their access token is invalidated on the server side.
+    // Request closing all tabs
+    log!("Requesting to close all tabs...");
+    Cx::post_action(RoomsPanelAction::CloseAllTabs);
+
+    // Delete the last user ID file
+    log!("Deleting last user ID file...");
     // We delete last_login.txt here for the following reasons:
     //
     // 1. Preventing Invalid Token Errors:
@@ -2657,19 +2700,53 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     // This way, when users log in again, they can still benefit from cached data
     // while avoiding the invalid token errors.
     if let Err(e) = delete_last_user_id().await {
-        log!("Warning: Failed to delete LATEST_USER_ID_FILE_NAME file: {}",  e);
+        let error_msg = format!("Failed to delete last user ID file: {}", e);
+        log!("Warning: {}", error_msg);
+        errors.push(error_msg);
+    } else {
+        log!("Last user ID file deleted successfully.");
     }
 
-    // not the first time to login, so we need to restart matrix tokio and wait for login
+    // Restart the Matrix tokio runtime
+    // This is a critical step; failure might prevent future logins
+    log!("Restarting Matrix tokio runtime...");
     if let Err(e) = start_matrix_tokio(false) {
-        log!("Warning: Failed to restart matrix tokio: {}", e);        
-        Cx::post_action(LoginAction::LogoutFailure("Failed to restart system. Please restart the application.".to_string()));
-        return Err(anyhow::anyhow!("Failed to restart matrix tokio: {}", e));
+        let error_msg = format!("Failed to restart Matrix runtime: {}. Manual app restart might be required to log in again.", e);
+        log!("Error: {}", error_msg);
+        errors.push(error_msg.clone());
+        // Send failure notification and return immediately, as the runtime is fundamental
+        let final_error_msg = format!("Critical error during logout: {}. Please try restarting the application.", errors.join("; "));
+        Cx::post_action(LoginAction::LogoutFailure(final_error_msg.clone()));
+        return Err(anyhow::anyhow!(final_error_msg));
     }
+    log!("Matrix tokio runtime restarted successfully.");
 
-    Cx::post_action(LoginAction::LogoutSuccess);
-
-    Ok(RefreshState::NeedRelogin)
+    // --- Final result handling ---
+    if logout_successful && errors.is_empty() {
+        // Complete success
+        log!("Logout process completed successfully.");
+        Cx::post_action(LoginAction::LogoutSuccess);
+        Ok(RefreshState::NeedRelogin)
+    } else if logout_successful {
+        // Partial success (server logout ok, but cleanup errors)
+        let warning_msg = format!(
+            "Logout completed, but some cleanup operations failed: {}",
+            errors.join("; ")
+        );
+        log!("Warning: {}", warning_msg);
+        // Still notify UI of success, as the user session has ended
+        Cx::post_action(LoginAction::LogoutSuccess); 
+        Ok(RefreshState::NeedRelogin)
+    } else {
+        // Failure (server logout failed)
+        let final_error_msg = format!(
+            "Logout failed: {}",
+            errors.join("; ")
+        );
+        log!("Error: {}", final_error_msg);
+        Cx::post_action(LoginAction::LogoutFailure(final_error_msg.clone()));
+        Err(anyhow::anyhow!(final_error_msg))
+    }
 
 }
 
