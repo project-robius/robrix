@@ -12,6 +12,7 @@ pub mod typing_animation;
 pub mod popup_list;
 pub mod verification_badge;
 pub mod callout_tooltip;
+pub mod popup_notification;
 
 pub fn live_design(cx: &mut Cx) {
     // Order matters here, as some widget definitions depend on others.
