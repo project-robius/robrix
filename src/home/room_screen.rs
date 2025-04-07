@@ -3654,7 +3654,7 @@ fn populate_audio_message_content(
     media_cache: &mut MediaCache
 ) -> bool {
     let audio_message_interface_uid = audio_message_interface.widget_uid();
-    // let mut fully_drawn = false;
+    let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let _filename = audio.filename();
     // let _caption = audio.formatted_caption()
@@ -3667,6 +3667,7 @@ fn populate_audio_message_content(
             match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
                 (MediaCacheEntry::Loaded(audio_data), _) => {
                     insert_new_audio(audio_message_interface_uid, audio_data);
+                    fully_drawn = true
                 },
                 _ => { }
             }
@@ -3674,8 +3675,7 @@ fn populate_audio_message_content(
         MediaSource::Encrypted(_e) => {
         }
     }
-    true
-    // fully_drawn
+    fully_drawn
 }
 
 

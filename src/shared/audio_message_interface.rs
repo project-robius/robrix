@@ -3,7 +3,6 @@
 //! The true audio playback is in `src/audio_player.rs`
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::events::room::message::AudioInfo;
 
 live_design! {
     use link::theme::*;
@@ -31,6 +30,7 @@ live_design! {
             height: 35,
             flow: Right,
             spacing: 20,
+            visible: false
 
             button = <Button> {
                 width: 35, height: Fill,
@@ -82,12 +82,14 @@ enum Status {
 #[derive(Debug, Clone, DefaultNone)]
 pub enum AudioMessageInterfaceAction {
     Play(WidgetUid),
+    Stop(WidgetUid),
     None
 }
 
 #[derive(Live, Widget, LiveHook)]
 pub struct AudioMessageInterface {
     #[deref] view: View,
+    #[rust(false)] fully_fetched: bool
 }
 
 impl Drop for AudioMessageInterface {
@@ -99,6 +101,9 @@ impl Drop for AudioMessageInterface {
 
 impl Widget for AudioMessageInterface {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if self.fully_fetched {
+            self.view(id!(v)).set_visible(cx, true);
+        }
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
@@ -114,11 +119,24 @@ impl MatchEvent for AudioMessageInterface {
         let stop_button = self.view.button(id!(v.stop_button));
 
         if button.clicked(actions) {
-
+            Cx::post_action(AudioMessageInterfaceAction::Play(self.widget_uid()));
         }
 
         if stop_button.clicked(actions) {
-
+            Cx::post_action(AudioMessageInterfaceAction::Stop(self.widget_uid()));
         }
+    }
+}
+
+impl AudioMessageInterface {
+    fn mark_fully_fetched(&mut self) {
+        self.fully_fetched = true
+    }
+}
+
+impl AudioMessageInterfaceRef {
+    pub fn mark_fully_fetched(&self) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.mark_fully_fetched()
     }
 }
