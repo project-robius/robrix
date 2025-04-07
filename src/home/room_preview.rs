@@ -58,7 +58,7 @@ live_design! {
                         padding: { top: 2.0, bottom: 2.0, left: 4.0, right: 4.0 }
                         draw_bg: {
                             color: #000,
-                            radius: 3.5,
+                            border_radius: 3.5,
                         }
                         avatar = {
                             height: 10.0, width: 10.0

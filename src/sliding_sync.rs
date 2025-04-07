@@ -12,7 +12,7 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, UserId
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
@@ -366,8 +366,8 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
-    GetMatrixLinkPillInfo {
-        room_or_alias_id: OwnedRoomOrAliasId,
+    GetMatrixRoomLinkPillInfo {
+        matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
 }
@@ -1010,19 +1010,31 @@ async fn async_worker(
                     }
                 });
             },
-            MatrixRequest::GetMatrixLinkPillInfo { room_or_alias_id, via } => {
+            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
                 let Some(client) = CLIENT.get() else { continue };
-                let _room_preview_task = Handle::current().spawn(async move {
-                    if let Ok(preview) = client.get_room_preview(&room_or_alias_id, via).await {
-                        log!("Got room preview for {room_or_alias_id:?}: {preview:?}");
-                        Cx::post_action(MatrixLinkPillInfo::Loaded {
-                            room_or_alias_id: room_or_alias_id.clone(),
-                            name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
-                            avatar_url: preview.avatar_url,
-                        });
-                    } else {
-                        log!("Failed to get room preview for {room_or_alias_id:?}");
+                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
+                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
+                        MatrixId::Room(room_id) => Some((&**room_id).into()),
+                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
+                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
+                        _ => {
+                            log!("MatrixLinkPillInfo: Unsupported MatrixId type: {matrix_id:?}");
+                            return;
+                        }
                     };
+                    if let Some(room_or_alias_id) = room_or_alias_id {
+                        if let Ok(preview) = client.get_room_preview(&room_or_alias_id, via).await {
+                            Cx::post_action(MatrixLinkPillInfo::Loaded {
+                                matrix_id: matrix_id.clone(),
+                                title: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                avatar_url: preview.avatar_url
+                            });
+                        } else {
+                            log!("Failed to get room preview for {room_or_alias_id:?}");
+                        };
+                    } else {
+                        log!("MatrixLinkPillInfo: Unsupported MatrixId type: {matrix_id:?}");
+                    }
                 });
             }
         }
