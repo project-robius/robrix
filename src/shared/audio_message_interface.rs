@@ -4,6 +4,8 @@
 
 use makepad_widgets::*;
 
+use crate::audio_player::{AUDIO_SET, SHOULD_PLAY};
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -72,29 +74,17 @@ live_design! {
         }
     }
 }
-#[derive(Debug, Clone, Copy, Default)]
-enum Status {
-    #[default] Stopping,
-    Pausing,
-    Playing,
-}
-
-#[derive(Debug, Clone, DefaultNone)]
-pub enum AudioMessageInterfaceAction {
-    Play(WidgetUid),
-    Stop(WidgetUid),
-    None
-}
 
 #[derive(Live, Widget, LiveHook)]
 pub struct AudioMessageInterface {
     #[deref] view: View,
-    #[rust(false)] fully_fetched: bool
+    #[rust(false)] fully_fetched: bool,
+    #[rust(false)] is_playing: bool,
 }
 
 impl Drop for AudioMessageInterface {
     fn drop(&mut self) {
-
+        // todo!()
     }
 }
 
@@ -119,11 +109,28 @@ impl MatchEvent for AudioMessageInterface {
         let stop_button = self.view.button(id!(v.stop_button));
 
         if button.clicked(actions) {
-            Cx::post_action(AudioMessageInterfaceAction::Play(self.widget_uid()));
+            let mut audio_set_wg = AUDIO_SET.write().unwrap();
+            audio_set_wg.get_mut(&self.widget_uid()).unwrap().1 = !self.is_playing;
+
+            let is_playing = if self.is_playing {
+                0.
+            } else {
+                *SHOULD_PLAY.write().unwrap() = true;
+                1.
+            };
+
+            button.apply_over(cx, live! {
+                draw_bg: {
+                    playing: (is_playing)
+                }
+            });
+            self.is_playing = !self.is_playing;
         }
 
         if stop_button.clicked(actions) {
-            Cx::post_action(AudioMessageInterfaceAction::Stop(self.widget_uid()));
+            let mut audio_set_wg = AUDIO_SET.write().unwrap();
+            audio_set_wg.get_mut(&self.widget_uid()).unwrap().1 = false;
+            self.is_playing = false;
         }
     }
 }

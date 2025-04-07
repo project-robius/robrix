@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    audio_player::insert_new_audio, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    audio_player::{insert_new_audio, parse_wav}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -3648,7 +3648,7 @@ fn populate_file_message_content(
 ///
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
-    _cx: &mut Cx,
+    cx: &mut Cx,
     audio_message_interface: &AudioMessageInterfaceRef,
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
@@ -3656,19 +3656,44 @@ fn populate_audio_message_content(
     let audio_message_interface_uid = audio_message_interface.widget_uid();
     let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
-    let _filename = audio.filename();
-    // let _caption = audio.formatted_caption()
-    //     .map(|fb| format!("<br><i>{}</i>", fb.body))
-    //     .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
-    //     .unwrap_or_default();
+    let filename = audio.filename();
+    let (duration, mime, size) = audio
+        .info
+        .as_ref()
+        .map(|info| (
+            info.duration
+                .map(|d| format!("  {:.2} sec, ", d.as_secs_f64()))
+                .unwrap_or_default(),
+            info.mimetype
+                .as_ref()
+                .map(|m| format!("{m}, "))
+                .unwrap_or_default(),
+            info.size
+                .map(|bytes| format!("({})", ByteSize::b(bytes.into())))
+                .unwrap_or_default(),
+        ))
+        .unwrap_or_default();
+    let caption = audio.formatted_caption()
+        .map(|fb| format!("<br><i>{}</i>", fb.body))
+        .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
+        .unwrap_or_default();
+    audio_message_interface.label(id!(info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
 
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
                 (MediaCacheEntry::Loaded(audio_data), _) => {
-                    insert_new_audio(audio_message_interface_uid, audio_data);
-                    fully_drawn = true
+                    parse_wav(&audio_data).inspect(|(channels, bit_depth)|{
+                        insert_new_audio(audio_message_interface_uid, audio_data, channels, bit_depth);
+                    });
+                    fully_drawn = true;
+                    audio_message_interface.mark_fully_fetched();
                 },
+                (MediaCacheEntry::Failed, _) => {
+                    fully_drawn = true;
+                    audio_message_interface.mark_fully_fetched();
+                    // todo!()
+                }
                 _ => { }
             }
         }
