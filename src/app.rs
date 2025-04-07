@@ -238,6 +238,11 @@ impl MatchEvent for App {
                 if let Some((x, y)) = rooms_panel_state.window_position {
                     cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), DVec2{x, y}));
                 }
+                if let Some(is_fullscreen) = rooms_panel_state.window_is_fullscreen {
+                    if is_fullscreen {
+                        cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
+                    }
+                }
             }
 
             match action.as_widget_action().cast() {
@@ -357,6 +362,7 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
+            cx.action(MainDesktopUIDockActions::DockSave);
         }
         if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
             if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
@@ -438,7 +444,9 @@ pub struct RoomsPanelState {
     /// A tuple containing the window's width and height.
     pub window_size: Option<(f64, f64)>,
     /// A tuple containing the window's x and y position.
-    pub window_position: Option<(f64, f64)>
+    pub window_position: Option<(f64, f64)>,
+    /// Maximise fullscreen if true
+    pub window_is_fullscreen: Option<bool>
 }
 
 /// Represents a room currently or previously selected by the user.

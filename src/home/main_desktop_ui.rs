@@ -135,6 +135,7 @@ impl Widget for MainDesktopUI {
                         if let Some(window_geom) = &app_state.window_geom {
                             app_state.rooms_panel.window_size = Some((window_geom.inner_size.x, window_geom.inner_size.y));
                             app_state.rooms_panel.window_position = Some((window_geom.position.x, window_geom.position.y));
+                            app_state.rooms_panel.window_is_fullscreen = Some(window_geom.is_fullscreen);
                         }
                     }
                     _ => {}
