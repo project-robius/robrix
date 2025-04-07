@@ -573,7 +573,8 @@ async fn async_worker(
                     (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
                 };
 
-                let _get_members_task = Handle::current().spawn(async move {
+                let room_id_clone = room_id.clone();
+                let get_members_task = Handle::current().spawn(async move {
                     let room = timeline.room();
 
                     if local_only {
@@ -594,7 +595,7 @@ async fn async_worker(
 
                     SignalToUI::set_ui_signal();
                 });
-                register_core_task(CoreTask::FetchRoomMembers(room_id_clone), fetch_task.abort_handle());
+                register_core_task(CoreTask::FetchRoomMembers(room_id_clone), get_members_task.abort_handle());
             }
 
             MatrixRequest::GetUserProfile { user_id, room_id, local_only } => {

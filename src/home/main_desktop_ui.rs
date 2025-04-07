@@ -259,6 +259,7 @@ impl MainDesktopUI {
             &HeapLiveIdPath::default(),
             RoomsPanelAction::FocusNone,
         );
+        self.redraw(cx);  
     }
 
 }
