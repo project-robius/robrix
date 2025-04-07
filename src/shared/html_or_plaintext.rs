@@ -1,7 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri, RoomOrAliasId}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri, RoomOrAliasId}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, get_client, submit_async_request, MatrixRequest}, utils};
 
@@ -213,13 +213,14 @@ impl Widget for RobrixHtmlLink {
         // TODO: this is currently disabled because Makepad doesn't yet support
         // partial vertical alignment of inline Html subwidgets with the surrounding text.
         // Once makepad supports that, we can re-enable this to show the Pill widgets.
-        if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
-            self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
-        } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
-            self.show_matrix_link(cx, matrix_uri.id(), matrix_uri.via());
-        } else {
-            self.show_html_link(cx, self.url.clone());
-        }
+        // if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
+        //     self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
+        // } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
+        //     self.show_matrix_link(cx, matrix_uri.id(), matrix_uri.via());
+        // } else {
+        //     self.show_html_link(cx, self.url.clone());
+        // }
+        self.show_html_link(cx, self.url.clone());
         self.view.draw_walk(cx, scope, walk)
     }
 
@@ -233,7 +234,7 @@ impl Widget for RobrixHtmlLink {
 }
 
 impl RobrixHtmlLink {
-    fn show_matrix_link(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+    fn _show_matrix_link(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
         self.matrix_link_pill(id!(matrix_link))
             .set_info(cx, matrix_id, via);
         self.view(id!(matrix_link_view)).set_visible(cx, true);
@@ -246,7 +247,7 @@ impl RobrixHtmlLink {
         self.view(id!(matrix_link_view)).set_visible(cx, false);
         let mut html_link = self.html_link(id!(html_link));
         html_link.set_url(&url);
-        html_link.set_text(cx, &self.text.as_ref());
+        html_link.set_text(cx, self.text.as_ref());
         self.redraw(cx);
 
     }
@@ -374,7 +375,6 @@ impl MatrixLinkPill {
                         via: via.to_owned()
                     }
                 );
-                self.set_name(cx, &"Loading...");
             }
             self.set_avatar(cx, avatar_url);
             self.set_name(cx, &room_name);

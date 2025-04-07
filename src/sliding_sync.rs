@@ -1023,7 +1023,7 @@ async fn async_worker(
                         }
                     };
                     if let Some(room_or_alias_id) = room_or_alias_id {
-                        if let Ok(preview) = client.get_room_preview(&room_or_alias_id, via).await {
+                        if let Ok(preview) = client.get_room_preview(room_or_alias_id, via).await {
                             Cx::post_action(MatrixLinkPillInfo::Loaded {
                                 matrix_id: matrix_id.clone(),
                                 title: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
