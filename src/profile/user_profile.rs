@@ -101,18 +101,6 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    // Copied from Moxin
-    FadeView = <CachedView> {
-        draw_bg: {
-            instance opacity: 1.0
-
-            fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
-                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
-            }
-        }
-    }
-
     ICON_DOUBLE_CHAT = dep("crate://self/resources/icons/double_chat.svg")
 
     UserProfileView = <ScrollXYView> {
@@ -448,7 +436,7 @@ impl Widget for UserProfileSlidingPane {
             || event.back_pressed()
             || match event.hits_with_capture_overload(cx, area, true) {
                 Hit::KeyUp(key) => key.key_code == KeyCode::Escape,
-                Hit::FingerDown(_fde, _) => {
+                Hit::FingerDown(_fde) => {
                     cx.set_key_focus(area);
                     false
                 }

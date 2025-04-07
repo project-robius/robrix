@@ -18,11 +18,11 @@ live_design! {
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
             instance border_color: #f2f2f2
-            instance border_width: 0.003
+            instance border_size: 0.003
 
             // Draws a right-side border
             fn pixel(self) -> vec4 {
-                if self.pos.x > 1.0 - self.border_width {
+                if self.pos.x > 1.0 - self.border_size {
                     return self.border_color;
                 } else {
                     return self.bg_color;

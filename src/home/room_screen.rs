@@ -6,14 +6,14 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
-use matrix_sdk::ruma::{
+use matrix_sdk::{room::RoomMember, ruma::{
     events::{receipt::Receipt, room::{
         message::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, RoomAliasId, RoomId, RoomOrAliasId
-};
+    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, RoomAliasId, RoomId, RoomOrAliasId
+}};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
@@ -25,10 +25,13 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{self, get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::room::room_input_bar::RoomInputBarWidgetExt;
+use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
+
 use rangemap::RangeSet;
 
 use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
@@ -59,6 +62,7 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::editing_pane::*;
+    use crate::room::room_input_bar::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -163,7 +167,7 @@ live_design! {
             draw_bg: {
                 instance vertical_bar_color: (USERNAME_TEXT_COLOR)
                 instance vertical_bar_width: 2.0
-                instance radius: 0.0
+                instance border_radius: 0.0
 
                 fn get_color(self) -> vec4 {
                     return self.color;
@@ -177,7 +181,7 @@ live_design! {
                         0.0,
                         self.rect_size.x,
                         self.rect_size.y,
-                        max(1.0, self.radius)
+                        max(1.0, self.border_radius)
                     );
                     sdf.fill(self.get_color());
 
@@ -794,7 +798,7 @@ live_design! {
                             draw_bg: {
                                 border_color: (COLOR_DANGER_RED),
                                 color: #fff0f0 // light red
-                                radius: 5
+                                border_radius: 5
                             }
                             draw_icon: {
                                 svg_file: (ICON_CLOSE),
@@ -824,36 +828,7 @@ live_design! {
                     flow: Overlay,
 
                     // Below that, display a view that holds the message input bar and send button.
-                    input_bar = <View> {
-                        width: Fill, height: Fit
-                        flow: Right,
-                        // Bottom-align everything to ensure that buttons always stick to the bottom
-                        // even when the message_input box is very tall.
-                        align: {y: 1.0},
-                        padding: 8.
-                        show_bg: true,
-                        draw_bg: {
-                            color: (COLOR_PRIMARY)
-                        }
-
-                        location_button = <IconButton> {
-                            draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                            icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
-                            text: "",
-                        }
-
-                        message_input = <RobrixTextInput> {
-                            width: Fill, height: Fit,
-                            margin: { bottom: 7 }
-                            align: {y: 0.5}
-                            empty_message: "Write a message (in Markdown) ..."
-                        }
-
-                        send_message_button = <IconButton> {
-                            draw_icon: {svg_file: (ICON_SEND)},
-                            icon_walk: {width: Fit, height: 25, margin: {left: -3} },
-                        }
-                    }
+                    input_bar = <RoomInputBar> {}
 
                     can_not_send_message_notice = <View> {
                         visible: false
@@ -1041,7 +1016,7 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
-            let message_input = self.text_input(id!(message_input));
+            let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
             for action in actions {
                 // Handle the highlight animation.
@@ -1124,7 +1099,6 @@ impl Widget for RoomScreen {
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
-                        // TODO: support attaching mentions, etc.
                     });
 
                     self.clear_replying_to(cx);
@@ -1132,6 +1106,7 @@ impl Widget for RoomScreen {
                     location_preview.redraw(cx);
                 }
             }
+
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
@@ -1142,21 +1117,34 @@ impl Widget for RoomScreen {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
-                    log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        RoomMessageEventContent::text_html(html_text, html_text)
+                    let (message, mentions) = if let Some(html_text) = entered_text.strip_prefix("/html") {
+                        (
+                            RoomMessageEventContent::text_html(html_text, html_text),
+                            self.view.room_input_bar(id!(input_bar))
+                                .mentionable_text_input(id!(message_input))
+                                .get_real_mentions_in_html_text(html_text),
+                        )
                     } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        RoomMessageEventContent::text_plain(plain_text)
+                        (
+                            RoomMessageEventContent::text_plain(plain_text),
+                            Default::default(),
+                        )
                     } else {
-                        RoomMessageEventContent::text_markdown(entered_text)
+                        (
+                            RoomMessageEventContent::text_markdown(&entered_text),
+                            self.view.room_input_bar(id!(input_bar))
+                                .mentionable_text_input(id!(message_input))
+                                .get_real_mentions_in_markdown_text(&entered_text),
+                        )
                     };
+                    log!("Sending message to room {}: {:?}, mentions: {:?}", room_id, entered_text, mentions);
+                    let message = message.add_mentions(Mentions::with_user_ids(mentions));
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
-                        // TODO: support attaching mentions, etc.
                     });
 
                     self.clear_replying_to(cx);
@@ -1460,6 +1448,11 @@ impl RoomScreen {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                            // For now, we paginate a cleared timeline in order to be able to show something at least.
+                            // A proper solution would be what's described below, which would be to save a few event IDs
+                            // and then either focus on them (if we're not close to the end of the timeline)
+                            // or paginate backwards until we find them (only if we are close the end of the timeline).
+                            should_continue_backwards_pagination = true;
                         }
 
                         // If the bottom of the timeline (the last event) is visible, then we should
@@ -1646,11 +1639,16 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the updated event,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-                TimelineUpdate::RoomMembersFetched => {
+                TimelineUpdate::RoomMembersSynced => {
                     // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
+                TimelineUpdate::RoomMembersListFetched { members } => {
+                    // Use `pub/sub` pattern here to let multiple components share room members data
+                    use crate::room::room_member_manager::room_members;
+                    room_members::update(cx, tl.room_id.clone(), members);
+                },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
@@ -2312,7 +2310,7 @@ impl RoomScreen {
             // Even though we specify that room member profiles should be lazy-loaded,
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
-            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2439,7 +2437,13 @@ impl RoomScreen {
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
-        self.room_id = Some(room_id);
+        self.room_id = Some(room_id.clone());
+
+        // Clear any mention input state
+        let input_bar = self.view.room_input_bar(id!(input_bar));
+        let message_input = input_bar.mentionable_text_input(id!(message_input));
+        message_input.set_room_id(room_id);
+
         self.show_timeline(cx);
     }
 
@@ -2644,7 +2648,14 @@ pub enum TimelineUpdate {
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
-    RoomMembersFetched,
+    RoomMembersSynced,
+    /// A notice that the room's full member list has been fetched from the server,
+    /// includes a complete list of room members that can be shared across components.
+    /// This is different from RoomMembersSynced which only indicates members were fetched
+    /// but doesn't provide the actual data.
+    RoomMembersListFetched {
+        members: Vec<RoomMember>,
+    },
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
@@ -3414,7 +3425,7 @@ fn populate_message_view(
             &message,
             has_html_body,
         ),
-        mentions_user: does_message_mention_current_user(&message),
+        should_be_highlighted: event_tl_item.is_highlighted()
     });
 
     // Set the timestamp.
@@ -3432,26 +3443,6 @@ fn populate_message_view(
     }
 
     (item, new_drawn_status)
-}
-
-
-/// Returns `true` if the given message mentions the current user or is a room mention.
-fn does_message_mention_current_user(
-    message: &MessageOrSticker,
-) -> bool {
-    let Some(current_user_id) = sliding_sync::current_user_id() else {
-        return false;
-    };
-
-    match message {
-        // This covers both direct mentions ("@user"), @room mentions, and a replied-to message.
-        MessageOrSticker::Message(msg) => {
-            msg.mentions().is_some_and(|mentions|
-                mentions.room || mentions.user_ids.contains(&current_user_id)
-            )
-        }
-        MessageOrSticker::Sticker(_) => false, // Stickers can't mention users.
-    }
 }
 
 /// Draws the Html or plaintext body of the given Text or Notice message into the `message_content_widget`.
@@ -3881,12 +3872,12 @@ trait SmallStateEventContent {
     ///
     /// ## Arguments
     /// * `item`: a `SmallStateEvent` widget that has already been added to
-    ///    the given `PortalList` at the given `item_id`.
-    ///    This function may either modify that item or completely replace it
-    ///    with a different widget if needed.
+    ///   the given `PortalList` at the given `item_id`.
+    ///   This function may either modify that item or completely replace it
+    ///   with a different widget if needed.
     /// * `item_drawn_status`: the old (prior) drawn status of the item.
     /// * `new_drawn_status`: the new drawn status of the item, which may have already
-    ///    been updated to reflect the item's profile having been drawn right before this function.
+    ///   been updated to reflect the item's profile having been drawn right before this function.
     ///
     /// ## Return
     /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
@@ -4285,16 +4276,58 @@ impl Widget for Message {
 
         let Some(details) = self.details.clone() else { return };
 
-        // We *first* forward the event to the child view such that it has the chance
+        // We first handle a click on the replied-to message preview, if present,
+        // because we don't want any widgets within the replied-to message to be
+        // clickable or otherwise interactive.
+        match event.hits(cx, self.view(id!(replied_to_message)).area()) {
+            Hit::FingerDown(fe) => {
+                cx.set_key_focus(self.view(id!(replied_to_message)).area());
+                if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
+                    cx.widget_action(
+                        details.room_screen_widget_uid,
+                        &scope.path,
+                        MessageAction::OpenMessageContextMenu {
+                            details: details.clone(),
+                            abs_pos: fe.abs,
+                        }
+                    );
+                }
+            }
+            Hit::FingerLongPress(lp) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: lp.abs,
+                    }
+                );
+            }
+            // If the hit occurred on the replied-to message preview, jump to it.
+            Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                // TODO: move this to the event handler for any reply preview content,
+                //       since we also want this jump-to-reply behavior for the reply preview
+                //       that appears above the message input box when you click the reply button.
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::JumpToRelated(details.clone()),
+                );
+            }
+            _ => { }
+        }
+
+        // Next, we forward the event to the child view such that it has the chance
         // to handle it before the Message widget handles it.
         // This ensures that events like right-clicking/long-pressing a reaction button
         // or a link within a message will be treated as an action upon that child view
         // rather than an action upon the message itself.
         self.view.handle_event(cx, event, scope);
 
+        // Finally, handle any hits on the rest of the message body itself.
         let message_view_area = self.view.area();
         match event.hits(cx, message_view_area) {
-            Hit::FingerDown(fe, _) => {
+            Hit::FingerDown(fe) => {
                 cx.set_key_focus(message_view_area);
                 // A right click means we should display the context menu.
                 if fe.device.mouse_button().is_some_and(|b| b.is_secondary()) {
@@ -4317,20 +4350,6 @@ impl Widget for Message {
                         abs_pos: lp.abs,
                     }
                 );
-            }
-            Hit::FingerUp(fe) if fe.is_over && fe.was_tap() => {
-                // If the hit occurred on the replied-to message preview, jump to it.
-                //
-                // TODO: move this to the event handler for any reply preview content,
-                //       since we also want this jump-to-reply behavior for the reply preview
-                //       that appears above the message input box when you click the reply button.
-                if fe.is_primary_hit() && self.view(id!(replied_to_message)).area().rect(cx).contains(fe.abs) {
-                    cx.widget_action(
-                        details.room_screen_widget_uid,
-                        &scope.path,
-                        MessageAction::JumpToRelated(details.clone()),
-                    );
-                }
             }
             Hit::FingerHoverIn(..) => {
                 self.animator_play(cx, id!(hover.on));
@@ -4357,8 +4376,7 @@ impl Widget for Message {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        let mentions_user = self.details.as_ref().is_some_and(|d| d.mentions_user);
-        if mentions_user {
+        if self.details.as_ref().is_some_and(|d| d.should_be_highlighted) {
             self.view.apply_over(
                 cx, live!(
                     draw_bg: {

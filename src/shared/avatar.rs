@@ -106,7 +106,7 @@ impl Widget for Avatar {
         let area = self.view.area();
         let widget_uid = self.widget_uid();
         match event.hits(cx, area) {
-            Hit::FingerDown(_fde, _) => {
+            Hit::FingerDown(_fde) => {
                 cx.set_key_focus(area);
             }
             Hit::FingerUp(fue) => if fue.is_over && fue.is_primary_hit() && fue.was_tap() {
@@ -139,11 +139,11 @@ impl Avatar {
     ///
     /// ## Arguments
     /// * `info`: information about the user represented by this avatar, including a tuple of
-    ///    the user ID, displayable user name, and room ID.
-    ///    * Set this to `Some` to enable a user to click/tap on the Avatar itself.
-    ///    * Set this to `None` to disable the click/tap action.
+    ///   the user ID, displayable user name, and room ID.
+    ///   * Set this to `Some` to enable a user to click/tap on the Avatar itself.
+    ///   * Set this to `None` to disable the click/tap action.
     /// * `username`: the displayable text for this avatar, either a user name or user ID.
-    ///    Only the first non-`@` letter (Unicode grapheme) is displayed.
+    ///   Only the first non-`@` letter (Unicode grapheme) is displayed.
     pub fn show_text<T: AsRef<str>>(
         &mut self,
         cx: &mut Cx,
@@ -168,13 +168,13 @@ impl Avatar {
     ///
     /// ## Arguments
     /// * `info`: information about the user represented by this avatar:
-    ///    the user name, user ID, room ID, and avatar image data.
-    ///    * Set this to `Some` to enable a user to click/tap on the Avatar itself.
-    ///    * Set this to `None` to disable the click/tap action.
+    ///   the user name, user ID, room ID, and avatar image data.
+    ///   * Set this to `Some` to enable a user to click/tap on the Avatar itself.
+    ///   * Set this to `None` to disable the click/tap action.
     /// * `image_set_function`: - a function that is passed in the `&mut Cx`
-    ///    and an [ImageRef] that refers to the image that will be displayed in this avatar.
-    ///    This allows the caller to set the image contents in any way they want.
-    ///    If `image_set_function` returns an error, no change is made to the avatar.
+    ///   and an [ImageRef] that refers to the image that will be displayed in this avatar.
+    ///   This allows the caller to set the image contents in any way they want.
+    ///   If `image_set_function` returns an error, no change is made to the avatar.
     pub fn show_image<F, E>(
         &mut self,
         cx: &mut Cx,
