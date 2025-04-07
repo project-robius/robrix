@@ -243,6 +243,7 @@ impl MainDesktopUI {
     /// Closes all tabs and selects the home tab
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         log!("Closing all tabs");
+        // TODO: should close directly message in future
         let dock = self.view.dock(id!(dock));
         let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
         
