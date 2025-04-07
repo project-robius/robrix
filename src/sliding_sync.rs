@@ -5,7 +5,7 @@ use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
 use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
-use makepad_widgets::{error, log, warning, Cx, SignalToUI, WidgetUid};
+use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
         api::client::receipt::create_receipt::v3::ReceiptType, events::{
@@ -19,7 +19,6 @@ use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
 };
 use robius_open::Uri;
-use rodio::Sink;
 use tokio::{
     runtime::Handle,
     sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
@@ -216,13 +215,6 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
-pub type OnMediaHandleFn = fn(
-    Option<Arc<[u8]>>, // media data
-    Option<crossbeam_channel::Sender<TimelineUpdate>>, // the sender to update timeline
-    Option<Arc<Sink>> // any sink if exist
-);
-
-
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.
@@ -363,14 +355,6 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
-    },
-
-    MediaHandle {
-        sender: Option<crossbeam_channel::Sender<TimelineUpdate>>,
-        media_data: Option<Arc<[u8]>>,
-        widget_uid: WidgetUid,
-        sink: Option<Arc<Sink>>,
-        on_handle: OnMediaHandleFn
     },
 }
 
@@ -977,14 +961,6 @@ async fn async_worker(
                             enqueue_popup_notification(format!("Failed to redact message. Error: {e}"));
                         }
                     }
-                });
-            },
-            MatrixRequest::MediaHandle {sender, media_data, widget_uid: _widget_uid, sink, on_handle} => {
-                Handle::current().spawn(async move {
-                    on_handle(media_data, sender, sink);
-                })
-                .await.unwrap_or_else(|e|{
-                    log!("Fail executing media joinhandle: {e}")
                 });
             },
         }

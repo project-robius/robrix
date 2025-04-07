@@ -7,7 +7,7 @@ use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{
-    ruma::{
+    media::MediaFormat, ruma::{
         events::{receipt::Receipt, room::{
             message::{
                 AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -21,11 +21,11 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    audio_player::insert_new_audio, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        audio_message_interface::{AudioMessageInterfaceRef, AudioMessageInterfaceWidgetRefExt}, avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -50,7 +50,7 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
-    use crate::shared::audio_player::AudioPlayer;
+    use crate::shared::audio_message_interface::AudioMessageInterface;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
@@ -419,7 +419,7 @@ live_design! {
                 width: Fill,
                 height: Fit
                 padding: { left: 10.0 }
-                message = <AudioPlayer> { }
+                message = <AudioMessageInterface> {}
                 v = <View> {
                     width: Fill,
                     height: Fit,
@@ -434,11 +434,11 @@ live_design! {
     CondensedAudioMessage = <CondensedMessage> {
         body = {
             content = {
-                message = <AudioPlayer> { }
+                message = <AudioMessageInterface> {}
                 <View> {
                     width: Fill,
                     height: Fit
-                    reaction_list = <ReactionList> { }
+                    reaction_list = <ReactionList> {}
                     avatar_row = <AvatarRow> {}
                 }
             }
@@ -3284,7 +3284,7 @@ fn populate_message_view(
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
-                    &item.audio_player(id!(content.message)),
+                    &item.audio_message_interface(id!(content.message)),
                     audio,
                     media_cache
                 );
@@ -3649,58 +3649,33 @@ fn populate_file_message_content(
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
     _cx: &mut Cx,
-    audio_player: &AudioPlayerRef,
+    audio_message_interface: &AudioMessageInterfaceRef,
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
 ) -> bool {
-    let _audio_player_uid = audio_player.widget_uid();
-    if audio_player.is_empty() {
-        log!("Empty audio player");
-    }
-    let mut fully_drawn = false;
+    let audio_message_interface_uid = audio_message_interface.widget_uid();
+    // let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let _filename = audio.filename();
-    let (_duration, _mime, _size) = audio
-        .info
-        .as_ref()
-        .map(|info| (
-            info.duration
-                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
-                .unwrap_or_default(),
-            info.mimetype
-                .as_ref()
-                .map(|m| format!("  {m},"))
-                .unwrap_or_default(),
-            info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
-                .unwrap_or_default(),
-        ))
-        .unwrap_or_default();
-    let _caption = audio.formatted_caption()
-        .map(|fb| format!("<br><i>{}</i>", fb.body))
-        .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
-        .unwrap_or_default();
+    // let _caption = audio.formatted_caption()
+    //     .map(|fb| format!("<br><i>{}</i>", fb.body))
+    //     .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
+    //     .unwrap_or_default();
 
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
-            match media_cache.try_get_media_or_fetch(mxc_uri, None) {
-                MediaCacheEntry::Requested => {
-
+            match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
+                (MediaCacheEntry::Loaded(audio_data), _) => {
+                    insert_new_audio(audio_message_interface_uid, audio_data);
                 },
-                MediaCacheEntry::Loaded(data) => {
-                    audio_player.set_data(data);
-                    fully_drawn = true;
-                },
-                MediaCacheEntry::Failed => {
-
-                }
+                _ => { }
             }
         }
         MediaSource::Encrypted(_e) => {
         }
     }
-
-    fully_drawn
+    true
+    // fully_drawn
 }
 
 
