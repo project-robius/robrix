@@ -293,25 +293,22 @@ impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
-                match action.downcast_ref() {
-                    Some(MatrixLinkPillInfo::Loaded { room_or_alias_id, name, avatar_url } ) => {
-                        log!("MatrixLinkPillInfo::Loaded: {:?}, {:?}, {:?}", room_or_alias_id, name, avatar_url);
-                        if let Some(matrix_id) = &self.matrix_id {
-                            let id: OwnedRoomOrAliasId = match matrix_id {
-                                MatrixId::Room(room_id) => room_id.clone().into(),
-                                MatrixId::RoomAlias(room_alias) => room_alias.clone().into(),
-                                MatrixId::Event(room_or_alias_id, _event_id) => room_or_alias_id.clone(),
-                                _ => return,
-                            };
+                if let Some(MatrixLinkPillInfo::Loaded { room_or_alias_id, name, avatar_url } ) = action.downcast_ref() {
+                    log!("MatrixLinkPillInfo::Loaded: {:?}, {:?}, {:?}", room_or_alias_id, name, avatar_url);
+                    if let Some(matrix_id) = &self.matrix_id {
+                        let id: OwnedRoomOrAliasId = match matrix_id {
+                            MatrixId::Room(room_id) => room_id.clone().into(),
+                            MatrixId::RoomAlias(room_alias) => room_alias.clone().into(),
+                            MatrixId::Event(room_or_alias_id, _event_id) => room_or_alias_id.clone(),
+                            _ => return,
+                        };
 
-                            if id == *room_or_alias_id {
-                                self.set_name(cx, name);
-                                self.set_avatar(cx, avatar_url.clone());
-                                self.redraw(cx);
-                            }
+                        if id == *room_or_alias_id {
+                            self.set_name(cx, name);
+                            self.set_avatar(cx, avatar_url.clone());
+                            self.redraw(cx);
                         }
                     }
-                    _ => { }
                 }
             }
         }
