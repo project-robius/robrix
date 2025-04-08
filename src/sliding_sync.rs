@@ -1133,7 +1133,7 @@ pub fn start_matrix_tokio(initial_flag: bool) -> Result<()> {
                                 status: e.to_string(),
                             });
                             // when abort async_join_handler it will give a error maybe show user "Stop Rooms list update"  better
-                            enqueue_popup_notification("Stop Rooms list update".to_string());
+                            // ueue_popup_notification("Stop Rooms list update".to_string());
                         },
                         Err(e) => {
                             error!("BUG: failed to join async worker task: {e:?}");
@@ -2618,6 +2618,8 @@ enum RefreshState {
 }
 
 async fn logout_and_refresh() -> Result<RefreshState> {
+
+
     // Collect all errors encountered during the logout process
     let mut errors = Vec::new();
     
@@ -2715,9 +2717,11 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     DEFAULT_SSO_CLIENT.lock().unwrap().take();
     log!("Client state and caches cleared.");
 
-    // Request closing all tabs
     log!("Requesting to close all tabs...");
     Cx::post_action(RoomsPanelAction::CloseAllTabs);
+    
+    // wait for UI to update
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 
     // Delete the last user ID file
     log!("Deleting last user ID file...");

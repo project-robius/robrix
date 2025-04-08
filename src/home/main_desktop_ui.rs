@@ -248,6 +248,7 @@ impl MainDesktopUI {
         let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
         
         for tab_id in tab_ids {
+            self.tab_to_close = Some(tab_id);
             self.close_tab(cx, tab_id);
         }
         
@@ -259,7 +260,7 @@ impl MainDesktopUI {
             &HeapLiveIdPath::default(),
             RoomsPanelAction::FocusNone,
         );
-
+        self.redraw(cx);
         cx.action(RoomsPanelAction::DockSave);
     }
 
