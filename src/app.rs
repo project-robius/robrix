@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use crate::{
-    home::{main_desktop_ui::{MainDesktopUIDockActions, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::DVec2Wrapper, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::{DockStateAction, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::DVec2Wrapper, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{Deserialize, Serialize};
 
@@ -229,9 +229,10 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
-            if let Some(AppRestoreDockAction::Restore(rooms_panel_state)) = action.downcast_ref() {
+
+            if let Some(RoomsPanelRestoreAction::Restore(rooms_panel_state)) = action.downcast_ref() {
                 self.app_state.rooms_panel = rooms_panel_state.clone();
-                cx.action(MainDesktopUIDockActions::DockRestore);
+                cx.action(DockStateAction::RestoreFromAppState);
                 cx.push_unique_platform_op(CxOsOp::ResizeWindow(CxWindowPool::id_zero(), rooms_panel_state.window_size.0));
                 cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), rooms_panel_state.window_position.0));
                 if rooms_panel_state.window_is_fullscreen {
@@ -420,10 +421,6 @@ impl App {
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
-    /// Whether if all known rooms have been loaded from the server.
-    /// This is preserved so that when the user changes from desktop to mobile, we can restore
-    /// the room screens which could not be loaded previously.
-    pub all_known_rooms_loaded: bool,
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
@@ -449,6 +446,7 @@ pub struct RoomsPanelState {
     /// Maximise fullscreen if true
     pub window_is_fullscreen: bool
 }
+
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
@@ -464,10 +462,11 @@ impl PartialEq for SelectedRoom {
 }
 impl Eq for SelectedRoom {}
 
-/// The possible actions that can result in updates to the dock of rooms tabs.
-#[derive(DefaultNone, Clone, Debug)]
-pub enum AppRestoreDockAction {
-    /// Load the previously-saved dock state and restore it to the dock.
+/// Action related to restoring the main dock and RoomScreen widgets from storage.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomsPanelRestoreAction {
+    /// The previously-saved state of the rooms panel & dock was loaded from storage
+    /// and is now ready to be restored to the dock UI widget.
     /// This will be handled by the top-level App and by each RoomScreen in the dock.
     Restore(RoomsPanelState),
     /// The given room has not yet been loaded from the homeserver
@@ -479,8 +478,8 @@ pub enum AppRestoreDockAction {
     /// and is known to our client.
     /// The RoomScreen for this room can now fully display the room's timeline.
     Success(OwnedRoomId),
-    /// Informs all room screens that all known rooms have been loaded.
-    /// Automatically fails all pending rooms.
-    LoadingCompleted,
-    None
+    /// All known rooms have been received by the homeserver.
+    /// Any `Pending` rooms (still waiting to be loaded) should display errors.
+    AllRoomsLoaded,
+    None,
 }

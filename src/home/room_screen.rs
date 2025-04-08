@@ -22,7 +22,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    app::AppRestoreDockAction, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::RoomsPanelRestoreAction, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -725,7 +725,7 @@ live_design! {
                 color: (COLOR_PRIMARY_DARKER)
             }
 
-            notice_label = <Label> {
+            restore_status_label = <Label> {
                 align: {x: 0.0, y: 0.5},
                 padding: {left: 5.0, right: 0.0}
                 draw_text: {
@@ -734,6 +734,7 @@ live_design! {
                 }
                 text: ""
             }
+
             keyboard_view = <KeyboardView> {
                 width: Fill, height: Fill,
                 flow: Down,
@@ -931,8 +932,10 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// RoomScreen will display the room timeline if this is not Pending or Failure.
-    #[rust] notice: AppRestoreDockAction,
+    /// The status of this room being restored from previously-saved data in storage.
+    /// If `Pending` or `AllRoomsLoaded`, this RoomScreen will display a message;
+    /// otherwise, the regular RoomScreen content (the room timeline) will be shown.
+    #[rust] restore_status: RoomsPanelRestoreAction,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -1030,8 +1033,6 @@ impl Widget for RoomScreen {
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
             let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
-            
-            self.handle_app_restore_dock_actions(cx, actions);
 
             for action in actions {
                 // Handle the highlight animation.
@@ -1063,6 +1064,19 @@ impl Widget for RoomScreen {
                             },
                         );
                     }
+                }
+
+                // Handle actions related to restoring the previously-saved state of rooms.
+                match action.downcast_ref() {
+                    Some(RoomsPanelRestoreAction::Success(room_id)) => {
+                        if self.room_id.as_ref().is_some_and(|r| r == room_id) {
+                            self.set_restore_status(cx, RoomsPanelRestoreAction::Success(room_id.clone()));
+                        }
+                    }
+                    Some(RoomsPanelRestoreAction::AllRoomsLoaded) => {
+                        self.set_restore_status(cx, RoomsPanelRestoreAction::AllRoomsLoaded);
+                    }
+                    _ => {}
                 }
             }
 
@@ -1280,18 +1294,20 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        match &self.notice {
-            AppRestoreDockAction::Pending(_) | AppRestoreDockAction::LoadingCompleted => {
-                return self.view.draw_walk(cx, scope, walk);
-            }
-            _=> {}
+        if matches!(
+            &self.restore_status,
+            RoomsPanelRestoreAction::Pending(_) | RoomsPanelRestoreAction::AllRoomsLoaded
+        ) {
+            return self.view.draw_walk(cx, scope, walk);
         }
-        let room_screen_widget_uid = self.widget_uid();
+
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
+
+        let room_screen_widget_uid = self.widget_uid();
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             let portal_list_ref = subview.as_portal_list();
@@ -2276,7 +2292,7 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
-                self.set_notice(cx, AppRestoreDockAction::Pending(room_id.clone()));
+                self.set_restore_status(cx, RoomsPanelRestoreAction::Pending(room_id.clone()));
                 return;
             };
             let new_tl_state = TimelineUiState {
@@ -2466,26 +2482,26 @@ impl RoomScreen {
     }
 
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
-    pub fn set_notice(&mut self, cx: &mut Cx, notice: AppRestoreDockAction) {
-        match &notice {
-            AppRestoreDockAction::Pending(room_id) => {
-                // Update the room_id so that we can handle the `AppRestoreDockAction::Success` case based on room_id
+    pub fn set_restore_status(&mut self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
+        match &status {
+            RoomsPanelRestoreAction::Pending(room_id) => {
+                // Set this RoomScreen's room_id such that it can handle a `RoomsPanelRestoreAction::Success` action.
                 self.room_id = Some(room_id.clone());
                 self.view
-                    .label(id!(notice_label))
+                    .label(id!(restore_status_label))
                     .set_text(cx, "[Placeholder for Spinner]");
-                self.notice = notice;
+                self.restore_status = status;
             }
-            AppRestoreDockAction::LoadingCompleted => {
-                if let AppRestoreDockAction::Pending(_) = self.notice {
+            RoomsPanelRestoreAction::AllRoomsLoaded => {
+                if let RoomsPanelRestoreAction::Pending(_) = self.restore_status {
                     self.view
-                        .label(id!(notice_label))
+                        .label(id!(restore_status_label))
                         .set_text(cx, &format!("Room {} was not found in the homeserver's list of all rooms.", self.room_name));
                 }                
             }
             _ => {
-                self.view.label(id!(notice_label)).set_text(cx, "");
-                self.notice = notice;
+                self.view.label(id!(restore_status_label)).set_text(cx, "");
+                self.restore_status = status;
             }
         }
         self.redraw(cx);
@@ -2588,26 +2604,6 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
-    // Handles any [`AppRestoreDockAction`]s received by this RoomScreen.
-    fn handle_app_restore_dock_actions(
-        &mut self,
-        cx: &mut Cx,
-        actions: &ActionsBuf,
-    ) {
-        for action in actions.iter() {
-            match action.downcast_ref() {
-                Some(AppRestoreDockAction::Success(room_id)) => {
-                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {
-                        self.set_notice(cx, AppRestoreDockAction::Success(room_id.clone()));
-                    }
-                }
-                Some(AppRestoreDockAction::LoadingCompleted) => {
-                    self.set_notice(cx, AppRestoreDockAction::LoadingCompleted);
-                }
-                _ => {}
-            }
-        }
-    }
 }
 
 impl RoomScreenRef {
@@ -2622,12 +2618,11 @@ impl RoomScreenRef {
         inner.set_displayed_room(cx, room_id, room_name);
     }
 
-    /// See [`RoomScreen::set_notice()`].
-    pub fn set_notice(&self, cx: &mut Cx, notice: AppRestoreDockAction) {
-        let Some(mut inner) = self.borrow_mut() else {
-            return;
-        };
-        inner.set_notice(cx, notice);
+    /// See [`RoomScreen::set_restore_status()`].
+    pub fn set_restore_status(&self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
+        if let Some(mut inner) = self.borrow_mut() {
+            inner.set_restore_status(cx, status);
+        }
     }
 }
 

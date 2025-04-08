@@ -209,8 +209,8 @@ pub fn save_room_panel(
     Ok(())
 }
 
-/// Read the rooms panel's state from persistent storage.
-pub async fn read_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPanelState> {
+/// Loads the rooms panel's state from persistent storage.
+pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPanelState> {
     let mut file = match tokio::fs::File::open(
         persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
     )
