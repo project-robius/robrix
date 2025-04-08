@@ -2480,7 +2480,7 @@ impl RoomScreen {
                 if let AppRestoreDockAction::Pending(_) = self.notice {
                     self.view
                         .label(id!(notice_label))
-                        .set_text(cx, &format!("Room {} is not found in the homeserver's list of all known rooms.", self.room_name));
+                        .set_text(cx, &format!("Room {} was not found in the homeserver's list of all rooms.", self.room_name));
                 }                
             }
             _ => {
