@@ -37,6 +37,8 @@ live_design! {
     PopupDialog = <RoundedView> {
         width: 275,
         height: Fill,
+
+        <Progress> {}
     }
 
 
@@ -48,6 +50,18 @@ live_design! {
         }
         content: {
             <PopupDialog> {}
+        }
+        
+        animator: {
+            mode = {
+                default: close,
+                open = {
+                    redraw: true,
+                    from: {}
+                    ease: 
+                    apply: {}
+                }
+            }
         }
     }
 }
@@ -68,12 +82,17 @@ pub struct RobrixPopupNotification {
 
     #[rust]
     opened: bool,
+
+    #[animator]
+    animator: Animator,
 }
 
 impl Widget for RobrixPopupNotification {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
 
+        // loop alaways trigger 
         if self.opened {
+            // self.timer = cx.start_timeout(interval);
             self.start_time = Some(Instant::now());
         }
 
@@ -85,8 +104,22 @@ impl Widget for RobrixPopupNotification {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        // let elapsed = self
-        let progress_bar_height = Instant::now();
+        if let Some(start_time) = self.start_time {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let progress = (elapsed / self.duration).min(1.0);
+            let progress_bar_height = 100.0 * (1.0 - progress);
+
+            self.view.view(id!(progress_bar)).apply_over(
+                cx,
+                live! {
+                    height: (progress_bar_height)
+                } 
+            );
+            if elapsed >= self.duration {
+                self.view.close(cx);
+                return DrawStep::done();
+            }
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 }
