@@ -474,7 +474,7 @@ impl Widget for RoomsList {
                         }
                         self.update_status_rooms_count();
                         if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
-                            Cx::post_action(AppRestoreDockAction::LoadingCompleted);
+                            cx.action(AppRestoreDockAction::LoadingCompleted);
                             let app_state = scope.data.get_mut::<AppState>().unwrap();
                             app_state.all_known_rooms_loaded = true;
                         }
