@@ -80,8 +80,7 @@ impl Widget for TextOrImage {
                 Hit::FingerDown(_) => {
                     cx.set_key_focus(image_area);
                 }
-                Hit::FingerUp(fe) => {
-                    if fe.was_tap() {
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                         // We run the check to see if the original image was already fetched or not.
                         //
                         // If `image_value` is `None`, it can tell that the image has not been fetched,
