@@ -420,6 +420,10 @@ impl App {
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    /// Whether if all known rooms have been loaded from the server.
+    /// This is preserved so that when the user changes from desktop to mobile, we can restore
+    /// the room screens which could not be loaded previously.
+    pub all_known_rooms_loaded: bool,
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
@@ -436,6 +440,7 @@ pub struct RoomsPanelState {
     #[serde(skip_serializing, skip_deserializing)]
     pub dock_state: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
+    /// The u64 key is the inner value of the LiveId and it is stored for serialization.
     pub open_rooms: HashMap<u64, SelectedRoom>,
     /// A tuple containing the window's width and height.
     pub window_size: DVec2Wrapper,

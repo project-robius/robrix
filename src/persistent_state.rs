@@ -225,13 +225,15 @@ pub async fn read_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPan
     file.read_to_string(&mut contents).await?;
     let dock_state: HashMap<LiveId, DockItem> =
         HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-    let file = match std::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME))
+    let mut file = match tokio::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME)).await
     {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
         Err(e) => return Err(e.into()),
     };
-    let mut rooms_panel_state: RoomsPanelState = serde_json::from_reader(file)?;
+    let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
+    file.read_to_end(&mut contents).await?;
+    let mut rooms_panel_state: RoomsPanelState = serde_json::from_slice(&contents)?;
     rooms_panel_state.dock_state = dock_state;
     Ok(rooms_panel_state)
 }

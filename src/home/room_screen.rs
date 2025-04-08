@@ -2481,11 +2481,11 @@ impl RoomScreen {
                     self.view
                         .label(id!(notice_label))
                         .set_text(cx, &format!("Room {} is not found in the homeserver's list of all known rooms.", self.room_name));
-                    self.notice = AppRestoreDockAction::LoadingCompleted;
                 }                
             }
             _ => {
                 self.view.label(id!(notice_label)).set_text(cx, "");
+                self.notice = notice;
             }
         }
         self.redraw(cx);

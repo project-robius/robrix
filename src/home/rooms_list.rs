@@ -473,7 +473,11 @@ impl Widget for RoomsList {
                             }
                         }
                         self.update_status_rooms_count();
-                        Cx::post_action(AppRestoreDockAction::LoadingCompleted);
+                        if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
+                            Cx::post_action(AppRestoreDockAction::LoadingCompleted);
+                            let app_state = scope.data.get_mut::<AppState>().unwrap();
+                            app_state.all_known_rooms_loaded = true;
+                        }
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {

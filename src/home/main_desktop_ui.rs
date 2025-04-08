@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use std::collections::HashMap;
 
-use crate::app::{AppState, SelectedRoom};
+use crate::app::{AppRestoreDockAction, AppState, SelectedRoom};
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
@@ -90,6 +90,7 @@ impl Widget for MainDesktopUI {
                 match action.downcast_ref() {
                     Some(MainDesktopUIDockActions::DockRestore) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
+                        let all_known_rooms_loaded = app_state.all_known_rooms_loaded;
                         self.room_order = app_state.rooms_panel.room_order.clone();
                         self.most_recently_selected_room = app_state.rooms_panel.selected_room.clone();
                         self.open_rooms = HashMap::with_capacity(app_state.rooms_panel.open_rooms.len());
@@ -120,6 +121,9 @@ impl Widget for MainDesktopUI {
                         if let Some(ref selected_room) = &app_state.rooms_panel.selected_room {
                             self.focus_or_create_tab(cx, selected_room.clone());
                         }
+                        if all_known_rooms_loaded {
+                            Cx::post_action(AppRestoreDockAction::LoadingCompleted);
+                        }
                     }
                     Some(MainDesktopUIDockActions::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
@@ -127,8 +131,9 @@ impl Widget for MainDesktopUI {
                             app_state.rooms_panel.dock_state = dock_state;
                         }
                         app_state.rooms_panel.open_rooms = HashMap::with_capacity(self.open_rooms.len());
-                        for (k, v) in self.open_rooms.iter() {
-                            app_state.rooms_panel.open_rooms.insert(k.0, v.clone());
+                        for (live_id, room) in self.open_rooms.iter() {
+                            // Create LiveId for u64 value
+                            app_state.rooms_panel.open_rooms.insert(live_id.0, room.clone());
                         }
                         app_state.rooms_panel.room_order = self.room_order.clone();
                         app_state.rooms_panel.selected_room = self.most_recently_selected_room.clone();
