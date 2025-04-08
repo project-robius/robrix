@@ -30,7 +30,7 @@ live_design! {
     UserListItem = <View> {
         width: Fill,
         height: Fit,
-        padding: {left: 8., right: 8., top: 4., bottom: 4.}
+        padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
@@ -45,9 +45,9 @@ live_design! {
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
                 if self.selected > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_color_hover)
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
                 } else if self.hover > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_color_hover)
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
                 } else {
                     sdf.fill(self.color)
                 }
