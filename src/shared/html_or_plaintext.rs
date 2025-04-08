@@ -346,7 +346,7 @@ impl MatrixLinkPill {
                     self.set_avatar(cx, avatar.uri().cloned());
                 }
                 None => {
-                    self.set_name(cx, &user_id.to_string());
+                    self.set_name(cx, &user_id.as_ref());
                     self.set_avatar(cx, None);
                 }
             }
