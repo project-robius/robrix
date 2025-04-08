@@ -61,7 +61,7 @@ pub struct ImageViewer {
 
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    /// Show the image with the given data.
+    /// Show the ImageViewer with the given image data.
     Show(Arc<[u8]>),
     /// Distinct it from `Show` action to avoid image view show up automatically when closing quickly.
     ReplaceImage(Arc<[u8]>),
