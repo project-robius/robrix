@@ -26,11 +26,14 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
 
+    pub FOCUS_HOVER_COLOR = #eaecf0
+    pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
+
     // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
-        padding: {left: 8., right: 8., top: 4., bottom: 4.}
+        padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
@@ -45,9 +48,9 @@ live_design! {
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
                 if self.selected > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER )
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
                 } else if self.hover > 0.0 {
-                    sdf.fill(POINTER_FOCUS_OR_COLOR_HOVER)
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
                 } else {
                     // Default state
                     sdf.fill(self.color)
@@ -93,16 +96,14 @@ live_design! {
         }
     }
 
-    pub FOCUS_HOVER_COLOR = #eaecf0
-
-    pub MentionableTextInput = {{MentionableTextInput}} {
+    pub MentionableTextInput = {{MentionableTextInput}}<CommandTextInput> {
         width: Fill,
         height: Fit
         trigger: "@"
         inline_search: true
 
         color_focus: (FOCUS_HOVER_COLOR),
-        color_hover: (FOCUS_HOVER_COLOR)
+        color_hover: (FOCUS_HOVER_COLOR),
 
         popup = {
             spacing: 0.0
