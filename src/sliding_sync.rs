@@ -366,6 +366,9 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
+    /// Sends a request to obtain the room's pill link info for the given Matrix ID.
+    ///
+    /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
     GetMatrixRoomLinkPillInfo {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
@@ -1018,7 +1021,7 @@ async fn async_worker(
                         MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
                         MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
                         _ => {
-                            log!("MatrixLinkPillInfo: Unsupported MatrixId type: {matrix_id:?}");
+                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
                             return;
                         }
                     };
@@ -1026,14 +1029,12 @@ async fn async_worker(
                         if let Ok(preview) = client.get_room_preview(room_or_alias_id, via).await {
                             Cx::post_action(MatrixLinkPillInfo::Loaded {
                                 matrix_id: matrix_id.clone(),
-                                title: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
                                 avatar_url: preview.avatar_url
                             });
                         } else {
                             log!("Failed to get room preview for {room_or_alias_id:?}");
                         };
-                    } else {
-                        log!("MatrixLinkPillInfo: Unsupported MatrixId type: {matrix_id:?}");
                     }
                 });
             }
