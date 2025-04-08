@@ -473,17 +473,7 @@ impl Widget for RoomsList {
                             }
                         }
                         self.update_status_rooms_count();
-                        if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
-                            let app_state = scope.data.get_mut::<AppState>().unwrap();
-                            for open_room in app_state.rooms_panel.open_rooms.values() {
-                                if !self.all_rooms.contains_key(&open_room.room_id) {
-                                    Cx::post_action(AppRestoreDockAction::Failure(
-                                        open_room.room_id.to_owned(),
-                                        crate::app::AppRestoringDockError::NotFound,
-                                    ));
-                                }
-                            }
-                        }
+                        Cx::post_action(AppRestoreDockAction::LoadingCompleted);
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {

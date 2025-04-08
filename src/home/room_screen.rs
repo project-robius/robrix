@@ -1031,7 +1031,7 @@ impl Widget for RoomScreen {
 
             let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
             
-            self.handle_rooms_panel_actions(cx, actions);
+            self.handle_app_restore_dock_actions(cx, actions);
 
             for action in actions {
                 // Handle the highlight animation.
@@ -1281,7 +1281,7 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         match &self.notice {
-            AppRestoreDockAction::Pending(_) | AppRestoreDockAction::Failure(_, _) => {
+            AppRestoreDockAction::Pending(_) | AppRestoreDockAction::LoadingCompleted => {
                 return self.view.draw_walk(cx, scope, walk);
             }
             _=> {}
@@ -2474,17 +2474,20 @@ impl RoomScreen {
                 self.view
                     .label(id!(notice_label))
                     .set_text(cx, "[Placeholder for Spinner]");
+                self.notice = notice;
             }
-            AppRestoreDockAction::Failure(_, _reason) => {
-                self.view
-                .label(id!(notice_label))
-                .set_text(cx, "A room was not found in the homeserver's list of all known rooms.");
+            AppRestoreDockAction::LoadingCompleted => {
+                if let AppRestoreDockAction::Pending(_) = self.notice {
+                    self.view
+                        .label(id!(notice_label))
+                        .set_text(cx, &format!("Room {} is not found in the homeserver's list of all known rooms.", self.room_name));
+                    self.notice = AppRestoreDockAction::LoadingCompleted;
+                }                
             }
             _ => {
                 self.view.label(id!(notice_label)).set_text(cx, "");
             }
         }
-        self.notice = notice;
         self.redraw(cx);
     }
 
@@ -2585,8 +2588,8 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
-    // Handles any [`RoomsPanelAction`]s received by this RoomScreen.
-    fn handle_rooms_panel_actions(
+    // Handles any [`AppRestoreDockAction`]s received by this RoomScreen.
+    fn handle_app_restore_dock_actions(
         &mut self,
         cx: &mut Cx,
         actions: &ActionsBuf,
@@ -2594,18 +2597,12 @@ impl RoomScreen {
         for action in actions.iter() {
             match action.downcast_ref() {
                 Some(AppRestoreDockAction::Success(room_id)) => {
-                    if let Some(ref self_room_id) = self.room_id {
-                        if self_room_id == room_id {
-                            self.set_notice(cx, AppRestoreDockAction::Success(room_id.clone()));
-                        }
+                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {
+                        self.set_notice(cx, AppRestoreDockAction::Success(room_id.clone()));
                     }
                 }
-                Some(AppRestoreDockAction::Failure(room_id, reason)) => {
-                    if let Some(ref self_room_id) = self.room_id {
-                        if self_room_id == room_id {
-                            self.set_notice(cx, AppRestoreDockAction::Failure(room_id.clone(), reason.clone()));
-                        }
-                    }
+                Some(AppRestoreDockAction::LoadingCompleted) => {
+                    self.set_notice(cx, AppRestoreDockAction::LoadingCompleted);
                 }
                 _ => {}
             }

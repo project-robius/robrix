@@ -132,11 +132,6 @@ impl Widget for MainDesktopUI {
                         }
                         app_state.rooms_panel.room_order = self.room_order.clone();
                         app_state.rooms_panel.selected_room = self.most_recently_selected_room.clone();
-                        if let Some(window_geom) = &app_state.window_geom {
-                            app_state.rooms_panel.window_size = Some((window_geom.inner_size.x, window_geom.inner_size.y));
-                            app_state.rooms_panel.window_position = Some((window_geom.position.x, window_geom.position.y));
-                            app_state.rooms_panel.window_is_fullscreen = Some(window_geom.is_fullscreen);
-                        }
                     }
                     _ => {}
                 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use crate::{
-    home::{main_desktop_ui::{MainDesktopUIDockActions, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::{MainDesktopUIDockActions, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::DVec2Wrapper, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{Deserialize, Serialize};
 
@@ -232,16 +232,10 @@ impl MatchEvent for App {
             if let Some(AppRestoreDockAction::Restore(rooms_panel_state)) = action.downcast_ref() {
                 self.app_state.rooms_panel = rooms_panel_state.clone();
                 cx.action(MainDesktopUIDockActions::DockRestore);
-                if let Some((x, y)) = rooms_panel_state.window_size {
-                    cx.push_unique_platform_op(CxOsOp::ResizeWindow(CxWindowPool::id_zero(), DVec2{x, y}));
-                }
-                if let Some((x, y)) = rooms_panel_state.window_position {
-                    cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), DVec2{x, y}));
-                }
-                if let Some(is_fullscreen) = rooms_panel_state.window_is_fullscreen {
-                    if is_fullscreen {
-                        cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
-                    }
+                cx.push_unique_platform_op(CxOsOp::ResizeWindow(CxWindowPool::id_zero(), rooms_panel_state.window_size.0));
+                cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), rooms_panel_state.window_position.0));
+                if rooms_panel_state.window_is_fullscreen {
+                    cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
                 }
             }
 
@@ -362,7 +356,9 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
-            cx.action(MainDesktopUIDockActions::DockSave);
+            self.app_state.rooms_panel.window_position = DVec2Wrapper(window_geom_change_event.new_geom.position);
+            self.app_state.rooms_panel.window_size = DVec2Wrapper(window_geom_change_event.new_geom.inner_size);
+            self.app_state.rooms_panel.window_is_fullscreen = window_geom_change_event.new_geom.is_fullscreen;
         }
         if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
             if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
@@ -442,13 +438,12 @@ pub struct RoomsPanelState {
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     pub open_rooms: HashMap<u64, SelectedRoom>,
     /// A tuple containing the window's width and height.
-    pub window_size: Option<(f64, f64)>,
+    pub window_size: DVec2Wrapper,
     /// A tuple containing the window's x and y position.
-    pub window_position: Option<(f64, f64)>,
+    pub window_position: DVec2Wrapper,
     /// Maximise fullscreen if true
-    pub window_is_fullscreen: Option<bool>
+    pub window_is_fullscreen: bool
 }
-
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
@@ -479,18 +474,8 @@ pub enum AppRestoreDockAction {
     /// and is known to our client.
     /// The RoomScreen for this room can now fully display the room's timeline.
     Success(OwnedRoomId),
-    /// The given room was not successfully loaded from the homeserver.
-    /// The given String includes the reason for the failure.
-    Failure(OwnedRoomId, AppRestoringDockError),
+    /// Informs all room screens that all known rooms have been loaded.
+    /// Automatically fails all pending rooms.
+    LoadingCompleted,
     None
-}
-
-/// The possible errors that can occur when updating the dock.
-#[derive(Clone, Debug)]
-pub enum AppRestoringDockError {
-    /// A room was not found in the homeserver's list of all known rooms.
-    ///
-    /// This will be sent to each unknown room _only after_ our local client
-    /// has received the _full_ list of rooms from the homeserver.
-    NotFound,
 }
