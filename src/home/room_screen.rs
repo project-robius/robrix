@@ -3679,19 +3679,26 @@ fn populate_audio_message_content(
         .unwrap_or_default();
     audio_message_interface.label(id!(info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
 
+    // match AUDIO_SET.read().unwrap().entry(audio_message_interface_uid.clone()) {
+    //     Entry:
+    // }
+
+
+
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
                 (MediaCacheEntry::Loaded(audio_data), _) => {
+                    log!("populating time data: {:?}", &audio_data[10000..15000]);
                     parse_wav(&audio_data).inspect(|(channels, bit_depth)|{
                         insert_new_audio(audio_message_interface_uid, audio_data, channels, bit_depth);
                     });
                     fully_drawn = true;
-                    audio_message_interface.mark_fully_fetched();
+                    audio_message_interface.mark_fully_fetched(cx);
                 },
                 (MediaCacheEntry::Failed, _) => {
                     fully_drawn = true;
-                    audio_message_interface.mark_fully_fetched();
+                    audio_message_interface.mark_fully_fetched(cx);
                     // todo!()
                 }
                 _ => { }

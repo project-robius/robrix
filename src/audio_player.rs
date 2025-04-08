@@ -1,22 +1,19 @@
 use std::{collections::HashMap, sync::{Arc, LazyLock, Mutex, RwLock}};
 use makepad_widgets::*;
 
-#[derive(Debug, Clone)]
+use crate::shared::audio_message_interface::AudioMessageInterfaceAction;
+
+#[derive(Debug, Clone, Default)]
 pub struct Audio {
     pub data: Arc<[u8]>,
-    pub pos: usize,
     pub channels: u16,
     pub bit_depth: u16
 }
 
-type Audios = HashMap<WidgetUid, (Arc<Mutex<Audio>>, bool)>;
+type Audios = HashMap<WidgetUid, (Audio, Arc<Mutex<usize>>)>;
 
 pub static AUDIO_SET: LazyLock<RwLock<Audios>> = LazyLock::new(||{
     RwLock::new(HashMap::new())
-});
-
-pub static SHOULD_PLAY: LazyLock<RwLock<bool>> = LazyLock::new(||{
-    RwLock::new(false)
 });
 
 live_design! {
@@ -33,9 +30,19 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub enum Selected {
+    Playing(WidgetUid, usize),
+    Paused(WidgetUid, usize),
+    #[default]
+    None,
+}
+
 #[derive(Live, LiveHook, Widget)]
 pub struct AudioPlayer {
     #[deref] view: View,
+    #[rust] audio: Arc<Mutex<Audio>>,
+    #[rust] selected: Arc<Mutex<Selected>>,
 }
 
 impl Drop for AudioPlayer {
@@ -57,68 +64,143 @@ impl Widget for AudioPlayer {
 
 impl MatchEvent for AudioPlayer {
     fn handle_startup(&mut self, cx: &mut Cx) {
-        cx.audio_output(0, |_audio_info, output_buffer|{
-            if *SHOULD_PLAY.read().unwrap() {
-            log!("run again");
-            AUDIO_SET.write().unwrap().iter_mut().for_each(|(audio_control_interface_uid, (audio, is_playing))|{
-                if *is_playing {
-                    let mut mg = audio.lock().unwrap();
-                    log!("Play time: uid: {:?}, audio_data_len: {}", audio_control_interface_uid, mg.data.len());
-                    let (channels, bit_depth) = (mg.channels, mg.bit_depth);
-                    match (channels, bit_depth) {
-                        (2, 16) => {
-                            // stereo 16bit
-                            output_buffer.zero();
+        let audio = self.audio.clone();
+        let selected = self.selected.clone();
+        let mut pos = 44;
+        cx.audio_output(0, move |_audio_info, output_buffer|{
+            let mut selected_mg = selected.lock().unwrap();
+            let audio_mg = audio.lock().unwrap();
+            if let Selected::Playing(uid, _) = selected_mg.clone() {
+                let audio = audio_mg.clone();
+                match (audio.channels, audio.bit_depth) {
+                    (2, 16) => {
+                        // stereo 16bit
+                        output_buffer.zero();
+                        let (left, right) = output_buffer.stereo_mut();
+                        let mut i = 0;
+                        while i < left.len() {
+                            let left_i16 = i16::from_le_bytes([audio.data[pos], audio.data[pos + 1]]);
+                            let right_i16 = i16::from_le_bytes([audio.data[pos + 2], audio.data[pos + 3]]);
+
+                            left[i] = left_i16 as f32 / i16::MAX as f32;
+                            right[i] = right_i16 as f32 / i16::MAX as f32;
+                            *selected_mg = Selected::Playing(uid, pos + 4);
+                            pos += 4;
+                            i += 1;
+                        }
+                    }
+                    (2, 24) => {
+                        // stereo 24bit
+                        output_buffer.zero();
                             let (left, right) = output_buffer.stereo_mut();
                             let mut i = 0;
                             while i < left.len() {
-                                let left_i16 = i16::from_le_bytes([mg.data[mg.pos], mg.data[mg.pos + 1]]);
-                                let right_i16 = i16::from_le_bytes([mg.data[mg.pos + 2], mg.data[mg.pos + 3]]);
+                                let left_i32 = i32::from_le_bytes([0, audio.data[pos], audio.data[pos + 1], audio.data[pos + 2]]);
+                                let right_i32 = i32::from_le_bytes([0, audio.data[pos + 3], audio.data[pos + 4], audio.data[pos + 5]]);
 
-                                left[i] = left_i16 as f32 / i16::MAX as f32;
-                                right[i] = right_i16 as f32 / i16::MAX as f32;
-                                mg.pos += 4;
+                                left[i] = left_i32 as f32 / i32::MAX as f32;
+                                right[i] = right_i32 as f32 / i32::MAX as f32;
+                                *selected_mg = Selected::Playing(uid, pos + 6);
+                                pos += 6;
                                 i += 1;
                             }
-                        }
-                        (2, 24) => {
-                            // stereo 24bit
-                            output_buffer.zero();
-                                let (left, right) = output_buffer.stereo_mut();
-                                let mut i = 0;
-                                while i < left.len() {
-                                    let left_i32 = i32::from_le_bytes([0, mg.data[mg.pos], mg.data[mg.pos + 1], mg.data[mg.pos + 2]]);
-                                    let right_i32 = i32::from_le_bytes([0, mg.data[mg.pos + 3], mg.data[mg.pos + 4], mg.data[mg.pos + 5]]);
-
-                                    left[i] = left_i32 as f32 / i32::MAX as f32;
-                                    right[i] = right_i32 as f32 / i32::MAX as f32;
-                                    mg.pos += 6;
-                                    i += 1;
-                                }
-                        }
-                        _ => { }
                     }
-                    *is_playing = false;
+                    _ => { }
                 }
-            });
+                if pos > audio.data.len() {
+                    *selected_mg = Selected::None;
+                }
+            } else {
+                output_buffer.zero();
             }
         });
     }
 
-    fn handle_audio_devices(&mut self, cx: &mut Cx, devices: &AudioDevicesEvent) {
-        cx.use_audio_outputs(&devices.default_output())
+    fn handle_audio_devices(&mut self, cx: &mut Cx, e: &AudioDevicesEvent) {
+        cx.use_audio_outputs(&e.default_output())
+    }
+    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+        for action in actions {
+            match action.downcast_ref() {
+                Some(AudioMessageInterfaceAction::Play(new_uid)) => {
+                    let selected =self.selected.clone().lock().unwrap().clone();
+                    match selected {
+                        Selected::Playing(current_uid, current_pos) => {
+                            if &current_uid != new_uid {
+                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                                    *old_pos.lock().unwrap() = current_pos;
+                                }
+                                if let Some((audio, _)) = AUDIO_SET.read().unwrap().get(new_uid) {
+                                    *self.audio.lock().unwrap() = audio.clone();
+                                    *self.selected.lock().unwrap() = Selected::Playing(*new_uid, 44);
+                                }
+                            }
+                        }
+                        Selected::Paused(current_uid, current_pos) => {
+                            if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get_mut(&current_uid) {
+                                *old_pos.lock().unwrap() = current_pos;
+                            }
+
+                            if let Some((audio, _)) = AUDIO_SET.read().unwrap().get(new_uid) {
+                                *self.audio.lock().unwrap() = audio.clone();
+                                *self.selected.lock().unwrap() = Selected::Playing(*new_uid, 44);
+                            }
+                        }
+                        Selected::None => {
+                            if let Some((audio, _old_pos)) = AUDIO_SET.write().unwrap().get_mut(new_uid) {
+                                *self.selected.lock().unwrap() = Selected::Playing(*new_uid, 44);
+                                *self.audio.lock().unwrap() = audio.clone();
+                            }
+                        }
+                    }
+                }
+                Some(AudioMessageInterfaceAction::Pause(new_uid)) => {
+                    let selected =self.selected.clone().lock().unwrap().clone();
+                    if let Selected::Playing(current_uid, current_pos) = selected {
+                        if &current_uid == new_uid {
+                            if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                                *old_pos.lock().unwrap() = current_pos;
+                            }
+                            *self.selected.lock().unwrap() = Selected::Paused(*new_uid, current_pos);
+                        }
+                    }
+                }
+                Some(AudioMessageInterfaceAction::Stop(new_uid)) => {
+                    let selected =self.selected.clone().lock().unwrap().clone();
+                    match selected {
+                        Selected::Playing(current_uid, _current_pos) => {
+                            if &current_uid == new_uid {
+                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                                    *old_pos.lock().unwrap() = 44;
+                                }
+                                *self.selected.lock().unwrap() = Selected::None;
+                            }
+                        }
+                        Selected::Paused(current_uid, _current_pos) => {
+                            if &current_uid == new_uid {
+                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                                    *old_pos.lock().unwrap() = 44;
+                                }
+                            }
+                            *self.selected.lock().unwrap() = Selected::None;
+                        }
+                        _ => { }
+                    }
+                }
+                _ => { }
+            }
+        }
     }
 }
 
-pub fn insert_new_audio(audio_control_interface_uid: WidgetUid, audio_data: Arc<[u8]>, channels: &u16, bit_depth: &u16) {
-    log!("Insert time: uid: {:?}, audio_data_len: {}", audio_control_interface_uid, audio_data.len());
+pub fn insert_new_audio(audio_control_interface_uid: WidgetUid, data: Arc<[u8]>, channels: &u16, bit_depth: &u16) {
     let audio = Audio {
-        data: audio_data,
-        pos: 0,
+        data,
         channels: *channels,
         bit_depth: *bit_depth
     };
-    AUDIO_SET.write().unwrap().insert(audio_control_interface_uid, (Arc::new(Mutex::new(audio)), false));
+    let pos = Arc::new(Mutex::new(44));
+    AUDIO_SET.write().unwrap().insert(audio_control_interface_uid, (audio, pos));
 }
 
 

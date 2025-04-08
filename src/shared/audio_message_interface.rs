@@ -4,7 +4,6 @@
 
 use makepad_widgets::*;
 
-use crate::audio_player::{AUDIO_SET, SHOULD_PLAY};
 
 live_design! {
     use link::theme::*;
@@ -75,10 +74,17 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum AudioMessageInterfaceAction {
+    Play(WidgetUid),
+    Stop(WidgetUid),
+    Pause(WidgetUid),
+    None
+}
+
 #[derive(Live, Widget, LiveHook)]
 pub struct AudioMessageInterface {
     #[deref] view: View,
-    #[rust(false)] fully_fetched: bool,
     #[rust(false)] is_playing: bool,
 }
 
@@ -91,9 +97,6 @@ impl Drop for AudioMessageInterface {
 
 impl Widget for AudioMessageInterface {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if self.fully_fetched {
-            self.view(id!(v)).set_visible(cx, true);
-        }
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
     }
@@ -109,13 +112,11 @@ impl MatchEvent for AudioMessageInterface {
         let stop_button = self.view.button(id!(v.stop_button));
 
         if button.clicked(actions) {
-            let mut audio_set_wg = AUDIO_SET.write().unwrap();
-            audio_set_wg.get_mut(&self.widget_uid()).unwrap().1 = !self.is_playing;
-
             let is_playing = if self.is_playing {
+                Cx::post_action(AudioMessageInterfaceAction::Pause(self.widget_uid()));
                 0.
             } else {
-                *SHOULD_PLAY.write().unwrap() = true;
+                Cx::post_action(AudioMessageInterfaceAction::Play(self.widget_uid()));
                 1.
             };
 
@@ -128,22 +129,26 @@ impl MatchEvent for AudioMessageInterface {
         }
 
         if stop_button.clicked(actions) {
-            let mut audio_set_wg = AUDIO_SET.write().unwrap();
-            audio_set_wg.get_mut(&self.widget_uid()).unwrap().1 = false;
+            Cx::post_action(AudioMessageInterfaceAction::Stop(self.widget_uid()));
             self.is_playing = false;
+            button.apply_over(cx, live! {
+                draw_bg: {
+                    playing: 0.
+                }
+            });
         }
     }
 }
 
 impl AudioMessageInterface {
-    fn mark_fully_fetched(&mut self) {
-        self.fully_fetched = true
+    fn mark_fully_fetched(&mut self, cx: &mut Cx) {
+        self.view(id!(v)).set_visible(cx, true);
     }
 }
 
 impl AudioMessageInterfaceRef {
-    pub fn mark_fully_fetched(&self) {
+    pub fn mark_fully_fetched(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.mark_fully_fetched()
+        inner.mark_fully_fetched(cx);
     }
 }
