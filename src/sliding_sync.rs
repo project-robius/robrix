@@ -1033,7 +1033,8 @@ async fn async_worker(
                                 avatar_url: preview.avatar_url
                             });
                         } else {
-                            log!("Failed to get room preview for {room_or_alias_id:?}");
+                            log!("Failed to get room link pill info for {room_or_alias_id:?}");
+                            Cx::post_action(MatrixLinkPillInfo::Failed);
                         };
                     }
                 });
