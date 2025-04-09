@@ -1,6 +1,11 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
+
+use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
+
+use super::avatar::AvatarWidgetExt;
 
 /// The color of the text used to print the spoiler reason before the hidden text.
 const COLOR_SPOILER_REASON: Vec4 = vec4(0.6, 0.6, 0.6, 1.0);
@@ -11,11 +16,67 @@ live_design! {
     use link::widgets::*;
     
     use crate::shared::styles::*;
+    use crate::shared::avatar::Avatar;
 
-    // These match the `MESSAGE_*` styles defined in `styles.rs`.
-    // For some reason, they're not the same. That's TBD.
-    // HTML_LINE_SPACING = 6.0
-    // HTML_TEXT_HEIGHT_FACTOR = 1.1
+    BaseLinkPill = <RoundedView> {
+        width: Fit, height: Fit,
+        flow: Right,
+        align: { y: 0.5 }
+        padding: { left: 7, right: 7, bottom: 5, top: 5 }
+        spacing: 5.0,
+
+        show_bg: true,
+        draw_bg: {
+            color: #000,
+            border_radius: 7.0,
+        }
+
+        avatar = <Avatar> {
+            height: 18.0, width: 18.0,
+            text_view = { text = { draw_text: {
+                text_style: <TITLE_TEXT>{ font_size: 10.0 }
+            }}}
+        }
+
+        title = <Label> {
+            draw_text: {
+                color: #f,
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 10.0 },
+            }
+            text: "Unknown",
+        }
+    }
+
+    // A pill-shaped widget that displays a Matrix link,
+    // either a link to a user, a room, or a message in a room.
+    MatrixLinkPill = {{MatrixLinkPill}}<BaseLinkPill> { }
+
+    // A RobrixHtmlLink is either a regular Html link (default) or a Matrix link.
+    // The Matrix link is a pill-shaped widget with an avatar and a title.
+    pub RobrixHtmlLink = {{RobrixHtmlLink}} {
+        width: Fit, height: Fit,
+        flow: Overlay,
+        align: { y: 0.5 },
+        cursor: Hand,
+
+        html_link_view = <View> {
+            visible: true,
+            width: Fit, height: Fit,
+
+            html_link = <HtmlLink> {
+                hover_color: #21b070
+                grab_key_focus: false,
+                padding: {left: 1.0, right: 1.5},
+            }
+        }
+
+        matrix_link_view = <View> {
+            visible: false
+            width: Fit, height: Fit,
+
+            matrix_link = <MatrixLinkPill> { }
+        }
+    }
 
     // This is an HTML subwidget used to handle `<font>` and `<span>` tags,
     // specifically: foreground text color, background color, and spoilers.
@@ -30,6 +91,7 @@ live_design! {
     pub MessageHtml = <Html> {
         padding: 0.0,
         width: Fill, height: Fit, // see comment in `HtmlOrPlaintext`
+        align: { y: 0.5 }
         font_size: (MESSAGE_FONT_SIZE),
         font_color: (MESSAGE_TEXT_COLOR),
         draw_normal:      { color: (MESSAGE_TEXT_COLOR), } // text_style: { height_factor: (HTML_TEXT_HEIGHT_FACTOR), line_spacing: (HTML_LINE_SPACING) } }
@@ -56,12 +118,7 @@ live_design! {
 
         font = <MatrixHtmlSpan> { }
         span = <MatrixHtmlSpan> { }
-
-        a = {
-            hover_color: #21b070
-            grab_key_focus: false,
-            padding: {left: 1.0, right: 1.5},
-        }
+        a = <RobrixHtmlLink> { }
 
         body: "[<i> HTML message placeholder</i>]",
     }
@@ -102,6 +159,262 @@ live_design! {
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum RobrixHtmlLinkAction{
+    ClickedMatrixLink {
+        /// The URL of the link, which is only temporarily needed here
+        /// because we don't fully handle MatrixId links directly in-app yet.
+        url: String,
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>,
+        key_modifiers: KeyModifiers,
+    },
+    None,
+}
+
+/// A RobrixHtmlLink is either a regular `HtmlLink` (default) or a Matrix link.
+///
+/// Matrix links are displayed using the [`MatrixLinkPill`] widget.
+#[derive(Live, Widget)]
+struct RobrixHtmlLink {
+    #[deref] view: View,
+
+    /// The displayable text of the link.
+    /// This should be set automatically by the Html widget 
+    /// when it parses and draws an Html `<a>` tag.
+    #[live] pub text: ArcStringMut,
+    /// The URL of the link.
+    /// This is set by the `after_apply()` logic below.
+    #[live] pub url: String,
+}
+
+impl LiveHook for RobrixHtmlLink {
+    fn after_apply(&mut self, _cx: &mut Cx, apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
+        if let ApplyFrom::NewFromDoc { .. } = apply.from {
+            let scope = apply.scope.as_ref().unwrap();
+            let doc = scope.props.get::<HtmlDoc>().unwrap();
+            let mut walker = doc.new_walker_with_index(scope.index + 1);
+            if let Some((live_id!(href), attr)) = walker.while_attr_lc() {
+                self.url = attr.into();
+            }
+        }
+    }
+}
+
+impl Widget for RobrixHtmlLink {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        // TODO: this is currently disabled because Makepad doesn't yet support
+        // partial vertical alignment of inline Html subwidgets with the surrounding text.
+        // Once makepad supports that, we can re-enable this to show the Pill widgets.
+        /*
+        if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
+            self.draw_matrix_pill(cx, matrix_to_uri.id(), matrix_to_uri.via());
+        } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
+            self.draw_matrix_pill(cx, matrix_uri.id(), matrix_uri.via());
+        } else {
+            self.draw_html_link(cx);
+        }
+        */
+        self.draw_html_link(cx);
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn text(&self) -> String {
+        self.text.as_ref().to_string()
+    }
+
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        self.text.as_mut_empty().push_str(v);
+        self.redraw(cx);
+    }
+}
+
+impl RobrixHtmlLink {
+    #[allow(unused)]
+    fn draw_matrix_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+        if let Some(mut pill) = self.matrix_link_pill(id!(matrix_link)).borrow_mut() {
+            pill.populate_pill(cx, self.url.clone(), matrix_id, via);
+        }
+        self.view(id!(matrix_link_view)).set_visible(cx, true);
+        self.view(id!(html_link_view)).set_visible(cx, false);
+    }
+
+    /// Shows the inner plain HTML link and hides the Matrix link pill view.
+    fn draw_html_link(&mut self, cx: &mut Cx) {
+        self.view(id!(html_link_view)).set_visible(cx, true);
+        self.view(id!(matrix_link_view)).set_visible(cx, false);
+        let mut html_link = self.html_link(id!(html_link));
+        html_link.set_url(&self.url);
+        html_link.set_text(cx, self.text.as_ref());
+    }
+}
+
+#[derive(Clone, Debug, DefaultNone)]
+pub enum MatrixLinkPillState {
+    Requested,
+    Loaded {
+        matrix_id: MatrixId,
+        name: String,
+        avatar_url: Option<OwnedMxcUri>,
+    },
+    None,
+}
+
+/// A pill-shaped widget that shows a Matrix link as an avatar and a title.
+///
+/// This can be a link to a user, a room, or a message in a room.
+#[derive(Live, LiveHook, Widget)]
+struct MatrixLinkPill {
+    #[deref] view: View,
+
+    #[rust] matrix_id: Option<MatrixId>,
+    #[rust] via: Vec<OwnedServerName>,
+    #[rust] state: MatrixLinkPillState,
+    #[rust] url: String,
+}
+
+impl Widget for MatrixLinkPill {
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let Some(loaded @ MatrixLinkPillState::Loaded { matrix_id, .. }) = action.downcast_ref() {
+                    if self.matrix_id.as_ref() == Some(matrix_id) {
+                        self.state = loaded.clone();
+                        self.redraw(cx);
+                    }
+                }
+            }
+        }
+
+        // To catch updates Redraw upon a UI Signal in order to catch updates to a user profile.
+        if matches!(event, Event::Signal) && matches!(self.matrix_id, Some(MatrixId::User(_))) {
+            self.redraw(cx);
+        }
+
+        if let Hit::FingerUp(fe) = event.hits_with_capture_overload(cx, self.area(), true) {
+            if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                if let Some(matrix_id) = self.matrix_id.clone() {
+                    cx.widget_action(
+                        self.widget_uid(),
+                        &scope.path,
+                        RobrixHtmlLinkAction::ClickedMatrixLink {
+                            matrix_id,
+                            via: self.via.clone(),
+                            key_modifiers: fe.modifiers,
+                            url: self.url.clone(),
+                        }
+                    );
+                }
+            }
+        }
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+
+    fn text(&self) -> String {
+        self.label(id!(title)).text()
+    }
+
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        self.label(id!(title)).set_text(cx, v);
+    }
+}
+
+impl MatrixLinkPill {
+    /// Populates this pill's info based on the given Matrix ID and via servers.
+    fn populate_pill(&mut self, cx: &mut Cx, url: String, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+        self.url = url;
+        self.matrix_id = Some(matrix_id.clone());
+        self.via = via.to_vec();
+
+        // Handle a user ID link by querying the user profile cache.
+        if let MatrixId::User(user_id) = matrix_id {
+            // Apply red background for current user
+            if current_user_id().is_some_and(|u| &u == user_id) {
+                self.apply_over(cx, live! {
+                    draw_bg: { color: #d91b38 }
+                });
+            }
+
+            match user_profile_cache::with_user_profile(
+                cx,
+                user_id.clone(),
+                true,
+                |profile, _| { (profile.displayable_name().to_owned(), profile.avatar_state.clone()) }
+            ) {
+                Some((name, avatar)) => {
+                    self.set_text(cx, &name);
+                    self.populate_avatar(cx, avatar.uri().cloned());
+                }
+                None => {
+                    self.set_text(cx, user_id.as_ref());
+                    self.populate_avatar(cx, None);
+                }
+            }
+            return;
+        }
+
+        // Handle room ID or alias
+        match &self.state {
+            MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
+                self.label(id!(title)).set_text(cx, name);
+                self.populate_avatar(cx, avatar_url.clone());
+                return;
+            }
+            MatrixLinkPillState::None => {
+                submit_async_request(MatrixRequest::GetMatrixRoomLinkPillInfo {
+                    matrix_id: matrix_id.clone(),
+                    via: via.to_vec(),
+                });
+                self.state = MatrixLinkPillState::Requested;
+            }
+            MatrixLinkPillState::Requested => { }
+        }
+        // While waiting for the async request to complete, show the matrix room ID/alias.
+        match matrix_id {
+            MatrixId::Room(room_id) => self.set_text(cx, room_id.as_str()),
+            MatrixId::RoomAlias(alias) => self.set_text(cx, alias.as_str()),
+            MatrixId::Event(room_or_alias, _) => self.set_text(cx, &format!("Message in {}", room_or_alias.as_str())),
+            _ => { }
+        }
+        self.populate_avatar(cx, None);
+    }
+
+    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
+        let avatar_ref = self.avatar(id!(avatar));
+        if let Some(avatar_url) = avatar_url {
+            if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
+                let res = avatar_ref.show_image(
+                    cx,
+                    None, // Don't make this avatar clickable
+                    |cx, img_ref| utils::load_png_or_jpg(&img_ref, cx, &data),
+                );
+                if res.is_ok() {
+                    return;
+                }
+            }
+        }
+        // Show a text avatar if we couldn't load an image into the avatar.
+        avatar_ref.show_text(cx, None, self.text());
+    }
+
+}
+
+impl MatrixLinkPillRef {
+    pub fn get_matrix_id(&self) -> Option<MatrixId> {
+        self.borrow().and_then(|inner| inner.matrix_id.clone())
+    }
+
+    pub fn get_via(&self) -> Vec<OwnedServerName> {
+        self.borrow().map(|inner| inner.via.clone()).unwrap_or_default()
+    }
+}
 
 /// A widget used to display a single HTML `<span>` tag or a `<font>` tag.
 #[derive(Live, Widget)]
