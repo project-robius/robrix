@@ -1035,6 +1035,18 @@ impl Widget for RoomScreen {
             let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
 
             for action in actions {
+                // Handle actions related to restoring the previously-saved state of rooms.
+                match action.downcast_ref() {
+                    Some(RoomsPanelRestoreAction::Success(room_id)) => {
+                        if self.room_id.as_ref().is_some_and(|r| r == room_id) {
+                            self.set_restore_status(cx, RoomsPanelRestoreAction::Success(room_id.clone()));
+                        }
+                    }
+                    Some(RoomsPanelRestoreAction::AllRoomsLoaded) => {
+                        self.set_restore_status(cx, RoomsPanelRestoreAction::AllRoomsLoaded);
+                    }
+                    _ => {}
+                }
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -1064,19 +1076,6 @@ impl Widget for RoomScreen {
                             },
                         );
                     }
-                }
-
-                // Handle actions related to restoring the previously-saved state of rooms.
-                match action.downcast_ref() {
-                    Some(RoomsPanelRestoreAction::Success(room_id)) => {
-                        if self.room_id.as_ref().is_some_and(|r| r == room_id) {
-                            self.set_restore_status(cx, RoomsPanelRestoreAction::Success(room_id.clone()));
-                        }
-                    }
-                    Some(RoomsPanelRestoreAction::AllRoomsLoaded) => {
-                        self.set_restore_status(cx, RoomsPanelRestoreAction::AllRoomsLoaded);
-                    }
-                    _ => {}
                 }
             }
 
@@ -2292,6 +2291,7 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
+                println!("RoomsPanelRestoreAction::Pending {}", room_id);
                 self.set_restore_status(cx, RoomsPanelRestoreAction::Pending(room_id.clone()));
                 return;
             };
@@ -2483,6 +2483,7 @@ impl RoomScreen {
 
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
     pub fn set_restore_status(&mut self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
+        println!("self.restore_status {:?} {:?}", self.restore_status, self.room_name );
         match &status {
             RoomsPanelRestoreAction::Pending(room_id) => {
                 // Set this RoomScreen's room_id such that it can handle a `RoomsPanelRestoreAction::Success` action.
