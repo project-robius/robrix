@@ -12,8 +12,8 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, RoomAliasId, RoomId, RoomOrAliasId
-}};
+    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+}, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
@@ -1741,63 +1741,10 @@ impl RoomScreen {
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
-        if let RobrixHtmlLinkAction::ClickedMatrixLink { matrix_id, via, .. } = action.as_widget_action().cast() {
-            match matrix_id {
-                MatrixId::Room(room_id) => {
-                    if self.room_id.as_ref() == Some(&room_id) {
-                        enqueue_popup_notification("You are already viewing that room.".into());
-                        return true;
-                    }
-
-                    {
-                        let url = room_id.matrix_to_uri_via(via).to_string();
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
-                        }
-                    }
-                    if let Some(_known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
-                        log!("TODO: jump to known room {}", room_id);
-                    } else {
-                        log!("TODO: fetch and display room preview for room {}", room_id);
-                    }
-                }
-                MatrixId::RoomAlias(room_alias) => {
-                    {
-                        let url = room_alias.matrix_to_uri().to_string();
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
-                        }
-                    }
-                    log!("TODO: open room alias {}", room_alias);
-                    // TODO: open a room loading screen that shows a spinner
-                    //       while our background async task calls Client::resolve_room_alias()
-                    //       and then either jumps to the room if known, or fetches and displays
-                    //       a room preview for that room.
-                }
-                MatrixId::Event(room_or_alias_id, event_id) => {
-                    {
-                        let url = if let Ok(room_id) = <&RoomOrAliasId as TryInto<&RoomId>>::try_into(&room_or_alias_id) {
-                            room_id.matrix_to_event_uri_via(&*event_id, via).to_string()
-                        } else if let Ok(room_alias) = <&RoomOrAliasId as TryInto<&RoomAliasId>>::try_into(&room_or_alias_id) {
-                            #[allow(deprecated)] {
-                                room_alias.matrix_to_event_uri(&*event_id).to_string()
-                            }
-                        } else {
-                            error!("Failed to re-create MatrixToUri for the clicked room event");
-                            return true;
-                        };
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
-                        }
-                    }
-                    log!("TODO: open event {} in room {}", event_id, room_or_alias_id);
-                    // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                    //       but then we need to call Room::event_with_context() to get the event
-                    //       and its context (surrounding events ?).
-                }
+        // A closure that handles both MatrixToUri and MatrixUri links,
+        // and returns whether the link was handled.
+        let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+            match id {
                 MatrixId::User(user_id) => {
                     // There is no synchronous way to get the user's full profile info
                     // including the details of their room membership,
@@ -1822,16 +1769,65 @@ impl RoomScreen {
                             room_member: None,
                         },
                     );
+                    true
                 }
-                _ => { }
+                MatrixId::Room(room_id) => {
+                    if self.room_id.as_ref() == Some(room_id) {
+                        enqueue_popup_notification("You are already viewing that room.".into());
+                        return true;
+                    }
+                    if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                        log!("TODO: jump to known room {}", room_id);
+                    } else {
+                        log!("TODO: fetch and display room preview for room {}", room_id);
+                    }
+                    false
+                }
+                MatrixId::RoomAlias(room_alias) => {
+                    log!("TODO: open room alias {}", room_alias);
+                    // TODO: open a room loading screen that shows a spinner
+                    //       while our background async task calls Client::resolve_room_alias()
+                    //       and then either jumps to the room if known, or fetches and displays
+                    //       a room preview for that room.
+                    false
+                }
+                MatrixId::Event(room_id, event_id) => {
+                    log!("TODO: open event {} in room {}", event_id, room_id);
+                    // TODO: this requires the same first step as the `MatrixId::Room` case above,
+                    //       but then we need to call Room::event_with_context() to get the event
+                    //       and its context (surrounding events ?).
+                    false
+                }
+                _ => false,
+            }
+        };
+
+        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
+            let mut link_was_handled = false;
+            if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
+            }
+            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
+            }
+
+            if !link_was_handled {
+                log!("Opening URL \"{}\"", url);
+                if let Err(e) = robius_open::Uri::new(&url).open() {
+                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
+                }
             }
             true
         }
-        else if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            log!("Opening URL \"{}\"", url);
-            if let Err(e) = robius_open::Uri::new(&url).open() {
-                error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                enqueue_popup_notification(format!("Could not open URL: {url}"));
+        else if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
+            let link_was_handled = handle_matrix_link(&matrix_id, &via);
+            if !link_was_handled {
+                log!("Opening URL \"{}\"", url);
+                if let Err(e) = robius_open::Uri::new(&url).open() {
+                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
+                }
             }
             true
         }

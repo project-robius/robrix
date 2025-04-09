@@ -162,9 +162,12 @@ live_design! {
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RobrixHtmlLinkAction{
     ClickedMatrixLink {
+        /// The URL of the link, which is only temporarily needed here
+        /// because we don't fully handle MatrixId links directly in-app yet.
+        url: String,
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>,
-        key_modifiers: KeyModifiers
+        key_modifiers: KeyModifiers,
     },
     None,
 }
@@ -234,7 +237,7 @@ impl RobrixHtmlLink {
     #[allow(unused)]
     fn draw_matrix_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
         if let Some(mut pill) = self.matrix_link_pill(id!(matrix_link)).borrow_mut() {
-            pill.populate_pill(cx, matrix_id, via);
+            pill.populate_pill(cx, self.url.clone(), matrix_id, via);
         }
         self.view(id!(matrix_link_view)).set_visible(cx, true);
         self.view(id!(html_link_view)).set_visible(cx, false);
@@ -271,6 +274,7 @@ struct MatrixLinkPill {
     #[rust] matrix_id: Option<MatrixId>,
     #[rust] via: Vec<OwnedServerName>,
     #[rust] state: MatrixLinkPillState,
+    #[rust] url: String,
 }
 
 impl Widget for MatrixLinkPill {
@@ -301,6 +305,7 @@ impl Widget for MatrixLinkPill {
                             matrix_id,
                             via: self.via.clone(),
                             key_modifiers: fe.modifiers,
+                            url: self.url.clone(),
                         }
                     );
                 }
@@ -323,7 +328,8 @@ impl Widget for MatrixLinkPill {
 
 impl MatrixLinkPill {
     /// Populates this pill's info based on the given Matrix ID and via servers.
-    fn populate_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+    fn populate_pill(&mut self, cx: &mut Cx, url: String, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+        self.url = url;
         self.matrix_id = Some(matrix_id.clone());
         self.via = via.to_vec();
 
@@ -344,11 +350,11 @@ impl MatrixLinkPill {
             ) {
                 Some((name, avatar)) => {
                     self.set_text(cx, &name);
-                    self.set_avatar(cx, avatar.uri().cloned());
+                    self.populate_avatar(cx, avatar.uri().cloned());
                 }
                 None => {
                     self.set_text(cx, user_id.as_ref());
-                    self.set_avatar(cx, None);
+                    self.populate_avatar(cx, None);
                 }
             }
             return;
@@ -357,8 +363,8 @@ impl MatrixLinkPill {
         // Handle room ID or alias
         match &self.state {
             MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
-                self.label(id!(title)).set_text(cx, &name);
-                self.set_avatar(cx, avatar_url.clone());
+                self.label(id!(title)).set_text(cx, name);
+                self.populate_avatar(cx, avatar_url.clone());
                 return;
             }
             MatrixLinkPillState::None => {
@@ -377,10 +383,10 @@ impl MatrixLinkPill {
             MatrixId::Event(room_or_alias, _) => self.set_text(cx, &format!("Message in {}", room_or_alias.as_str())),
             _ => { }
         }
-        self.set_avatar(cx, None);
+        self.populate_avatar(cx, None);
     }
 
-    fn set_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
+    fn populate_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
         let avatar_ref = self.avatar(id!(avatar));
         if let Some(avatar_url) = avatar_url {
             if let AvatarCacheEntry::Loaded(data) = avatar_cache::get_or_fetch_avatar(cx, avatar_url) {
