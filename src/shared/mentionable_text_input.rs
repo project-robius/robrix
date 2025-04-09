@@ -26,18 +26,21 @@ live_design! {
     use crate::shared::avatar::Avatar;
     use crate::shared::helpers::FillerX;
 
+    pub FOCUS_HOVER_COLOR = #eaecf0
+    pub KEYBOARD_FOCUS_OR_COLOR_HOVER = #1C274C
+
     // Template for user list items in the mention dropdown
     UserListItem = <View> {
         width: Fill,
         height: Fit,
-        padding: {left: 8., right: 8., top: 4., bottom: 4.}
+        padding: {left: 8, right: 8, top: 4, bottom: 4}
         show_bg: true
         cursor: Hand
         draw_bg: {
             color: #fff,
             uniform border_radius: 6.0,
             instance hover: 0.0,
-            instance selected: 0.0
+            instance selected: 0.0,
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -45,10 +48,11 @@ live_design! {
                 sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
 
                 if self.selected > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_color_hover)
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
                 } else if self.hover > 0.0 {
-                    sdf.fill(KEYBOARD_FOCUS_OR_color_hover)
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
                 } else {
+                    // Default state
                     sdf.fill(self.color)
                 }
                 return sdf.result
@@ -92,16 +96,14 @@ live_design! {
         }
     }
 
-    pub FOCUS_HOVER_COLOR = #eaecf0
-
-    pub MentionableTextInput = {{MentionableTextInput}} {
+    pub MentionableTextInput = {{MentionableTextInput}}<CommandTextInput> {
         width: Fill,
         height: Fit
         trigger: "@"
         inline_search: true
 
         color_focus: (FOCUS_HOVER_COLOR),
-        color_hover: (FOCUS_HOVER_COLOR)
+        color_hover: (FOCUS_HOVER_COLOR),
 
         popup = {
             spacing: 0.0
@@ -228,7 +230,7 @@ pub struct MentionableTextInput {
     #[rust] current_mention_start_index: Option<usize>,
     /// The set of users that were mentioned (at one point) in this text input.
     /// Due to characters being deleted/removed, this list is a *superset*
-    /// of possible users who may have been mentioned. 
+    /// of possible users who may have been mentioned.
     /// All of these mentions may not exist in the final text input content;
     /// this is just a list of users to search the final sent message for
     /// when adding in new mentions.
@@ -516,6 +518,7 @@ impl MentionableTextInput {
     fn close_mention_popup(&mut self, cx: &mut Cx) {
         self.current_mention_start_index = None;
         self.is_searching = false;
+
 
         self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
         self.cmd_text_input.request_text_input_focus();
