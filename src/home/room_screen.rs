@@ -27,7 +27,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageAction, TextOrImageRef, TextOrImageWidgetRefExt, TimelineImageInfo}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -3535,6 +3535,11 @@ fn populate_image_message_content(
 
         match media_cache.try_get_media_or_fetch(timeline_mxc_uri, insert_into_cache) {
             MediaCacheEntry::Loaded(timeline_image_data) => {
+                let timeline_image_info = TimelineImageInfo {
+                    timeline_image_data: timeline_image_data.clone(),
+                    original_mxc_uri: original_mxc_uri.clone()
+                };
+                text_or_image_ref.set_status_to_image(timeline_image_info);
                 let show_image_result = text_or_image_ref.show_image(cx, |cx, img| {
                     utils::load_png_or_jpg(&img, cx, &timeline_image_data)
                         .map(|()| img.size_in_pixels(cx).unwrap_or_default())
@@ -3544,9 +3549,6 @@ fn populate_image_message_content(
                     error!("{err_str}");
                     text_or_image_ref.show_text(cx, &err_str);
                 }
-
-                text_or_image_ref.set_original_mxc_uri_and_timeline_image_data(original_mxc_uri, timeline_image_data.clone());
-
                 // We're done drawing the image, so mark it as fully drawn.
                 fully_drawn = true;
             }

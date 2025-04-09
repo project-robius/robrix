@@ -52,8 +52,8 @@ pub enum TextOrImageAction {
     None,
 }
 
-#[derive(Clone)]
-pub struct ImageValue {
+#[derive(Debug, Clone)]
+pub struct TimelineImageInfo {
     pub original_mxc_uri: OwnedMxcUri,
     pub timeline_image_data: Arc<[u8]>,
 }
@@ -68,13 +68,12 @@ pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
-    #[rust] image_value: Option<ImageValue>,
 }
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // We handle hit events if the status is `Image`.
-        if let TextOrImageStatus::Image = self.status {
+        if let TextOrImageStatus::Image(ref timeline_image_info) = self.status {
             let image_area = self.view.image(id!(image_view.image)).area();
             match event.hits(cx, image_area) {
                 Hit::FingerDown(_) => {
@@ -86,9 +85,7 @@ impl Widget for TextOrImage {
                     // If `image_value` is `None`, it can tell that the image has not been fetched,
                     // user actually clicks the blurhash,
                     // so we do nothing this condition.
-                    if let Some(image_value) = self.image_value.as_ref() {
-                        cx.action(TextOrImageAction::Click(image_value.original_mxc_uri.clone()));
-                    }
+                    cx.action(TextOrImageAction::Click(timeline_image_info.original_mxc_uri.clone()));
                 }
                 _ => { },
             }
@@ -129,7 +126,6 @@ impl TextOrImage {
         let image_ref = self.view.image(id!(image_view.image));
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
-                self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
                 self.view(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
@@ -143,8 +139,12 @@ impl TextOrImage {
     }
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
-    fn status(&self) -> TextOrImageStatus {
-        self.status
+    fn get_status(&self) -> &TextOrImageStatus {
+        &self.status
+    }
+
+    pub fn set_status_to_image(&mut self, timeline_image_info: TimelineImageInfo) {
+        self.status = TextOrImageStatus::Image(timeline_image_info)
     }
 }
 
@@ -168,24 +168,23 @@ impl TextOrImageRef {
     }
 
     /// See [TextOrImage::status()].
-    pub fn status(&self) -> TextOrImageStatus {
+    pub fn get_status(&self) -> TextOrImageStatus {
         if let Some(inner) = self.borrow() {
-            inner.status()
+            inner.get_status().clone()
         } else {
             TextOrImageStatus::Text
         }
     }
 
-    pub fn set_original_mxc_uri_and_timeline_image_data(&self, original_mxc_uri: &OwnedMxcUri, timeline_image_data: Arc<[u8]>) {
+    pub fn set_status_to_image(&self, timeline_image_info: TimelineImageInfo) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.image_value= Some(ImageValue { original_mxc_uri: original_mxc_uri.clone(), timeline_image_data});
+        inner.set_status_to_image(timeline_image_info);
     }
 }
 
 /// Whether a `TextOrImage` instance is currently displaying text or an image.
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Debug, Default, Clone)]
 pub enum TextOrImageStatus {
-    #[default]
-    Text,
-    Image,
+    #[default] Text,
+    Image(TimelineImageInfo),
 }
