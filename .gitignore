@@ -5,4 +5,8 @@
 
 .vscode
 .DS_Store
+.readit
+.tags
+tags
+.tag
 CLAUDE.md

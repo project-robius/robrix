@@ -215,15 +215,18 @@ pub fn text_preview_of_message(
             text.formatted
                 .as_ref()
                 .and_then(|fb|
-                    (fb.format == MessageFormat::Html).then(||
-                        utils::linkify(
+                    (fb.format == MessageFormat::Html).then(|| {
+                        let (linkified_text, _) = utils::linkify(
                             utils::trim_start_html_whitespace(&fb.body),
                             true,
-                        )
-                        .to_string()
-                    )
+                        );
+                        linkified_text.to_string()
+                    })
                 )
-                .unwrap_or_else(|| utils::linkify(&text.body, false).to_string())
+                .unwrap_or_else(|| {
+                    let (linkified_text, _) = utils::linkify(&text.body, false);
+                    linkified_text.to_string()
+                })
         }
         MessageType::VerificationRequest(verification) => format!(
             "[Verification Request] <i>to user {}</i>",
