@@ -469,10 +469,11 @@ impl Widget for RoomsList {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
                             if should_display {
-                                self.displayed_rooms.push(room_id);
+                                self.displayed_rooms.push(room_id.clone());
                             }
                         }
                         self.update_status_rooms_count();
+                        cx.action(RoomsPanelRestoreAction::Success(room_id));
                         if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
                             cx.action(RoomsPanelRestoreAction::AllRoomsLoaded);
                         }

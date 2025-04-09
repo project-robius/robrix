@@ -1038,8 +1038,12 @@ impl Widget for RoomScreen {
                 // Handle actions related to restoring the previously-saved state of rooms.
                 match action.downcast_ref() {
                     Some(RoomsPanelRestoreAction::Success(room_id)) => {
-                        if self.room_id.as_ref().is_some_and(|r| r == room_id) {
+                        if self.room_id.as_ref().is_some_and(|r| r == room_id) {                            
                             self.set_restore_status(cx, RoomsPanelRestoreAction::Success(room_id.clone()));
+                            // Reset room_id before displaying room.
+                            self.room_id = None;
+                            self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
+                            return;
                         }
                     }
                     Some(RoomsPanelRestoreAction::AllRoomsLoaded) => {
@@ -1048,7 +1052,7 @@ impl Widget for RoomScreen {
                     _ => {}
                 }
                 // Handle the highlight animation.
-                let Some(tl) = self.tl_state.as_mut() else { return };
+                let Some(tl) = self.tl_state.as_mut() else { continue };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
                     if portal_list.smooth_scroll_reached(actions) {
                         cx.widget_action(
@@ -2291,7 +2295,6 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
-                println!("RoomsPanelRestoreAction::Pending {}", room_id);
                 self.set_restore_status(cx, RoomsPanelRestoreAction::Pending(room_id.clone()));
                 return;
             };
@@ -2483,11 +2486,8 @@ impl RoomScreen {
 
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
     pub fn set_restore_status(&mut self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
-        println!("self.restore_status {:?} {:?}", self.restore_status, self.room_name );
         match &status {
-            RoomsPanelRestoreAction::Pending(room_id) => {
-                // Set this RoomScreen's room_id such that it can handle a `RoomsPanelRestoreAction::Success` action.
-                self.room_id = Some(room_id.clone());
+            RoomsPanelRestoreAction::Pending(_room_id) => {
                 self.view
                     .label(id!(restore_status_label))
                     .set_text(cx, "[Placeholder for Spinner]");
