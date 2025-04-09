@@ -95,7 +95,7 @@ impl MatchEvent for AudioController {
                             right[i] = right_i16 as f32 / i16::MAX as f32;
                             pos += 4;
                             i += 1;
-                            *selected_mg = Selected::Playing(uid, pos + 4);
+                            *selected_mg = Selected::Playing(uid, pos);
                         }
                     }
                     (2, 24) => {
@@ -111,7 +111,7 @@ impl MatchEvent for AudioController {
                                 right[i] = right_i32 as f32 / i32::MAX as f32;
                                 pos += 6;
                                 i += 1;
-                                *selected_mg = Selected::Playing(uid, pos + 6);
+                                *selected_mg = Selected::Playing(uid, pos);
                             }
                     }
                     (2, 32) => {
@@ -127,7 +127,7 @@ impl MatchEvent for AudioController {
                                 right[i] = right_i32 as f32 / i32::MAX as f32;
                                 pos += 8;
                                 i += 1;
-                                *selected_mg = Selected::Playing(uid, pos + 8);
+                                *selected_mg = Selected::Playing(uid, pos);
                             }
                     }
                     _ => { }
