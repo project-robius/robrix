@@ -418,9 +418,19 @@ impl App {
     }
 }
 
+/// Application-wide state that is needed across multiple widgets.
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    /// Whether all known rooms have been loaded from the server.
+    ///
+    /// This is necessary for two reasons:
+    /// 1. If a RoomScreen is restored *after* all known rooms have been loaded,
+    ///    it should show the room's timeline and hide its `Pending` message.
+    /// 2. When changing from the desktop to mobile view, we want to ensure that
+    ///    all newly-restored rooms that were loaded in the background are properly displayed. 
+    pub all_known_rooms_loaded: bool,
+    /// Whether a user is currently logged in.
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,

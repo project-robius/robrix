@@ -476,6 +476,8 @@ impl Widget for RoomsList {
                         cx.action(RoomsPanelRestoreAction::Success(room_id));
                         if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
                             cx.action(RoomsPanelRestoreAction::AllRoomsLoaded);
+                            let app_state = scope.data.get_mut::<AppState>().unwrap();
+                            app_state.all_known_rooms_loaded = true;
                         }
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
