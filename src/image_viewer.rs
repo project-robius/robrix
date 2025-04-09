@@ -59,12 +59,13 @@ pub struct ImageViewer {
     view: View,
 }
 
+/// Actions handled by the `ImageViewer` widget.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum ImageViewerAction {
-    /// Show the ImageViewer with the given image data.
-    Show(Arc<[u8]>),
-    /// Distinct it from `Show` action to avoid image view show up automatically when closing quickly.
-    ReplaceImage(Arc<[u8]>),
+    /// Make the ImageViewer widget visible.
+    Show,
+    /// Set the image being displayed by the ImageViewer.
+    SetImage(Arc<[u8]>),
     None,
 }
 
@@ -86,14 +87,11 @@ impl MatchEvent for ImageViewer {
 
         for action in actions {
             match action.downcast_ref::<ImageViewerAction>() {
-                Some(ImageViewerAction::Show(data)) => {
+                Some(ImageViewerAction::Show) => {
                     self.open(cx);
-                    self.load_with_data(cx, data);
                 }
-                Some(ImageViewerAction::ReplaceImage(data)) => {
-                    if self.visible {
-                        self.load_with_data(cx, data);
-                    }
+                Some(ImageViewerAction::SetImage(data)) => {
+                    self.load_with_data(cx, data);
                 }
                 _ => {}
             }

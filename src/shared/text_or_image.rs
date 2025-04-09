@@ -81,17 +81,16 @@ impl Widget for TextOrImage {
                     cx.set_key_focus(image_area);
                 }
                 Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
-                        // We run the check to see if the original image was already fetched or not.
-                        //
-                        // If `image_value` is `None`, it can tell that the image has not been fetched,
-                        // user actually clicks the blurhash,
-                        // so we do nothing this condition.
-                        if let Some(image_value) = self.image_value.as_ref() {
-                            Cx::post_action(TextOrImageAction::Click(image_value.original_mxc_uri.clone()));
-                        }
+                    // We run the check to see if the original image was already fetched or not.
+                    //
+                    // If `image_value` is `None`, it can tell that the image has not been fetched,
+                    // user actually clicks the blurhash,
+                    // so we do nothing this condition.
+                    if let Some(image_value) = self.image_value.as_ref() {
+                        Cx::post_action(TextOrImageAction::Click(image_value.original_mxc_uri.clone()));
                     }
                 }
-                _ => (),
+                _ => { },
             }
         }
         self.view.handle_event(cx, event, scope);
