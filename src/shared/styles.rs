@@ -97,9 +97,7 @@ live_design! {
 
     pub COLOR_TEXT_IDLE = #d8d8d8
     pub COLOR_TEXT = #1C274C
-
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
-
 
     // A text input widget styled for Robrix.
     pub RobrixTextInput = <TextInput> {
