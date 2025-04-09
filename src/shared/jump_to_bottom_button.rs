@@ -56,17 +56,17 @@ live_design! {
                     show_bg: true,
                     draw_bg: {
                         color: (COLOR_UNREAD_MESSAGE_BADGE)
-                        instance radius: 4.0
-                        // Adjust this border_width to larger value to make oval smaller 
-                        instance border_width: 2.0
+                        instance border_radius: 4.0
+                        // Adjust this border_size to larger value to make oval smaller 
+                        instance border_size: 2.0
                         fn pixel(self) -> vec4 {
                             let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                             sdf.box(
-                                self.border_width,
-                                self.border_width,
-                                self.rect_size.x - (self.border_width * 2.0),
-                                self.rect_size.y - (self.border_width * 2.0),
-                                max(1.0, self.radius)
+                                self.border_size,
+                                self.border_size,
+                                self.rect_size.x - (self.border_size * 2.0),
+                                self.rect_size.y - (self.border_size * 2.0),
+                                max(1.0, self.border_radius)
                             )
                             sdf.fill_keep(self.color)
                             return sdf.result;
@@ -155,7 +155,7 @@ impl JumpToBottomButton {
                 );
                 self.view(id!(unread_message_badge.green_rounded_label)).apply_over(cx, live!{
                     draw_bg: {
-                        border_width: (border_size),
+                        border_size: (border_size),
                     }
                 });
             }
