@@ -71,6 +71,8 @@ pub enum RoomInputBarAction {
     UserMentioned(String),
     /// Room members data has been updated
     RoomMembersUpdated(OwnedRoomId, Arc<Vec<RoomMember>>),
+    /// Power levels for the room have been updated
+    PowerLevelsUpdated(OwnedRoomId, bool),
     /// Default empty action
     None,
 }
@@ -135,13 +137,22 @@ impl Widget for RoomInputBar {
                     log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
 
                     if let Some(update_action) = widget_action.downcast_ref::<RoomInputBarAction>() {
-                        if let RoomInputBarAction::RoomMembersUpdated(room_id, members) = update_action
-                        {
-                            log!(
-                                "RoomInputBar received RoomInputBarAction RoomMembersUpdated action for room {}",
-                                room_id
-                            );
-                            self.handle_members_updated(members.clone());
+                        match update_action {
+                            RoomInputBarAction::RoomMembersUpdated(room_id, members) => {
+                                log!(
+                                    "RoomInputBar received RoomInputBarAction RoomMembersUpdated action for room {}",
+                                    room_id
+                                );
+                                self.handle_members_updated(members.clone());
+                            },
+                            RoomInputBarAction::PowerLevelsUpdated(room_id, can_notify_room) => {
+                                log!(
+                                    "RoomInputBar received RoomInputBarAction PowerLevelsUpdated action for room {}, can_notify_room={}",
+                                    room_id, can_notify_room
+                                );
+                                self.handle_power_levels_updated(*can_notify_room);
+                            },
+                            _ => {}
                         }
                         continue;
                     }
@@ -221,11 +232,16 @@ impl RoomInputBar {
         self.member_subscription =
             Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
 
-        // Request data after subscription is confirmed
+        // Request room members data
         submit_async_request(MatrixRequest::GetRoomMembers {
-            room_id,
+            room_id: room_id.clone(),
             memberships: matrix_sdk::RoomMemberships::JOIN,
             local_only: false,
+        });
+        
+        // Request power levels data to determine if @room mentions are allowed
+        submit_async_request(MatrixRequest::GetRoomPowerLevels {
+            room_id,
         });
     }
 
@@ -239,6 +255,24 @@ impl RoomInputBar {
                         members.len(), current_room_id);
                 // Pass data to MentionableTextInput
                 message_input.set_room_members(members);
+            }
+        }
+    }
+    
+    /// Handle power levels update event
+    fn handle_power_levels_updated(&mut self, can_notify_room: bool) {
+        if let Some(current_room_id) = &self.room_id {
+            let message_input = self.view.mentionable_text_input(id!(message_input));
+            
+            if message_input.get_room_id().as_ref() == Some(current_room_id) {
+                log!("RoomInputBar: Updating power levels to MentionableTextInput (Room {}, can_notify_room: {})",
+                        current_room_id, can_notify_room);
+                // Pass power level data to MentionableTextInput
+                message_input.set_can_notify_room(can_notify_room);
+                
+                // Log the current setting to verify it worked
+                let actual_setting = message_input.can_notify_room();
+                log!("After update: mentionable_text_input.can_notify_room = {}", actual_setting);
             }
         }
     }
