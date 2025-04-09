@@ -3700,7 +3700,6 @@ fn populate_audio_message_content(
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
                 (MediaCacheEntry::Loaded(audio_data), _) => {
-                    log!("populating time data: {:?}", &audio_data[10000..15000]);
                     parse_wav(&audio_data).inspect(|(channels, bit_depth)|{
                         insert_new_audio(audio_message_interface_uid, audio_data, channels, bit_depth);
                     });
@@ -3709,7 +3708,6 @@ fn populate_audio_message_content(
                 },
                 (MediaCacheEntry::Failed, _) => {
                     fully_drawn = true;
-                    audio_message_interface.mark_fully_fetched(cx);
                     // todo!()
                 }
                 _ => { }
