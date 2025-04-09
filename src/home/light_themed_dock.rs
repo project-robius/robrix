@@ -8,7 +8,7 @@ live_design! {
     use crate::shared::styles::*;
 
     pub Splitter = <SplitterBase> {
-        draw_splitter: {
+        draw_bg: {
             uniform border_radius: 1.0
             uniform splitter_pad: 1.0
             uniform splitter_grabber: 110.0
@@ -41,15 +41,15 @@ live_design! {
                 return sdf.fill_keep(mix(
                     THEME_COLOR_D_HIDDEN,
                     mix(
-                        THEME_COLOR_CTRL_SCROLLBAR_HOVER,
-                        THEME_COLOR_CTRL_SCROLLBAR_HOVER * 1.2,
+                        THEME_COLOR_SCROLLBAR_HOVER,
+                        THEME_COLOR_SCROLLBAR_HOVER * 1.2,
                         self.down
                     ),
                     self.hover
                 ));
             }
         }
-        split_bar_size: (THEME_SPLITTER_SIZE)
+        size: (THEME_SPLITTER_SIZE)
         min_horizontal: (THEME_SPLITTER_MIN_HORIZONTAL)
         max_horizontal: (THEME_SPLITTER_MAX_HORIZONTAL)
         min_vertical: (THEME_SPLITTER_MIN_VERTICAL)
@@ -61,7 +61,7 @@ live_design! {
                 off = {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_splitter: {down: 0.0, hover: 0.0}
+                        draw_bg: {down: 0.0, hover: 0.0}
                     }
                 }
 
@@ -71,7 +71,7 @@ live_design! {
                         state_down: Forward {duration: 0.01}
                     }
                     apply: {
-                        draw_splitter: {
+                        draw_bg: {
                             down: 0.0,
                             hover: [{time: 0.0, value: 1.0}],
                         }
@@ -81,7 +81,7 @@ live_design! {
                 drag = {
                     from: { all: Forward { duration: 0.1 }}
                     apply: {
-                        draw_splitter: {
+                        draw_bg: {
                             down: [{time: 0.0, value: 1.0}],
                             hover: 1.0,
                         }
@@ -157,7 +157,7 @@ live_design! {
                         #xf, // THEME_COLOR_TEXT_ACTIVE,
                         self.active
                     ),
-                    THEME_COLOR_TEXT_HOVER,
+                    THEME_COLOR_OUTSET_HOVER,
                     self.hover
                 )
             }
@@ -249,7 +249,7 @@ live_design! {
             show_scroll_x: true
             show_scroll_y: false
             scroll_bar_x: {
-                draw_bg: {bar_width: 3.0}
+                draw_bg: {size: 3.0}
                 bar_size: 4
                 use_vertical_finger_scroll: true
             }
@@ -278,7 +278,6 @@ live_design! {
                 );
 
                 sdf.subtract()
-                // sdf.fill(THEME_COLOR_BG_APP)
                 sdf.fill(COLOR_SECONDARY)
                 return sdf.result
             }
