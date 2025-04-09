@@ -66,11 +66,10 @@ impl MatchEvent for AudioPlayer {
     fn handle_startup(&mut self, cx: &mut Cx) {
         let audio = self.audio.clone();
         let selected = self.selected.clone();
-        let mut pos = 44;
         cx.audio_output(0, move |_audio_info, output_buffer|{
             let mut selected_mg = selected.lock().unwrap();
             let audio_mg = audio.lock().unwrap();
-            if let Selected::Playing(uid, _) = selected_mg.clone() {
+            if let Selected::Playing(uid, mut pos) = selected_mg.clone() {
                 let audio = audio_mg.clone();
                 match (audio.channels, audio.bit_depth) {
                     (2, 16) => {
@@ -84,9 +83,9 @@ impl MatchEvent for AudioPlayer {
 
                             left[i] = left_i16 as f32 / i16::MAX as f32;
                             right[i] = right_i16 as f32 / i16::MAX as f32;
-                            *selected_mg = Selected::Playing(uid, pos + 4);
                             pos += 4;
                             i += 1;
+                            *selected_mg = Selected::Playing(uid, pos + 4);
                         }
                     }
                     (2, 24) => {
@@ -100,9 +99,25 @@ impl MatchEvent for AudioPlayer {
 
                                 left[i] = left_i32 as f32 / i32::MAX as f32;
                                 right[i] = right_i32 as f32 / i32::MAX as f32;
-                                *selected_mg = Selected::Playing(uid, pos + 6);
                                 pos += 6;
                                 i += 1;
+                                *selected_mg = Selected::Playing(uid, pos + 6);
+                            }
+                    }
+                    (2, 32) => {
+                        // stereo 24bit
+                        output_buffer.zero();
+                            let (left, right) = output_buffer.stereo_mut();
+                            let mut i = 0;
+                            while i < left.len() {
+                                let left_i32 = i32::from_le_bytes([audio.data[pos], audio.data[pos + 1], audio.data[pos + 2], audio.data[pos + 3]]);
+                                let right_i32 = i32::from_le_bytes([audio.data[pos + 4], audio.data[pos + 5], audio.data[pos + 6], audio.data[pos + 7]]);
+
+                                left[i] = left_i32 as f32 / i32::MAX as f32;
+                                right[i] = right_i32 as f32 / i32::MAX as f32;
+                                pos += 8;
+                                i += 1;
+                                *selected_mg = Selected::Playing(uid, pos + 8);
                             }
                     }
                     _ => { }
@@ -127,23 +142,29 @@ impl MatchEvent for AudioPlayer {
                     match selected {
                         Selected::Playing(current_uid, current_pos) => {
                             if &current_uid != new_uid {
-                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                                if let Some((_old_uid, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
                                     *old_pos.lock().unwrap() = current_pos;
                                 }
-                                if let Some((audio, _)) = AUDIO_SET.read().unwrap().get(new_uid) {
+                                if let Some((audio, new_pos)) = AUDIO_SET.read().unwrap().get(new_uid) {
                                     *self.audio.lock().unwrap() = audio.clone();
-                                    *self.selected.lock().unwrap() = Selected::Playing(*new_uid, 44);
+                                    let new_pos = *new_pos.lock().unwrap();
+                                    *self.selected.lock().unwrap() = Selected::Playing(*new_uid, new_pos);
                                 }
                             }
                         }
                         Selected::Paused(current_uid, current_pos) => {
-                            if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get_mut(&current_uid) {
-                                *old_pos.lock().unwrap() = current_pos;
-                            }
+                            if &current_uid == new_uid {
+                                *self.selected.lock().unwrap() = Selected::Playing(*new_uid, current_pos);
+                            } else {
+                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get_mut(&current_uid) {
+                                    *old_pos.lock().unwrap() = current_pos;
+                                }
 
-                            if let Some((audio, _)) = AUDIO_SET.read().unwrap().get(new_uid) {
-                                *self.audio.lock().unwrap() = audio.clone();
-                                *self.selected.lock().unwrap() = Selected::Playing(*new_uid, 44);
+                                if let Some((audio, new_pos)) = AUDIO_SET.read().unwrap().get(new_uid) {
+                                    *self.audio.lock().unwrap() = audio.clone();
+                                    let new_pos = *new_pos.lock().unwrap();
+                                    *self.selected.lock().unwrap() = Selected::Playing(*new_uid, new_pos);
+                                }
                             }
                         }
                         Selected::None => {
