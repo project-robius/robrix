@@ -1,7 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
 
@@ -169,13 +169,6 @@ pub enum RobrixHtmlLinkAction{
     None,
 }
 
-#[derive(Debug, Clone, Default)]
-pub enum RobrixHtmlLinkType {
-    Matrix,
-    #[default]
-    Normal,
-}
-
 /// A RobrixHtmlLink is either a regular `HtmlLink` (default) or a Matrix link.
 ///
 /// Matrix links are displayed using the [`MatrixLinkPill`] widget.
@@ -188,6 +181,7 @@ struct RobrixHtmlLink {
     /// when it parses and draws an Html `<a>` tag.
     #[live] pub text: ArcStringMut,
     /// The URL of the link.
+    /// This is set by the `after_apply()` logic below.
     #[live] pub url: String,
 }
 
@@ -213,14 +207,16 @@ impl Widget for RobrixHtmlLink {
         // TODO: this is currently disabled because Makepad doesn't yet support
         // partial vertical alignment of inline Html subwidgets with the surrounding text.
         // Once makepad supports that, we can re-enable this to show the Pill widgets.
+        /*
         if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
-            self.show_matrix_link(cx, matrix_to_uri.id(), matrix_to_uri.via());
+            self.draw_matrix_pill(cx, matrix_to_uri.id(), matrix_to_uri.via());
         } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
-            self.show_matrix_link(cx, matrix_uri.id(), matrix_uri.via());
+            self.draw_matrix_pill(cx, matrix_uri.id(), matrix_uri.via());
         } else {
-            self.show_html_link(cx, self.url.clone());
+            self.draw_html_link(cx);
         }
-        // self.show_html_link(cx, self.url.clone());
+        */
+        self.draw_html_link(cx);
         self.view.draw_walk(cx, scope, walk)
     }
 
@@ -235,36 +231,34 @@ impl Widget for RobrixHtmlLink {
 }
 
 impl RobrixHtmlLink {
-    fn show_matrix_link(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
-        self.matrix_link_pill(id!(matrix_link))
-            .set_info(cx, matrix_id, via);
+    #[allow(unused)]
+    fn draw_matrix_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+        if let Some(mut pill) = self.matrix_link_pill(id!(matrix_link)).borrow_mut() {
+            pill.populate_pill(cx, matrix_id, via);
+        }
         self.view(id!(matrix_link_view)).set_visible(cx, true);
         self.view(id!(html_link_view)).set_visible(cx, false);
-        self.redraw(cx);
     }
 
-    fn show_html_link(&mut self, cx: &mut Cx, url: String) {
+    /// Shows the inner plain HTML link and hides the Matrix link pill view.
+    fn draw_html_link(&mut self, cx: &mut Cx) {
         self.view(id!(html_link_view)).set_visible(cx, true);
         self.view(id!(matrix_link_view)).set_visible(cx, false);
         let mut html_link = self.html_link(id!(html_link));
-        html_link.set_url(&url);
+        html_link.set_url(&self.url);
         html_link.set_text(cx, self.text.as_ref());
-        self.redraw(cx);
-
     }
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub enum MatrixLinkPillInfo {
-    #[default]
-    None,
+#[derive(Clone, Debug, DefaultNone)]
+pub enum MatrixLinkPillState {
     Requested,
     Loaded {
         matrix_id: MatrixId,
         name: String,
         avatar_url: Option<OwnedMxcUri>,
     },
-    Failed,
+    None,
 }
 
 /// A pill-shaped widget that shows a Matrix link as an avatar and a title.
@@ -276,31 +270,28 @@ struct MatrixLinkPill {
 
     #[rust] matrix_id: Option<MatrixId>,
     #[rust] via: Vec<OwnedServerName>,
-
-    #[rust] status: MatrixLinkPillInfo,
+    #[rust] state: MatrixLinkPillState,
 }
 
 impl Widget for MatrixLinkPill {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let Some(MatrixLinkPillInfo::Loaded { matrix_id, name, avatar_url } ) = action.downcast_ref() {
-                    if let Some(raw_matrix_id) = &self.matrix_id {
-                        if raw_matrix_id == matrix_id {
-                            self.status = MatrixLinkPillInfo::Loaded {
-                                matrix_id: matrix_id.clone(),
-                                name: name.clone(),
-                                avatar_url: avatar_url.clone(),
-                            };
-                            self.redraw(cx);
-                        }
+                if let Some(loaded @ MatrixLinkPillState::Loaded { matrix_id, .. }) = action.downcast_ref() {
+                    if self.matrix_id.as_ref() == Some(matrix_id) {
+                        self.state = loaded.clone();
+                        self.redraw(cx);
                     }
                 }
             }
         }
 
-        let hit = event.hits_with_capture_overload(cx, self.area(), true);
-        if let Hit::FingerUp(fe) = hit {
+        // To catch updates Redraw upon a UI Signal in order to catch updates to a user profile.
+        if matches!(event, Event::Signal) && matches!(self.matrix_id, Some(MatrixId::User(_))) {
+            self.redraw(cx);
+        }
+
+        if let Hit::FingerUp(fe) = event.hits_with_capture_overload(cx, self.area(), true) {
             if fe.is_over && fe.is_primary_hit() && fe.was_tap() {
                 if let Some(matrix_id) = self.matrix_id.clone() {
                     cx.widget_action(
@@ -309,7 +300,7 @@ impl Widget for MatrixLinkPill {
                         RobrixHtmlLinkAction::ClickedMatrixLink {
                             matrix_id,
                             via: self.via.clone(),
-                            key_modifiers: fe.modifiers
+                            key_modifiers: fe.modifiers,
                         }
                     );
                 }
@@ -320,15 +311,23 @@ impl Widget for MatrixLinkPill {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
+
+    fn text(&self) -> String {
+        self.label(id!(title)).text()
+    }
+
+    fn set_text(&mut self, cx: &mut Cx, v: &str) {
+        self.label(id!(title)).set_text(cx, v);
+    }
 }
 
 impl MatrixLinkPill {
-    /// Sets this pill's internal info based on the given Matrix ID and via servers.
-    pub fn set_info(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
+    /// Populates this pill's info based on the given Matrix ID and via servers.
+    fn populate_pill(&mut self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
         self.matrix_id = Some(matrix_id.clone());
         self.via = via.to_vec();
 
-        // Handle user ID early
+        // Handle a user ID link by querying the user profile cache.
         if let MatrixId::User(user_id) = matrix_id {
             // Apply red background for current user
             if current_user_id().is_some_and(|u| &u == user_id) {
@@ -337,57 +336,48 @@ impl MatrixLinkPill {
                 });
             }
 
-            // Fetch profile
-            match user_profile_cache::with_user_profile(cx, user_id.clone(), true, |profile, _| {
-                (profile.displayable_name().to_owned(), profile.avatar_state.clone())
-            }) {
+            match user_profile_cache::with_user_profile(
+                cx,
+                user_id.clone(),
+                true,
+                |profile, _| { (profile.displayable_name().to_owned(), profile.avatar_state.clone()) }
+            ) {
                 Some((name, avatar)) => {
-                    self.set_name(cx, &name);
+                    self.set_text(cx, &name);
                     self.set_avatar(cx, avatar.uri().cloned());
                 }
                 None => {
-                    self.set_name(cx, user_id.as_ref());
+                    self.set_text(cx, user_id.as_ref());
                     self.set_avatar(cx, None);
                 }
             }
-
-            self.redraw(cx);
             return;
         }
 
         // Handle room ID or alias
-        match &self.status {
-            MatrixLinkPillInfo::None => {
+        match &self.state {
+            MatrixLinkPillState::Loaded { name, avatar_url, .. } => {
+                self.label(id!(title)).set_text(cx, &name);
+                self.set_avatar(cx, avatar_url.clone());
+                return;
+            }
+            MatrixLinkPillState::None => {
                 submit_async_request(MatrixRequest::GetMatrixRoomLinkPillInfo {
                     matrix_id: matrix_id.clone(),
                     via: via.to_vec(),
                 });
-                self.status = MatrixLinkPillInfo::Requested;
-                self.set_name(cx, "Loading...");
+                self.state = MatrixLinkPillState::Requested;
             }
-            MatrixLinkPillInfo::Requested => {
-                self.set_name(cx, "Loading...");
-            }
-            MatrixLinkPillInfo::Loaded { name, avatar_url, .. } => {
-                self.set_name(cx, name);
-                self.set_avatar(cx, avatar_url.clone());
-                self.redraw(cx);
-                return;
-            }
-            MatrixLinkPillInfo::Failed => {
-                self.set_name(cx, "Failed to load");
-            }
+            MatrixLinkPillState::Requested => { }
+        }
+        // While waiting for the async request to complete, show the matrix room ID/alias.
+        match matrix_id {
+            MatrixId::Room(room_id) => self.set_text(cx, room_id.as_str()),
+            MatrixId::RoomAlias(alias) => self.set_text(cx, alias.as_str()),
+            MatrixId::Event(room_or_alias, _) => self.set_text(cx, &format!("Message in {}", room_or_alias.as_str())),
+            _ => { }
         }
         self.set_avatar(cx, None);
-        self.redraw(cx);
-    }
-
-    fn name(&self) -> String {
-        self.label(id!(title)).text()
-    }
-
-    fn set_name(&self, cx: &mut Cx, name: &str) {
-        self.label(id!(title)).set_text(cx, name);
     }
 
     fn set_avatar(&self, cx: &mut Cx, avatar_url: Option<OwnedMxcUri>) {
@@ -405,19 +395,12 @@ impl MatrixLinkPill {
             }
         }
         // Show a text avatar if we couldn't load an image into the avatar.
-        avatar_ref.show_text(cx, None, self.name());
+        avatar_ref.show_text(cx, None, self.text());
     }
 
 }
 
 impl MatrixLinkPillRef {
-    /// See [`MatrixLinkPill::set_info()`].
-    pub fn set_info(&self, cx: &mut Cx, matrix_id: &MatrixId, via: &[OwnedServerName]) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_info(cx, matrix_id, via);
-        }
-    }
-
     pub fn get_matrix_id(&self) -> Option<MatrixId> {
         self.borrow().and_then(|inner| inner.matrix_id.clone())
     }

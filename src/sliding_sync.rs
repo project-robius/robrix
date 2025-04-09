@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{html_or_plaintext::MatrixLinkPillInfo, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -1026,15 +1026,15 @@ async fn async_worker(
                         }
                     };
                     if let Some(room_or_alias_id) = room_or_alias_id {
-                        if let Ok(preview) = client.get_room_preview(room_or_alias_id, via).await {
-                            Cx::post_action(MatrixLinkPillInfo::Loaded {
+                        match client.get_room_preview(room_or_alias_id, via).await {
+                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
                                 matrix_id: matrix_id.clone(),
                                 name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
                                 avatar_url: preview.avatar_url
-                            });
-                        } else {
-                            log!("Failed to get room link pill info for {room_or_alias_id:?}");
-                            Cx::post_action(MatrixLinkPillInfo::Failed);
+                            }),
+                            Err(_e) => {
+                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
+                            }
                         };
                     }
                 });
