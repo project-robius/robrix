@@ -87,7 +87,7 @@ impl Widget for TextOrImage {
                     // user actually clicks the blurhash,
                     // so we do nothing this condition.
                     if let Some(image_value) = self.image_value.as_ref() {
-                        Cx::post_action(TextOrImageAction::Click(image_value.original_mxc_uri.clone()));
+                        cx.action(TextOrImageAction::Click(image_value.original_mxc_uri.clone()));
                     }
                 }
                 _ => { },
