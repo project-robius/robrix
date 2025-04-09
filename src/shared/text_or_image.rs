@@ -104,7 +104,7 @@ impl TextOrImage {
     /// ## Arguments
     /// * `text`: the text that will be displayed in this `TextOrImage`, e.g.,
     ///   a message like "Loading..." or an error message.
-    fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
+    pub fn show_text<T: AsRef<str>>(&mut self, cx: &mut Cx, text: T) {
         self.view(id!(image_view)).set_visible(cx, false);
         self.view(id!(text_view)).set_visible(cx, true);
         self.view.label(id!(text_view.label)).set_text(cx, text.as_ref());
@@ -139,7 +139,7 @@ impl TextOrImage {
     }
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
-    fn get_status(&self) -> &TextOrImageStatus {
+    pub fn get_status(&self) -> &TextOrImageStatus {
         &self.status
     }
 
