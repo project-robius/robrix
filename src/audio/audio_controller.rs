@@ -1,7 +1,31 @@
+//! Audio controller, which just manages audio playback.
+//! In UI interaction, it is just a template.
+
 use std::{collections::HashMap, sync::{Arc, LazyLock, Mutex, RwLock}};
 use makepad_widgets::*;
 
-use crate::shared::audio_message_interface::AudioMessageInterfaceAction;
+use super::audio_message_ui::AudioMessageUIAction;
+
+live_design! {
+    use link::theme::*;
+    use link::shaders::*;
+    use link::widgets::*;
+
+    use crate::shared::styles::*;
+    use crate::shared::icon_button::*;
+
+    // width & height is 0 because it is just a template.
+    pub AudioController = {{AudioController}} {
+        width: 0., height: 0.,
+        visible: false,
+    }
+}
+
+#[derive(Debug, Clone, DefaultNone)]
+pub enum AudioControllerAction {
+    UiToPause(WidgetUid),
+    None,
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Audio {
@@ -16,20 +40,6 @@ pub static AUDIO_SET: LazyLock<RwLock<Audios>> = LazyLock::new(||{
     RwLock::new(HashMap::new())
 });
 
-live_design! {
-    use link::theme::*;
-    use link::shaders::*;
-    use link::widgets::*;
-
-    use crate::shared::styles::*;
-    use crate::shared::icon_button::*;
-
-    pub AudioPlayer = {{AudioPlayer}} {
-        width: 0., height: 0.,
-        visible: false,
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub enum Selected {
     Playing(WidgetUid, usize),
@@ -39,19 +49,19 @@ pub enum Selected {
 }
 
 #[derive(Live, LiveHook, Widget)]
-pub struct AudioPlayer {
+pub struct AudioController {
     #[deref] view: View,
     #[rust] audio: Arc<Mutex<Audio>>,
     #[rust] selected: Arc<Mutex<Selected>>,
 }
 
-impl Drop for AudioPlayer {
+impl Drop for AudioController {
     fn drop(&mut self) {
         // todo!()
     }
 }
 
-impl Widget for AudioPlayer {
+impl Widget for AudioController {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
@@ -62,7 +72,7 @@ impl Widget for AudioPlayer {
     }
 }
 
-impl MatchEvent for AudioPlayer {
+impl MatchEvent for AudioController {
     fn handle_startup(&mut self, cx: &mut Cx) {
         let audio = self.audio.clone();
         let selected = self.selected.clone();
@@ -134,14 +144,15 @@ impl MatchEvent for AudioPlayer {
     fn handle_audio_devices(&mut self, cx: &mut Cx, e: &AudioDevicesEvent) {
         cx.use_audio_outputs(&e.default_output())
     }
-    fn handle_actions(&mut self, _cx: &mut Cx, actions: &Actions) {
+    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
             match action.downcast_ref() {
-                Some(AudioMessageInterfaceAction::Play(new_uid)) => {
+                Some(AudioMessageUIAction::Play(new_uid)) => {
                     let selected =self.selected.clone().lock().unwrap().clone();
                     match selected {
                         Selected::Playing(current_uid, current_pos) => {
                             if &current_uid != new_uid {
+                                cx.action(AudioControllerAction::UiToPause(current_uid));
                                 if let Some((_old_uid, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
                                     *old_pos.lock().unwrap() = current_pos;
                                 }
@@ -175,7 +186,7 @@ impl MatchEvent for AudioPlayer {
                         }
                     }
                 }
-                Some(AudioMessageInterfaceAction::Pause(new_uid)) => {
+                Some(AudioMessageUIAction::Pause(new_uid)) => {
                     let selected =self.selected.clone().lock().unwrap().clone();
                     if let Selected::Playing(current_uid, current_pos) = selected {
                         if &current_uid == new_uid {
@@ -186,7 +197,7 @@ impl MatchEvent for AudioPlayer {
                         }
                     }
                 }
-                Some(AudioMessageInterfaceAction::Stop(new_uid)) => {
+                Some(AudioMessageUIAction::Stop(new_uid)) => {
                     let selected =self.selected.clone().lock().unwrap().clone();
                     match selected {
                         Selected::Playing(current_uid, _current_pos) => {

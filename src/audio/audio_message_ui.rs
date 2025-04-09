@@ -1,9 +1,10 @@
-//! A widget for controlling audio playback in timeline.
-//! We only implement the interface here.
-//! The true audio playback is in `src/audio_player.rs`
+//! Audio message in timeline.
+//! It just manages UI.
+//! Audio playback is in `audio_controller.rs`.
 
 use makepad_widgets::*;
 
+use super::audio_controller::AudioControllerAction;
 
 live_design! {
     use link::theme::*;
@@ -13,7 +14,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::icon_button::*;
 
-    pub AudioMessageInterface = {{AudioMessageInterface}} {
+    pub AudioMessageUI = {{AudioMessageUI}} {
         width: Fill, height: Fit,
         flow: Down,
 
@@ -88,7 +89,7 @@ live_design! {
 }
 
 #[derive(Debug, Clone, DefaultNone)]
-pub enum AudioMessageInterfaceAction {
+pub enum AudioMessageUIAction {
     Play(WidgetUid),
     Stop(WidgetUid),
     Pause(WidgetUid),
@@ -96,19 +97,19 @@ pub enum AudioMessageInterfaceAction {
 }
 
 #[derive(Live, Widget, LiveHook)]
-pub struct AudioMessageInterface {
+pub struct AudioMessageUI {
     #[deref] view: View,
     #[rust(false)] is_playing: bool,
 }
 
-impl Drop for AudioMessageInterface {
-    fn drop(&mut self) {
-        // todo!()
-    }
-}
+// impl Drop for AudioMessageUI {
+//     fn drop(&mut self) {
+//         // todo!()
+//     }
+// }
 
 
-impl Widget for AudioMessageInterface {
+impl Widget for AudioMessageUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.match_event(cx, event);
         self.view.handle_event(cx, event, scope);
@@ -119,30 +120,29 @@ impl Widget for AudioMessageInterface {
     }
 }
 
-impl MatchEvent for AudioMessageInterface {
+impl MatchEvent for AudioMessageUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         let button = self.view.button(id!(v.button));
         let stop_button = self.view.button(id!(v.stop_button));
 
         if button.clicked(actions) {
             let is_playing = if self.is_playing {
-                Cx::post_action(AudioMessageInterfaceAction::Pause(self.widget_uid()));
+                cx.action(AudioMessageUIAction::Pause(self.widget_uid()));
                 0.
             } else {
-                Cx::post_action(AudioMessageInterfaceAction::Play(self.widget_uid()));
+                cx.action(AudioMessageUIAction::Play(self.widget_uid()));
                 1.
             };
-
+            self.is_playing = !self.is_playing;
             button.apply_over(cx, live! {
                 draw_bg: {
                     playing: (is_playing)
                 }
             });
-            self.is_playing = !self.is_playing;
         }
 
         if stop_button.clicked(actions) {
-            Cx::post_action(AudioMessageInterfaceAction::Stop(self.widget_uid()));
+            cx.action(AudioMessageUIAction::Stop(self.widget_uid()));
             self.is_playing = false;
             button.apply_over(cx, live! {
                 draw_bg: {
@@ -150,17 +150,29 @@ impl MatchEvent for AudioMessageInterface {
                 }
             });
         }
+        for action in actions {
+            if let Some(AudioControllerAction::UiToPause(uid)) = action.downcast_ref() {
+                if *uid == self.widget_uid() {
+                    self.is_playing = false;
+                    button.apply_over(cx, live! {
+                        draw_bg: {
+                            playing: 0.
+                        }
+                    });
+                }
+            }
+        }
     }
 }
 
-impl AudioMessageInterface {
+impl AudioMessageUI {
     fn mark_fully_fetched(&mut self, cx: &mut Cx) {
         self.view(id!(fetching_data)).set_visible(cx, false);
         self.view(id!(v)).set_visible(cx, true);
     }
 }
 
-impl AudioMessageInterfaceRef {
+impl AudioMessageUIRef {
     pub fn mark_fully_fetched(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.mark_fully_fetched(cx);

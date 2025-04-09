@@ -21,11 +21,11 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    audio_player::{insert_new_audio, parse_wav}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    audio::{audio_controller::{insert_new_audio, parse_wav}, audio_message_ui::{AudioMessageUIRef, AudioMessageUIWidgetRefExt}}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        audio_message_interface::{AudioMessageInterfaceRef, AudioMessageInterfaceWidgetRefExt}, avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -53,7 +53,7 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
-    use crate::shared::audio_message_interface::AudioMessageInterface;
+    use crate::audio::audio_message_ui::AudioMessageUI;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
@@ -423,7 +423,7 @@ live_design! {
                 width: Fill,
                 height: Fit
                 padding: { left: 10.0 }
-                message = <AudioMessageInterface> {}
+                message = <AudioMessageUI> {}
                 v = <View> {
                     width: Fill,
                     height: Fit,
@@ -438,7 +438,7 @@ live_design! {
     CondensedAudioMessage = <CondensedMessage> {
         body = {
             content = {
-                message = <AudioMessageInterface> {}
+                message = <AudioMessageUI> {}
                 <View> {
                     width: Fill,
                     height: Fit
@@ -3295,7 +3295,7 @@ fn populate_message_view(
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
-                    &item.audio_message_interface(id!(content.message)),
+                    &item.audio_message_ui(id!(content.message)),
                     audio,
                     media_cache
                 );
@@ -3660,7 +3660,7 @@ fn populate_file_message_content(
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
     cx: &mut Cx,
-    audio_message_interface: &AudioMessageInterfaceRef,
+    audio_message_interface: &AudioMessageUIRef,
     audio: &AudioMessageEventContent,
     media_cache: &mut MediaCache
 ) -> bool {

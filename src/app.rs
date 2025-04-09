@@ -20,7 +20,7 @@ live_design! {
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-    use crate::audio_player::AudioPlayer;
+    use crate::audio::audio_controller::AudioController;
 
 
     APP_TAB_COLOR = #344054
@@ -127,7 +127,7 @@ live_design! {
                             <PopupList> {}
                         }
                     }
-                    audio_player = <AudioPlayer> {}
+                    audio_controller = <AudioController> {}
 
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
@@ -176,7 +176,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
-        crate::audio_player::live_design(cx);
+        crate::audio::live_design(cx);
     }
 }
 
