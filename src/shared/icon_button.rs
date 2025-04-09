@@ -14,7 +14,7 @@ live_design! {
     pub IconButton = <Button> {
         draw_text: {
             instance hover: 0.0
-            instance pressed: 0.0
+            instance down: 0.0
             text_style: {
                 font_size: 11.0
             }
@@ -26,7 +26,7 @@ live_design! {
                         self.hover
                     ),
                     (COLOR_BRAND_HOVER),
-                    self.pressed
+                    self.down
                 )
             }
         }
@@ -39,7 +39,7 @@ live_design! {
                         self.hover
                     ),
                     (COLOR_BRAND_HOVER),
-                    self.pressed
+                    self.down
                 )
             }
         }
@@ -67,9 +67,9 @@ live_design! {
         draw_bg: {
             instance color: (COLOR_PRIMARY)
             instance color_hover: #A
-            instance border_width: 0.0
+            instance border_size: 0.0
             instance border_color: #D0D5DD
-            instance radius: 3.0
+            instance border_radius: 3.0
 
             fn get_color(self) -> vec4 {
                 return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
@@ -78,15 +78,15 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.border_width,
-                    self.border_width,
-                    self.rect_size.x - (self.border_width * 2.0),
-                    self.rect_size.y - (self.border_width * 2.0),
-                    max(1.0, self.radius)
+                    self.border_size,
+                    self.border_size,
+                    self.rect_size.x - (self.border_size * 2.0),
+                    self.rect_size.y - (self.border_size * 2.0),
+                    max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.border_color, self.border_width)
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.border_color, self.border_size)
                 }
                 return sdf.result;
             }
