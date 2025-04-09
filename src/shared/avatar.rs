@@ -205,7 +205,7 @@ impl Avatar {
 
     /// Returns whether this avatar is currently displaying an image or text.
     pub fn status(&mut self) -> AvatarDisplayStatus {
-        if self.view(id!(img_view)).is_visible() {
+        if self.view(id!(img_view)).visible() {
             AvatarDisplayStatus::Image
         } else {
             AvatarDisplayStatus::Text
