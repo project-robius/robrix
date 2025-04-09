@@ -3688,12 +3688,11 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
-    audio_message_interface.label(id!(info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
+    audio_message_interface.label(id!(fetching_info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
 
     // match AUDIO_SET.read().unwrap().entry(audio_message_interface_uid.clone()) {
     //     Entry:
     // }
-
 
 
     match audio.source.clone() {

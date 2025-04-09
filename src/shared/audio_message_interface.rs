@@ -17,12 +17,25 @@ live_design! {
         width: Fill, height: Fit,
         flow: Down,
 
-        info = <Label> {
-            text: "[Fetching Audio Info...]"
+        fetching_info = <Label> {
+            text: "[Fetching audio info...]"
             draw_text: {
                 color: #0
                 text_style: {
                     font_size: 11.
+                }
+            }
+        }
+
+        fetching_data = <View> {
+            height: 35
+            <Label> {
+                text: "[Fetching audio data...]"
+                draw_text: {
+                    color: #0
+                    text_style: {
+                        font_size: 11.
+                    }
                 }
             }
         }
@@ -142,6 +155,7 @@ impl MatchEvent for AudioMessageInterface {
 
 impl AudioMessageInterface {
     fn mark_fully_fetched(&mut self, cx: &mut Cx) {
+        self.view(id!(fetching_data)).set_visible(cx, false);
         self.view(id!(v)).set_visible(cx, true);
     }
 }
