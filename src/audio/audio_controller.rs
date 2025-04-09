@@ -88,11 +88,7 @@ impl MatchEvent for AudioController {
                         let (left, right) = output_buffer.stereo_mut();
                         let mut i = 0;
                         while i < left.len() {
-                            // Ensure pos + 3 is within bounds before accessing audio.data
-                            if pos + 3 >= audio.data.len() {
-                                *selected_mg = Selected::None;
-                                break;
-                            }
+                            let left_i16 = i16::from_le_bytes([audio.data[pos], audio.data[pos + 1]]);
                             let right_i16 = i16::from_le_bytes([audio.data[pos + 2], audio.data[pos + 3]]);
 
                             left[i] = left_i16 as f32 / i16::MAX as f32;

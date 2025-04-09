@@ -3707,16 +3707,14 @@ fn populate_audio_message_content(
                 },
                 (MediaCacheEntry::Failed, _) => {
                     fully_drawn = true;
-                    // todo!()
                 }
                 _ => { }
             }
         }
         MediaSource::Encrypted(_e) => {
-            log::error!("Encrypted audio media is not supported.");
+            log!("Encrypted audio media is not supported.");
             audio_message_interface.label(id!(fetching_info)).set_text(cx, "Encrypted audio media is not supported.");
             fully_drawn = true;
-            audio_message_interface.mark_fully_fetched(cx);
         }
     }
     fully_drawn
