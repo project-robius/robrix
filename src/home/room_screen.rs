@@ -514,7 +514,6 @@ live_design! {
         }
     }
 
-
     // The view used for each day divider in a room's timeline.
     // The date text is centered between two horizontal lines.
     DateDivider = <View> {
@@ -1341,42 +1340,50 @@ impl Widget for RoomScreen {
                                     room_screen_widget_uid,
                                 )
                             }
-                            TimelineItemContent::RedactedMessage => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                &RedactedMessageEventMarker,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::MembershipChange(membership_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                membership_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::ProfileChange(profile_change) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                profile_change,
-                                item_drawn_status,
-                            ),
-                            TimelineItemContent::OtherState(other) => populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event_tl_item,
-                                other,
-                                item_drawn_status,
-                            ),
+                            TimelineItemContent::RedactedMessage => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    &RedactedMessageEventMarker,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::MembershipChange(membership_change) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    membership_change,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::ProfileChange(profile_change) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    profile_change,
+                                    item_drawn_status,
+                                )
+                            }
+                            TimelineItemContent::OtherState(other) => {
+                                populate_small_state_event(
+                                    cx,
+                                    list,
+                                    item_id,
+                                    room_id,
+                                    event_tl_item,
+                                    other,
+                                    item_drawn_status,
+                                )
+                            }
                             unhandled => {
                                 let item = list.item(cx, item_id, live_id!(SmallStateEvent));
                                 item.label(id!(content)).set_text(cx, &format!("[Unsupported] {:?}", unhandled));
