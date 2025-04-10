@@ -28,9 +28,9 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
-    app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::{RoomsPanelRestoreAction, WindowGeomState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, load_window_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -1282,7 +1282,7 @@ async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
-
+    handle_load_window_state();
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
@@ -1381,7 +1381,6 @@ async fn async_main_loop(
     let logged_in_user_id = client.user_id()
         .expect("BUG: client.user_id() returned None after successful login!");
     let status = format!("Logged in as {}.\n → Loading rooms...", logged_in_user_id);
-    // enqueue_popup_notification(status.clone());
     enqueue_rooms_list_update(RoomsListUpdate::Status { status });
 
     CLIENT.set(client.clone()).expect("BUG: CLIENT already set!");
@@ -1394,6 +1393,10 @@ async fn async_main_loop(
     let sync_service = SyncService::builder(client.clone())
         .build()
         .await?;
+
+    // Attempt to load the previously-saved rooms panel state.
+    handle_load_rooms_panel_state(logged_in_user_id.to_owned());
+
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();
@@ -1754,6 +1757,40 @@ fn handle_ignore_user_list_subscriber(client: Client) {
     });
 }
 
+fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
+    Handle::current().spawn(async move {
+        match load_rooms_panel_state(&user_id).await {
+            Ok(rooms_panel_state) => {
+                if !rooms_panel_state.open_rooms.is_empty()
+                    && !rooms_panel_state.dock_state.is_empty()
+                {
+                    log!("Loaded room panel state from app data directory. Restoring now...");
+                    Cx::post_action(RoomsPanelRestoreAction::Restore(rooms_panel_state));
+                }
+            }
+            Err(e) => {
+                enqueue_popup_notification(format!("Failed to restore previous dock state: {e}"));
+            }
+        }
+    });
+}
+
+fn handle_load_window_state() {
+    Handle::current().spawn(async move {
+        match load_window_state().await {
+            Ok(window_geom_state) => {
+                if window_geom_state != WindowGeomState::default() {
+                    Cx::post_action(RoomsPanelRestoreAction::RestoreWindow(window_geom_state));
+                }
+            }
+            Err(e) => {
+                enqueue_popup_notification(format!(
+                    "Failed to restore previous window geom state: {e}"
+                ));
+            }
+        }
+    });
+}
 
 fn handle_sync_service_state_subscriber(mut subscriber: Subscriber<sync_service::State>) {
     log!("Initial sync service state is {:?}", subscriber.get());

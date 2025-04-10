@@ -1,15 +1,19 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
-
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 use anyhow::{anyhow, bail};
-use makepad_widgets::{log, Cx};
+use makepad_widgets::{
+    event::WindowGeom, log, makepad_micro_serde::{DeRon, SerRon}, Cx, DockItem, LiveId
+};
 use matrix_sdk::{
-    authentication::matrix::MatrixSession, ruma::{OwnedUserId, UserId}, sliding_sync::VersionBuilder, Client
+    authentication::matrix::MatrixSession,
+    ruma::{OwnedUserId, UserId},
+    sliding_sync::VersionBuilder,
+    Client,
 };
 use serde::{Deserialize, Serialize};
-use tokio::fs;
+use tokio::{fs, io::{self, AsyncReadExt}};
 
-use crate::{app_data_dir, login::login_screen::LoginAction};
+use crate::{app::{RoomsPanelState, WindowGeomState}, app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,6 +63,12 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 }
 
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
+
+const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
+
+const ROOMS_PANEL_STATE_FILE_NAME: &str = "rooms_panel_state.json";
+
+const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
 /// Returns the user ID of the most recently-logged in user session.
 pub fn most_recent_user_id() -> Option<OwnedUserId> {
@@ -181,4 +191,79 @@ pub async fn save_session(
     // `cross_signing_bootstrap` example).
 
     Ok(())
+}
+
+/// Save the current display state of the room panel to persistent storage.
+pub fn save_room_panel(
+    rooms_panel_state: &RoomsPanelState,
+    user_id: &UserId,
+) -> anyhow::Result<()> {
+    std::fs::write(
+        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
+        rooms_panel_state.dock_state.serialize_ron(),
+    )?;
+    std::fs::write(
+        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
+        serde_json::to_string(&rooms_panel_state)?,
+    )?;
+    Ok(())
+}
+
+/// Save the current state of window geometry state to persistent storage.
+pub fn save_window_state(window_geom: &WindowGeom) -> anyhow::Result<()> {
+    let window_geom_state = WindowGeomState {
+        window_is_fullscreen: window_geom.is_fullscreen,
+        window_position: crate::utils::DVec2Wrapper(window_geom.position),
+        window_size: crate::utils::DVec2Wrapper(window_geom.inner_size),
+    };
+    std::fs::write(
+        app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
+        serde_json::to_string(&window_geom_state)?,
+    )?;
+    Ok(())
+}
+
+/// Loads the rooms panel's state from persistent storage.
+pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPanelState> {
+    let mut file = match tokio::fs::File::open(
+        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
+    )
+    .await
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
+        Err(e) => return Err(e.into()),
+    };
+    // Read the file contents into a String
+    let mut contents = String::with_capacity(file.metadata().await?.len() as usize);
+    file.read_to_string(&mut contents).await?;
+    let dock_state: HashMap<LiveId, DockItem> =
+        HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
+    let mut file = match tokio::fs::File::open(
+        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
+    )
+    .await
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
+        Err(e) => return Err(e.into()),
+    };
+    let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
+    file.read_to_end(&mut contents).await?;
+    let mut rooms_panel_state: RoomsPanelState = serde_json::from_slice(&contents)?;
+    rooms_panel_state.dock_state = dock_state;
+    Ok(rooms_panel_state)
+}
+
+/// Loads the window geometry's state from persistent storage.
+pub async fn load_window_state() -> anyhow::Result<WindowGeomState> {
+    let mut file =
+        match tokio::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)).await {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(WindowGeomState::default()),
+            Err(e) => return Err(e.into()),
+        };
+    let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
+    file.read_to_end(&mut contents).await?;
+    serde_json::from_slice(&contents).map_err(|e| anyhow!(e))
 }

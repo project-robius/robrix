@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
-
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::{DockStateAction, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::{save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::DVec2Wrapper, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
+use serde::{Deserialize, Serialize};
 
 live_design! {
     use link::theme::*;
@@ -229,6 +229,26 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+            match action.downcast_ref() {
+                Some(RoomsPanelRestoreAction::Restore(rooms_panel_state)) => {
+                    self.app_state.rooms_panel = rooms_panel_state.clone();
+                    cx.action(DockStateAction::RestoreFromAppState);
+                }
+                Some(RoomsPanelRestoreAction::RestoreWindow(window_state)) => {
+                    cx.push_unique_platform_op(CxOsOp::ResizeWindow(
+                        CxWindowPool::id_zero(),
+                        window_state.window_size.0,
+                    ));
+                    cx.push_unique_platform_op(CxOsOp::RepositionWindow(
+                        CxWindowPool::id_zero(),
+                        window_state.window_position.0,
+                    ));
+                    if window_state.window_is_fullscreen {
+                        cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
+                    }
+                }
+                _ => {}
+            }
 
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
@@ -261,7 +281,6 @@ impl MatchEvent for App {
                     self.app_state.rooms_panel.selected_room = None;
                 }
                 RoomsPanelAction::None => { }
-                _ => {}
             }
 
             match action.as_widget_action().cast() {
@@ -349,6 +368,16 @@ impl AppMain for App {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
+        if let (Event::WindowClosed(_) | Event::Shutdown, Some(user_id)) = (event, current_user_id()) {
+            if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
+                log!("Bug! Failed to save room panel: {}", e);
+            }
+            if let Some(window_geom) = &self.app_state.window_geom {
+                if let Err(e) = save_window_state(window_geom) {
+                    log!("Bug! Failed to save window_state: {}", e);
+                }
+            }
+        }
         // Forward events to the MatchEvent trait implementation.
         self.match_event(cx, event);
         let scope = &mut Scope::with_data(&mut self.app_state);
@@ -401,29 +430,54 @@ impl App {
     }
 }
 
+/// Application-wide state that is needed across multiple widgets.
 #[derive(Default, Debug)]
 pub struct AppState {
     pub rooms_panel: RoomsPanelState,
+    /// Whether all known rooms have been loaded from the server.
+    ///
+    /// This is necessary for two reasons:
+    /// 1. If a RoomScreen is restored *after* all known rooms have been loaded,
+    ///    it should show the room's timeline and hide its `Pending` message.
+    /// 2. When changing from the desktop to mobile view, we want to ensure that
+    ///    all newly-restored rooms that were loaded in the background are properly displayed. 
+    pub all_known_rooms_loaded: bool,
+    /// Whether a user is currently logged in.
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+/// The state of the rooms panel
 pub struct RoomsPanelState {
+    /// The most-recently selected room, which is highlighted in the rooms list panel.
     pub selected_room: Option<SelectedRoom>,
-    /// The saved dock state
+    /// The order in which the rooms were opened.
+    pub room_order: Vec<SelectedRoom>,
+    /// The saved dock state created by makepad's dock widget.
+    #[serde(skip_serializing, skip_deserializing)]
     pub dock_state: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
-    pub open_rooms: HashMap<LiveId, SelectedRoom>,
-    /// The order in which the rooms were opened
-    pub room_order: Vec<SelectedRoom>,
+    /// The u64 key is the inner value of the LiveId and it is stored for serialization.
+    pub open_rooms: HashMap<u64, SelectedRoom>,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// The state of the window geometry
+pub struct WindowGeomState {
+    /// A tuple containing the window's width and height.
+    pub window_size: DVec2Wrapper,
+    /// A tuple containing the window's x and y position.
+    pub window_position: DVec2Wrapper,
+    /// Maximise fullscreen if true.
+    pub window_is_fullscreen: bool
 }
 
 /// Represents a room currently or previously selected by the user.
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SelectedRoom {
     pub room_id: OwnedRoomId,
     pub room_name: Option<String>,
@@ -434,3 +488,28 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
+
+/// Action related to restoring the main dock and RoomScreen widgets from storage.
+#[derive(Clone, Debug, DefaultNone)]
+pub enum RoomsPanelRestoreAction {
+    /// The previously-saved state of the rooms panel & dock was loaded from storage
+    /// and is now ready to be restored to the dock UI widget.
+    /// This will be handled by the top-level App and by each RoomScreen in the dock.
+    Restore(RoomsPanelState),
+    /// The given room has not yet been loaded from the homeserver
+    /// and is waiting to be known by our client so that it can be displayed.
+    /// Each RoomScreen widget will handle and update its own status
+    /// to be pending, and should thus display a loading spinner / notice.
+    Pending(OwnedRoomId),
+    /// The given room was successfully loaded from the homeserver
+    /// and is known to our client.
+    /// The RoomScreen for this room can now fully display the room's timeline.
+    Success(OwnedRoomId),
+    /// All known rooms have been received by the homeserver.
+    /// Any `Pending` rooms (still waiting to be loaded) should display errors.
+    AllRoomsLoaded,
+    /// The previously-saved of the window geometry state.
+    /// This will be handled by the top-level App to restore window's size and position.
+    RestoreWindow(WindowGeomState),
+    None,
+}
