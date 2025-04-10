@@ -12,7 +12,7 @@ use crate::utils;
 
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
-use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId, MxcUri};
+use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use crate::sliding_sync::get_client;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -311,7 +311,7 @@ impl MentionableTextInput {
                     &current_text,
                     start_idx,
                     head,
-                    &mention_to_insert,
+                    mention_to_insert,
                 );
 
                 self.cmd_text_input.set_text(cx, &new_text);
@@ -513,7 +513,7 @@ impl MentionableTextInput {
                         let mut room_avatar_shown = false;
 
                         if let Some(room_id) = &self.room_id {
-                            if let Some(known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
+                            if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                                 if let Some(mxc_uri) = known_room.avatar_url() {
                                     let owned_mxc = mxc_uri.to_owned();
                                     if let AvatarCacheEntry::Loaded(avatar_data) = get_or_fetch_avatar(cx, owned_mxc) {
@@ -696,7 +696,7 @@ impl MentionableTextInputRef {
 
     /// Gets whether the current user can notify the entire room (@room mention)
     pub fn can_notify_room(&self) -> bool {
-        self.borrow().map_or(false, |inner| inner.can_notify_room())
+        self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
 
     /// Returns the list of users mentioned in the given html message content.
