@@ -12,7 +12,8 @@ use crate::utils;
 
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
-use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
+use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId, MxcUri};
+use crate::sliding_sync::get_client;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use unicode_segmentation::UnicodeSegmentation;
@@ -278,12 +279,12 @@ impl LiveHook for MentionableTextInput {
         if self.possible_mentions.is_empty() {
             self.possible_mentions = BTreeMap::new();
         }
-        
+
         // Initialize room_members if empty
         if self.room_members.is_empty() {
             self.room_members = Arc::new(Vec::new());
         }
-        
+
         log!("MentionableTextInput LiveHook::after_apply called. can_notify_room={}", self.can_notify_room);
     }
 }
@@ -386,13 +387,13 @@ impl MentionableTextInput {
             let mut matched_members = Vec::new();
 
             // Add @room mention if the user has permission and search matches "room"
-            log!("Checking if we should show @room option: can_notify_room={}, search_text='{}'", 
+            log!("Checking if we should show @room option: can_notify_room={}, search_text='{}'",
                 self.can_notify_room, search_text);
-                
+
             // For debugging, dump all fields of self
             log!("MentionableTextInput state: is_searching={}, room_id={:?}, room_members.len={}",
                 self.is_searching, self.room_id, self.room_members.len());
-            
+
             // Fixed condition: Show if search is empty or if search is part of "room"
             if self.can_notify_room && (search_text.is_empty() || search_text == "r" || search_text == "ro" || search_text == "roo" || search_text == "room") {
                 // Add a special "@room" entry at the top of the list
@@ -400,7 +401,7 @@ impl MentionableTextInput {
                 log!("ADDING @room option to mention list with search_text: '{}'", search_text);
                 matched_members.push(("@room (Notify everyone in this room)".to_string(), None));
             } else {
-                log!("NOT showing @room option: can_notify_room={}, search_text='{}'", 
+                log!("NOT showing @room option: can_notify_room={}, search_text='{}'",
                     self.can_notify_room, search_text);
             }
 
@@ -491,6 +492,7 @@ impl MentionableTextInput {
                 }
 
                 let avatar = item.avatar(id!(user_info.avatar));
+
                 match member_opt {
                     Some(member) => {
                         if let Some(mxc_uri) = member.avatar_url() {
@@ -507,7 +509,33 @@ impl MentionableTextInput {
                     },
                     None => {
                         // Special case for @room mention
-                        avatar.show_text(cx, None, "@");
+                        // First attempt to get the room avatar if available
+                        let mut room_avatar_shown = false;
+
+                        if let Some(room_id) = &self.room_id {
+                            if let Some(known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
+                                if let Some(mxc_uri) = known_room.avatar_url() {
+                                    let owned_mxc = mxc_uri.to_owned();
+                                    if let AvatarCacheEntry::Loaded(avatar_data) = get_or_fetch_avatar(cx, owned_mxc) {
+                                        let _ = avatar.show_image(cx, None, |cx, img| {
+                                            utils::load_png_or_jpg(&img, cx, &avatar_data)
+                                        });
+                                        room_avatar_shown = true;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If room avatar couldn't be shown, display the text avatar with red background
+                        if !room_avatar_shown {
+                            avatar.show_text(cx, None, "Room");
+                            // Set avatar background to red for @room mentions
+                            avatar.view(id!(text_view)).apply_over(cx, live! {
+                                draw_bg: {
+                                    background_color: #e24d4d
+                                }
+                            });
+                        }
                     }
                 }
 
