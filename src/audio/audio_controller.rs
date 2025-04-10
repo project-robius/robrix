@@ -1,5 +1,4 @@
 //! Audio controller, which just manages audio playback.
-//! In UI interaction, it is just a template.
 
 use std::{collections::HashMap, sync::{Arc, LazyLock, Mutex, RwLock}};
 use makepad_widgets::*;
