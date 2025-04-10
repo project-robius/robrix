@@ -1149,8 +1149,8 @@ impl Widget for RoomScreen {
                     // Only set room mention flag if the user has permission and text contains @room
                     let notify_room = has_room_mention && can_notify_room;
 
-                    log!("Sending message to room {}: {:?}, mentions: {:?}, notify_room: {}",
-                         room_id, entered_text, mentions, notify_room);
+                    // log!("Sending message to room {}: {:?}, mentions: {:?}, notify_room: {}",
+                         // room_id, entered_text, mentions, notify_room);
 
                     // Create Mentions object with both user mentions and room mention status
                     let mut message_mentions = Mentions::with_user_ids(mentions);
@@ -1697,11 +1697,10 @@ impl RoomScreen {
 
                     // Update the @room mention capability based on the user's power level
                     let can_notify_room = user_power_level.can_notify_room();
-                    log!("Room screen: Got user power levels update. can_notify_room = {}", can_notify_room);
 
                     if let Some(room_id) = &self.room_id {
                         // Send the power level update action so RoomInputBar can update MentionableTextInput
-                        log!("Room screen: Sending PowerLevelsUpdated action for room {}", room_id);
+                        // log!("Room screen: Sending PowerLevelsUpdated action for room {}", room_id);
 
                         // Use different methods for sending the action to be sure it gets delivered
                         cx.action(MentionableTextInputAction::PowerLevelsUpdated(
@@ -1711,7 +1710,6 @@ impl RoomScreen {
 
                         // Also try direct widget action
                         let input_bar = self.view.view(id!(input_bar)).widget_uid();
-                        log!("Sending direct widget action to input_bar uid: {:?}", input_bar);
                         cx.widget_action(
                             input_bar,
                             &Scope::empty().path,
@@ -1725,7 +1723,6 @@ impl RoomScreen {
                         let message_input = self.view.room_input_bar(id!(input_bar))
                             .mentionable_text_input(id!(message_input));
                         message_input.set_can_notify_room(can_notify_room);
-                        log!("Directly set mentionable_text_input.can_notify_room = {}", can_notify_room);
                     }
                 }
 

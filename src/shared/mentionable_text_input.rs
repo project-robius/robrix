@@ -220,7 +220,7 @@ pub enum MentionableTextInputAction {
 }
 
 /// Widget that extends CommandTextInput with @mention capabilities
-#[derive(Live, Widget)]
+#[derive(Live, LiveHook, Widget)]
 pub struct MentionableTextInput {
     /// Base command text input
     #[deref] cmd_text_input: CommandTextInput,
@@ -272,22 +272,6 @@ impl Widget for MentionableTextInput {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.cmd_text_input.draw_walk(cx, scope, walk)
-    }
-}
-
-impl LiveHook for MentionableTextInput {
-    fn after_apply(&mut self, _cx: &mut Cx, _apply: &mut Apply, _index: usize, _nodes: &[LiveNode]) {
-        // Initialize BTreeMap if empty
-        if self.possible_mentions.is_empty() {
-            self.possible_mentions = BTreeMap::new();
-        }
-
-        // Initialize room_members if empty
-        if self.room_members.is_empty() {
-            self.room_members = Arc::new(Vec::new());
-        }
-
-        log!("MentionableTextInput LiveHook::after_apply called. can_notify_room={}", self.can_notify_room);
     }
 }
 
@@ -388,23 +372,11 @@ impl MentionableTextInput {
             let is_desktop = cx.display_context.is_desktop();
             let mut matched_members = Vec::new();
 
-            // Add @room mention if the user has permission and search matches "room"
-            log!("Checking if we should show @room option: can_notify_room={}, search_text='{}'",
-                self.can_notify_room, search_text);
-
-            // For debugging, dump all fields of self
-            log!("MentionableTextInput state: is_searching={}, room_id={:?}, room_members.len={}",
-                self.is_searching, self.room_id, self.room_members.len());
-
             // Fixed condition: Show if search is empty or if search is part of "room"
             if self.can_notify_room && (search_text.is_empty() || search_text == "r" || search_text == "ro" || search_text == "roo" || search_text == "room") {
                 // Add a special "@room" entry at the top of the list
                 // We use a dummy room member to maintain compatibility with existing code
-                log!("ADDING @room option to mention list with search_text: '{}'", search_text);
                 matched_members.push(("@room (Notify everyone in this room)".to_string(), None));
-            } else {
-                log!("NOT showing @room option: can_notify_room={}, search_text='{}'",
-                    self.can_notify_room, search_text);
             }
 
             // Add matching individual members

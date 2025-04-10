@@ -274,19 +274,14 @@ impl Widget for EditingPane {
                             if &info.room_id == room_id {
                                 let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
                                 message_input.set_can_notify_room(*can_notify_room);
-                                log!("EditingPane: Set can_notify_room={} on edit_text_input", can_notify_room);
                             }
                         }
                     }
                 }
 
                 if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
-                    log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
-                    log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
-
                     if let Some(update_action) = widget_action.downcast_ref::<EditingPaneInternalAction>() {
                         if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
-                            log!("EditingPane received EditingPaneInternalAction RoomMembersUpdated action with {} members", members.len());
                             self.handle_members_updated(members.clone());
                         }
                         continue;
@@ -504,7 +499,7 @@ impl EditingPane {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
         }
-        
+
         log!("EditingPane show: Opening editing pane for room: {}", room_id);
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
@@ -522,7 +517,7 @@ impl EditingPane {
         }
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
-        
+
         // Set room ID on the MentionableTextInput
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         edit_text_input.set_room_id(room_id.clone());
@@ -564,7 +559,7 @@ impl EditingPane {
             memberships: matrix_sdk::RoomMemberships::JOIN,
             local_only: false,
         });
-        
+
         // Request power levels data to determine if @room mentions are allowed
         submit_async_request(MatrixRequest::GetRoomPowerLevels {
             room_id,
@@ -577,7 +572,7 @@ impl EditingPane {
             // Pass room member data to MentionableTextInput
             let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
             message_input.set_room_members(members);
-            
+
             // Also set room ID if it's not already set
             if let Some(info) = &self.info {
                 if message_input.get_room_id().is_none() {
