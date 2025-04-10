@@ -267,14 +267,12 @@ impl Widget for EditingPane {
             // Check for room member update actions and power level updates
             for action in actions {
                 // Check for MentionableTextInputAction::PowerLevelsUpdated
-                if let Some(power_levels_action) = action.downcast_ref::<MentionableTextInputAction>() {
-                    if let MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) = power_levels_action {
-                        // Make sure this is for our current room
-                        if let Some(info) = &self.info {
-                            if &info.room_id == room_id {
-                                let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-                                message_input.set_can_notify_room(*can_notify_room);
-                            }
+                if let Some(MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room)) = action.downcast_ref::<MentionableTextInputAction>() {
+                    // Make sure this is for our current room
+                    if let Some(info) = &self.info {
+                        if &info.room_id == room_id {
+                            let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+                            message_input.set_can_notify_room(*can_notify_room);
                         }
                     }
                 }
