@@ -12,8 +12,8 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -365,6 +365,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    /// Sends a request to obtain the room's pill link info for the given Matrix ID.
+    ///
+    /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
+    GetMatrixRoomLinkPillInfo {
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>
     },
 }
 
@@ -1006,6 +1013,32 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
+                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
+                        MatrixId::Room(room_id) => Some((&**room_id).into()),
+                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
+                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
+                        _ => {
+                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
+                            return;
+                        }
+                    };
+                    if let Some(room_or_alias_id) = room_or_alias_id {
+                        match client.get_room_preview(room_or_alias_id, via).await {
+                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
+                                matrix_id: matrix_id.clone(),
+                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                avatar_url: preview.avatar_url
+                            }),
+                            Err(_e) => {
+                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
+                            }
+                        };
+                    }
+                });
+            }
         }
     }
 
