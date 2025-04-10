@@ -53,6 +53,31 @@ live_design! {
                 draw_bold:        { text_style: { font_size: 9.3 } },
                 draw_bold_italic: { text_style: { font_size: 9.3 } },
                 draw_fixed:       { text_style: { font_size: 9.3 } },
+                a = {
+                    matrix_link_view = {
+                        matrix_link = {
+                            padding: { top: 2.0, bottom: 2.0, left: 4.0, right: 4.0 }
+                            draw_bg: {
+                                color: #000,
+                                border_radius: 3.5,
+                            }
+                            avatar = {
+                                height: 10.0, width: 10.0
+                                text_view = { text = { draw_text: {
+                                    text_style: <TITLE_TEXT>{ font_size: 6.3 }
+                                }}}
+                            }
+                            title = {
+                                draw_text: {
+                                    color: #fff
+                                    text_style: {
+                                        font_size: 6.3
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
