@@ -28,9 +28,9 @@ use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use crate::{
-    app::RoomsPanelRestoreAction, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
+    app::{RoomsPanelRestoreAction, WindowGeomState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
-    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, ClientSessionPersisted}, profile::{
+    }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, load_window_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
@@ -1249,7 +1249,7 @@ async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
     tracing_subscriber::fmt::init();
-
+    handle_load_window_state();
     let most_recent_user_id = persistent_state::most_recent_user_id();
     log!("Most recent user ID: {most_recent_user_id:?}");
     let cli_parse_result = Cli::try_parse();
@@ -1738,6 +1738,21 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
             }
             Err(e) => {
                 enqueue_popup_notification(format!("Failed to restore previous dock state: {e}"));
+            }
+        }
+    });
+}
+
+fn handle_load_window_state() {
+    Handle::current().spawn(async move {
+        match load_window_state().await {
+            Ok(window_geom_state) => {
+                if window_geom_state != WindowGeomState::default() {
+                    Cx::post_action(RoomsPanelRestoreAction::RestoreWindow(window_geom_state));
+                }
+            }
+            Err(e) => {
+                enqueue_popup_notification(format!("Failed to restore previous window geom state: {e}"));
             }
         }
     });

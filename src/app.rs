@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 use crate::{
-    home::{main_desktop_ui::{DockStateAction, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::save_room_panel, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::DVec2Wrapper, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::{DockStateAction, RoomsPanelAction}, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, persistent_state::{save_room_panel, save_window_state}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::current_user_id, utils::DVec2Wrapper, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 use serde::{Deserialize, Serialize};
 
@@ -229,14 +229,20 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+            match action.downcast_ref() {
+                Some(RoomsPanelRestoreAction::Restore(rooms_panel_state)) => {
+                    self.app_state.rooms_panel = rooms_panel_state.clone();
+                    cx.action(DockStateAction::RestoreFromAppState);
+                }
+                Some(RoomsPanelRestoreAction::RestoreWindow(window_state)) => {
+                    cx.push_unique_platform_op(CxOsOp::ResizeWindow(CxWindowPool::id_zero(), window_state.window_size.0));
+                    cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), window_state.window_position.0));
+                    if window_state.window_is_fullscreen {
+                        cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
+                    }
+                }
+                _ => {
 
-            if let Some(RoomsPanelRestoreAction::Restore(rooms_panel_state)) = action.downcast_ref() {
-                self.app_state.rooms_panel = rooms_panel_state.clone();
-                cx.action(DockStateAction::RestoreFromAppState);
-                cx.push_unique_platform_op(CxOsOp::ResizeWindow(CxWindowPool::id_zero(), rooms_panel_state.window_size.0));
-                cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), rooms_panel_state.window_position.0));
-                if rooms_panel_state.window_is_fullscreen {
-                    cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
                 }
             }
 
@@ -357,13 +363,16 @@ impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
         if let Event::WindowGeomChange(window_geom_change_event) = event {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
-            self.app_state.rooms_panel.window_position = DVec2Wrapper(window_geom_change_event.new_geom.position);
-            self.app_state.rooms_panel.window_size = DVec2Wrapper(window_geom_change_event.new_geom.inner_size);
-            self.app_state.rooms_panel.window_is_fullscreen = window_geom_change_event.new_geom.is_fullscreen;
         }
-        if let (Event::WindowClosed(_), Some(user_id)) = (event, current_user_id()) {
+        if let (Event::WindowClosed(_) | Event::Shutdown, Some(user_id)) = (event, current_user_id()) {
+            
             if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
-                log!("Bug! Failed to save save_room_panel: {}", e);
+                log!("Bug! Failed to save room panel: {}", e);
+            }
+            if let Some(window_geom) = &self.app_state.window_geom {
+                if let Err(e) = save_window_state(window_geom) {
+                    log!("Bug! Failed to save window_state: {}", e);
+                }
             }
         }
         // Forward events to the MatchEvent trait implementation.
@@ -449,11 +458,16 @@ pub struct RoomsPanelState {
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     /// The u64 key is the inner value of the LiveId and it is stored for serialization.
     pub open_rooms: HashMap<u64, SelectedRoom>,
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// The state of the window geometry
+pub struct WindowGeomState {
     /// A tuple containing the window's width and height.
     pub window_size: DVec2Wrapper,
     /// A tuple containing the window's x and y position.
     pub window_position: DVec2Wrapper,
-    /// Maximise fullscreen if true
+    /// Maximise fullscreen if true.
     pub window_is_fullscreen: bool
 }
 
@@ -491,5 +505,8 @@ pub enum RoomsPanelRestoreAction {
     /// All known rooms have been received by the homeserver.
     /// Any `Pending` rooms (still waiting to be loaded) should display errors.
     AllRoomsLoaded,
+    /// The previously-saved of the window geometry state.
+    /// This will be handled by the top-level App to restore window's size and position.
+    RestoreWindow(WindowGeomState),
     None,
 }
