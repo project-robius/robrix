@@ -2487,7 +2487,9 @@ impl RoomScreen {
     /// This sets the RoomScreen widget to display a text label in place of the timeline.
     pub fn set_restore_status(&mut self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
         match &status {
-            RoomsPanelRestoreAction::Pending(_room_id) => {
+            RoomsPanelRestoreAction::Pending(room_id) => {
+                // Set this RoomScreen's room_id such that it can handle a `RoomsPanelRestoreAction::Success` action.
+                self.room_id = Some(room_id.clone());
                 self.view
                     .label(id!(restore_status_label))
                     .set_text(cx, "[Placeholder for Spinner]");
