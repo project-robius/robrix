@@ -99,6 +99,11 @@ live_design! {
     pub COLOR_TEXT = #1C274C
     pub COLOR_TEXT_INPUT_IDLE = #d8d8d8
 
+    pub COLOR_CLOSE = #000000
+    pub COLOR_IMAGE_VIEWER_BG = #000000E0
+    pub COLOR_CLOSE_BG = #FFFFFF90
+
+
     // A text input widget styled for Robrix.
     pub RobrixTextInput = <TextInput> {
         width: Fill, height: Fit,

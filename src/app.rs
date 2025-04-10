@@ -16,11 +16,11 @@ live_design! {
     use crate::home::home_screen::HomeScreen;
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
+    use crate::image_viewer::ImageViewer;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
-
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
@@ -131,6 +131,8 @@ live_design! {
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
 
+                    image_viewer = <ImageViewer> {}
+
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -174,6 +176,7 @@ impl LiveRegister for App {
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
         crate::login::live_design(cx);
+        crate::image_viewer::live_design(cx);
     }
 }
 

@@ -3,7 +3,9 @@
 //! This is useful to display a loading message while waiting for an image to be fetched,
 //! or to display an error message if the image fails to load, etc.
 
+use std::sync::Arc;
 use makepad_widgets::*;
+use matrix_sdk::ruma::OwnedMxcUri;
 
 live_design! {
     use link::theme::*;
@@ -34,32 +36,60 @@ live_design! {
         }
         image_view = <View> {
             visible: false,
-            cursor: Default, // Use `Hand` once we support clicking on the image
+            cursor: Hand,
             width: Fill, height: Fit,
             image = <Image> {
                 width: Fill, height: Fit,
-                fit: Smallest,
+                fit: Size, // Only for a comfortable test, would set back to `Smallest` if this pr OK.
             }
         }
     }
 }
 
+#[derive(Debug, Clone, DefaultNone)]
+pub enum TextOrImageAction {
+    Click(OwnedMxcUri),
+    None,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimelineImageInfo {
+    pub original_mxc_uri: OwnedMxcUri,
+    pub timeline_image_data: Arc<[u8]>,
+}
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
-/// This is useful for displaying alternate text when an image is not (yet) available
+/// This is useful for displaying alternate text when an image is not yet available
 /// or fails to load. It can also be used to display a loading message while an image
 /// is being fetched.
 #[derive(Live, Widget, LiveHook)]
 pub struct TextOrImage {
     #[deref] view: View,
     #[rust] status: TextOrImageStatus,
-    // #[rust(TextOrImageStatus::Text)] status: TextOrImageStatus,
     #[rust] size_in_pixels: (usize, usize),
 }
 
 impl Widget for TextOrImage {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        // We handle hit events if the status is `Image`.
+        if let TextOrImageStatus::Image(ref timeline_image_info) = self.status {
+            let image_area = self.view.image(id!(image_view.image)).area();
+            match event.hits(cx, image_area) {
+                Hit::FingerDown(_) => {
+                    cx.set_key_focus(image_area);
+                }
+                Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
+                    // We run the check to see if the original image was already fetched or not.
+                    //
+                    // If `image_value` is `None`, it can tell that the image has not been fetched,
+                    // user actually clicks the blurhash,
+                    // so we do nothing this condition.
+                    cx.action(TextOrImageAction::Click(timeline_image_info.original_mxc_uri.clone()));
+                }
+                _ => { },
+            }
+        }
         self.view.handle_event(cx, event, scope);
     }
 
@@ -67,6 +97,7 @@ impl Widget for TextOrImage {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+
 impl TextOrImage {
     /// Sets the text content, which will be displayed on future draw operations.
     ///
@@ -95,7 +126,6 @@ impl TextOrImage {
         let image_ref = self.view.image(id!(image_view.image));
         match image_set_function(cx, image_ref) {
             Ok(size_in_pixels) => {
-                self.status = TextOrImageStatus::Image;
                 self.size_in_pixels = size_in_pixels;
                 self.view(id!(image_view)).set_visible(cx, true);
                 self.view(id!(text_view)).set_visible(cx, false);
@@ -109,8 +139,12 @@ impl TextOrImage {
     }
 
     /// Returns whether this `TextOrImage` is currently displaying an image or text.
-    pub fn status(&self) -> TextOrImageStatus {
-        self.status
+    pub fn get_status(&self) -> &TextOrImageStatus {
+        &self.status
+    }
+
+    pub fn set_status_to_image(&mut self, timeline_image_info: TimelineImageInfo) {
+        self.status = TextOrImageStatus::Image(timeline_image_info)
     }
 }
 
@@ -134,19 +168,23 @@ impl TextOrImageRef {
     }
 
     /// See [TextOrImage::status()].
-    pub fn status(&self) -> TextOrImageStatus {
+    pub fn get_status(&self) -> TextOrImageStatus {
         if let Some(inner) = self.borrow() {
-            inner.status()
+            inner.get_status().clone()
         } else {
             TextOrImageStatus::Text
         }
     }
+
+    pub fn set_status_to_image(&self, timeline_image_info: TimelineImageInfo) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_status_to_image(timeline_image_info);
+    }
 }
 
 /// Whether a `TextOrImage` instance is currently displaying text or an image.
-#[derive(Debug, Default, Copy, Clone, PartialEq)]
+#[derive(Debug, Default, Clone)]
 pub enum TextOrImageStatus {
-    #[default]
-    Text,
-    Image,
+    #[default] Text,
+    Image(TimelineImageInfo),
 }
