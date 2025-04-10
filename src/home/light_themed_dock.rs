@@ -8,12 +8,12 @@ live_design! {
     use crate::shared::styles::*;
 
     pub Splitter = <SplitterBase> {
-        draw_splitter: {
+        draw_bg: {
             uniform border_radius: 1.0
             uniform splitter_pad: 1.0
             uniform splitter_grabber: 110.0
 
-            instance pressed: 0.0
+            instance down: 0.0
             instance hover: 0.0
 
             fn pixel(self) -> vec4 {
@@ -41,15 +41,15 @@ live_design! {
                 return sdf.fill_keep(mix(
                     THEME_COLOR_D_HIDDEN,
                     mix(
-                        THEME_COLOR_CTRL_SCROLLBAR_HOVER,
-                        THEME_COLOR_CTRL_SCROLLBAR_HOVER * 1.2,
-                        self.pressed
+                        THEME_COLOR_SCROLLBAR_HOVER,
+                        THEME_COLOR_SCROLLBAR_HOVER * 1.2,
+                        self.down
                     ),
                     self.hover
                 ));
             }
         }
-        split_bar_size: (THEME_SPLITTER_SIZE)
+        size: (THEME_SPLITTER_SIZE)
         min_horizontal: (THEME_SPLITTER_MIN_HORIZONTAL)
         max_horizontal: (THEME_SPLITTER_MAX_HORIZONTAL)
         min_vertical: (THEME_SPLITTER_MIN_VERTICAL)
@@ -61,7 +61,7 @@ live_design! {
                 off = {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
-                        draw_splitter: {pressed: 0.0, hover: 0.0}
+                        draw_bg: {down: 0.0, hover: 0.0}
                     }
                 }
 
@@ -71,18 +71,18 @@ live_design! {
                         state_down: Forward {duration: 0.01}
                     }
                     apply: {
-                        draw_splitter: {
-                            pressed: 0.0,
+                        draw_bg: {
+                            down: 0.0,
                             hover: [{time: 0.0, value: 1.0}],
                         }
                     }
                 }
 
-                pressed = {
+                drag = {
                     from: { all: Forward { duration: 0.1 }}
                     apply: {
-                        draw_splitter: {
-                            pressed: [{time: 0.0, value: 1.0}],
+                        draw_bg: {
+                            down: [{time: 0.0, value: 1.0}],
                             hover: 1.0,
                         }
                     }
@@ -98,7 +98,7 @@ live_design! {
         draw_button: {
 
             instance hover: float;
-            instance selected: float;
+            instance active: float;
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -146,18 +146,18 @@ live_design! {
         padding: <THEME_MSPACE_3> { }
 
         close_button: <TabCloseButton> {}
-        draw_name: {
+        draw_text: {
             text_style: <THEME_FONT_REGULAR> {}
             instance hover: 0.0
-            instance selected: 0.0
+            instance active: 0.0
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
                         #x0, // THEME_COLOR_TEXT_INACTIVE,
-                        #xf, // THEME_COLOR_TEXT_SELECTED,
-                        self.selected
+                        #xf, // THEME_COLOR_TEXT_ACTIVE,
+                        self.active
                     ),
-                    THEME_COLOR_TEXT_HOVER,
+                    THEME_COLOR_OUTSET_HOVER,
                     self.hover
                 )
             }
@@ -165,7 +165,7 @@ live_design! {
 
         draw_bg: {
             instance hover: float
-            instance selected: float
+            instance active: float
 
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size);
@@ -179,8 +179,8 @@ live_design! {
                 sdf.fill_keep(
                     mix(
                         (COLOR_SECONDARY) * 0.95,
-                        (COLOR_SELECTED_PRIMARY),
-                        self.selected
+                        (COLOR_ACTIVE_PRIMARY),
+                        self.active
                     )
                 )
                 return sdf.result
@@ -194,7 +194,7 @@ live_design! {
                     from: {all: Forward {duration: 0.2}}
                     apply: {
                         draw_bg: {hover: 0.0}
-                        draw_name: {hover: 0.0}
+                        draw_text: {hover: 0.0}
                     }
                 }
 
@@ -203,28 +203,28 @@ live_design! {
                     from: {all: Forward {duration: 0.1}}
                     apply: {
                         draw_bg: {hover: [{time: 0.0, value: 1.0}]}
-                        draw_name: {hover: [{time: 0.0, value: 1.0}]}
+                        draw_text: {hover: [{time: 0.0, value: 1.0}]}
                     }
                 }
             }
 
-            selected = {
+            active = {
                 default: off
                 off = {
                     from: {all: Forward {duration: 0.3}}
                     apply: {
-                        close_button: {draw_button: {selected: 0.0}}
-                        draw_bg: {selected: 0.0}
-                        draw_name: {selected: 0.0}
+                        close_button: {draw_button: {active: 0.0}}
+                        draw_bg: {active: 0.0}
+                        draw_text: {active: 0.0}
                     }
                 }
 
                 on = {
                     from: {all: Snap}
                     apply: {
-                        close_button: {draw_button: {selected: 1.0}}
-                        draw_bg: {selected: 1.0}
-                        draw_name: {selected: 1.0}
+                        close_button: {draw_button: {active: 1.0}}
+                        draw_bg: {active: 1.0}
+                        draw_text: {active: 1.0}
                     }
                 }
             }
@@ -249,7 +249,7 @@ live_design! {
             show_scroll_x: true
             show_scroll_y: false
             scroll_bar_x: {
-                draw_bar: {bar_width: 3.0}
+                draw_bg: {size: 3.0}
                 bar_size: 4
                 use_vertical_finger_scroll: true
             }
@@ -278,16 +278,13 @@ live_design! {
                 );
 
                 sdf.subtract()
-                // sdf.fill(THEME_COLOR_BG_APP)
                 sdf.fill(COLOR_SECONDARY)
                 return sdf.result
             }
         }
-        border_size: (THEME_DOCK_BORDER_SIZE)
 
         padding: {left: (THEME_DOCK_BORDER_SIZE), top: 0, right: (THEME_DOCK_BORDER_SIZE), bottom: (THEME_DOCK_BORDER_SIZE)}
-        padding_fill: {color: (THEME_COLOR_BG_APP)} // TODO: unclear what this does
-        drag_quad: {
+        drag_target_preview: {
             draw_depth: 10.0
             color: (mix((COLOR_SECONDARY), #FFFFFF00, pow(0.25, THEME_COLOR_CONTRAST)))
         }

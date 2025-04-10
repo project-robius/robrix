@@ -25,9 +25,9 @@ live_design! {
 
                 draw_bg: {
                     color: #fff,
-                    border_width: 7.5,
+                    border_size: 7.5,
                     border_color: #D0D5DD,
-                    radius: 2.,
+                    border_radius: 2.,
                     instance background_color: #3b444b,
                     // Absolute position of top left corner of the tooltip
                     instance tooltip_pos: vec2(0.0, 0.0),
@@ -49,11 +49,11 @@ live_design! {
                         }
                         // Draw rounded box
                         sdf.box(
-                            self.border_width,
-                            self.border_width,
-                            rect_size.x - (self.border_width * 2.0),
-                            rect_size.y - (self.border_width * 2.0),
-                            max(1.0, self.radius)
+                            self.border_size,
+                            self.border_size,
+                            rect_size.x - (self.border_size * 2.0),
+                            rect_size.y - (self.border_size * 2.0),
+                            max(1.0, self.border_radius)
                         )
                         sdf.fill(self.background_color);
                         let triangle_height = self.triangle_height;
@@ -79,14 +79,14 @@ live_design! {
                         if angle == 45.0 || angle == 315.0 {
                             // Point upwards
                             // + 2.0 to overlap the triangle
-                            vertex1 = vec2(max(self.border_width + 2.0, diff_x), self.border_width + 2.0);
+                            vertex1 = vec2(max(self.border_size + 2.0, diff_x), self.border_size + 2.0);
                             vertex2 = vec2(vertex1.x + triangle_height, vertex1.y - triangle_height);
                             vertex3 = vec2(vertex1.x + triangle_height * 2.0, vertex1.y);
                         } else {
                             // Point downwards
                             // +/- 2.0 to overlap the triangle
                             vertex1 = vec2(
-                                max(self.border_width + 2.0, diff_x) + triangle_height * 2.0,
+                                max(self.border_size + 2.0, diff_x) + triangle_height * 2.0,
                                 rect_size.y - triangle_height - 2.0
                             );
                             vertex2 = vec2(vertex1.x - triangle_height, vertex1.y + triangle_height);

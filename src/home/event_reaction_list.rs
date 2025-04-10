@@ -38,8 +38,10 @@ live_design! {
     use link::widgets::*;
 
     use crate::shared::styles::*;
+
     COLOR_BUTTON_GREY = #B6BABF
     REACTION_LIST_PADDING_RIGHT = 30.0;
+
     pub ReactionList = {{ReactionList}} {
         width: Fill,
         height: Fit,
@@ -55,37 +57,41 @@ live_design! {
             // Use a zero margin on the left because we want the first reaction
             // to be flush with the left edge of the message text.
             margin: { top: 3, bottom: 3, left: 0, right: 6 },
+
             draw_bg: {
-                instance color: (COLOR_BUTTON_GREY)
-                instance color_hover: #fef65b
-                instance border_width: 1.5
-                instance border_color: #001A11
-                instance radius: 3.0
-                instance hover: 0.0
+                // Anything that we apply over must be an `instance`,
+                // and their names must be distinct from the base Button type.
+                instance reaction_bg_color: (COLOR_BUTTON_GREY)
+                instance reaction_border_color: #001A11
+                // Override values from the base Button type.
+                color_hover: #fef65b
+                hover: 0.0
+                border_size: 1.5
+                border_radius: 3.0
+
                 fn get_color(self) -> vec4 {
-                    return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+                    return mix(self.reaction_bg_color, mix(self.reaction_bg_color, self.color_hover, 0.2), self.hover)
                 }
 
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                     sdf.box(
-                        self.border_width,
-                        self.border_width,
-                        self.rect_size.x - self.border_width * 2.0,
-                        self.rect_size.y - self.border_width * 2.0,
-                        max(1.0, self.radius)
+                        self.border_size,
+                        self.border_size,
+                        self.rect_size.x - self.border_size * 2.0,
+                        self.rect_size.y - self.border_size * 2.0,
+                        max(1.0, self.border_radius)
                     )
                     sdf.fill_keep(self.get_color())
-                    if self.border_width > 0.0 {
-                        //let stroke_color = mix(self.get_color(), self.border_color, 0.2);
-                        sdf.stroke(self.border_color, self.border_width)
+                    if self.border_size > 0.0 {
+                        sdf.stroke(self.reaction_border_color, self.border_size)
                     }
                     return sdf.result;
                 }
             }
             draw_text: {
                 text_style: <REGULAR_TEXT>{font_size: 9},
-                color: #000
+                color: #000000
                 fn get_color(self) -> vec4 {
                     return self.color;
                 }
@@ -184,9 +190,9 @@ impl Widget for ReactionList {
                             (EMOJI_BG_COLOR_NOT_INCLUDE_SELF, EMOJI_BORDER_COLOR_NOT_INCLUDE_SELF)
                         };
                         button_ref.apply_over(cx, live! {
-                            draw_bg: { color: (bg_color) , border_color: (border_color) }
+                            draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
                         });
-                        self.do_hover_in(cx, scope, button_ref, reaction_data.clone());
+                        self.do_hover_out(cx, scope, button_ref);
                     }
                     break;
                 }
@@ -318,7 +324,7 @@ impl ReactionListRef {
             button.apply_over(
                 cx,
                 live! {
-                    draw_bg: { color: (bg_color) , border_color: (border_color) }
+                    draw_bg: { reaction_bg_color: (bg_color) , reaction_border_color: (border_color) }
                 },
             );
             inner.children.push((button, reaction_data));

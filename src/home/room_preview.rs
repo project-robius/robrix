@@ -53,6 +53,31 @@ live_design! {
                 draw_bold:        { text_style: { font_size: 9.3 } },
                 draw_bold_italic: { text_style: { font_size: 9.3 } },
                 draw_fixed:       { text_style: { font_size: 9.3 } },
+                a = {
+                    matrix_link_view = {
+                        matrix_link = {
+                            padding: { top: 2.0, bottom: 2.0, left: 4.0, right: 4.0 }
+                            draw_bg: {
+                                color: #000,
+                                border_radius: 3.5,
+                            }
+                            avatar = {
+                                height: 10.0, width: 10.0
+                                text_view = { text = { draw_text: {
+                                    text_style: <TITLE_TEXT>{ font_size: 6.3 }
+                                }}}
+                            }
+                            title = {
+                                draw_text: {
+                                    color: #fff
+                                    text_style: {
+                                        font_size: 6.3
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } }
             plaintext_view = { pt_label = {
                 draw_text: {
@@ -69,10 +94,10 @@ live_design! {
         width: Fill, height: Fit
         show_bg: true
         draw_bg: {
-            instance border_width: 0.0
+            instance border_size: 0.0
             instance border_color: #0000
             instance inset: vec4(0.0, 0.0, 0.0, 0.0)
-            instance radius: 4.0
+            instance border_radius: 4.0
 
             fn get_color(self) -> vec4 {
                 return self.color
@@ -85,15 +110,15 @@ live_design! {
             fn pixel(self) -> vec4 {
                 let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                 sdf.box(
-                    self.inset.x + self.border_width,
-                    self.inset.y + self.border_width,
-                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_width * 2.0),
-                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_width * 2.0),
-                    max(1.0, self.radius)
+                    self.inset.x + self.border_size,
+                    self.inset.y + self.border_size,
+                    self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                    self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    max(1.0, self.border_radius)
                 )
                 sdf.fill_keep(self.get_color())
-                if self.border_width > 0.0 {
-                    sdf.stroke(self.get_border_color(), self.border_width)
+                if self.border_size > 0.0 {
+                    sdf.stroke(self.get_border_color(), self.border_size)
                 }
                 return sdf.result;
             }
@@ -116,17 +141,17 @@ live_design! {
                 instance highlight: 0.0,
                 instance highlight_color: (UNREAD_HIGHLIGHT_COLOR),
                 instance default_color: (UNREAD_DEFAULT_COLOR),
-                instance radius: 4.0
-                // Adjust this border_width to larger value to make oval smaller 
-                instance border_width: 2.0
+                instance border_radius: 4.0
+                // Adjust this border_size to larger value to make oval smaller 
+                instance border_size: 2.0
                 fn pixel(self) -> vec4 {
                     let sdf = Sdf2d::viewport(self.pos * self.rect_size)
                     sdf.box(
-                        self.border_width,
+                        self.border_size,
                         1.0,
-                        self.rect_size.x - (self.border_width * 2.0),
+                        self.rect_size.x - (self.border_size * 2.0),
                         self.rect_size.y - 2.0,
-                        max(1.0, self.radius)
+                        max(1.0, self.border_radius)
                     )
                     sdf.fill_keep(mix(self.default_color, self.highlight_color, self.highlight));
                     return sdf.result;
@@ -237,14 +262,17 @@ impl Widget for RoomPreview {
         let uid = self.widget_uid();
         let rooms_list_props = scope.props.get::<RoomsListScopeProps>().unwrap();
 
+        // We handle hits on this widget first to ensure that any clicks on it
+        // will just select the room, rather than resulting in a click on any child view
+        // within the room preview content itself, such as links or avatars.
         match event.hits(cx, self.view.area()) {
             Hit::FingerDown(..) => {
                 cx.set_key_focus(self.view.area());
             }
-            Hit::FingerUp(fe) if !rooms_list_props.was_scrolling &&
-                fe.is_over && fe.is_primary_hit() && fe.was_tap() =>
-            {
-                cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
+            Hit::FingerUp(fe) => {
+                if !rooms_list_props.was_scrolling && fe.is_over && fe.is_primary_hit() && fe.was_tap() {
+                    cx.widget_action(uid, &scope.path, RoomPreviewAction::Click);
+                }
             }
             _ => { }
         }
@@ -328,7 +356,7 @@ impl Widget for RoomPreviewContent {
                     .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_mentions, 99)));
                 unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
                     draw_bg: {
-                        border_width: (border_size),
+                        border_size: (border_size),
                         highlight: 1.0
                     }
                 });
@@ -341,7 +369,7 @@ impl Widget for RoomPreviewContent {
                     .set_text(cx, &format!("{}{plus_sign}", std::cmp::min(room_info.num_unread_messages, 99)));
                 unread_badge.view(id!(rounded_label)).apply_over(cx, live!{
                     draw_bg: {
-                        border_width: (border_size),
+                        border_size: (border_size),
                         highlight: 0.0
                     }
                 });
