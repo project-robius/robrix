@@ -235,15 +235,19 @@ impl MatchEvent for App {
                     cx.action(DockStateAction::RestoreFromAppState);
                 }
                 Some(RoomsPanelRestoreAction::RestoreWindow(window_state)) => {
-                    cx.push_unique_platform_op(CxOsOp::ResizeWindow(CxWindowPool::id_zero(), window_state.window_size.0));
-                    cx.push_unique_platform_op(CxOsOp::RepositionWindow(CxWindowPool::id_zero(), window_state.window_position.0));
+                    cx.push_unique_platform_op(CxOsOp::ResizeWindow(
+                        CxWindowPool::id_zero(),
+                        window_state.window_size.0,
+                    ));
+                    cx.push_unique_platform_op(CxOsOp::RepositionWindow(
+                        CxWindowPool::id_zero(),
+                        window_state.window_position.0,
+                    ));
                     if window_state.window_is_fullscreen {
                         cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
                     }
                 }
-                _ => {
-
-                }
+                _ => {}
             }
 
             match action.as_widget_action().cast() {
@@ -365,7 +369,6 @@ impl AppMain for App {
             self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
         }
         if let (Event::WindowClosed(_) | Event::Shutdown, Some(user_id)) = (event, current_user_id()) {
-            
             if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
                 log!("Bug! Failed to save room panel: {}", e);
             }

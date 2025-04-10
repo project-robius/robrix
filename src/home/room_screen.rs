@@ -2498,10 +2498,14 @@ impl RoomScreen {
             }
             RoomsPanelRestoreAction::AllRoomsLoaded => {
                 if let RoomsPanelRestoreAction::Pending(_) = self.restore_status {
-                    self.view
-                        .label(id!(restore_status_label))
-                        .set_text(cx, &format!("Room {} was not found in the homeserver's list of all rooms.", self.room_name));
-                }                
+                    self.view.label(id!(restore_status_label)).set_text(
+                        cx,
+                        &format!(
+                            "Room {} was not found in the homeserver's list of all rooms.",
+                            self.room_name
+                        ),
+                    );
+                }
             }
             _ => {
                 self.view.label(id!(restore_status_label)).set_text(cx, "");

@@ -1724,7 +1724,6 @@ fn handle_ignore_user_list_subscriber(client: Client) {
     });
 }
 
-
 fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_rooms_panel_state(&user_id).await {
@@ -1752,7 +1751,9 @@ fn handle_load_window_state() {
                 }
             }
             Err(e) => {
-                enqueue_popup_notification(format!("Failed to restore previous window geom state: {e}"));
+                enqueue_popup_notification(format!(
+                    "Failed to restore previous window geom state: {e}"
+                ));
             }
         }
     });

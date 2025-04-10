@@ -210,13 +210,11 @@ pub fn save_room_panel(
 }
 
 /// Save the current state of window geometry state to persistent storage.
-pub fn save_window_state(
-    window_geom: &WindowGeom,
-) -> anyhow::Result<()> {
-    let window_geom_state = WindowGeomState{
+pub fn save_window_state(window_geom: &WindowGeom) -> anyhow::Result<()> {
+    let window_geom_state = WindowGeomState {
         window_is_fullscreen: window_geom.is_fullscreen,
         window_position: crate::utils::DVec2Wrapper(window_geom.position),
-        window_size: crate::utils::DVec2Wrapper(window_geom.inner_size)
+        window_size: crate::utils::DVec2Wrapper(window_geom.inner_size),
     };
     std::fs::write(
         app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
@@ -241,7 +239,10 @@ pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPan
     file.read_to_string(&mut contents).await?;
     let dock_state: HashMap<LiveId, DockItem> =
         HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-    let mut file = match tokio::fs::File::open(persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME)).await
+    let mut file = match tokio::fs::File::open(
+        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
+    )
+    .await
     {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
@@ -256,15 +257,12 @@ pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPan
 
 /// Loads the window geometry's state from persistent storage.
 pub async fn load_window_state() -> anyhow::Result<WindowGeomState> {
-    let mut file = match tokio::fs::File::open(
-        app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
-    )
-    .await
-    {
-        Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(WindowGeomState::default()),
-        Err(e) => return Err(e.into()),
-    };
+    let mut file =
+        match tokio::fs::File::open(app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME)).await {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(WindowGeomState::default()),
+            Err(e) => return Err(e.into()),
+        };
     let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
     file.read_to_end(&mut contents).await?;
     serde_json::from_slice(&contents).map_err(|e| anyhow!(e))
