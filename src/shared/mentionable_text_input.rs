@@ -213,6 +213,8 @@ pub enum MentionableTextInputAction {
     RoomMembersUpdated(Arc<Vec<RoomMember>>),
     /// Room ID has been updated (new)
     RoomIdChanged(OwnedRoomId),
+    /// Power levels for the room have been updated
+    PowerLevelsUpdated(OwnedRoomId, bool),
     /// Default empty action
     None,
 }

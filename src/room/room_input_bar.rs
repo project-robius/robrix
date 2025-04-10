@@ -71,8 +71,6 @@ pub enum RoomInputBarAction {
     UserMentioned(String),
     /// Room members data has been updated
     RoomMembersUpdated(OwnedRoomId, Arc<Vec<RoomMember>>),
-    /// Power levels for the room have been updated
-    PowerLevelsUpdated(OwnedRoomId, bool),
     /// Default empty action
     None,
 }
@@ -98,12 +96,15 @@ impl RoomMemberSubscriber for RoomInputBarSubscriber {
                     room_id
                 );
 
-                // cx.action(RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone()));
+                // Use both approaches for compatibility
                 cx.widget_action(
                     self.widget_uid,
                     &Scope::empty().path,
                     RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone())
                 );
+                
+                // Also emit as a regular MentionableTextInputAction
+                Cx::post_action(MentionableTextInputAction::RoomMembersUpdated(members.clone()));
             }else{
                 log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
             }
@@ -145,13 +146,6 @@ impl Widget for RoomInputBar {
                                 );
                                 self.handle_members_updated(members.clone());
                             },
-                            RoomInputBarAction::PowerLevelsUpdated(room_id, can_notify_room) => {
-                                log!(
-                                    "RoomInputBar received RoomInputBarAction PowerLevelsUpdated action for room {}, can_notify_room={}",
-                                    room_id, can_notify_room
-                                );
-                                self.handle_power_levels_updated(*can_notify_room);
-                            },
                             _ => {}
                         }
                         continue;
@@ -159,17 +153,21 @@ impl Widget for RoomInputBar {
                 }
 
                 // Check for MentionableTextInputAction::RoomIdChanged action
-                if let Some(room_id) =
-                    action.downcast_ref::<MentionableTextInputAction>().and_then(|a| {
-                        if let MentionableTextInputAction::RoomIdChanged(room_id) = a {
-                            Some(room_id)
-                        } else {
-                            None
-                        }
-                    })
-                {
-                    // Create subscription
-                    self.create_room_subscription(cx, room_id.clone());
+                if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
+                    match action_ref {
+                        MentionableTextInputAction::RoomIdChanged(room_id) => {
+                            // Create subscription
+                            self.create_room_subscription(cx, room_id.clone());
+                        },
+                        MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
+                            log!(
+                                "RoomInputBar received MentionableTextInputAction PowerLevelsUpdated action for room {}, can_notify_room={}",
+                                room_id, can_notify_room
+                            );
+                            self.handle_power_levels_updated(*can_notify_room);
+                        },
+                        _ => {},
+                    }
                 }
 
                 // // Check for text input actions
@@ -269,6 +267,9 @@ impl RoomInputBar {
                         current_room_id, can_notify_room);
                 // Pass power level data to MentionableTextInput
                 message_input.set_can_notify_room(can_notify_room);
+                
+                // Emit PowerLevelsUpdated action for other components that might need it
+                Cx::post_action(MentionableTextInputAction::PowerLevelsUpdated(current_room_id.clone(), can_notify_room));
                 
                 // Log the current setting to verify it worked
                 let actual_setting = message_input.can_notify_room();

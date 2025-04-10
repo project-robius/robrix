@@ -17,7 +17,7 @@ use crate::{
 };
 
 use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
+use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputAction};
 use std::sync::{Arc, Mutex};
 
 live_design! {
@@ -264,8 +264,21 @@ impl Widget for EditingPane {
         if let Event::Actions(actions) = event {
             let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
 
-            // Check for room member update actions
+            // Check for room member update actions and power level updates
             for action in actions {
+                // Check for MentionableTextInputAction::PowerLevelsUpdated
+                if let Some(power_levels_action) = action.downcast_ref::<MentionableTextInputAction>() {
+                    if let MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) = power_levels_action {
+                        // Make sure this is for our current room
+                        if let Some(info) = &self.info {
+                            if &info.room_id == room_id {
+                                let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+                                message_input.set_can_notify_room(*can_notify_room);
+                                log!("EditingPane: Set can_notify_room={} on edit_text_input", can_notify_room);
+                            }
+                        }
+                    }
+                }
 
                 if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
                     log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
@@ -491,6 +504,8 @@ impl EditingPane {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
         }
+        
+        log!("EditingPane show: Opening editing pane for room: {}", room_id);
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         match event_tl_item.content() {
@@ -507,6 +522,10 @@ impl EditingPane {
         }
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
+        
+        // Set room ID on the MentionableTextInput
+        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+        edit_text_input.set_room_id(room_id.clone());
 
         // Create room member subscription
         self.create_room_subscription(cx, room_id.clone());
@@ -541,9 +560,14 @@ impl EditingPane {
         self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
 
         submit_async_request(MatrixRequest::GetRoomMembers {
-            room_id,
+            room_id: room_id.clone(),
             memberships: matrix_sdk::RoomMemberships::JOIN,
             local_only: false,
+        });
+        
+        // Request power levels data to determine if @room mentions are allowed
+        submit_async_request(MatrixRequest::GetRoomPowerLevels {
+            room_id,
         });
     }
 
@@ -551,8 +575,15 @@ impl EditingPane {
     fn handle_members_updated(&mut self, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
         if let Some(_info) = &self.info {
             // Pass room member data to MentionableTextInput
-            let message_input = self.mentionable_text_input(id!(edit_text_input));
+            let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
             message_input.set_room_members(members);
+            
+            // Also set room ID if it's not already set
+            if let Some(info) = &self.info {
+                if message_input.get_room_id().is_none() {
+                    message_input.set_room_id(info.room_id.clone());
+                }
+            }
         }
     }
 }

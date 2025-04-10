@@ -30,7 +30,7 @@ use crate::{
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
 use crate::room::room_input_bar::RoomInputBarWidgetExt;
-use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
+use crate::shared::mentionable_text_input::{MentionableTextInputWidgetRefExt, MentionableTextInputAction};
 
 use rangemap::RangeSet;
 
@@ -1140,22 +1140,22 @@ impl Widget for RoomScreen {
                             entered_text.contains("@room")
                         )
                     };
-                    
+
                     // Check if the current user has permission to notify room
                     let can_notify_room = self.tl_state.as_ref()
                         .map(|tl| tl.user_power.can_notify_room())
                         .unwrap_or(false);
-                        
+
                     // Only set room mention flag if the user has permission and text contains @room
                     let notify_room = has_room_mention && can_notify_room;
-                    
-                    log!("Sending message to room {}: {:?}, mentions: {:?}, notify_room: {}", 
+
+                    log!("Sending message to room {}: {:?}, mentions: {:?}, notify_room: {}",
                          room_id, entered_text, mentions, notify_room);
-                    
+
                     // Create Mentions object with both user mentions and room mention status
                     let mut message_mentions = Mentions::with_user_ids(mentions);
                     message_mentions.room = notify_room;
-                    
+
                     let message = message.add_mentions(message_mentions);
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
@@ -1694,33 +1694,33 @@ impl RoomScreen {
                         .set_visible(cx, can_send_message);
                     self.view.view(id!(can_not_send_message_notice))
                         .set_visible(cx, !can_send_message);
-                    
+
                     // Update the @room mention capability based on the user's power level
                     let can_notify_room = user_power_level.can_notify_room();
                     log!("Room screen: Got user power levels update. can_notify_room = {}", can_notify_room);
-                    
+
                     if let Some(room_id) = &self.room_id {
                         // Send the power level update action so RoomInputBar can update MentionableTextInput
                         log!("Room screen: Sending PowerLevelsUpdated action for room {}", room_id);
-                        
+
                         // Use different methods for sending the action to be sure it gets delivered
-                        cx.action(crate::room::room_input_bar::RoomInputBarAction::PowerLevelsUpdated(
+                        cx.action(MentionableTextInputAction::PowerLevelsUpdated(
                             room_id.clone(),
                             can_notify_room
                         ));
-                        
+
                         // Also try direct widget action
                         let input_bar = self.view.view(id!(input_bar)).widget_uid();
                         log!("Sending direct widget action to input_bar uid: {:?}", input_bar);
                         cx.widget_action(
                             input_bar,
                             &Scope::empty().path,
-                            crate::room::room_input_bar::RoomInputBarAction::PowerLevelsUpdated(
+                            MentionableTextInputAction::PowerLevelsUpdated(
                                 room_id.clone(),
                                 can_notify_room
                             )
                         );
-                        
+
                         // Alternative: directly set to mentionable_text_input
                         let message_input = self.view.room_input_bar(id!(input_bar))
                             .mentionable_text_input(id!(message_input));
