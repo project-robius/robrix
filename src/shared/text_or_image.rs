@@ -60,7 +60,7 @@ pub struct TimelineImageInfo {
 
 /// A view that holds an image or text content, and can switch between the two.
 ///
-/// This is useful for displaying alternate text when an image is not (y680-121-263et) available
+/// This is useful for displaying alternate text when an image is not yet available
 /// or fails to load. It can also be used to display a loading message while an image
 /// is being fetched.
 #[derive(Live, Widget, LiveHook)]
