@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::app::{AppState, SelectedRoom};
 
-use super::room_screen::RoomScreenWidgetRefExt;
+use super::{room_screen::RoomScreenWidgetRefExt, room_search_result::SearchResultAction};
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -169,7 +169,7 @@ impl MainDesktopUI {
 
         // create a new tab for the room
         let (tab_bar, _pos) = dock.find_tab_bar_of_tab(live_id!(home_tab)).unwrap();
-        let kind = live_id!(room_screen);
+        let kind: LiveId = live_id!(room_screen);
 
         let result = dock.create_and_select_tab(
             cx,
@@ -238,6 +238,7 @@ impl MainDesktopUI {
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
+        cx.action(SearchResultAction::Close);
     }
 }
 

@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, room_search_result::SearchResultAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction, search_bar::SearchBarWidgetRefExt}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -193,6 +193,7 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
+        self.app_state.search_widget = Some(self.ui.search_bar(id!(home_screen_search_bar)).widget_uid());
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 
@@ -305,6 +306,9 @@ impl MatchEvent for App {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
+            if let Some(SearchResultAction::Close) = action.downcast_ref() {
+                self.ui.search_bar(id!(home_screen_search_bar)).text_input(id!(input)).set_text(cx, "");
+            }
             // // message source modal handling.
             // match action.as_widget_action().cast() {
             //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
@@ -407,6 +411,10 @@ pub struct AppState {
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
+    /// Main Desktop Ui's search widget uid.
+    /// Room screens will get this widget uid to differentiate search action 
+    /// from search bar widget.
+    pub search_widget: Option<WidgetUid>,
 }
 
 #[derive(Default, Debug)]

@@ -5,10 +5,11 @@ use bitflags::bitflags;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
 use matrix_sdk_ui::timeline::EventTimelineItem;
+use ruma::events::{AnyMessageLikeEventContent, AnyTimelineEvent};
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::room_screen::{MessageAction, MessageOrSticker};
+use super::{room_screen::{MessageAction, MessageOrSticker}, room_search_result};
 
 const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
@@ -306,6 +307,29 @@ impl MessageAbilities {
         abilities
     }
 
+    pub fn from_user_power_and_any_event(
+        _user_power_levels: &UserPowerLevels,
+        event_tl_item: &AnyTimelineEvent,
+        _message: &room_search_result::MessageOrSticker,
+        _has_html: bool,
+    ) -> Self {
+        let is_editable = {
+            match event_tl_item {
+                AnyTimelineEvent::MessageLike(msg) => {
+                    match msg.original_content() {
+                        Some(AnyMessageLikeEventContent::RoomMessage(_message)) => {
+                            false
+                        }
+                        _ => false
+                    }
+                }
+                AnyTimelineEvent::State(_state) => false
+            }
+        };
+        let mut abilities = Self::empty();
+        abilities.set(Self::CanEdit, is_editable);
+        abilities
+    }
 }
 
 /// Details about the message that define its context menu content.
