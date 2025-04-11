@@ -14,18 +14,6 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    // Copied from Moxin
-    FadeView = <CachedView> {
-        draw_bg: {
-            instance opacity: 1.0
-
-            fn pixel(self) -> vec4 {
-                let color = sample2d_rt(self.image, self.pos * self.scale + self.shift) + vec4(self.marked, 0.0, 0.0, 0.0);
-                return Pal::premul(vec4(color.xyz, color.w * self.opacity))
-            }
-        }
-    }
-
     pub LoadingPane = {{LoadingPane}} {
         visible: false,
         flow: Overlay,
@@ -50,7 +38,7 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 3.0
+                border_radius: 3.0
             }
 
             title_view = <View> {

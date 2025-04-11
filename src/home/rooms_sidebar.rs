@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::shared::search_bar::SearchBarAction;
+use crate::shared::search_bar::{SearchBarAction, SearchBarWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -18,11 +18,11 @@ live_design! {
         draw_bg: {
             instance bg_color: (COLOR_PRIMARY)
             instance border_color: #f2f2f2
-            instance border_width: 0.003
+            instance border_size: 0.003
 
             // Draws a right-side border
             fn pixel(self) -> vec4 {
-                if self.pos.x > 1.0 - self.border_width {
+                if self.pos.x > 1.0 - self.border_size {
                     return self.border_color;
                 } else {
                     return self.bg_color;
@@ -87,8 +87,9 @@ impl Widget for RoomsView {
 impl WidgetMatchEvent for RoomsView {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, scope: &mut Scope) {
         let widget_uid = self.widget_uid();
-        for action in actions {
-            match action.as_widget_action().cast() {
+        let search_bar_widget_uid = self.view.search_bar(id!(search_bar)).widget_uid();
+        if let Some(search_widget_action) = actions.find_widget_action(search_bar_widget_uid) {
+            match search_widget_action.cast() {
                 SearchBarAction::Search(keywords) => {
                     cx.widget_action(widget_uid, &scope.path, RoomsViewAction::Search(keywords.clone()));
                 }

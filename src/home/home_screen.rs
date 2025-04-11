@@ -31,7 +31,7 @@ live_design! {
             <View> {
                 flow: Down
                 width: Fill, height: Fill
-                <SearchBar> {}
+                home_screen_search_bar = <SearchBar> {}
                 <MainDesktopUI> {}
             }
         }

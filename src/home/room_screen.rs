@@ -1,40 +1,41 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, fs, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
 
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
-use matrix_sdk::{
-    ruma::{
-        events::{receipt::Receipt, room::{
-            message::{
-                AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
-            }, ImageInfo, MediaSource
-        }, sticker::StickerEventContent}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
-    }, OwnedServerName
-};
+use matrix_sdk::{room::RoomMember, ruma::{
+    events::{receipt::Receipt, room::{
+        message::{
+            AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
+        }, ImageInfo, MediaSource
+    },
+    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+}, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
-use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Categories, Criteria, EventContext, OrderBy, ResultCategories}}, events::{AnyTimelineEvent, EventContent}};
+use ruma::api::client::search::search_events::v3::ResultCategories;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, search_bar::SearchBarAction, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, search_bar::SearchBarAction, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
+use crate::room::room_input_bar::RoomInputBarWidgetExt;
+use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
+
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchTimelineItem}};
-use super::room_search_result::SearchResultWidgetExt;
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetRefExt, SearchTimelineItem}};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -61,6 +62,7 @@ live_design! {
     use crate::home::loading_pane::*;
     use crate::home::event_reaction_list::*;
     use crate::home::editing_pane::*;
+    use crate::room::room_input_bar::*;
     use crate::home::room_search_result::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
@@ -166,7 +168,7 @@ live_design! {
             draw_bg: {
                 instance vertical_bar_color: (USERNAME_TEXT_COLOR)
                 instance vertical_bar_width: 2.0
-                instance radius: 0.0
+                instance border_radius: 0.0
 
                 fn get_color(self) -> vec4 {
                     return self.color;
@@ -180,7 +182,7 @@ live_design! {
                         0.0,
                         self.rect_size.x,
                         self.rect_size.y,
-                        max(1.0, self.radius)
+                        max(1.0, self.border_radius)
                     );
                     sdf.fill(self.get_color());
 
@@ -311,70 +313,83 @@ live_design! {
 
         body = <View> {
             width: Fill,
-            height: Fit
-            flow: Right,
-            padding: 10.0,
+            height: Fit,
+            flow: Overlay
+            <View> {
 
-            profile = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
-                height: Fit,
-                margin: {top: 4.5, right: 10}
-                flow: Down,
-                avatar = <Avatar> {
-                    width: 50.,
-                    height: 50.
-                    // draw_bg: {
-                    //     fn pixel(self) -> vec4 {
-                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                    //         let c = self.rect_size * 0.5;
-                    //         sdf.circle(c.x, c.y, c.x - 2.)
-                    //         sdf.fill_keep(self.get_color());
-                    //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
-                    //         return sdf.result
-                    //     }
-                    // }
-                }
-                timestamp = <Timestamp> {
-                    padding: { top: 3.0 }
-                }
-                datestamp = <Timestamp> {
-                    padding: { top: 3.0 }
-                }
-            }
-            content = <View> {
                 width: Fill,
                 height: Fit
-                flow: Down,
-                padding: 0.0
-                <View> {
-                    flow: Right,
-                    width: Fill,
+                flow: Right,
+                padding: 10.0,
+
+                profile = <View> {
+                    align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                    width: 65.0,
                     height: Fit,
-                    username = <Label> {
-                        width: Fill,
-                        margin: {bottom: 9.0, top: 11.0, right: 10.0,}
-                        draw_text: {
-                            text_style: <USERNAME_TEXT_STYLE> {},
-                            color: (USERNAME_TEXT_COLOR)
-                            wrap: Ellipsis,
-                        }
-                        text: "<Username not available>"
+                    margin: {top: 4.5, right: 10}
+                    flow: Down,
+                    avatar = <Avatar> {
+                        width: 50.,
+                        height: 50.
+                        // draw_bg: {
+                        //     fn pixel(self) -> vec4 {
+                        //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                        //         let c = self.rect_size * 0.5;
+                        //         sdf.circle(c.x, c.y, c.x - 2.)
+                        //         sdf.fill_keep(self.get_color());
+                        //         sdf.stroke((COLOR_PROFILE_CIRCLE), 1);
+                        //         return sdf.result
+                        //     }
+                        // }
+                    }
+                    timestamp = <Timestamp> {
+                        padding: { top: 3.0 }
+                    }
+                    datestamp = <Timestamp> {
+                        padding: { top: 3.0 }
                     }
                 }
-
-                message = <HtmlOrPlaintext> { }
-
-                // <LineH> {
-                //     margin: {top: 13.0, bottom: 5.0}
-                // }
-                <View> {
+                content = <View> {
                     width: Fill,
                     height: Fit
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
-                }
+                    flow: Down,
+                    padding: 0.0
+                    <View> {
+                        flow: Right,
+                        width: Fill,
+                        height: Fit,
+                        username = <Label> {
+                            width: Fill,
+                            margin: {bottom: 9.0, top: 11.0, right: 10.0,}
+                            draw_text: {
+                                text_style: <USERNAME_TEXT_STYLE> {},
+                                color: (USERNAME_TEXT_COLOR)
+                                wrap: Ellipsis,
+                            }
+                            text: "<Username not available>"
+                        }
+                    }
 
+                    message = <HtmlOrPlaintext> { }
+
+                    // <LineH> {
+                    //     margin: {top: 13.0, bottom: 5.0}
+                    // }
+                    <View> {
+                        width: Fill,
+                        height: Fit
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
+
+                }
+            }
+            // Apply a whitish overlay over the searched result's contextual messages 
+            overlay_message = <View> {
+                width: Fill, height: Fill,
+                show_bg: true,
+                visible: false,
+                draw_bg: {color: (#FFFFFF80),}
             }
         }
     }
@@ -389,28 +404,30 @@ live_design! {
             }
         }
         body = {
-            padding: { top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
-            profile = <View> {
-                align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
-                width: 65.0,
-                height: Fit,
-                flow: Down,
-                timestamp = <Timestamp> {
-                    margin: {top: 1.5}
+            <View> {
+                padding: { top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
+                profile = <View> {
+                    align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
+                    width: 65.0,
+                    height: Fit,
+                    flow: Down,
+                    timestamp = <Timestamp> {
+                        margin: {top: 1.5}
+                    }
                 }
-            }
-            content = <View> {
-                width: Fill,
-                height: Fit,
-                flow: Down,
-                padding: { left: 10.0 }
-
-                message = <HtmlOrPlaintext> { }
-                <View> {
+                content = <View> {
                     width: Fill,
-                    height: Fit
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
+                    height: Fit,
+                    flow: Down,
+                    padding: { left: 10.0 }
+
+                    message = <HtmlOrPlaintext> { }
+                    <View> {
+                        width: Fill,
+                        height: Fit
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
                 }
             }
         }
@@ -713,8 +730,6 @@ live_design! {
         draw_bg: {
             color: (COLOR_SECONDARY)
         }
-        room_screen_search_result = <SearchResult> {
-        }
         room_screen_wrapper = <View> {
             width: Fill, height: Fill,
             flow: Overlay,
@@ -798,7 +813,7 @@ live_design! {
                             draw_bg: {
                                 border_color: (COLOR_DANGER_RED),
                                 color: #fff0f0 // light red
-                                radius: 5
+                                border_radius: 5
                             }
                             draw_icon: {
                                 svg_file: (ICON_CLOSE),
@@ -828,36 +843,7 @@ live_design! {
                     flow: Overlay,
 
                     // Below that, display a view that holds the message input bar and send button.
-                    input_bar = <View> {
-                        width: Fill, height: Fit
-                        flow: Right,
-                        // Bottom-align everything to ensure that buttons always stick to the bottom
-                        // even when the message_input box is very tall.
-                        align: {y: 1.0},
-                        padding: 8.
-                        show_bg: true,
-                        draw_bg: {
-                            color: (COLOR_PRIMARY)
-                        }
-
-                        location_button = <IconButton> {
-                            draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-                            icon_walk: {width: Fit, height: 26, margin: {left: 0, bottom: -1, right: 3}},
-                            text: "",
-                        }
-
-                        message_input = <RobrixTextInput> {
-                            width: Fill, height: Fit,
-                            margin: { bottom: 7 }
-                            align: {y: 0.5}
-                            empty_message: "Write a message (in Markdown) ..."
-                        }
-
-                        send_message_button = <IconButton> {
-                            draw_icon: {svg_file: (ICON_SEND)},
-                            icon_walk: {width: Fit, height: 25, margin: {left: -3} },
-                        }
-                    }
+                    input_bar = <RoomInputBar> {}
 
                     can_not_send_message_notice = <View> {
                         visible: false
@@ -898,7 +884,11 @@ live_design! {
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane = <LoadingPane> { }
 
-
+            search_result_overlay = <View> {
+                visible: false,
+                search_result_inner = <SearchResult> { 
+                } 
+            }
             /*
              * This is broken currently, so I'm disabling it.
              *
@@ -951,6 +941,12 @@ pub struct RoomScreen {
     #[rust] pub tl_state: Option<TimelineUiState>,
     /// By typing inside the Search input, search result
     #[rust] pub other_display: RoomScreenOtherDisplay,
+    /// The timer for sending a search request after a delay when user stops typing.
+    #[rust] search_delay_timer: Timer,
+    /// The search query to be sent adter the search delay timer ends.
+    /// This field is reset when the user continues typing before the search delay timer ends.
+    #[rust] search_query: String,
+    #[rust] search_widget_uid: Option<WidgetUid>
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -983,7 +979,21 @@ impl Widget for RoomScreen {
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
         }
-
+        if let Event::Timer(te) = event {
+            if self.search_delay_timer.is_timer(te).is_some() {
+                if let Some(room_id) = &self.room_id {
+                    if self.search_query.is_empty() {
+                        self.other_display = RoomScreenOtherDisplay::None;
+                        return; 
+                    }
+                    submit_async_request(MatrixRequest::SearchMessages { 
+                        room_id: room_id.clone(), 
+                        include_all_rooms: false,
+                        search_term: self.search_query.clone()
+                    });
+                }
+            }
+        }
         if let Event::Actions(actions) = event {
             for (_, wr) in portal_list.items_with_actions(actions) {
                 let reaction_list = wr.reaction_list(id!(reaction_list));
@@ -1047,8 +1057,10 @@ impl Widget for RoomScreen {
 
             self.handle_message_actions(cx, actions, &portal_list, &loading_pane);
 
-            let message_input = self.text_input(id!(message_input));
+            let message_input = self.room_input_bar(id!(input_bar)).text_input(id!(text_input));
+
             for action in actions {
+                self.handle_search(cx, action, scope);
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { return };
                 if let MessageHighlightAnimationState::Pending { item_id } = tl.message_highlight_animation_state {
@@ -1095,7 +1107,7 @@ impl Widget for RoomScreen {
                 self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
             }
 
-            self.handle_search(cx, actions);
+            
             // Clear the replying-to preview pane if the "cancel reply" button was clicked
             // or if the `Escape` key was pressed within the message input box.
             if self.button(id!(cancel_reply_button)).clicked(actions)
@@ -1131,7 +1143,6 @@ impl Widget for RoomScreen {
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
-                        // TODO: support attaching mentions, etc.
                     });
 
                     self.clear_replying_to(cx);
@@ -1139,6 +1150,7 @@ impl Widget for RoomScreen {
                     location_preview.redraw(cx);
                 }
             }
+
 
             // Handle the send message button being clicked or Cmd/Ctrl + Return being pressed.
             if self.button(id!(send_message_button)).clicked(actions)
@@ -1149,21 +1161,34 @@ impl Widget for RoomScreen {
                 let entered_text = message_input.text().trim().to_string();
                 if !entered_text.is_empty() {
                     let room_id = self.room_id.clone().unwrap();
-                    log!("Sending message to room {}: {:?}", room_id, entered_text);
-                    let message = if let Some(html_text) = entered_text.strip_prefix("/html") {
-                        RoomMessageEventContent::text_html(html_text, html_text)
+                    let (message, mentions) = if let Some(html_text) = entered_text.strip_prefix("/html") {
+                        (
+                            RoomMessageEventContent::text_html(html_text, html_text),
+                            self.view.room_input_bar(id!(input_bar))
+                                .mentionable_text_input(id!(message_input))
+                                .get_real_mentions_in_html_text(html_text),
+                        )
                     } else if let Some(plain_text) = entered_text.strip_prefix("/plain") {
-                        RoomMessageEventContent::text_plain(plain_text)
+                        (
+                            RoomMessageEventContent::text_plain(plain_text),
+                            Default::default(),
+                        )
                     } else {
-                        RoomMessageEventContent::text_markdown(entered_text)
+                        (
+                            RoomMessageEventContent::text_markdown(&entered_text),
+                            self.view.room_input_bar(id!(input_bar))
+                                .mentionable_text_input(id!(message_input))
+                                .get_real_mentions_in_markdown_text(&entered_text),
+                        )
                     };
+                    log!("Sending message to room {}: {:?}, mentions: {:?}", room_id, entered_text, mentions);
+                    let message = message.add_mentions(Mentions::with_user_ids(mentions));
                     submit_async_request(MatrixRequest::SendMessage {
                         room_id,
                         message,
                         replied_to: self.tl_state.as_mut().and_then(
                             |tl| tl.replying_to.take().map(|(_, rep)| rep)
                         ),
-                        // TODO: support attaching mentions, etc.
                     });
 
                     self.clear_replying_to(cx);
@@ -1470,6 +1495,11 @@ impl RoomScreen {
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
+                            // For now, we paginate a cleared timeline in order to be able to show something at least.
+                            // A proper solution would be what's described below, which would be to save a few event IDs
+                            // and then either focus on them (if we're not close to the end of the timeline)
+                            // or paginate backwards until we find them (only if we are close the end of the timeline).
+                            should_continue_backwards_pagination = true;
                         }
 
                         // If the bottom of the timeline (the last event) is visible, then we should
@@ -1656,11 +1686,16 @@ impl RoomScreen {
                     // Here, to be most efficient, we could redraw only the updated event,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
-                TimelineUpdate::RoomMembersFetched => {
+                TimelineUpdate::RoomMembersSynced => {
                     // log!("Timeline::handle_event(): room members fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the user avatars and names in the timeline,
                     // but for now we just fall through and let the final `redraw()` call re-draw the whole timeline view.
                 }
+                TimelineUpdate::RoomMembersListFetched { members } => {
+                    // Use `pub/sub` pattern here to let multiple components share room members data
+                    use crate::room::room_member_manager::room_members;
+                    room_members::update(cx, tl.room_id.clone(), members);
+                },
                 TimelineUpdate::MediaFetched => {
                     log!("Timeline::handle_event(): media fetched for room {}", tl.room_id);
                     // Here, to be most efficient, we could redraw only the media items in the timeline,
@@ -1720,6 +1755,7 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
                     tl.searched_results = timeline_events;
+                    cx.action(SearchResultAction::Success(result.room_events.results.len(), result.room_events.highlights.join(", ")));
                     tl.searched_results_highlighted_strings = result.room_events.highlights;
                     done_loading = true;
                 }
@@ -1776,92 +1812,81 @@ impl RoomScreen {
 
     /// Handles a link being clicked in any child widgets of this RoomScreen.
     ///
-    /// Returns `true` if the given `action` was indeed an `HtmlLinkAction::Clicked` action.
+    /// Returns `true` if the given `action` was handled as a link click.
     fn handle_link_clicked(
         &mut self,
         cx: &mut Cx,
         action: &Action,
         pane: &UserProfileSlidingPaneRef,
     ) -> bool {
-        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
-            // A closure that handles both MatrixToUri and MatrixUri links,
-            // and returns whether the link was handled.
-            let mut handle_uri = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
-                match id {
-                    MatrixId::Room(room_id) => {
-                        if self.room_id.as_ref() == Some(room_id) {
-                            return true;
-                        }
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
-                        }
-                        if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                            log!("TODO: jump to known room {}", room_id);
-                        } else {
-                            log!("TODO: fetch and display room preview for room {}", room_id);
-                        }
-                        true
-                    }
-                    MatrixId::RoomAlias(room_alias) => {
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
-                        }
-                        log!("TODO: open room alias {}", room_alias);
-                        // TODO: open a room loading screen that shows a spinner
-                        //       while our background async task calls Client::resolve_room_alias()
-                        //       and then either jumps to the room if known, or fetches and displays
-                        //       a room preview for that room.
-                        true
-                    }
-                    MatrixId::User(user_id) => {
-                        // There is no synchronous way to get the user's full profile info
-                        // including the details of their room membership,
-                        // so we fill in with the details we *do* know currently,
-                        // show the UserProfileSlidingPane, and then after that,
-                        // the UserProfileSlidingPane itself will fire off
-                        // an async request to get the rest of the details.
-                        self.show_user_profile(
-                            cx,
-                            pane,
-                            UserProfilePaneInfo {
-                                profile_and_room_id: UserProfileAndRoomId {
-                                    user_profile: UserProfile {
-                                        user_id: user_id.to_owned(),
-                                        username: None,
-                                        avatar_state: AvatarState::Unknown,
-                                    },
-                                    room_id: self.room_id.clone().unwrap(),
+        // A closure that handles both MatrixToUri and MatrixUri links,
+        // and returns whether the link was handled.
+        let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+            match id {
+                MatrixId::User(user_id) => {
+                    // There is no synchronous way to get the user's full profile info
+                    // including the details of their room membership,
+                    // so we fill in with the details we *do* know currently,
+                    // show the UserProfileSlidingPane, and then after that,
+                    // the UserProfileSlidingPane itself will fire off
+                    // an async request to get the rest of the details.
+                    self.show_user_profile(
+                        cx,
+                        pane,
+                        UserProfilePaneInfo {
+                            profile_and_room_id: UserProfileAndRoomId {
+                                user_profile: UserProfile {
+                                    user_id: user_id.to_owned(),
+                                    username: None,
+                                    avatar_state: AvatarState::Unknown,
                                 },
-                                room_name: self.room_name.clone(),
-                                // TODO: use the extra `via` parameters
-                                room_member: None,
+                                room_id: self.room_id.clone().unwrap(),
                             },
-                        );
-                        true
-                    }
-                    MatrixId::Event(room_id, event_id) => {
-                        if let Err(e) = robius_open::Uri::new(&url).open() {
-                            error!("Failed to open URL {:?}. Error: {:?}", url, e);
-                            enqueue_popup_notification(format!("Could not open URL: {url}"));
-                        }
-                        log!("TODO: open event {} in room {}", event_id, room_id);
-                        // TODO: this requires the same first step as the `MatrixId::Room` case above,
-                        //       but then we need to call Room::event_with_context() to get the event
-                        //       and its context (surrounding events ?).
-                        true
-                    }
-                    _ => false,
+                            room_name: self.room_name.clone(),
+                            // TODO: use the extra `via` parameters
+                            room_member: None,
+                        },
+                    );
+                    true
                 }
-            };
+                MatrixId::Room(room_id) => {
+                    if self.room_id.as_ref() == Some(room_id) {
+                        enqueue_popup_notification("You are already viewing that room.".into());
+                        return true;
+                    }
+                    if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                        log!("TODO: jump to known room {}", room_id);
+                    } else {
+                        log!("TODO: fetch and display room preview for room {}", room_id);
+                    }
+                    false
+                }
+                MatrixId::RoomAlias(room_alias) => {
+                    log!("TODO: open room alias {}", room_alias);
+                    // TODO: open a room loading screen that shows a spinner
+                    //       while our background async task calls Client::resolve_room_alias()
+                    //       and then either jumps to the room if known, or fetches and displays
+                    //       a room preview for that room.
+                    false
+                }
+                MatrixId::Event(room_id, event_id) => {
+                    log!("TODO: open event {} in room {}", event_id, room_id);
+                    // TODO: this requires the same first step as the `MatrixId::Room` case above,
+                    //       but then we need to call Room::event_with_context() to get the event
+                    //       and its context (surrounding events ?).
+                    false
+                }
+                _ => false,
+            }
+        };
 
+        if let HtmlLinkAction::Clicked { url, .. } = action.as_widget_action().cast() {
             let mut link_was_handled = false;
             if let Ok(matrix_to_uri) = MatrixToUri::parse(&url) {
-                link_was_handled |= handle_uri(matrix_to_uri.id(), matrix_to_uri.via());
+                link_was_handled |= handle_matrix_link(matrix_to_uri.id(), matrix_to_uri.via());
             }
-            if let Ok(matrix_uri) = MatrixUri::parse(&url) {
-                link_was_handled |= handle_uri(matrix_uri.id(), matrix_uri.via());
+            else if let Ok(matrix_uri) = MatrixUri::parse(&url) {
+                link_was_handled |= handle_matrix_link(matrix_uri.id(), matrix_uri.via());
             }
 
             if !link_was_handled {
@@ -1872,7 +1897,19 @@ impl RoomScreen {
                 }
             }
             true
-        } else {
+        }
+        else if let RobrixHtmlLinkAction::ClickedMatrixLink { url, matrix_id, via, .. } = action.as_widget_action().cast() {
+            let link_was_handled = handle_matrix_link(&matrix_id, &via);
+            if !link_was_handled {
+                log!("Opening URL \"{}\"", url);
+                if let Err(e) = robius_open::Uri::new(&url).open() {
+                    error!("Failed to open URL {:?}. Error: {:?}", url, e);
+                    enqueue_popup_notification(format!("Could not open URL: {url}"));
+                }
+            }
+            true
+        }
+        else {
             false
         }
     }
@@ -2349,7 +2386,7 @@ impl RoomScreen {
             // Even though we specify that room member profiles should be lazy-loaded,
             // the matrix server still doesn't consistently send them to our client properly.
             // So we kick off a request to fetch the room members here upon first viewing the room.
-            submit_async_request(MatrixRequest::FetchRoomMembers { room_id });
+            submit_async_request(MatrixRequest::SyncRoomMemberList { room_id });
         }
 
         // Now, restore the visual state of this timeline from its previously-saved state.
@@ -2476,7 +2513,13 @@ impl RoomScreen {
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
-        self.room_id = Some(room_id);
+        self.room_id = Some(room_id.clone());
+
+        // Clear any mention input state
+        let input_bar = self.view.room_input_bar(id!(input_bar));
+        let message_input = input_bar.mentionable_text_input(id!(message_input));
+        message_input.set_room_id(room_id);
+
         self.show_timeline(cx);
     }
 
@@ -2577,46 +2620,67 @@ impl RoomScreen {
         }
         tl.last_scrolled_index = first_index;
     }
+    
+    
     /// Handles any search-related actions received by this RoomScreen.
     ///
     /// See `SearchBarAction` for the possible actions.
     fn handle_search(
         &mut self,
         cx: &mut Cx,
-        actions: &ActionsBuf
+        action: &Action,
+        scope: &mut Scope,
     ) {
-        for action in actions {
-            match action.as_widget_action().cast() {
-                SearchBarAction::Search(keywords) => {
-                    let Some(room_id) = self.room_id.clone() else { return };
-                    let mut search_categories = Categories::new();
-                    let mut room_filter = RoomEventFilter::empty();
-                    room_filter.rooms = Some(vec![self.tl_state.as_ref().unwrap().room_id.clone()]);
-                    let mut criteria = Criteria::new(keywords);
-                    criteria.filter = room_filter;
-                    criteria.order_by = Some(OrderBy::Recent);
-                    criteria.event_context = EventContext::new();
-                    criteria.event_context.after_limit = uint!(1);
-                    criteria.event_context.before_limit = uint!(1);
-                    criteria.event_context.include_profile = true;
-  
-                    search_categories.room_events = Some(criteria);
-                    submit_async_request(MatrixRequest::Search {
-                        room_id,
-                        search_categories
-                    });
-                    self.other_display = RoomScreenOtherDisplay::SearchResult;
-                }
-                _ => {
+        if let Some(SearchResultAction::Close) = action.downcast_ref() {
+            self.view(id!(search_result_overlay)).search_result(id!(search_result_inner)).set_summary(cx, 0, String::from(""));
+            self.view(id!(search_result_overlay)).set_visible(cx, false);
+            self.other_display = RoomScreenOtherDisplay::None;
+        }
+        let widget_action = action.as_widget_action();
+        match widget_action.cast() {
+            SearchBarAction::Search(keywords) => {
+                if let (Some(selected_room), Some(search_widget_id)) = {
+                    let app_state = scope.data.get::<AppState>().unwrap();
+                    (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
+                } {
+                    if let Some(widget_action) = widget_action {
+                        if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
+                            self.search_delay_timer = cx.start_timeout(1.0);
+                            self.search_query = keywords.clone();
+                            self.other_display = RoomScreenOtherDisplay::SearchResult;
+                            self.view(id!(search_result_overlay)).set_visible(cx, true);
+                        }
+                    }
                 }
             }
-            match action.downcast_ref().cast() {
-                Some(SearchResultAction::Success(results, criteria )) => {
-                    self.view.search_result(id!(room_screen_search_result)).set_list(cx, results.len(), criteria);
+            SearchBarAction::ResetSearch => {
+                if let (Some(selected_room), Some(search_widget_id)) = {
+                    let app_state = scope.data.get::<AppState>().unwrap();
+                    (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
+                } {
+                    if let Some(widget_action) = widget_action {
+                        if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
+                            cx.stop_timer(self.search_delay_timer);
+                            self.search_query = String::new();
+                            self.other_display = RoomScreenOtherDisplay::None;
+                            self.view(id!(search_result_overlay)).set_visible(cx, false);
+                        }
+                    }
                 }
-                _ => {}
+            }
+            _ => {
+
             }
         }
+    }
+    
+    /// Stores the live ID of the `SearchBarWidget` that is currently associated
+    /// with this `RoomScreen`.
+    ///
+    /// This is used to forward search-related actions from the `SearchBarWidget`
+    /// to the `RoomScreen`.
+    fn set_search_uid(&mut self, search_widget_id: Option<WidgetUid>) {
+        self.search_widget_uid = search_widget_id;
     }
 }
 
@@ -2630,6 +2694,15 @@ impl RoomScreenRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
+    }
+
+    /// See [`RoomScreen::set_displayed_room()`].
+    pub fn set_search_uid(
+        &self,
+        search_widget_id: Option<WidgetUid>,
+    ) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_search_uid(search_widget_id);
     }
 }
 
@@ -2733,7 +2806,14 @@ pub enum TimelineUpdate {
     /// A notice that the room's members have been fetched from the server,
     /// though the success or failure of the request is not yet known until the client
     /// requests the member info via a timeline event's `sender_profile()` method.
-    RoomMembersFetched,
+    RoomMembersSynced,
+    /// A notice that the room's full member list has been fetched from the server,
+    /// includes a complete list of room members that can be shared across components.
+    /// This is different from RoomMembersSynced which only indicates members were fetched
+    /// but doesn't provide the actual data.
+    RoomMembersListFetched {
+        members: Vec<RoomMember>,
+    },
     /// A notice that one or more requested media items (images, videos, etc.)
     /// that should be displayed in this timeline have now been fetched and are available.
     MediaFetched,
@@ -4377,6 +4457,16 @@ impl Widget for Message {
                     );
                 }
             }
+            Hit::FingerLongPress(lp) => {
+                cx.widget_action(
+                    details.room_screen_widget_uid,
+                    &scope.path,
+                    MessageAction::OpenMessageContextMenu {
+                        details: details.clone(),
+                        abs_pos: lp.abs,
+                    }
+                );
+            }
             // If the hit occurred on the replied-to message preview, jump to it.
             Hit::FingerUp(fe) if fe.is_over && fe.is_primary_hit() && fe.was_tap() => {
                 // TODO: move this to the event handler for any reply preview content,
@@ -4478,10 +4568,3 @@ impl MessageRef {
     }
 }
 
-/// Actions related to a specific message within a room timeline.
-#[derive(Clone, DefaultNone, Debug)]
-pub enum SearchResultAction {
-    /// List of search result and the search criteria
-    Success(Vector<AnyTimelineEvent>, String),
-    None
-}

@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, room_search_result::SearchResultAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction, search_bar::SearchBarWidgetRefExt}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -24,7 +24,7 @@ live_design! {
 
     APP_TAB_COLOR = #344054
     APP_TAB_COLOR_HOVER = #636e82
-    APP_TAB_COLOR_SELECTED = #091
+    APP_TAB_COLOR_ACTIVE = #091
 
     AppTab = <RadioButton> {
         width: Fit,
@@ -35,7 +35,7 @@ live_design! {
         icon_walk: {width: 20, height: 20, margin: 0.0}
         label_walk: {margin: 0.0}
 
-        draw_radio: {
+        draw_bg: {
             radio_type: Tab,
 
             // Draws a horizontal line under the tab when selected or hovered.
@@ -55,8 +55,8 @@ live_design! {
                             (APP_TAB_COLOR_HOVER),
                             self.hover
                         ),
-                        (APP_TAB_COLOR_SELECTED),
-                        self.selected
+                        (APP_TAB_COLOR_ACTIVE),
+                        self.active
                     )
                 );
                 return sdf.result;
@@ -64,35 +64,35 @@ live_design! {
         }
 
         draw_text: {
-            color_unselected: (APP_TAB_COLOR)
-            color_unselected_hover: (APP_TAB_COLOR_HOVER)
-            color_selected: (APP_TAB_COLOR_SELECTED)
+            color: (APP_TAB_COLOR)
+            color_hover: (APP_TAB_COLOR_HOVER)
+            color_active: (APP_TAB_COLOR_ACTIVE)
 
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        self.color_unselected,
-                        self.color_unselected_hover,
+                        self.color,
+                        self.color_hover,
                         self.hover
                     ),
-                    self.color_selected,
-                    self.selected
+                    self.color_active,
+                    self.active
                 )
             }
         }
 
         draw_icon: {
-            instance color_unselected: (APP_TAB_COLOR)
-            instance color_unselected_hover: (APP_TAB_COLOR_HOVER)
-            instance color_selected: (APP_TAB_COLOR_SELECTED)
+            instance color: (APP_TAB_COLOR)
+            instance color_hover: (APP_TAB_COLOR_HOVER)
+            instance color_active: (APP_TAB_COLOR_ACTIVE)
             fn get_color(self) -> vec4 {
                 return mix(
                     mix(
-                        self.color_unselected,
-                        self.color_unselected_hover,
+                        self.color,
+                        self.color_hover,
                         self.hover
                     ),
-                    self.color_selected,
+                    self.color_active,
                     self.selected
                 )
             }
@@ -130,7 +130,7 @@ live_design! {
                     // Context menus should be shown above other UI elements,
                     // but beneath the verification modal.
                     new_message_context_menu = <NewMessageContextMenu> { }
-                    
+
                     // message_source_modal = <Modal> {
                     //     content: {
                     //         message_source_modal_inner = <MessageSourceModal> {}
@@ -169,6 +169,7 @@ impl LiveRegister for App {
         // then other modules widgets.
         makepad_widgets::live_design(cx);
         crate::shared::live_design(cx);
+        crate::room::live_design(cx);
         crate::verification_modal::live_design(cx);
         crate::home::live_design(cx);
         crate::profile::live_design(cx);
@@ -192,6 +193,7 @@ impl MatchEvent for App {
         self.update_login_visibility(cx);
 
         log!("App::handle_startup(): starting matrix sdk loop");
+        self.app_state.search_widget = Some(self.ui.search_bar(id!(home_screen_search_bar)).widget_uid());
         crate::sliding_sync::start_matrix_tokio().unwrap();
     }
 
@@ -262,7 +264,7 @@ impl MatchEvent for App {
                 RoomsPanelAction::None => { }
                 _ => {}
             }
-            
+
             match action.as_widget_action().cast() {
                 TooltipAction::HoverIn {
                     widget_rect,
@@ -304,6 +306,9 @@ impl MatchEvent for App {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
 
+            if let Some(SearchResultAction::Close) = action.downcast_ref() {
+                self.ui.search_bar(id!(home_screen_search_bar)).text_input(id!(input)).set_text(cx, "");
+            }
             // // message source modal handling.
             // match action.as_widget_action().cast() {
             //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
@@ -406,6 +411,10 @@ pub struct AppState {
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
+    /// Main Desktop Ui's search widget uid.
+    /// Room screens will get this widget uid to differentiate search action 
+    /// from search bar widget.
+    pub search_widget: Option<WidgetUid>,
 }
 
 #[derive(Default, Debug)]

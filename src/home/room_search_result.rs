@@ -1,10 +1,8 @@
 use std::{borrow::Cow, ops::DerefMut};
 
-use imbl::Vector;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{Profile, TimelineDetails, VirtualTimelineItem};
-use rangemap::RangeSet;
-use ruma::{events::{relation::InReplyTo, room::message::{EmoteMessageEventContent, FileMessageEventContent, FormattedBody, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent}, sticker::StickerEventContent, AnyMessageLikeEventContent, AnySyncTimelineEvent, AnyTimelineEvent}, uint, OwnedRoomId};
+use ruma::{events::{relation::InReplyTo, room::message::{EmoteMessageEventContent, FormattedBody, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent}, sticker::StickerEventContent, AnyMessageLikeEventContent, AnyTimelineEvent}, uint, OwnedRoomId};
 
 use crate::{media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::UserPowerLevels, utils::unix_time_millis_to_datetime};
 
@@ -12,6 +10,12 @@ use super::{new_message_context_menu::{MessageAbilities, MessageDetails}, room_s
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
+const SEARCH_HIGHLIGHT: Vec4 = Vec4 {
+    x: 0.89,
+    y: 0.967,
+    z: 0.929,
+    w: 1.0,
+}; // LightGreen
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -21,67 +25,79 @@ live_design! {
     use crate::shared::icon_button::*;
     COLOR_BUTTON_GREY = #B6BABF
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
+    SearchIcon = <Icon> {
+        align: {x: 0.0} // Align to top-right
+        spacing: 10,
+        margin: {top: 5, left: 10},
+        padding: {top: 10, bottom: 10, left: 8, right: 15}
+        width: Fit,
+        height: Fit,
+        draw_bg: {
+            instance color: (COLOR_BUTTON_GREY)
+            instance color_hover: #fef65b
+            instance border_width: 1.5
+            instance radius: 3.0
+            instance hover: 0.0
+            fn get_color(self) -> vec4 {
+                return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
+            }
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(
+                    self.border_width,
+                    self.border_width,
+                    self.rect_size.x - self.border_width * 2.0,
+                    self.rect_size.y - self.border_width * 2.0,
+                    max(1.0, self.radius)
+                )
+                sdf.fill(self.get_color());
+                return sdf.result;
+            }
+        }
+        draw_icon: {
+            svg_file: (ICON_SEARCH),
+            fn get_color(self) -> vec4 {
+                return (COLOR_TEXT_INPUT_IDLE);
+            }
+        }
+        icon_walk: {width: 16, height: 16}
+    }
     pub SearchResult = {{SearchResult}} {
         width: Fill,
-        height: 60,
-        show_bg: true,
-        draw_bg: {
-            color: (COLOR_SECONDARY)
+        height: Fill,
+        show_bg: false,
+        // draw_bg: {
+        //     color: (COLOR_SECONDARY)
+        // }
+        flow: Overlay,
+        loading_view = <View> {
+            width: Fill,
+            height: Fill,
+            show_bg: true,
+            visible: true,
+            draw_bg: {
+                color: (COLOR_SECONDARY)
+            }
+            align: {x: 0.5, y: 0.5}
+            <SearchIcon> {}
         }
-        flow: Down,
         <View> {
             width: Fill,
             height: 60,
-            <Icon> {
-                align: {x: 0.0} // Align to top-right
-                spacing: 10,
-                margin: {top: 5},
-                padding: {top: 10, bottom: 10, left: 8, right: 15}
-                width: Fit,
-                height: Fit,
-                draw_bg: {
-                    instance color: (COLOR_BUTTON_GREY)
-                    instance color_hover: #fef65b
-                    instance border_width: 1.5
-                    instance radius: 3.0
-                    instance hover: 0.0
-                    fn get_color(self) -> vec4 {
-                        return mix(self.color, mix(self.color, self.color_hover, 0.2), self.hover)
-                    }
-                    fn pixel(self) -> vec4 {
-                        let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                        sdf.box(
-                            self.border_width,
-                            self.border_width,
-                            self.rect_size.x - self.border_width * 2.0,
-                            self.rect_size.y - self.border_width * 2.0,
-                            max(1.0, self.radius)
-                        )
-                        sdf.fill(self.get_color());
-                        return sdf.result;
-                    }
-                }
-                draw_icon: {
-                    svg_file: (ICON_SEARCH),
-                    fn get_color(self) -> vec4 {
-                        return (COLOR_TEXT_INPUT_IDLE);
-                    }
-                }
-                icon_walk: {width: 16, height: 16}
+            show_bg: true,
+            draw_bg: {
+                color: (COLOR_SECONDARY)
             }
-            <Label> {
+            <SearchIcon> {}
+            summary_label = <Html> {
                 align: {x: 0.2, y: 0.0 }  // Align to top-right
                 width: Fill,
                 height: Fit,
                 padding: 13,
-                draw_text: {
-                    wrap: Word,
-                    color: (MESSAGE_TEXT_COLOR),
-                    text_style: <MESSAGE_TEXT_STYLE>{ font_size: 10.0 },
-                }
-                text: "Send your location to this room1?"
+                font_color: (MESSAGE_TEXT_COLOR),
+                font_size: (MESSAGE_FONT_SIZE),
+                body: ""
             }
-    
             <Button> {
                 align: {x: 0.8, y: 0.0},
                 margin: {right:10, top:5}
@@ -92,14 +108,14 @@ live_design! {
                 text: "Search All Rooms"
             }
             cancel_button = <RobrixIconButton> {
-                align: {x: 1.0, y: 0.0} 
+                align: {x: 1.0, y: 0.0}
+                margin: {right: 10},
                 width: Fit,
                 height: Fit,
                 padding: 13,
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),
                     color: #fff0f0 // light red
-                    radius: 5
                 }
                 draw_icon: {
                     svg_file: (ICON_CLOSE),
@@ -118,30 +134,52 @@ pub struct SearchResult {
     #[deref] pub view: View,
     /// The room ID of the currently-shown room.
     #[rust] pub room_id: Option<OwnedRoomId>,
-    #[rust] pub search_result_count: usize,
-    #[rust] pub search_criteria: String
 }
 
 impl Widget for SearchResult {
     // Handle events and actions for the SearchResult widget and its inner Timeline view.
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-
+        self.match_event(cx, event);
+        self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
     }
 }
+impl MatchEvent for SearchResult {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
+        let cancel_button_clicked = self.view.button(id!(cancel_button)).clicked(actions);
+        if cancel_button_clicked {
+            cx.action(SearchResultAction::Close);
+        }
+        for action in actions {
+            match action.downcast_ref() {
+                Some(SearchResultAction::Success(result_length, search_criteria)) => {
+                    self.set_summary(cx, *result_length, search_criteria.clone());
+                }
+                Some(SearchResultAction::Pending) => {
+                    self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
+                }
+                _ => {}
+            }
+        }
+    }
+}
 impl SearchResult {
-    fn set_list(&mut self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
-        self.search_result_count = search_result_count;
-        self.search_criteria = search_criteria;
+    /// Sets the `search_result_count` and `search_criteria` fields of this `SearchResult`.
+    ///
+    /// This is used to display the number of search results and the search criteria
+    /// in the top-right of the room screen.
+    fn set_summary(&mut self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
+        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", search_result_count, search_criteria));
+        self.view.view(id!(loading_view)).set_visible(cx, false);
     }
 }
 impl SearchResultRef {
-    /// See [`SearchResult::set_list()`].
-    pub fn set_list(&self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
+    /// See [`SearchResult::set_summary()`].
+    pub fn set_summary(&self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_list(cx, search_result_count, search_criteria);
+        inner.set_summary(cx, search_result_count, search_criteria);
     }
 }
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
@@ -161,6 +199,7 @@ pub fn populate_message_view(
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     sender_profile:  Option<&TimelineDetails<Profile>>,
+    is_contextual: bool,
     room_screen_widget_uid: WidgetUid,
 ) -> (WidgetRef, ItemDrawnStatus) {
     let mut new_drawn_status = item_drawn_status;
@@ -203,6 +242,18 @@ pub fn populate_message_view(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                html_or_plaintext_ref.apply_over(cx, live!(
+                    html_view = {
+                        html = {
+                            font_color: (vec3(0.0,0.0,0.0)),
+                            draw_block: {
+                                code_color: (SEARCH_HIGHLIGHT)
+                            }
+                            font_size: (15.0),
+                        }
+                    }
+                ));
                 populate_text_message_content(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
@@ -236,6 +287,9 @@ pub fn populate_message_view(
                             draw_italic:      { color: (MESSAGE_NOTICE_TEXT_COLOR), }
                             draw_bold:        { color: (MESSAGE_NOTICE_TEXT_COLOR), }
                             draw_bold_italic: { color: (MESSAGE_NOTICE_TEXT_COLOR), }
+                            draw_block: {
+                                code_color: (SEARCH_HIGHLIGHT)
+                            }
                         }
                     }
                 ));
@@ -266,6 +320,9 @@ pub fn populate_message_view(
                             draw_italic:      { color: (COLOR_DANGER_RED), }
                             draw_bold:        { color: (COLOR_DANGER_RED), }
                             draw_bold_italic: { color: (COLOR_DANGER_RED), }
+                            draw_block: {
+                                code_color: (SEARCH_HIGHLIGHT)
+                            }
                         }
                     }
                 ));
@@ -546,12 +603,11 @@ pub fn populate_message_view(
         return (item, new_drawn_status);
     }
     
-    let message_abilities = MessageAbilities::empty();
     // Set the Message widget's metadata for reply-handling purposes.
     item.as_message().set_data(MessageDetails {
         event_id: Some(current_event.event_id().to_owned()),
         item_id,
-        related_event_id: in_reply_to.and_then(|f|Some(f.event_id)),
+        related_event_id: in_reply_to.map(|f| f.event_id),
         room_screen_widget_uid,
         abilities: MessageAbilities::from_user_power_and_any_event(
             user_power_levels,
@@ -575,7 +631,9 @@ pub fn populate_message_view(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-
+    if is_contextual {
+        item.view(id!(overlay_message)).set_visible(cx, true);
+    }
     (item, new_drawn_status)
 }
 
@@ -694,12 +752,9 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                             AnyTimelineEvent::MessageLike(msg) => {
                                 match msg.original_content() {
                                     Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
-                                        // let is_contextual = if let SearchTimelineItemKind::ContextEvent(event) = &current_item.kind {
-                                        //     true
-                                        // } else {false};
-                                        match &mut message.msgtype {
-                                            MessageType::Text(text) => {
-
+                                        let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
+                                        if let MessageType::Text(text) = &mut message.msgtype {
+                                            if !is_contextual {
                                                 if let Some(ref mut formatted) = text.formatted {
                                                     for highlight in tl_state.searched_results_highlighted_strings.iter() {
                                                         formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
@@ -711,22 +766,22 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                                     }
                                                     text.formatted = Some(FormattedBody::html(formated_string));
                                                 }
-                                                
                                             }
-                                            _ => {}
                                         }
+  
                                         populate_message_view(
                                             cx,
                                             list,
                                             item_id,
                                             room_id,
-                                            &event,
+                                            event,
                                             MessageOrSticker::Message(&message),
                                             prev_event,
                                             &mut tl_state.media_cache,
                                             &tl_state.user_power,
                                             item_drawn_status,
                                             None,
+                                            is_contextual,
                                             room_screen_widget_uid,
                                         )
                                     }
@@ -781,4 +836,14 @@ pub enum SearchTimelineItemKind {
     /// An item that doesn't correspond to an event, for example the user's
     /// own read marker, or a date divider.
     Virtual(VirtualTimelineItem),
+}
+
+/// Actions related to a specific message within a room timeline.
+#[derive(Clone, DefaultNone, Debug)]
+pub enum SearchResultAction {
+    /// Search result's length and the search criteria
+    Success(usize, String),
+    Pending,
+    Close,
+    None
 }

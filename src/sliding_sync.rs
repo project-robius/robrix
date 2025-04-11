@@ -12,8 +12,8 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -27,14 +27,14 @@ use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
 use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
-use ruma::{api::client::search::search_events::v3::Request, events::AnyTimelineEvent};
+use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -241,8 +241,17 @@ pub enum MatrixRequest {
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
-    FetchRoomMembers {
+    SyncRoomMemberList {
         room_id: OwnedRoomId,
+    },
+    /// Request to get the actual list of members in a room.
+    /// This returns the list of members that can be displayed in the UI.
+    GetRoomMembers {
+        room_id: OwnedRoomId,
+        memberships: RoomMemberships,
+        /// * If `true` (not recommended), only the local cache will be accessed.
+        /// * If `false` (recommended), details will be fetched from the server.
+        local_only: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -358,10 +367,21 @@ pub enum MatrixRequest {
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
     },
+    /// Sends a request to obtain the room's pill link info for the given Matrix ID.
+    ///
+    /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
+    GetMatrixRoomLinkPillInfo {
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>
+    },
     /// General Matrix Search API with given categorie
-    Search {
+    SearchMessages {
+        /// The room to search for message.
         room_id: OwnedRoomId,
-        search_categories: Categories,
+        /// Filter criteria for searching message.
+        include_all_rooms: bool,
+        /// Text in the search bar.
+        search_term: String,
     }
 }
 
@@ -514,7 +534,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchRoomMembers { room_id } => {
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -527,10 +547,43 @@ async fn async_worker(
 
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch room members request for room {room_id}...");
+                    log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    log!("Completed fetch room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    log!("Completed sync room members request for room {room_id}.");
+                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for get room members request {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _get_members_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+
+                    if local_only {
+                        if let Ok(members) = room.members_no_sync(memberships).await {
+                            log!("Got {} members from cache for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    } else {
+                        if let Ok(members) = room.members(memberships).await {
+                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    }
+
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -721,7 +774,7 @@ async fn async_worker(
 
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
-                        // log!("Received typing notifications for room {room_id}: {user_ids:?}");
+                        log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
                         for user_id in user_ids {
                             users.push(
@@ -969,30 +1022,68 @@ async fn async_worker(
                     }
                 });
             },
-            MatrixRequest::Search { room_id, search_categories } => {
-                let client = CLIENT.get().unwrap();
-                let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                        log!("Skipping pagination request for not-yet-known room {room_id}");
-                        continue;
+            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
+                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
+                        MatrixId::Room(room_id) => Some((&**room_id).into()),
+                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
+                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
+                        _ => {
+                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
+                            return;
+                        }
                     };
-
-                    let timeline_ref = room_info.timeline.clone();
-                    let sender = room_info.timeline_update_sender.clone();
-                    (timeline_ref, sender)
+                    if let Some(room_or_alias_id) = room_or_alias_id {
+                        match client.get_room_preview(room_or_alias_id, via).await {
+                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
+                                matrix_id: matrix_id.clone(),
+                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                avatar_url: preview.avatar_url
+                            }),
+                            Err(_e) => {
+                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
+                            }
+                        };
+                    }
+                });
+            }
+            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms } => {
+                let client = CLIENT.get().unwrap();
+                let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    log!("Skipping pagination request for not-yet-known room {room_id}");
+                    continue;
                 };
+
+                let sender = room_info.timeline_update_sender.clone();
+                let mut search_categories = Categories::new();
+                let mut room_filter = RoomEventFilter::empty();
+                room_filter.rooms = Some(vec![room_id.clone()]);
+                if include_all_rooms {
+                    room_filter.rooms = Some(Vec::with_capacity(0));
+                }
+                let mut criteria = Criteria::new(search_term);
+                criteria.filter = room_filter;
+                criteria.order_by = Some(OrderBy::Recent);
+                criteria.event_context = EventContext::new();
+                criteria.event_context.after_limit = uint!(1);
+                criteria.event_context.before_limit = uint!(1);
+                criteria.event_context.include_profile = true;
+                search_categories.room_events = Some(criteria);
                 Handle::current().spawn(async move {
                     match client.send(Request::new(search_categories)).await {
                         Ok(response) => {
-                            match sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
-                                Ok(_v) => {
-                                    SignalToUI::set_ui_signal();
-                                }
-                                Err(e) => {}
+                            if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
+                                error!("Failed to search message in {room_id}; error: {e:?}");
+                                enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
+                            SignalToUI::set_ui_signal();
                         }
-                        Err(e) => {}
+                        Err(e) => {
+                            error!("Failed to search message in {room_id}; error: {e:?}");
+                            enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
+                        }
                     }
                 });
             }

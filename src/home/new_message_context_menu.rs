@@ -56,8 +56,8 @@ live_design! {
             show_bg: true
             draw_bg: {
                 color: #fff
-                radius: 5.0
-                border_width: 0.5
+                border_radius: 5.0
+                border_size: 0.5
                 border_color: #888
             }
 
@@ -308,39 +308,26 @@ impl MessageAbilities {
     }
 
     pub fn from_user_power_and_any_event(
-        user_power_levels: &UserPowerLevels,
+        _user_power_levels: &UserPowerLevels,
         event_tl_item: &AnyTimelineEvent,
         _message: &room_search_result::MessageOrSticker,
-        has_html: bool,
+        _has_html: bool,
     ) -> Self {
-        let (is_editable) = {
+        let is_editable = {
             match event_tl_item {
                 AnyTimelineEvent::MessageLike(msg) => {
                     match msg.original_content() {
-                        Some(AnyMessageLikeEventContent::RoomMessage(message)) => {
+                        Some(AnyMessageLikeEventContent::RoomMessage(_message)) => {
                             false
                         }
                         _ => false
                     }
                 }
-                AnyTimelineEvent::State(state) => false
+                AnyTimelineEvent::State(_state) => false
             }
         };
         let mut abilities = Self::empty();
         abilities.set(Self::CanEdit, is_editable);
-        // abilities.set(Self::CanEdit, event_tl_item.is_editable());
-        // // Currently we only support deleting one's own messages.
-        // if event_tl_item.is_own() {
-        //     abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
-        // }
-        // abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
-        // abilities.set(Self::CanPin, user_power_levels.can_pin());
-        // // TODO: currently we don't differentiate between pin and unpin,
-        // //       but we should first check whether the given message is already pinned
-        // //       before deciding which ability to set.
-        // // abilities.set(Self::CanUnPin, user_power_levels.can_pin_unpin());
-        // abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
-        // abilities.set(Self::HasHtml, has_html);
         abilities
     }
 }
