@@ -199,12 +199,34 @@ live_design! {
     }
 }
 
+/// Subscriber adapter for MentionableTextInput
+/// This is used by parent components to subscribe to room member updates
+pub struct MentionableTextInputSubscriber {
+    widget_uid: WidgetUid,
+}
+
+/// Implement RoomMemberSubscriber trait to receive member update notifications
+impl RoomMemberSubscriber for MentionableTextInputSubscriber {
+    fn on_room_members_updated(
+        &mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
+    ) {
+        // Always send the update - we'll store the data regardless of current room
+        // This enables proper caching of room members for all rooms
+        log!(
+            "MentionableTextInputSubscriber({:?}) received members {} update for room {} in subscriber",
+            self.widget_uid,
+            members.len(),
+            room_id,
+        );
+        cx.action(MentionableTextInputAction::RoomMembersUpdated(room_id.clone(), members));
+    }
+}
+
 // /// A special string used to denote the start of a mention within
 // /// the actual text being edited.
 // /// This is used to help easily locate and distinguish actual mentions
 // /// from normal `@` characters.
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
-
 
 /// Actions emitted by the MentionableTextInput component
 #[allow(dead_code)]
@@ -290,7 +312,6 @@ impl Widget for MentionableTextInput {
                         MentionableTextInputAction::RoomMembersUpdated(room_id, members) => {
                             if let Some(current_room_id) = &self.room_id {
                                 if current_room_id == room_id {
-                                    log!("Processing RoomMembersUpdated for room {}", room_id);
                                     self.room_members_map.insert(room_id.clone(), members.clone());
                                 }
                             }
@@ -330,7 +351,7 @@ impl MentionableTextInput {
                     &current_text,
                     start_idx,
                     head,
-                    &mention_to_insert,
+                    mention_to_insert,
                 );
 
                 self.cmd_text_input.set_text(cx, &new_text);
@@ -541,11 +562,8 @@ impl MentionableTextInput {
                     None => {
                         // Special case for @room mention
                         if let Some(room_id) = &self.room_id {
-                            if let Some(known_room) = get_client().and_then(|c| c.get_room(&room_id)) {
-                                log!("Known Room ID: {}", room_id);
+                            if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
                                 if let Some(mxc_uri) = known_room.avatar_url() {
-                                    log!("Known Room ID mxc_uri : {}", mxc_uri);
-
                                     // Convert to owned MxcUri before accessing the cache
                                     let owned_mxc = mxc_uri.to_owned();
 
@@ -736,8 +754,7 @@ impl MentionableTextInput {
 
         // Create subscriber
         let subscriber = Arc::new(Mutex::new(MentionableTextInputSubscriber {
-            widget_uid: self.widget_uid(),
-            current_room_id: Some(room_id.clone()),
+            widget_uid: self.widget_uid()
         }));
 
         log!("Creating room subscription. Widget UID: {:?}", self.widget_uid());
@@ -753,30 +770,6 @@ impl MentionableTextInput {
                 local_only: false,
             });
         }
-    }
-}
-
-/// Subscriber adapter for MentionableTextInput
-/// This is used by parent components to subscribe to room member updates
-pub struct MentionableTextInputSubscriber {
-    widget_uid: WidgetUid,
-    current_room_id: Option<OwnedRoomId>,
-}
-
-/// Implement RoomMemberSubscriber trait to receive member update notifications
-impl RoomMemberSubscriber for MentionableTextInputSubscriber {
-    fn on_room_members_updated(
-        &mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
-    ) {
-        // Always send the update - we'll store the data regardless of current room
-        // This enables proper caching of room members for all rooms
-        log!(
-            "MentionableTextInputSubscriber({:?}) received members {} update for room {} in subscriber",
-            self.widget_uid,
-            members.len(),
-            room_id,
-        );
-        cx.action(MentionableTextInputAction::RoomMembersUpdated(room_id.clone(), members));
     }
 }
 
@@ -817,7 +810,7 @@ impl MentionableTextInputRef {
 
     /// Gets whether the current user can notify the entire room (@room mention)
     pub fn can_notify_room(&self) -> bool {
-        self.borrow().map_or(false, |inner| inner.can_notify_room())
+        self.borrow().is_some_and(|inner| inner.can_notify_room())
     }
 
     /// Create a room member subscription for this MentionableTextInput
