@@ -1700,29 +1700,12 @@ impl RoomScreen {
 
                     if let Some(room_id) = &self.room_id {
                         // Send the power level update action so RoomInputBar can update MentionableTextInput
-                        // log!("Room screen: Sending PowerLevelsUpdated action for room {}", room_id);
+                        log!("Room screen: Sending PowerLevelsUpdated action for room {}", room_id);
 
-                        // Use different methods for sending the action to be sure it gets delivered
                         cx.action(MentionableTextInputAction::PowerLevelsUpdated(
                             room_id.clone(),
                             can_notify_room
                         ));
-
-                        // Also try direct widget action
-                        let input_bar = self.view.view(id!(input_bar)).widget_uid();
-                        cx.widget_action(
-                            input_bar,
-                            &Scope::empty().path,
-                            MentionableTextInputAction::PowerLevelsUpdated(
-                                room_id.clone(),
-                                can_notify_room
-                            )
-                        );
-
-                        // Alternative: directly set to mentionable_text_input
-                        let message_input = self.view.room_input_bar(id!(input_bar))
-                            .mentionable_text_input(id!(message_input));
-                        message_input.set_can_notify_room(can_notify_room);
                     }
                 }
 
@@ -2210,10 +2193,21 @@ impl RoomScreen {
         // otherwise a very-tall input bar might show up underneath a shorter editing pane.
         self.view(id!(input_bar)).set_visible(cx, false);
 
+        // Extract power levels from the current room state to pass directly to the editing pane.
+        // This is necessary because:
+        // 1. EditingPane uses its own MentionableTextInput instance separate from RoomInputBar
+        // 2. While global actions (via cx.action()) are used to broadcast power level updates,
+        //    the editing pane may be opened before those updates have been processed
+        // 3. Explicitly passing the current value ensures immediate consistency between
+        //    all MentionableTextInput instances in the application
+        let can_notify_room = self.tl_state.as_ref()
+                .map(|tl| tl.user_power.can_notify_room())
+                .unwrap_or(false);
         self.editing_pane(id!(editing_pane)).show(
             cx,
             event_tl_item,
             room_id,
+            can_notify_room,
         );
         self.redraw(cx);
     }
