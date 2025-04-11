@@ -14,6 +14,8 @@ use matrix_sdk::{
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -366,6 +368,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    /// Sends a request to obtain the room's pill link info for the given Matrix ID.
+    ///
+    /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
+    GetMatrixRoomLinkPillInfo {
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>
     },
     /// Sends a request to obtain the room's pill link info for the given Matrix ID.
     ///
