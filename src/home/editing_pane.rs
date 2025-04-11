@@ -163,8 +163,6 @@ struct EditingPaneInfo {
     room_id: OwnedRoomId,
 }
 
-// Using MentionableTextInputSubscriber directly instead of duplicating code
-
 /// A view that slides in from the bottom of the screen to allow editing a message.
 #[derive(Live, LiveHook, Widget)]
 pub struct EditingPane {
@@ -213,8 +211,6 @@ impl Widget for EditingPane {
 
         if let Event::Actions(actions) = event {
             let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
-
-            // Room member updates are now handled directly by MentionableTextInput
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -452,7 +448,8 @@ impl EditingPane {
         edit_text_input.set_room_id(room_id.clone());
 
         // Create room member subscription
-        self.create_room_subscription(cx, room_id.clone());
+        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+        edit_text_input.create_room_subscription(cx, room_id);
 
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
@@ -466,15 +463,6 @@ impl EditingPane {
         self.animator_play(cx, id!(panel.show));
         self.redraw(cx);
     }
-
-    /// Create room member subscription for the editing pane
-    fn create_room_subscription(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
-        // Use the MentionableTextInput's subscription directly
-        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-        edit_text_input.create_room_subscription(cx, room_id);
-    }
-
-    // Room member updates are now handled directly by MentionableTextInput
 }
 
 impl EditingPaneRef {

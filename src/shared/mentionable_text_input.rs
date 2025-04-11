@@ -443,15 +443,10 @@ impl MentionableTextInput {
             log!("Checking if we should show @room option: can_notify_room={}, search_text='{}'",
                 self.can_notify_room, search_text);
 
-            // For debugging, dump all fields of self
-            log!("MentionableTextInput state: is_searching={}, room_id={:?}, current members={}",
-                self.is_searching, self.room_id, current_members.len());
-
             // Fixed condition: Show if search is empty or if search is part of "room"
             if self.can_notify_room && (search_text.is_empty() || search_text == "r" || search_text == "ro" || search_text == "roo" || search_text == "room") {
                 // Add a special "@room" entry at the top of the list
                 // We use a dummy room member to maintain compatibility with existing code
-                log!("ADDING @room option to mention list with search_text: '{}'", search_text);
                 matched_members.push(("@room (Notify everyone in this room)".to_string(), None));
             } else {
                 log!("NOT showing @room option: can_notify_room={}, search_text='{}'",

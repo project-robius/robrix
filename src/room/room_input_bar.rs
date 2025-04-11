@@ -65,8 +65,6 @@ pub enum RoomInputBarAction {
     None,
 }
 
-// Using MentionableTextInputSubscriber directly instead of duplicating code
-
 /// Main component for message input with @mention support
 #[derive(Live, LiveHook, Widget)]
 pub struct RoomInputBar {
