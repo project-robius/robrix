@@ -444,11 +444,8 @@ impl EditingPane {
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
         // Set room ID on the MentionableTextInput
-        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         edit_text_input.set_room_id(room_id.clone());
-
         // Create room member subscription
-        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         edit_text_input.create_room_subscription(cx, room_id);
 
         self.visible = true;
