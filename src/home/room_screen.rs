@@ -35,7 +35,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetRefExt, SearchTimelineItem}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -947,9 +947,9 @@ pub struct RoomScreen {
     /// The search query to be sent adter the search delay timer ends.
     /// This field is reset when the user continues typing before the search delay timer ends.
     #[rust] search_query: String,
-    #[rust] search_widget_uid: Option<WidgetUid>
 }
 impl Drop for RoomScreen {
+
     fn drop(&mut self) {
         // This ensures that the `TimelineUiState` instance owned by this room is *always* returned
         // back to to `TIMELINE_STATES`, which ensures that its UI state(s) are not lost
@@ -1196,7 +1196,13 @@ impl Widget for RoomScreen {
                     message_input.set_text(cx, "");
                 }
             }
-
+            if self.view.button(id!(search_all_rooms_button)).clicked(actions) {
+                if let Some(room_id) = self.room_id.clone() {
+                    self.view(id!(search_result_overlay)).set_visible(cx, true);
+                    self.search_result(id!(search_result_inner)).set_summary(cx, 0, String::from(""));
+                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone() });
+                }
+            }
             // Handle the jump to bottom button: update its visibility, and handle clicks.
             self.jump_to_bottom_button(id!(jump_to_bottom)).update_from_actions(
                 cx,
@@ -2633,9 +2639,13 @@ impl RoomScreen {
         scope: &mut Scope,
     ) {
         if let Some(SearchResultAction::Close) = action.downcast_ref() {
-            self.view(id!(search_result_overlay)).search_result(id!(search_result_inner)).set_summary(cx, 0, String::from(""));
+            self.search_result(id!(search_result_inner)).set_summary(cx, 0, String::from(""));
             self.view(id!(search_result_overlay)).set_visible(cx, false);
             self.other_display = RoomScreenOtherDisplay::None;
+            if let Some(ref mut tl_state) = self.tl_state {
+                tl_state.searched_results = Vector::new();
+                tl_state.searched_results_highlighted_strings = vec![];
+            }
         }
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
@@ -2674,15 +2684,7 @@ impl RoomScreen {
             }
         }
     }
-    
-    /// Stores the live ID of the `SearchBarWidget` that is currently associated
-    /// with this `RoomScreen`.
-    ///
-    /// This is used to forward search-related actions from the `SearchBarWidget`
-    /// to the `RoomScreen`.
-    fn set_search_uid(&mut self, search_widget_id: Option<WidgetUid>) {
-        self.search_widget_uid = search_widget_id;
-    }
+
 }
 
 impl RoomScreenRef {
@@ -2696,15 +2698,6 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
-
-    /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_search_uid(
-        &self,
-        search_widget_id: Option<WidgetUid>,
-    ) {
-        let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_search_uid(search_widget_id);
-    }
 }
 
 /// Various display types other than timeline in the room screen  
@@ -2712,8 +2705,6 @@ impl RoomScreenRef {
 pub enum RoomScreenOtherDisplay{
     /// Display Search Result
     SearchResult,
-    /// Display spinner animation
-    SearchPending,
     /// Display timeline
     None
 }

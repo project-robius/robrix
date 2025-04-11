@@ -98,7 +98,7 @@ live_design! {
                 font_size: (MESSAGE_FONT_SIZE),
                 body: ""
             }
-            <Button> {
+            search_all_rooms_button = <Button> {
                 align: {x: 0.8, y: 0.0},
                 margin: {right:10, top:5}
                 // width: Fill,

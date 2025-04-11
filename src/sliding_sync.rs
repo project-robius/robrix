@@ -1061,7 +1061,7 @@ async fn async_worker(
                 let mut room_filter = RoomEventFilter::empty();
                 room_filter.rooms = Some(vec![room_id.clone()]);
                 if include_all_rooms {
-                    room_filter.rooms = Some(Vec::with_capacity(0));
+                    room_filter.rooms = None;
                 }
                 let mut criteria = Criteria::new(search_term);
                 criteria.filter = room_filter;

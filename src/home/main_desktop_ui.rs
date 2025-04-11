@@ -89,8 +89,6 @@ impl Widget for MainDesktopUI {
                 match action.downcast_ref() {
                     Some(RoomsPanelAction::DockLoad) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        let search_widget_ui = app_state.search_widget;
-                        println!("search_widget_ui {:?}", search_widget_ui);
                         let dock = self.view.dock(id!(dock));
                         self.room_order = app_state.rooms_panel.room_order.clone();
                         self.open_rooms = app_state.rooms_panel.open_rooms.clone();
@@ -109,7 +107,6 @@ impl Widget for MainDesktopUI {
                                         room.room_id.clone(),
                                         room.room_name.clone().unwrap_or_default(),
                                     );
-                                    //widget.as_room_screen().set_search_uid(search_widget_ui);
                                 }
                             });
                         } else {
