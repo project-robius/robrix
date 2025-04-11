@@ -10,15 +10,11 @@ use matrix_sdk::{
     },
 };
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineEventItemId, TimelineItemContent};
-
 use crate::{
     shared::popup_list::enqueue_popup_notification,
     sliding_sync::{MatrixRequest, submit_async_request},
 };
-
-use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
-use crate::shared::mentionable_text_input::{MentionableTextInputWidgetExt, MentionableTextInputAction};
-use std::sync::{Arc, Mutex};
+use crate::shared::mentionable_text_input::MentionableTextInputWidgetExt;
 
 live_design! {
     use link::theme::*;
@@ -167,52 +163,6 @@ struct EditingPaneInfo {
     room_id: OwnedRoomId,
 }
 
-/// Actions specific to EditingPane for internal use
-#[derive(Clone, Debug, DefaultNone)]
-enum EditingPaneInternalAction {
-    /// Room members data has been updated
-    RoomMembersUpdated(Arc<Vec<matrix_sdk::room::RoomMember>>),
-    None,
-}
-
-/// Subscriber for EditingPane to receive room member updates
-struct EditingPaneSubscriber {
-    widget_uid: WidgetUid,
-    current_room_id: Option<OwnedRoomId>,
-}
-
-/// Implement `RoomMemberSubscriber` trait, receive member update notifications
-impl RoomMemberSubscriber for EditingPaneSubscriber {
-    fn on_room_members_updated(
-        &mut self,
-        cx: &mut Cx,
-        room_id: &OwnedRoomId,
-        members: Arc<Vec<matrix_sdk::room::RoomMember>>,
-    ) {
-        if let Some(current_room_id) = &self.current_room_id {
-            if current_room_id == room_id {
-                // Log with stable identifier
-                log!(
-                    "EditingPaneSubscriber({:?}) received members update for room {}",
-                    self.widget_uid,
-                    room_id
-                );
-
-                // cx.action(EditingPaneInternalAction::RoomMembersUpdated(members.clone()));
-                cx.widget_action(
-                    self.widget_uid,
-                    &Scope::empty().path,
-                    EditingPaneInternalAction::RoomMembersUpdated(members),
-                );
-            }else{
-                log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
-            }
-        }
-
-
-    }
-}
-
 /// A view that slides in from the bottom of the screen to allow editing a message.
 #[derive(Live, LiveHook, Widget)]
 pub struct EditingPane {
@@ -225,8 +175,6 @@ pub struct EditingPane {
     info: Option<EditingPaneInfo>,
     #[rust]
     is_animating_out: bool,
-    #[rust]
-    member_subscription: Option<RoomMemberSubscription>,
 }
 
 impl Widget for EditingPane {
@@ -263,29 +211,6 @@ impl Widget for EditingPane {
 
         if let Event::Actions(actions) = event {
             let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input)).text_input(id!(text_input));
-
-            // Check for room member update actions and power level updates
-            for action in actions {
-                // Check for MentionableTextInputAction::PowerLevelsUpdated
-                if let Some(MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room)) = action.downcast_ref::<MentionableTextInputAction>() {
-                    // Make sure this is for our current room
-                    if let Some(info) = &self.info {
-                        if &info.room_id == room_id {
-                            let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-                            message_input.set_can_notify_room(*can_notify_room);
-                        }
-                    }
-                }
-
-                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
-                    if let Some(update_action) = widget_action.downcast_ref::<EditingPaneInternalAction>() {
-                        if let EditingPaneInternalAction::RoomMembersUpdated(members) = update_action {
-                            self.handle_members_updated(members.clone());
-                        }
-                        continue;
-                    }
-                }
-            }
 
             // Hide the editing pane if the cancel button was clicked
             // or if the `Escape` key was pressed within the edit text input.
@@ -492,7 +417,7 @@ impl EditingPane {
     }
 
     /// Shows the editing pane and sets it up to edit the given `event`'s content.
-    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(&mut self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId, can_notify_room: bool) {
         if !event_tl_item.is_editable() {
             enqueue_popup_notification("That message cannot be edited.".into());
             return;
@@ -501,6 +426,8 @@ impl EditingPane {
         log!("EditingPane show: Opening editing pane for room: {}", room_id);
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
+        edit_text_input.set_can_notify_room(can_notify_room);
+
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
                 edit_text_input.set_text(cx, message.body());
@@ -517,11 +444,9 @@ impl EditingPane {
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
 
         // Set room ID on the MentionableTextInput
-        let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
         edit_text_input.set_room_id(room_id.clone());
-
         // Create room member subscription
-        self.create_room_subscription(cx, room_id.clone());
+        edit_text_input.create_room_subscription(cx, room_id);
 
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);
@@ -534,50 +459,6 @@ impl EditingPane {
 
         self.animator_play(cx, id!(panel.show));
         self.redraw(cx);
-    }
-
-    /// Create room member subscription for the editing pane
-    fn create_room_subscription(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
-        // Cancel previous subscription if any
-        self.member_subscription = None;
-
-        log!("Creating room member subscription for EditingPane, ID: {:?}", self.widget_uid());
-
-        // Create new subscriber
-        let subscriber = Arc::new(Mutex::new(EditingPaneSubscriber {
-            widget_uid: self.widget_uid(),
-            current_room_id: Some(room_id.clone()),
-        }));
-
-        // Create and save subscription
-        self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
-
-        submit_async_request(MatrixRequest::GetRoomMembers {
-            room_id: room_id.clone(),
-            memberships: matrix_sdk::RoomMemberships::JOIN,
-            local_only: false,
-        });
-
-        // Request power levels data to determine if @room mentions are allowed
-        submit_async_request(MatrixRequest::GetRoomPowerLevels {
-            room_id,
-        });
-    }
-
-    /// Handle room members update event
-    fn handle_members_updated(&mut self, members: Arc<Vec<matrix_sdk::room::RoomMember>>) {
-        if let Some(_info) = &self.info {
-            // Pass room member data to MentionableTextInput
-            let message_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-            message_input.set_room_members(members);
-
-            // Also set room ID if it's not already set
-            if let Some(info) = &self.info {
-                if message_input.get_room_id().is_none() {
-                    message_input.set_room_id(info.room_id.clone());
-                }
-            }
-        }
     }
 }
 
@@ -604,11 +485,11 @@ impl EditingPaneRef {
     }
 
     /// See [`EditingPane::show()`].
-    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId) {
+    pub fn show(&self, cx: &mut Cx, event_tl_item: EventTimelineItem, room_id: OwnedRoomId, can_notify_room: bool) {
         let Some(mut inner) = self.borrow_mut() else {
             return;
         };
-        inner.show(cx, event_tl_item, room_id);
+        inner.show(cx, event_tl_item, room_id, can_notify_room);
     }
 
     /// Returns the event that is currently being edited, if any.

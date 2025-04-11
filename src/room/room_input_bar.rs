@@ -1,15 +1,7 @@
 //! RoomInputBar component provides a message input interface with @mention capabilities
 //! Supports user mention autocomplete, avatar display, and desktop/mobile layouts
 
-use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
-use crate::shared::mentionable_text_input::{
-    MentionableTextInputAction, MentionableTextInputWidgetExt,
-};
-use crate::sliding_sync::{MatrixRequest, submit_async_request};
 use makepad_widgets::*;
-use matrix_sdk::room::RoomMember;
-use matrix_sdk::ruma::OwnedRoomId;
-use std::sync::{Arc, Mutex};
 
 live_design! {
     use link::theme::*;
@@ -69,47 +61,8 @@ pub enum RoomInputBarAction {
     MessageChanged(String),
     /// Triggered when a user is specifically mentioned
     UserMentioned(String),
-    /// Room members data has been updated
-    RoomMembersUpdated(OwnedRoomId, Arc<Vec<RoomMember>>),
     /// Default empty action
     None,
-}
-
-/// Create subscriber adapter for RoomInputBar
-/// Create subscriber adapter for RoomInputBar
-struct RoomInputBarSubscriber {
-    widget_uid: WidgetUid,
-    current_room_id: Option<OwnedRoomId>,
-}
-
-/// Implement `RoomMemberSubscriber` trait, receive member update notifications
-impl RoomMemberSubscriber for RoomInputBarSubscriber {
-    fn on_room_members_updated(
-        &mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
-    ) {
-        if let Some(current_room_id) = &self.current_room_id {
-            if current_room_id == room_id {
-                // Use stable identifier for logging
-                log!(
-                    "RoomInputBarSubscriber({:?}) received members update for room {}",
-                    self.widget_uid,
-                    room_id
-                );
-
-                // Use both approaches for compatibility
-                cx.widget_action(
-                    self.widget_uid,
-                    &Scope::empty().path,
-                    RoomInputBarAction::RoomMembersUpdated(room_id.clone(), members.clone())
-                );
-
-                // Also emit as a regular MentionableTextInputAction
-                Cx::post_action(MentionableTextInputAction::RoomMembersUpdated(members.clone()));
-            }else{
-                log!("Ignoring update for different room {} (current: {})", room_id, current_room_id);
-            }
-        }
-    }
 }
 
 /// Main component for message input with @mention support
@@ -118,130 +71,14 @@ pub struct RoomInputBar {
     /// Base view properties
     #[deref]
     view: View,
-    /// Current Matrix room ID
-    #[rust]
-    room_id: Option<OwnedRoomId>,
-    /// Room member subscription
-    #[rust]
-    member_subscription: Option<RoomMemberSubscription>,
 }
 
 impl Widget for RoomInputBar {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
-
-        if let Event::Actions(actions) = event {
-            for action in actions {
-
-                if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
-                    log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
-                    log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));
-
-                    if let Some(update_action) = widget_action.downcast_ref::<RoomInputBarAction>() {
-                        if let RoomInputBarAction::RoomMembersUpdated(_room_id, members) = update_action {
-                            // log!(
-                            //     "RoomInputBar received RoomInputBarAction RoomMembersUpdated action for room {}",
-                            //     room_id
-                            // );
-                            self.handle_members_updated(members.clone());
-                        }
-                        continue;
-                    }
-                }
-
-                // Check for MentionableTextInputAction::RoomIdChanged action
-                if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
-                    match action_ref {
-                        MentionableTextInputAction::RoomIdChanged(room_id) => {
-                            // Create subscription
-                            self.create_room_subscription(cx, room_id.clone());
-                        },
-                        MentionableTextInputAction::PowerLevelsUpdated(_room_id, can_notify_room) => {
-                            self.handle_power_levels_updated(*can_notify_room);
-                        },
-                        _ => {},
-                    }
-                }
-
-                if let Some(widget_action) =
-                    action.as_widget_action().widget_uid_eq(self.widget_uid())
-                {
-                    if let Some(RoomInputBarAction::RoomMembersUpdated(_room_id, members)) =
-                        widget_action.cast()
-                    {
-                        self.handle_members_updated(members);
-                    }
-                }
-            }
-        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
-    }
-}
-
-impl RoomInputBar {
-    /// Create room member subscription
-    fn create_room_subscription(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
-        // Save room ID
-        self.room_id = Some(room_id.clone());
-
-        // Cancel previous subscription (if any)
-        self.member_subscription = None;
-
-        // Create new subscriber and subscribe
-        let subscriber = Arc::new(Mutex::new(RoomInputBarSubscriber {
-            widget_uid: self.widget_uid(),
-            current_room_id: Some(room_id.clone()),
-        }));
-
-        log!("Creating subscription, RoomInputBar ID: {:?}", self.widget_uid());
-
-        // Create and save subscription
-        self.member_subscription =
-            Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
-
-        // Request room members data
-        submit_async_request(MatrixRequest::GetRoomMembers {
-            room_id: room_id.clone(),
-            memberships: matrix_sdk::RoomMemberships::JOIN,
-            local_only: false,
-        });
-
-        // Request power levels data to determine if @room mentions are allowed
-        submit_async_request(MatrixRequest::GetRoomPowerLevels {
-            room_id,
-        });
-    }
-
-    fn handle_members_updated(&mut self, members: Arc<Vec<RoomMember>>) {
-        if let Some(current_room_id) = &self.room_id {
-            let message_input = self.view.mentionable_text_input(id!(message_input));
-
-            if message_input.get_room_id().as_ref() == Some(current_room_id) {
-                log!("RoomInputBar: Updating {} members to MentionableTextInput (Room {})",
-                        members.len(), current_room_id);
-                // Pass data to MentionableTextInput
-                message_input.set_room_members(members);
-            }
-        }
-    }
-
-    fn handle_power_levels_updated(&mut self, can_notify_room: bool) {
-        if let Some(current_room_id) = &self.room_id {
-            let message_input = self.view.mentionable_text_input(id!(message_input));
-
-            if message_input.get_room_id().as_ref() == Some(current_room_id) {
-                // Pass power level data to MentionableTextInput
-                message_input.set_can_notify_room(can_notify_room);
-
-                // Emit PowerLevelsUpdated action for other components that might need it
-                Cx::post_action(MentionableTextInputAction::PowerLevelsUpdated(current_room_id.clone(), can_notify_room));
-
-                // Log the current setting to verify it worked
-                message_input.can_notify_room();
-            }
-        }
     }
 }
