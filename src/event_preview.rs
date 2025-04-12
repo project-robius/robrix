@@ -383,7 +383,98 @@ pub fn text_preview_of_other_state(
     text.map(|t| TextPreview::from((t, BeforeText::UsernameWithoutColon)))
 }
 
-
+/// Returns a text preview of the given other state event as an Html-formatted string.
+pub fn text_preview_of_other_state_new(
+    other_state: AnyOtherFullStateEventContent,
+    state_key: &str
+) -> Option<TextPreview> {
+    let text = match other_state {
+        AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
+            let mut s = String::from("set this room's aliases to ");
+            let last_alias = content.aliases.len() - 1;
+            for (i, alias) in content.aliases.iter().enumerate() {
+                s.push_str(alias.as_str());
+                if i != last_alias {
+                    s.push_str(", ");
+                }
+            }
+            s.push('.');
+            Some(s)
+        }
+        AnyOtherFullStateEventContent::RoomAvatar(_) => {
+            Some(String::from("set this room's avatar picture."))
+        }
+        AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("set the main address of this room to {}.",
+                content.alias.as_ref().map(|a| a.as_str()).unwrap_or("none")
+            ))
+        }
+        AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("created this room (v{}).", content.room_version.as_str()))
+        }
+        AnyOtherFullStateEventContent::RoomEncryption(_) => {
+            Some(String::from("enabled encryption in this room."))
+        }
+        AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content, .. }) => {
+            Some(match &content.guest_access {
+                GuestAccess::CanJoin => String::from("has allowed guests to join this room."),
+                GuestAccess::Forbidden => String::from("has forbidden guests from joining this room."),
+                custom => format!("has set custom guest access rules for this room: {}", custom.as_str()),
+            })
+        }
+        AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("set this room's history to be visible by {}",
+                match &content.history_visibility {
+                    HistoryVisibility::Invited => "invited users, since they were invited.",
+                    HistoryVisibility::Joined => "joined users, since they joined.",
+                    HistoryVisibility::Shared => "joined users, for all of time.",
+                    HistoryVisibility::WorldReadable => "anyone for all time.",
+                    custom => custom.as_str(),
+                },
+            ))
+        }
+        AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content, .. }) => {
+            Some(match &content.join_rule {
+                JoinRule::Public => String::from("set this room to be joinable by anyone."),
+                JoinRule::Knock => String::from("set this room to be joinable by invite only or by request."),
+                JoinRule::Private => String::from("set this room to be private."),
+                JoinRule::Restricted(_) => String::from("set this room to be joinable by invite only or with restrictions."),
+                JoinRule::KnockRestricted(_) => String::from("set this room to be joinable by invite only or requestable with restrictions."),
+                JoinRule::Invite  => String::from("set this room to be joinable by invite only."),
+                custom => format!("set custom join rules for this room: {}", custom.as_str()),
+            })
+        }
+        AnyOtherFullStateEventContent::RoomPinnedEvents(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("pinned {} events in this room.", content.pinned.len()))
+        }
+        AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("changed this room's name to {:?}.", content.name))
+        }
+        AnyOtherFullStateEventContent::RoomPowerLevels(_) => {
+            Some(String::from("set the power levels for this room."))
+        }
+        AnyOtherFullStateEventContent::RoomServerAcl(_) => {
+            Some(String::from("set the server access control list for this room."))
+        }
+        AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("closed this room and upgraded it to {}", content.replacement_room.matrix_to_uri()))
+        }
+        AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content, .. }) => {
+            Some(format!("changed this room's topic to {:?}.", content.topic))
+        }
+        AnyOtherFullStateEventContent::SpaceParent(_) => {
+            Some(format!("set this room's parent space to {}.", state_key))
+        }
+        AnyOtherFullStateEventContent::SpaceChild(_) => {
+            Some(format!("added a new child to this space: {}.", state_key))
+        }
+        _other => {
+            // log!("*** Unhandled: {:?}.", _other);
+            None
+        }
+    };
+    text.map(|t| TextPreview::from((t, BeforeText::UsernameWithoutColon)))
+}
 /// Returns a text preview of the given member profile change as a plaintext string.
 pub fn text_preview_of_member_profile_change(
     change: &MemberProfileChange,

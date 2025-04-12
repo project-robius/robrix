@@ -3049,7 +3049,7 @@ pub struct ItemDrawnStatus {
 }
 impl ItemDrawnStatus {
     /// Returns a new `ItemDrawnStatus` with both `profile_drawn` and `content_drawn` set to `false`.
-    const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             profile_drawn: false,
             content_drawn: false,
@@ -4245,7 +4245,7 @@ fn populate_small_state_event(
 
 /// Sets the text of the `Label` at the given `item`'s live ID path
 /// to a typical 12-hour AM/PM timestamp format.
-fn set_timestamp(
+pub fn set_timestamp(
     cx: &mut Cx,
     item: &WidgetRef,
     live_id_path: &[LiveId],

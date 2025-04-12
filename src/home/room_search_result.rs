@@ -1,12 +1,14 @@
 use std::{borrow::Cow, ops::DerefMut};
 
+use futures_util::stream::Any;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{Profile, TimelineDetails, VirtualTimelineItem};
-use ruma::{events::{relation::InReplyTo, room::message::{EmoteMessageEventContent, FormattedBody, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent}, sticker::StickerEventContent, AnyMessageLikeEventContent, AnyTimelineEvent}, uint, OwnedRoomId};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, Profile, TimelineDetails, VirtualTimelineItem};
+use ruma::{api::client::state, events::{relation::InReplyTo, room::message::{EmoteMessageEventContent, FormattedBody, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent}, sticker::StickerEventContent, AnyMessageLikeEventContent, AnyStateEvent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, OwnedRoomId};
+use serde::Serialize;
 
-use crate::{media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::UserPowerLevels, utils::unix_time_millis_to_datetime};
+use crate::{event_preview::text_preview_of_other_state_new, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::UserPowerLevels, utils::unix_time_millis_to_datetime};
 
-use super::{new_message_context_menu::{MessageAbilities, MessageDetails}, room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, ItemDrawnStatus, MessageOrStickerType, MessageWidgetRefExt, RoomScreen}};
+use super::{new_message_context_menu::{MessageAbilities, MessageDetails}, room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, set_timestamp, ItemDrawnStatus, MessageOrStickerType, MessageWidgetRefExt, RoomScreen}};
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
@@ -702,7 +704,120 @@ impl MessageOrSticker<'_> {
         }
     }
 }
+pub trait SmallStateEventContent {
+    /// Populates the *content* (not the profile) of the given `item` with data from
+    /// the given `event_tl_item` and `self` (the specific type of event content).
+    ///
+    /// ## Arguments
+    /// * `item`: a `SmallStateEvent` widget that has already been added to
+    ///   the given `PortalList` at the given `item_id`.
+    ///   This function may either modify that item or completely replace it
+    ///   with a different widget if needed.
+    /// * `item_drawn_status`: the old (prior) drawn status of the item.
+    /// * `new_drawn_status`: the new drawn status of the item, which may have already
+    ///   been updated to reflect the item's profile having been drawn right before this function.
+    ///
+    /// ## Return
+    /// Returns a tuple of the drawn `item` and its `new_drawn_status`.
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        event_tl_item: &AnyTimelineEvent,
+        username: &str,
+        item_drawn_status: ItemDrawnStatus,
+        new_drawn_status: ItemDrawnStatus,
+        state_key: &str,
+    ) -> (WidgetRef, ItemDrawnStatus);
+}
+impl SmallStateEventContent for AnyStateEventContentWrapper {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &AnyTimelineEvent,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+        state_key: &str,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let Some(other_state) = self.into() else { return (list.item(cx, item_id, live_id!(Empty)), ItemDrawnStatus::new()) };
+        let item = if let Some(text_preview) = text_preview_of_other_state_new(other_state, state_key) {
+            item.label(id!(content))
+                .set_text(cx, &text_preview.format_with(username));
+            new_drawn_status.content_drawn = true;
+            item
+        } else {
+            let item = list.item(cx, item_id, live_id!(Empty));
+            new_drawn_status = ItemDrawnStatus::new();
+            item
+        };
+        (item, new_drawn_status)
+    }
+}
+fn populate_small_state_event(
+    cx: &mut Cx,
+    list: &mut PortalList,
+    item_id: usize,
+    room_id: &OwnedRoomId,
+    event_tl_item: &AnyTimelineEvent,
+    event_content: &impl SmallStateEventContent,
+    item_drawn_status: ItemDrawnStatus,
+    state_key: &str,
+) -> (WidgetRef, ItemDrawnStatus) {
+    let mut new_drawn_status = item_drawn_status;
+    let (item, existed) = list.item_with_existed(cx, item_id, live_id!(SmallStateEvent));
+    // The content of a small state event view may depend on the profile info,
+    // so we can only mark the content as drawn after the profile has been fully drawn and cached.
+    let skip_redrawing_profile = existed && item_drawn_status.profile_drawn;
+    let skip_redrawing_content = skip_redrawing_profile && item_drawn_status.content_drawn;
+    if skip_redrawing_content {
+        return (item, new_drawn_status);
+    }
+    // If the profile has been drawn, we can just quickly grab the user's display name
+    // instead of having to call `set_avatar_and_get_username` again.
+    let username_opt = skip_redrawing_profile
+        .then(|| None)
+        .flatten();
 
+    let username = username_opt.unwrap_or_else(|| {
+        // As a fallback, call `set_avatar_and_get_username` to get the user's display name.
+        let avatar_ref = item.avatar(id!(avatar));
+        let (username, profile_drawn) = avatar_ref.set_avatar_and_get_username(
+            cx,
+            room_id,
+            event_tl_item.sender(),
+            None,
+            Some(event_tl_item.event_id()),
+        );
+        // Draw the timestamp as part of the profile.
+        set_timestamp(
+            cx,
+            &item,
+            id!(left_container.timestamp),
+            event_tl_item.origin_server_ts(),
+        );
+        new_drawn_status.profile_drawn = profile_drawn;
+        username
+    });
+
+    // Proceed to draw the actual event content.
+    event_content.populate_item_content(
+        cx,
+        list,
+        item_id,
+        item,
+        event_tl_item,
+        &username,
+        item_drawn_status,
+        new_drawn_status,
+        state_key,
+    )
+}
 pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
@@ -798,10 +913,31 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                             room_screen_widget_uid,
                                         )
                                     }
+                                    
+                                   
                                     _ => continue
                                 }
                             },
-                            _ => continue
+                            AnyTimelineEvent::State(state) => {
+                                let state_key = state.state_key();
+                                if let Some(content) = state.original_content() {
+                                    let wrapper = AnyStateEventContentWrapper(content);
+                                    populate_small_state_event(
+                                        cx,
+                                        list,
+                                        item_id,
+                                        room_id,
+                                        event,
+                                        &wrapper,
+                                        item_drawn_status,
+                                        state_key,
+                                    )
+                                } else {
+                                    continue
+                                }
+                                
+                                
+                            }
                         }
                         SearchTimelineItemKind::RoomHeader(room_name) => {
                             let item = list.item(cx, item_id, live_id!(RoomHeader));
@@ -871,4 +1007,39 @@ pub enum SearchResultAction {
     Pending,
     Close,
     None
+}
+
+
+pub struct AnyStateEventContentWrapper(AnyStateEventContent);
+
+impl Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrapper {
+    fn into(self) -> Option<AnyOtherFullStateEventContent> {
+        match self.0.clone() {
+            AnyStateEventContent::RoomAliases(p) => Some(AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomAvatar(p) => Some(AnyOtherFullStateEventContent::RoomAvatar(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomCanonicalAlias(p) => Some(AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomCreate(p) => Some(AnyOtherFullStateEventContent::RoomCreate(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomEncryption(p) => Some(AnyOtherFullStateEventContent::RoomEncryption(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomGuestAccess(p) => Some(AnyOtherFullStateEventContent::RoomGuestAccess(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomHistoryVisibility(p) => Some(AnyOtherFullStateEventContent::RoomHistoryVisibility(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomJoinRules(p) => Some(AnyOtherFullStateEventContent::RoomJoinRules(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomPinnedEvents(p) => Some(AnyOtherFullStateEventContent::RoomPinnedEvents(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomName(p) => Some(AnyOtherFullStateEventContent::RoomName(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomPowerLevels(p) => Some(AnyOtherFullStateEventContent::RoomPowerLevels(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomServerAcl(p) => Some(AnyOtherFullStateEventContent::RoomServerAcl(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomTombstone(p) => Some(AnyOtherFullStateEventContent::RoomTombstone(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomTopic(p) => Some(AnyOtherFullStateEventContent::RoomTopic(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::SpaceParent(p) => Some(AnyOtherFullStateEventContent::SpaceParent(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::SpaceChild(p) => Some(AnyOtherFullStateEventContent::SpaceChild(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::PolicyRuleRoom(p) => Some(AnyOtherFullStateEventContent::PolicyRuleRoom(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::PolicyRuleServer(p) => Some(AnyOtherFullStateEventContent::PolicyRuleServer(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::PolicyRuleUser(p) => Some(AnyOtherFullStateEventContent::PolicyRuleUser(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::RoomThirdPartyInvite(p) => Some(AnyOtherFullStateEventContent::RoomThirdPartyInvite(FullStateEventContent::Original { content: p, prev_content: None})),
+            AnyStateEventContent::BeaconInfo(p) => None,
+            AnyStateEventContent::CallMember(p) => None,
+            AnyStateEventContent::MemberHints(p) => None,
+            AnyStateEventContent::RoomMember(p) => None,
+            _ => None,
+        }
+    }
 }
