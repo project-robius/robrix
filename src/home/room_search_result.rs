@@ -28,7 +28,7 @@ live_design! {
     SearchIcon = <Icon> {
         align: {x: 0.0} // Align to top-right
         spacing: 10,
-        margin: {top: 5, left: 10},
+        margin: {top: 0, left: 10},
         padding: {top: 10, bottom: 10, left: 8, right: 15}
         width: Fit,
         height: Fit,
@@ -85,34 +85,32 @@ live_design! {
             width: Fill,
             height: 60,
             show_bg: true,
+            align: {y: 0.5}
             draw_bg: {
                 color: (COLOR_SECONDARY)
             }
             <SearchIcon> {}
             summary_label = <Html> {
-                align: {x: 0.2, y: 0.0 }  // Align to top-right
+                align: {x: 0.3}  // Align to top-right
                 width: Fill,
                 height: Fit,
-                padding: 13,
+                padding: 0,
                 font_color: (MESSAGE_TEXT_COLOR),
                 font_size: (MESSAGE_FONT_SIZE),
                 body: ""
             }
             search_all_rooms_button = <Button> {
-                align: {x: 0.8, y: 0.0},
-                margin: {right:10, top:5}
-                // width: Fill,
-                // height: Fit,
-                //padding: 13,
+                align: {x: 0.8},
+                margin: {right:10, top: -2}
                 draw_text:{color:#000}
                 text: "Search All Rooms"
             }
             cancel_button = <RobrixIconButton> {
-                align: {x: 1.0, y: 0.0}
-                margin: {right: 10},
+                align: {x: 1.0}
+                margin: {right: 10, top:0},
                 width: Fit,
                 height: Fit,
-                padding: 13,
+                padding: {left: 15, right: 15}
                 draw_bg: {
                     border_color: (COLOR_DANGER_RED),
                     color: #fff0f0 // light red
@@ -174,12 +172,27 @@ impl SearchResult {
         self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", search_result_count, search_criteria));
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
+
+    /// Resets the search result summary and displays the loading view.
+    ///
+    /// This function clears the summary text and makes the loading indicator visible.
+    /// It is typically used when a new search is initiated or search results are being cleared.
+    fn reset_summary(&mut self, cx: &mut Cx) {
+        self.view.html(id!(summary_label)).set_text(cx, "");
+        self.view.view(id!(loading_view)).set_visible(cx, true);
+    }
 }
 impl SearchResultRef {
     /// See [`SearchResult::set_summary()`].
     pub fn set_summary(&self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_summary(cx, search_result_count, search_criteria);
+    }
+
+    /// See [`SearchResult::reset_summary()`].
+    pub fn reset_summary(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.reset_summary(cx);
     }
 }
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
@@ -790,6 +803,11 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                             },
                             _ => continue
                         }
+                        SearchTimelineItemKind::RoomHeader(room_name) => {
+                            let item = list.item(cx, item_id, live_id!(RoomHeader));
+                            item.set_text(cx, &format!("Room {}", room_name));
+                            (item, ItemDrawnStatus::both_drawn())
+                        }
                     }
                 };
                 if item_new_draw_status.content_drawn {
@@ -826,6 +844,11 @@ impl SearchTimelineItem{
             kind: SearchTimelineItemKind::Virtual(virtual_item)
         }
     }
+    pub fn with_room_header(room_name: String) -> Self {
+        SearchTimelineItem {
+            kind: SearchTimelineItemKind::RoomHeader(room_name)
+        }
+    }
 }
 #[derive(Clone)]
 pub enum SearchTimelineItemKind {
@@ -836,6 +859,8 @@ pub enum SearchTimelineItemKind {
     /// An item that doesn't correspond to an event, for example the user's
     /// own read marker, or a date divider.
     Virtual(VirtualTimelineItem),
+    /// The room header displaying room name for all found messages in a room.
+    RoomHeader(String)
 }
 
 /// Actions related to a specific message within a room timeline.
