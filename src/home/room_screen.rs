@@ -5,6 +5,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 
 use bytesize::ByteSize;
 use imbl::Vector;
+use indexmap::IndexMap;
 use makepad_widgets::{image_cache::ImageBuffer, *};
 use matrix_sdk::{room::RoomMember, ruma::{
     events::{receipt::Receipt, room::{
@@ -15,10 +16,10 @@ use matrix_sdk::{room::RoomMember, ruma::{
     sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
-    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
+    self, EventTimelineItem, InReplyToDetails, MemberProfileChange, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
-use ruma::api::client::search::search_events::v3::ResultCategories;
+use ruma::{api::client::search::search_events::v3::ResultCategories, OwnedUserId, UserId};
 
 use crate::{
     app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
@@ -35,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, populate_read_receipts_generic, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -1378,6 +1379,7 @@ impl Widget for RoomScreen {
                         TimelineItemKind::Event(event_tl_item) => match event_tl_item.content() {
                             TimelineItemContent::Message(message) => {
                                 let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                let event_tl_item = &EventableWrapperETI(event_tl_item);
                                 populate_message_view(
                                     cx,
                                     list,
@@ -1394,6 +1396,7 @@ impl Widget for RoomScreen {
                             }
                             TimelineItemContent::Sticker(sticker) => {
                                 let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
+                                let event_tl_item = &EventableWrapperETI(event_tl_item);
                                 populate_message_view(
                                     cx,
                                     list,
@@ -3171,26 +3174,82 @@ impl MessageOrStickerType<'_> {
         }
     }
 }
+pub trait Eventable {
+    fn timestamp(&self) -> MilliSecondsSinceUnixEpoch;
+    fn event_id(&self) -> Option<&EventId>;
+    fn sender(&self) -> &UserId;
+    fn sender_profile(&self) -> &TimelineDetails<matrix_sdk_ui::timeline::Profile>;
+    fn reactions(&self) -> Option<ReactionsByKeyBySender>;
+    fn identifier(&self) -> TimelineEventItemId;
+    fn is_highlighted(&self) -> bool;
+    fn is_editable(&self) -> bool;
+    fn is_own(&self) -> bool;
+    fn can_be_replied_to(&self) -> bool;
+    fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>>;
+}
 
+pub struct EventableWrapperETI<'a>(pub &'a EventTimelineItem);
+impl <'a> Eventable for EventableWrapperETI<'a> {
+    fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
+        self.0.timestamp()
+    }
+    fn event_id(&self) -> Option<&EventId> {
+        self.0.event_id()
+    }
+    fn sender(&self) -> &UserId {
+        self.0.sender()
+    }
+    fn sender_profile(&self) -> &TimelineDetails<matrix_sdk_ui::timeline::Profile> {
+        self.0.sender_profile()
+    }
+    fn reactions(&self) -> Option<ReactionsByKeyBySender> {
+        Some(self.0.content().reactions())
+    }
+    fn identifier(&self) -> TimelineEventItemId {
+        self.0.identifier()
+    }
+    fn is_highlighted(&self) -> bool {
+        self.0.is_highlighted()
+    }
+    fn is_editable(&self) -> bool {
+        self.0.is_editable()
+    }
+    fn is_own(&self) -> bool {
+        self.0.is_own()
+    }
+    fn can_be_replied_to(&self) -> bool {
+        self.0.can_be_replied_to()
+    }
+    fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>> {
+        Some(self.0.read_receipts())
+    }
+}
 
+pub trait PreviousEventable {
+    
+}
+pub struct PreviousWrapperTI(pub Arc<TimelineItem>);
+impl PreviousEventable for PreviousWrapperTI {
+    
+}
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
 /// with the given `item_id`.
 ///
 /// The content of the returned `Message` widget is populated with data from a message
 /// or sticker and its containing `EventTimelineItem`.
-fn populate_message_view(
+fn populate_message_view<T>(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
     room_id: &OwnedRoomId,
-    event_tl_item: &EventTimelineItem,
+    event_tl_item: &T,
     message: MessageOrSticker,
     prev_event: Option<&Arc<TimelineItem>>,
     media_cache: &mut MediaCache,
     user_power_levels: &UserPowerLevels,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
-) -> (WidgetRef, ItemDrawnStatus) {
+) -> (WidgetRef, ItemDrawnStatus) where T: Eventable {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
@@ -3523,14 +3582,17 @@ fn populate_message_view(
 
     // If we didn't use a cached item, we need to draw all other message content: the reply preview and reactions.
     if !used_cached_item {
-        item.reaction_list(id!(content.reaction_list)).set_list(
-            cx,
-            &event_tl_item.content().reactions(),
-            room_id.to_owned(),
-            event_tl_item.identifier(),
-            item_id,
-        );
-        populate_read_receipts(&item, cx, room_id, event_tl_item);
+        if let Some(reactions) = event_tl_item.reactions() {
+            item.reaction_list(id!(content.reaction_list)).set_list(
+                cx,
+                &reactions,
+                room_id.to_owned(),
+                event_tl_item.identifier(),
+                item_id,
+            );
+        }
+        
+        populate_read_receipts_generic(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3604,7 +3666,7 @@ fn populate_message_view(
         item_id,
         related_event_id: replied_to_event_id,
         room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event(
+        abilities: MessageAbilities::from_user_power_and_event_generic(
             user_power_levels,
             event_tl_item,
             &message,

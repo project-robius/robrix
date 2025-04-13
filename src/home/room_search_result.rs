@@ -1,14 +1,13 @@
 use std::{borrow::Cow, ops::DerefMut};
 
-use futures_util::stream::Any;
+use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, Profile, TimelineDetails, VirtualTimelineItem};
-use ruma::{api::client::state, events::{relation::InReplyTo, room::message::{EmoteMessageEventContent, FormattedBody, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent}, sticker::StickerEventContent, AnyMessageLikeEventContent, AnyStateEvent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, OwnedRoomId};
-use serde::Serialize;
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, Profile, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
+use ruma::{events::{receipt::Receipt, relation::InReplyTo, room::message::{EmoteMessageEventContent, FormattedBody, MessageFormat, MessageType, NoticeMessageEventContent, Relation, RoomMessageEventContent, TextMessageEventContent}, sticker::StickerEventContent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
 use crate::{event_preview::text_preview_of_other_state_new, media_cache::MediaCache, shared::{avatar::AvatarWidgetRefExt, html_or_plaintext::HtmlOrPlaintextWidgetRefExt, text_or_image::TextOrImageWidgetRefExt}, sliding_sync::UserPowerLevels, utils::unix_time_millis_to_datetime};
 
-use super::{new_message_context_menu::{MessageAbilities, MessageDetails}, room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, set_timestamp, ItemDrawnStatus, MessageOrStickerType, MessageWidgetRefExt, RoomScreen}};
+use super::{new_message_context_menu::{MessageAbilities, MessageDetails}, room_screen::{populate_audio_message_content, populate_file_message_content, populate_image_message_content, populate_location_message_content, populate_text_message_content, populate_video_message_content, set_timestamp, Eventable, ItemDrawnStatus, MessageOrStickerType, MessageWidgetRefExt, RoomScreen}};
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
 const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
@@ -1035,11 +1034,49 @@ impl Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrappe
             AnyStateEventContent::PolicyRuleServer(p) => Some(AnyOtherFullStateEventContent::PolicyRuleServer(FullStateEventContent::Original { content: p, prev_content: None})),
             AnyStateEventContent::PolicyRuleUser(p) => Some(AnyOtherFullStateEventContent::PolicyRuleUser(FullStateEventContent::Original { content: p, prev_content: None})),
             AnyStateEventContent::RoomThirdPartyInvite(p) => Some(AnyOtherFullStateEventContent::RoomThirdPartyInvite(FullStateEventContent::Original { content: p, prev_content: None})),
-            AnyStateEventContent::BeaconInfo(p) => None,
-            AnyStateEventContent::CallMember(p) => None,
-            AnyStateEventContent::MemberHints(p) => None,
-            AnyStateEventContent::RoomMember(p) => None,
+            AnyStateEventContent::BeaconInfo(_) => None,
+            AnyStateEventContent::CallMember(_) => None,
+            AnyStateEventContent::MemberHints(_) => None,
+            AnyStateEventContent::RoomMember(_) => None,
             _ => None,
         }
+    }
+}
+
+pub struct EventableWrapperAEI(pub AnyTimelineEvent);
+
+impl Eventable for EventableWrapperAEI {
+    fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
+        self.0.origin_server_ts()
+    }
+    fn event_id(&self) -> Option<&EventId> {
+        Some(self.0.event_id())
+    }
+    fn sender(&self) -> &UserId {
+        self.0.sender()
+    }
+    fn sender_profile(&self) -> &TimelineDetails<matrix_sdk_ui::timeline::Profile> {
+        &TimelineDetails::Unavailable
+    }
+    fn reactions(&self) -> Option<ReactionsByKeyBySender> {
+        None
+    }
+    fn identifier(&self) -> TimelineEventItemId {
+        TimelineEventItemId::EventId(self.0.event_id().to_owned())
+    }
+    fn is_highlighted(&self) -> bool {
+        false
+    }
+    fn is_editable(&self) -> bool {
+        false
+    }
+    fn is_own(&self) -> bool {
+        false
+    }
+    fn can_be_replied_to(&self) -> bool {
+        false
+    }
+    fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>> {
+        None
     }
 }

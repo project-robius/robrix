@@ -9,7 +9,7 @@ use ruma::events::{AnyMessageLikeEventContent, AnyTimelineEvent};
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::{room_screen::{MessageAction, MessageOrSticker}, room_search_result};
+use super::{room_screen::{Eventable, MessageAction, MessageOrSticker}, room_search_result};
 
 const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW
@@ -306,7 +306,28 @@ impl MessageAbilities {
         abilities.set(Self::HasHtml, has_html);
         abilities
     }
-
+    pub fn from_user_power_and_event_generic<T: Eventable>(
+        user_power_levels: &UserPowerLevels,
+        event_tl_item: &T,
+        _message: &MessageOrSticker,
+        has_html: bool,
+    ) -> Self {
+        let mut abilities = Self::empty();
+        abilities.set(Self::CanEdit, event_tl_item.is_editable());
+        // Currently we only support deleting one's own messages.
+        if event_tl_item.is_own() {
+            abilities.set(Self::CanDelete, user_power_levels.can_redact_own());
+        }
+        abilities.set(Self::CanReplyTo, event_tl_item.can_be_replied_to());
+        abilities.set(Self::CanPin, user_power_levels.can_pin());
+        // TODO: currently we don't differentiate between pin and unpin,
+        //       but we should first check whether the given message is already pinned
+        //       before deciding which ability to set.
+        // abilities.set(Self::CanUnPin, user_power_levels.can_pin_unpin());
+        abilities.set(Self::CanReact, user_power_levels.can_send_reaction());
+        abilities.set(Self::HasHtml, has_html);
+        abilities
+    }
     pub fn from_user_power_and_any_event(
         _user_power_levels: &UserPowerLevels,
         event_tl_item: &AnyTimelineEvent,

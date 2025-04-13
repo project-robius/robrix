@@ -8,6 +8,8 @@ use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
 use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 
+use super::room_screen::Eventable;
+
 
 /// The maximum number of items to display in the read receipts AvatarRow
 /// and its accompanying tooltip.
@@ -232,6 +234,22 @@ pub fn populate_read_receipts(
         event_tl_item.event_id(),
         event_tl_item.read_receipts(),
     );
+}
+
+pub fn populate_read_receipts_generic<T: Eventable>(
+    item: &WidgetRef,
+    cx: &mut Cx,
+    room_id: &RoomId,
+    event_tl_item: &T,
+) {
+    if let Some(read_receipts) = event_tl_item.read_receipts() {
+        item.avatar_row(id!(avatar_row)).set_avatar_row(
+            cx,
+            room_id,
+            event_tl_item.event_id(),
+            read_receipts,
+        );
+    }
 }
 
 /// Populate the tooltip text for a read receipts avatar row.
