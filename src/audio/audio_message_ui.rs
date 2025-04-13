@@ -94,6 +94,7 @@ pub enum AudioMessageUIAction {
     Play(TimelineEventItemId),
     Stop(TimelineEventItemId),
     Pause(TimelineEventItemId),
+    ShowPlayBackWindow(TimelineEventItemId),
     None
 }
 
@@ -106,7 +107,11 @@ pub struct AudioMessageUI {
 
 impl Drop for AudioMessageUI {
     fn drop(&mut self) {
-        // todo!()
+        if let Some(id) = self.timeline_audio_event_item_id.take() {
+            if self.is_playing {
+                Cx::post_action(AudioMessageUIAction::ShowPlayBackWindow(id));
+            }
+        }
     }
 }
 
