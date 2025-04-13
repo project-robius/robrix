@@ -4,8 +4,7 @@
 
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::TimelineEventItemId;
-
-use super::audio_controller::AudioControllerAction;
+use crate::audio::audio_controller::AudioControllerAction;
 
 live_design! {
     use link::theme::*;
@@ -42,7 +41,7 @@ live_design! {
             }
         }
 
-        v = <View> {
+        play_back_control_buttons = <View> {
             height: 35,
             flow: Right,
             spacing: 20,
@@ -94,7 +93,7 @@ pub enum AudioMessageUIAction {
     Play(TimelineEventItemId),
     Stop(TimelineEventItemId),
     Pause(TimelineEventItemId),
-    ShowPlayBackWindow(TimelineEventItemId),
+    ToPlaybackWindowAction(String),
     None
 }
 
@@ -107,10 +106,9 @@ pub struct AudioMessageUI {
 
 impl Drop for AudioMessageUI {
     fn drop(&mut self) {
-        if let Some(id) = self.timeline_audio_event_item_id.take() {
-            if self.is_playing {
-                Cx::post_action(AudioMessageUIAction::ShowPlayBackWindow(id));
-            }
+        if self.timeline_audio_event_item_id.as_ref().is_some() && self.is_playing {
+            let info = self.view.label(id!(fetching_info)).text();
+            Cx::post_action(AudioMessageUIAction::ToPlaybackWindowAction(info));
         }
     }
 }
@@ -129,8 +127,8 @@ impl Widget for AudioMessageUI {
 
 impl MatchEvent for AudioMessageUI {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
-        let button = self.view.button(id!(v.button));
-        let stop_button = self.view.button(id!(v.stop_button));
+        let button = self.view.button(id!(play_back_control_buttons.button));
+        let stop_button = self.view.button(id!(play_back_control_buttons.stop_button));
 
         if button.clicked(actions) {
             let is_playing = if self.is_playing {
@@ -190,7 +188,7 @@ impl MatchEvent for AudioMessageUI {
 impl AudioMessageUI {
     fn mark_fully_fetched(&mut self, cx: &mut Cx) {
         self.view(id!(fetching_data)).set_visible(cx, false);
-        self.view(id!(v)).set_visible(cx, true);
+        self.view(id!(play_back_control_buttons)).set_visible(cx, true);
     }
     fn set_id(&mut self, id: &TimelineEventItemId) {
         self.timeline_audio_event_item_id = Some(id.clone());
@@ -200,7 +198,7 @@ impl AudioMessageUI {
         if new_playing_status {
             self.is_playing = new_playing_status;
             let playing = if new_playing_status { 1. } else { 0. };
-            self.view.button(id!(v.button)).apply_over(cx, live! {
+            self.view.button(id!(play_back_control_buttons.button)).apply_over(cx, live! {
                 draw_bg: {
                     playing: (playing)
                 }

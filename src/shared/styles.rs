@@ -188,4 +188,25 @@ live_design! {
             }
         }
     }
+
+    // A close button for Robrix
+    pub RobrixCloseButton = <Button> {
+        draw_bg: {
+            instance color: #1F1F1F
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                let thickness = 2.0;
+
+                sdf.move_to(0.0, 0.0);
+                sdf.line_to(self.rect_size.x, self.rect_size.y);
+                sdf.stroke(self.color, thickness);
+
+                sdf.move_to(0.0, self.rect_size.y);
+                sdf.line_to(self.rect_size.x, 0.0);
+                sdf.stroke(self.color, thickness);
+
+                return sdf.result
+            }
+        }
+    }
 }

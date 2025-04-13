@@ -81,58 +81,66 @@ impl MatchEvent for AudioController {
             let audio_mg = audio.lock().unwrap();
             if let Selected::Playing(ref id, mut pos) = selected_mg.clone() {
                 let audio = audio_mg.clone();
+                let audio_data_len = audio.data.len();
                 match (audio.channels, audio.bit_depth) {
                     (2, 16) => {
                         // stereo 16bit
                         output_buffer.zero();
                         let (left, right) = output_buffer.stereo_mut();
-                        let mut i = 0;
-                        while i < left.len() {
-                            let left_i16 = i16::from_le_bytes([audio.data[pos], audio.data[pos + 1]]);
-                            let right_i16 = i16::from_le_bytes([audio.data[pos + 2], audio.data[pos + 3]]);
-
-                            left[i] = left_i16 as f32 / i16::MAX as f32;
-                            right[i] = right_i16 as f32 / i16::MAX as f32;
-                            pos += 4;
-                            i += 1;
-                            *selected_mg = Selected::Playing(id.clone(), pos);
+                        for i in 0..left.len() {
+                            if pos + 4 < audio_data_len {
+                                let left_i16 = i16::from_le_bytes([audio.data[pos], audio.data[pos + 1]]);
+                                let right_i16 = i16::from_le_bytes([audio.data[pos + 2], audio.data[pos + 3]]);
+                                left[i] = left_i16 as f32 / i16::MAX as f32;
+                                right[i] = right_i16 as f32 / i16::MAX as f32;
+                                pos += 4;
+                                *selected_mg = Selected::Playing(id.clone(), pos);
+                            } else {
+                                break;
+                            }
                         }
                     }
                     (2, 24) => {
                         // stereo 24bit
                         output_buffer.zero();
                             let (left, right) = output_buffer.stereo_mut();
-                            let mut i = 0;
-                            while i < left.len() {
-                                let left_i32 = i32::from_le_bytes([0, audio.data[pos], audio.data[pos + 1], audio.data[pos + 2]]);
-                                let right_i32 = i32::from_le_bytes([0, audio.data[pos + 3], audio.data[pos + 4], audio.data[pos + 5]]);
-
-                                left[i] = left_i32 as f32 / i32::MAX as f32;
-                                right[i] = right_i32 as f32 / i32::MAX as f32;
-                                pos += 6;
-                                i += 1;
-                                *selected_mg = Selected::Playing(id.clone(), pos);
+                            for i in 0..left.len() {
+                                if pos + 5 < audio_data_len {
+                                    let left_i32 = i32::from_le_bytes([0, audio.data[pos], audio.data[pos + 1], audio.data[pos + 2]]);
+                                    let right_i32 = i32::from_le_bytes([0, audio.data[pos + 3], audio.data[pos + 4], audio.data[pos + 5]]);
+                                    left[i] = left_i32 as f32 / i32::MAX as f32;
+                                    right[i] = right_i32 as f32 / i32::MAX as f32;
+                                    pos += 6;
+                                    *selected_mg = Selected::Playing(id.clone(), pos);
+                                } else {
+                                    break;
+                                }
                             }
                     }
                     (2, 32) => {
                         // stereo 24bit
                         output_buffer.zero();
                             let (left, right) = output_buffer.stereo_mut();
-                            let mut i = 0;
-                            while i < left.len() {
-                                let left_i32 = i32::from_le_bytes([audio.data[pos], audio.data[pos + 1], audio.data[pos + 2], audio.data[pos + 3]]);
-                                let right_i32 = i32::from_le_bytes([audio.data[pos + 4], audio.data[pos + 5], audio.data[pos + 6], audio.data[pos + 7]]);
-
-                                left[i] = left_i32 as f32 / i32::MAX as f32;
-                                right[i] = right_i32 as f32 / i32::MAX as f32;
-                                pos += 8;
-                                i += 1;
-                                *selected_mg = Selected::Playing(id.clone(), pos);
+                            for i in 0..left.len() {
+                                if pos + 7 < audio_data_len {
+                                    let left_i32 = i32::from_le_bytes([audio.data[pos], audio.data[pos + 1], audio.data[pos + 2], audio.data[pos + 3]]);
+                                    let right_i32 = i32::from_le_bytes([audio.data[pos + 4], audio.data[pos + 5], audio.data[pos + 6], audio.data[pos + 7]]);
+                                    left[i] = left_i32 as f32 / i32::MAX as f32;
+                                    right[i] = right_i32 as f32 / i32::MAX as f32;
+                                    pos += 8;
+                                    *selected_mg = Selected::Playing(id.clone(), pos);
+                                } else {
+                                    break;
+                                }
                             }
                     }
                     _ => { }
                 }
-                if pos > audio.data.len() {
+                if pos + 8 > audio_data_len {
+                    if let Some((_audio, _old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(id) {
+                        *old_playing_status.lock().unwrap() = false;
+                    }
+                    Cx::post_action(AudioControllerAction::UiToPause(id.clone()));
                     *selected_mg = Selected::None;
                 }
             } else {
