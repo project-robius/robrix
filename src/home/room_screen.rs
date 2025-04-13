@@ -21,7 +21,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    audio::{audio_controller::{insert_new_audio, parse_wav}, audio_message_ui::{AudioMessageUIRef, AudioMessageUIWidgetRefExt}}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    audio::{audio_controller::{insert_new_audio_or_get, parse_wav}, audio_message_ui::{AudioMessageUIRef, AudioMessageUIWidgetRefExt}}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -3297,6 +3297,7 @@ fn populate_message_view(
                     cx,
                     &item.audio_message_ui(id!(content.message)),
                     audio,
+                    event_tl_item,
                     media_cache
                 );
                 (item, false)
@@ -3660,11 +3661,12 @@ fn populate_file_message_content(
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
     cx: &mut Cx,
-    audio_message_interface: &AudioMessageUIRef,
+    audio_message_ui: &AudioMessageUIRef,
     audio: &AudioMessageEventContent,
+    event_timeline_item: &EventTimelineItem,
     media_cache: &mut MediaCache
 ) -> bool {
-    let audio_message_interface_uid = audio_message_interface.widget_uid();
+    let event_timeline_item_id = event_timeline_item.identifier();
     let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = audio.filename();
@@ -3688,22 +3690,21 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
-    audio_message_interface.label(id!(fetching_info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
-
-    // match AUDIO_SET.read().unwrap().entry(audio_message_interface_uid.clone()) {
-    //     Entry:
-    // }
-
+    audio_message_ui.label(id!(fetching_info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
 
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
                 (MediaCacheEntry::Loaded(audio_data), _) => {
                     parse_wav(&audio_data).inspect(|(channels, bit_depth)|{
-                        insert_new_audio(audio_message_interface_uid, audio_data, channels, bit_depth);
+                        let (_audio, _pos, is_playing) =
+                            insert_new_audio_or_get(&event_timeline_item_id, audio_data, *channels, *bit_depth);
+                        audio_message_ui.mark_fully_fetched(cx);
+                        audio_message_ui.set_id(&event_timeline_item_id);
+                        let is_playing_mg = is_playing.lock().unwrap();
+                        audio_message_ui.change_play_status(cx, *is_playing_mg);
                     });
                     fully_drawn = true;
-                    audio_message_interface.mark_fully_fetched(cx);
                 },
                 (MediaCacheEntry::Failed, _) => {
                     fully_drawn = true;
@@ -3713,7 +3714,7 @@ fn populate_audio_message_content(
         }
         MediaSource::Encrypted(_e) => {
             log!("Encrypted audio media is not supported.");
-            audio_message_interface.label(id!(fetching_info)).set_text(cx, "Encrypted audio media is not supported.");
+            audio_message_ui.label(id!(fetching_info)).set_text(cx, "Encrypted audio media is not supported.");
             fully_drawn = true;
         }
     }

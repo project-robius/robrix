@@ -1,9 +1,16 @@
 //! Audio controller, which just manages audio playback.
 
-use std::{collections::HashMap, sync::{Arc, LazyLock, Mutex, RwLock}};
+use std::{collections::{hash_map::Entry, HashMap}, sync::{Arc, LazyLock, Mutex, RwLock}};
 use makepad_widgets::*;
+use matrix_sdk_ui::timeline::TimelineEventItemId;
 
 use super::audio_message_ui::AudioMessageUIAction;
+
+type Audios = HashMap<TimelineEventItemId, (Audio, Arc<Mutex<usize>>, Arc<Mutex<bool>>)>;
+
+pub static AUDIO_SET: LazyLock<RwLock<Audios>> = LazyLock::new(||{
+    RwLock::new(HashMap::new())
+});
 
 live_design! {
     use link::theme::*;
@@ -22,7 +29,7 @@ live_design! {
 
 #[derive(Debug, Clone, DefaultNone)]
 pub enum AudioControllerAction {
-    UiToPause(WidgetUid),
+    UiToPause(TimelineEventItemId),
     None,
 }
 
@@ -33,16 +40,10 @@ pub struct Audio {
     pub bit_depth: u16
 }
 
-type Audios = HashMap<WidgetUid, (Audio, Arc<Mutex<usize>>)>;
-
-pub static AUDIO_SET: LazyLock<RwLock<Audios>> = LazyLock::new(||{
-    RwLock::new(HashMap::new())
-});
-
 #[derive(Debug, Clone, Default)]
 pub enum Selected {
-    Playing(WidgetUid, usize),
-    Paused(WidgetUid, usize),
+    Playing(TimelineEventItemId, usize),
+    Paused(TimelineEventItemId, usize),
     #[default]
     None,
 }
@@ -78,7 +79,7 @@ impl MatchEvent for AudioController {
         cx.audio_output(0, move |_audio_info, output_buffer|{
             let mut selected_mg = selected.lock().unwrap();
             let audio_mg = audio.lock().unwrap();
-            if let Selected::Playing(uid, mut pos) = selected_mg.clone() {
+            if let Selected::Playing(ref id, mut pos) = selected_mg.clone() {
                 let audio = audio_mg.clone();
                 match (audio.channels, audio.bit_depth) {
                     (2, 16) => {
@@ -94,7 +95,7 @@ impl MatchEvent for AudioController {
                             right[i] = right_i16 as f32 / i16::MAX as f32;
                             pos += 4;
                             i += 1;
-                            *selected_mg = Selected::Playing(uid, pos);
+                            *selected_mg = Selected::Playing(id.clone(), pos);
                         }
                     }
                     (2, 24) => {
@@ -110,7 +111,7 @@ impl MatchEvent for AudioController {
                                 right[i] = right_i32 as f32 / i32::MAX as f32;
                                 pos += 6;
                                 i += 1;
-                                *selected_mg = Selected::Playing(uid, pos);
+                                *selected_mg = Selected::Playing(id.clone(), pos);
                             }
                     }
                     (2, 32) => {
@@ -126,7 +127,7 @@ impl MatchEvent for AudioController {
                                 right[i] = right_i32 as f32 / i32::MAX as f32;
                                 pos += 8;
                                 i += 1;
-                                *selected_mg = Selected::Playing(uid, pos);
+                                *selected_mg = Selected::Playing(id.clone(), pos);
                             }
                     }
                     _ => { }
@@ -146,74 +147,82 @@ impl MatchEvent for AudioController {
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
             match action.downcast_ref() {
-                Some(AudioMessageUIAction::Play(new_uid)) => {
+                Some(AudioMessageUIAction::Play(new_id)) => {
                     let selected =self.selected.clone().lock().unwrap().clone();
                     match selected {
-                        Selected::Playing(current_uid, current_pos) => {
-                            if &current_uid != new_uid {
-                                cx.action(AudioControllerAction::UiToPause(current_uid));
-                                if let Some((_old_uid, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                        Selected::Playing(current_id, current_pos) => {
+                            if current_id != new_id.clone() {
+                                cx.action(AudioControllerAction::UiToPause(current_id.clone()));
+                                if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(&current_id) {
                                     *old_pos.lock().unwrap() = current_pos;
+                                    *old_playing_status.lock().unwrap() = false;
                                 }
-                                if let Some((audio, new_pos)) = AUDIO_SET.read().unwrap().get(new_uid) {
+                                if let Some((audio, new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
                                     *self.audio.lock().unwrap() = audio.clone();
-                                    let new_pos = *new_pos.lock().unwrap();
-                                    *self.selected.lock().unwrap() = Selected::Playing(*new_uid, new_pos);
+                                    let new_pos_mg = new_pos.lock().unwrap();
+                                    *new_playing_status.lock().unwrap() = true;
+                                    *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), *new_pos_mg);
                                 }
                             }
                         }
-                        Selected::Paused(current_uid, current_pos) => {
-                            if &current_uid == new_uid {
-                                *self.selected.lock().unwrap() = Selected::Playing(*new_uid, current_pos);
+                        Selected::Paused(current_id, current_pos) => {
+                            if &current_id == new_id {
+                                *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), current_pos);
                             } else {
-                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get_mut(&current_uid) {
+                                if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(&current_id) {
+                                    *old_playing_status.lock().unwrap() = false;
                                     *old_pos.lock().unwrap() = current_pos;
                                 }
 
-                                if let Some((audio, new_pos)) = AUDIO_SET.read().unwrap().get(new_uid) {
+                                if let Some((audio, new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
                                     *self.audio.lock().unwrap() = audio.clone();
                                     let new_pos = *new_pos.lock().unwrap();
-                                    *self.selected.lock().unwrap() = Selected::Playing(*new_uid, new_pos);
+                                    *new_playing_status.lock().unwrap() = true;
+                                    *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), new_pos);
                                 }
                             }
                         }
                         Selected::None => {
-                            if let Some((audio, _old_pos)) = AUDIO_SET.write().unwrap().get_mut(new_uid) {
-                                *self.selected.lock().unwrap() = Selected::Playing(*new_uid, 44);
+                            if let Some((audio, _new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
+                                *new_playing_status.lock().unwrap() = true;
                                 *self.audio.lock().unwrap() = audio.clone();
+                                *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), 44);
                             }
                         }
                     }
                 }
-                Some(AudioMessageUIAction::Pause(new_uid)) => {
+                Some(AudioMessageUIAction::Pause(new_id)) => {
                     let selected =self.selected.clone().lock().unwrap().clone();
-                    if let Selected::Playing(current_uid, current_pos) = selected {
-                        if &current_uid == new_uid {
-                            if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                    if let Selected::Playing(current_id, current_pos) = selected {
+                        if &current_id == new_id {
+                            if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.write().unwrap().get(&current_id) {
+                                *old_playing_status.lock().unwrap() = false;
                                 *old_pos.lock().unwrap() = current_pos;
                             }
-                            *self.selected.lock().unwrap() = Selected::Paused(*new_uid, current_pos);
+                            *self.selected.lock().unwrap() = Selected::Paused(new_id.clone(), current_pos);
                         }
                     }
                 }
-                Some(AudioMessageUIAction::Stop(new_uid)) => {
+                Some(AudioMessageUIAction::Stop(new_id)) => {
                     let selected =self.selected.clone().lock().unwrap().clone();
                     match selected {
-                        Selected::Playing(current_uid, _current_pos) => {
-                            if &current_uid == new_uid {
-                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                        Selected::Playing(current_id, _current_pos) => {
+                            if &current_id == new_id {
+                                if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.write().unwrap().get(&current_id) {
+                                    *old_playing_status.lock().unwrap() = false;
                                     *old_pos.lock().unwrap() = 44;
                                 }
                                 *self.selected.lock().unwrap() = Selected::None;
                             }
                         }
-                        Selected::Paused(current_uid, _current_pos) => {
-                            if &current_uid == new_uid {
-                                if let Some((_, old_pos)) = AUDIO_SET.write().unwrap().get(&current_uid) {
+                        Selected::Paused(current_id, _current_pos) => {
+                            if &current_id == new_id {
+                                if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.write().unwrap().get(&current_id) {
+                                    *old_playing_status.lock().unwrap() = false;
                                     *old_pos.lock().unwrap() = 44;
                                 }
+                                *self.selected.lock().unwrap() = Selected::None;
                             }
-                            *self.selected.lock().unwrap() = Selected::None;
                         }
                         _ => { }
                     }
@@ -224,14 +233,22 @@ impl MatchEvent for AudioController {
     }
 }
 
-pub fn insert_new_audio(audio_control_interface_uid: WidgetUid, data: Arc<[u8]>, channels: &u16, bit_depth: &u16) {
-    let audio = Audio {
-        data,
-        channels: *channels,
-        bit_depth: *bit_depth
-    };
-    let pos = Arc::new(Mutex::new(44));
-    AUDIO_SET.write().unwrap().insert(audio_control_interface_uid, (audio, pos));
+pub fn insert_new_audio_or_get(timeline_audio_event_item_id: &TimelineEventItemId, data: Arc<[u8]>, channels: u16, bit_depth: u16) -> (Audio, Arc<Mutex<usize>>, Arc<Mutex<bool>>) {
+    match AUDIO_SET.write().unwrap().entry(timeline_audio_event_item_id.clone()) {
+        Entry::Vacant(v) => {
+            let audio = Audio {
+                data,
+                channels,
+                bit_depth
+            };
+            let pos = Arc::new(Mutex::new(44));
+            let is_playing = Arc::new(Mutex::new(false));
+            v.insert((audio, pos, is_playing)).clone()
+        }
+        Entry::Occupied(o) => {
+            o.get().clone()
+        }
+    }
 }
 
 

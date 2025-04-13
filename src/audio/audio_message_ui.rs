@@ -3,6 +3,7 @@
 //! Audio playback is in `audio_controller.rs`.
 
 use makepad_widgets::*;
+use matrix_sdk_ui::timeline::TimelineEventItemId;
 
 use super::audio_controller::AudioControllerAction;
 
@@ -90,9 +91,9 @@ live_design! {
 
 #[derive(Debug, Clone, DefaultNone)]
 pub enum AudioMessageUIAction {
-    Play(WidgetUid),
-    Stop(WidgetUid),
-    Pause(WidgetUid),
+    Play(TimelineEventItemId),
+    Stop(TimelineEventItemId),
+    Pause(TimelineEventItemId),
     None
 }
 
@@ -100,13 +101,14 @@ pub enum AudioMessageUIAction {
 pub struct AudioMessageUI {
     #[deref] view: View,
     #[rust(false)] is_playing: bool,
+    #[rust] timeline_audio_event_item_id: Option<TimelineEventItemId>,
 }
 
-// impl Drop for AudioMessageUI {
-//     fn drop(&mut self) {
-//         // todo!()
-//     }
-// }
+impl Drop for AudioMessageUI {
+    fn drop(&mut self) {
+        // todo!()
+    }
+}
 
 
 impl Widget for AudioMessageUI {
@@ -127,13 +129,24 @@ impl MatchEvent for AudioMessageUI {
 
         if button.clicked(actions) {
             let is_playing = if self.is_playing {
-                cx.action(AudioMessageUIAction::Pause(self.widget_uid()));
-                0.
+                if let Some(timeline_audio_event_item_id) = self.timeline_audio_event_item_id.as_ref() {
+                    cx.action(AudioMessageUIAction::Pause(timeline_audio_event_item_id.clone()));
+                    self.is_playing = !self.is_playing;
+                    0.
+                } else {
+                    1.
+                }
             } else {
-                cx.action(AudioMessageUIAction::Play(self.widget_uid()));
-                1.
+                if let Some(timeline_audio_event_item_id) = self.timeline_audio_event_item_id.as_ref() {
+                    cx.action(AudioMessageUIAction::Play(timeline_audio_event_item_id.clone()));
+                    self.is_playing = !self.is_playing;
+                    1.
+                } else {
+                   0.
+                }
             };
-            self.is_playing = !self.is_playing;
+
+
             button.apply_over(cx, live! {
                 draw_bg: {
                     playing: (is_playing)
@@ -142,17 +155,21 @@ impl MatchEvent for AudioMessageUI {
         }
 
         if stop_button.clicked(actions) {
-            cx.action(AudioMessageUIAction::Stop(self.widget_uid()));
-            self.is_playing = false;
-            button.apply_over(cx, live! {
-                draw_bg: {
-                    playing: 0.
-                }
-            });
+            if let Some(timeline_audio_event_item_id) = self.timeline_audio_event_item_id.as_ref() {
+                cx.action(AudioMessageUIAction::Stop(timeline_audio_event_item_id.clone()));
+                self.is_playing = false;
+                button.apply_over(cx, live! {
+                    draw_bg: {
+                        playing: 0.
+                    }
+                });
+            }
         }
         for action in actions {
-            if let Some(AudioControllerAction::UiToPause(uid)) = action.downcast_ref() {
-                if *uid == self.widget_uid() {
+            if let Some(AudioControllerAction::UiToPause(id1)) = action.downcast_ref() {
+                if self.timeline_audio_event_item_id.as_ref().is_some_and(|id2|{ id1 == id2 })
+                {
+                    cx.action(AudioMessageUIAction::Pause(id1.clone()));
                     self.is_playing = false;
                     button.apply_over(cx, live! {
                         draw_bg: {
@@ -170,11 +187,34 @@ impl AudioMessageUI {
         self.view(id!(fetching_data)).set_visible(cx, false);
         self.view(id!(v)).set_visible(cx, true);
     }
+    fn set_id(&mut self, id: &TimelineEventItemId) {
+        self.timeline_audio_event_item_id = Some(id.clone());
+        log!("AudioMessageUI set_id: {:?}", id);
+    }
+    fn change_play_status(&mut self, cx: &mut Cx, new_playing_status: bool) {
+        if new_playing_status {
+            self.is_playing = new_playing_status;
+            let playing = if new_playing_status { 1. } else { 0. };
+            self.view.button(id!(v.button)).apply_over(cx, live! {
+                draw_bg: {
+                    playing: (playing)
+                }
+            });
+        }
+    }
 }
 
 impl AudioMessageUIRef {
     pub fn mark_fully_fetched(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.mark_fully_fetched(cx);
+    }
+    pub fn set_id(&self, id: &TimelineEventItemId) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.set_id(id);
+    }
+    pub fn change_play_status(&self, cx: &mut Cx, new_playing_status: bool) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.change_play_status(cx, new_playing_status);
     }
 }
