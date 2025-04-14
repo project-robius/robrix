@@ -633,8 +633,20 @@ live_design! {
             RoomHeader = <Label> {
                 margin: {left: 10},
                 draw_text: {
-                    text_style: <TIMESTAMP_TEXT_STYLE> {},
-                    color: (TIMESTAMP_TEXT_COLOR)
+                    text_style: <REGULAR_TEXT> {
+                        font_size: 12.5,
+                    },
+                    color: #000,
+                }
+                text: "??"
+            }
+            NoMoreMessages = <Label> {
+                margin: {left: 10, top: 30},
+                draw_text: {
+                    text_style: <REGULAR_TEXT> {
+                        font_size: 16.5,
+                    },
+                    color: #000,
                 }
                 text: "??"
             }
@@ -1767,8 +1779,10 @@ impl RoomScreen {
                     let mut timeline_events= Vector::new();
                     let mut last_room_id = None;
                     let rooms_names = self.view.rooms_list(id!(rooms_list)).get_all_rooms_names();
+                    timeline_events.push_back(SearchTimelineItem::with_no_more_messages());
                     for item in result.room_events.results.iter().rev() {
                         let Some(event) = item.result.clone().and_then(|f|f.deserialize().ok()) else { continue };
+                        timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
                         if let Some(ref mut last_room_id) = last_room_id {
                             if last_room_id != event.room_id() {
                                 *last_room_id = event.room_id().to_owned();
@@ -1783,7 +1797,6 @@ impl RoomScreen {
                             }
                         }
                         
-                        timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
                         item.context.events_before.iter().for_each(|f| {
                             if let Ok(timeline_event) = f.deserialize() {
                                 timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
@@ -3234,7 +3247,7 @@ pub trait Eventable {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch;
     fn event_id(&self) -> Option<&EventId>;
     fn sender(&self) -> &UserId;
-    fn sender_profile(&self) -> &TimelineDetails<matrix_sdk_ui::timeline::Profile>;
+    fn sender_profile(&self) -> Option<&TimelineDetails<matrix_sdk_ui::timeline::Profile>>;
     fn reactions(&self) -> Option<ReactionsByKeyBySender>;
     fn identifier(&self) -> TimelineEventItemId;
     fn is_highlighted(&self) -> bool;
@@ -3256,8 +3269,8 @@ impl <'a> Eventable for EventableWrapperETI<'a> {
     fn sender(&self) -> &UserId {
         self.0.sender()
     }
-    fn sender_profile(&self) -> &TimelineDetails<matrix_sdk_ui::timeline::Profile> {
-        self.0.sender_profile()
+    fn sender_profile(&self) -> Option<&TimelineDetails<matrix_sdk_ui::timeline::Profile>> {
+        Some(self.0.sender_profile())
     }
     fn reactions(&self) -> Option<ReactionsByKeyBySender> {
         Some(self.0.content().reactions())
@@ -3476,7 +3489,7 @@ pub fn populate_message_view<T,P,M>(
                     cx,
                     room_id,
                     event_tl_item.sender(),
-                    Some(event_tl_item.sender_profile()),
+                    event_tl_item.sender_profile(),
                     event_tl_item.event_id(),
                 );
 
@@ -3701,7 +3714,7 @@ pub fn populate_message_view<T,P,M>(
                     cx,
                     room_id,
                     event_tl_item.sender(),
-                    Some(event_tl_item.sender_profile()),
+                    event_tl_item.sender_profile(),
                     event_tl_item.event_id(),
                 )
             );
@@ -4386,7 +4399,7 @@ pub fn populate_small_state_event<T: Eventable>(
             cx,
             room_id,
             event_tl_item.sender(),
-            Some(event_tl_item.sender_profile()),
+            event_tl_item.sender_profile(),
             event_tl_item.event_id(),
         );
         // Draw the timestamp as part of the profile.
@@ -4433,7 +4446,7 @@ pub fn set_timestamp(
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
 fn get_profile_display_name<T: Eventable>(event_tl_item: &T) -> Option<String> {
-    if let TimelineDetails::Ready(profile) = event_tl_item.sender_profile() {
+    if let Some(TimelineDetails::Ready(profile)) = event_tl_item.sender_profile() {
         profile.display_name.clone()
     } else {
         None

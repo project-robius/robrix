@@ -16,6 +16,8 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::icon_button::*;
+    use crate::home::rooms_list::RoomsList;
+
     COLOR_BUTTON_GREY = #B6BABF
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
     SearchIcon = <Icon> {
@@ -206,7 +208,6 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
 
         // Set the portal list's range based on the number of timeline items.
         let last_item_id = tl_items.len();
-
         let list = list_ref.deref_mut();
         list.set_item_range(cx, 0, last_item_id);
 
@@ -316,6 +317,11 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                             item.set_text(cx, &format!("Room {}", room_name));
                             (item, ItemDrawnStatus::both_drawn())
                         }
+                        SearchTimelineItemKind::NoMoreMessages => {
+                            let item = list.item(cx, item_id, live_id!(NoMoreMessages));
+                            item.set_text(cx, "No More");
+                            (item, ItemDrawnStatus::both_drawn())
+                        }
                     }
                 };
                 if item_new_draw_status.content_drawn {
@@ -357,6 +363,11 @@ impl SearchTimelineItem{
             kind: SearchTimelineItemKind::RoomHeader(room_name)
         }
     }
+    pub fn with_no_more_messages() -> Self {
+        SearchTimelineItem {
+            kind: SearchTimelineItemKind::NoMoreMessages
+        }
+    }
 }
 #[derive(Clone)]
 pub enum SearchTimelineItemKind {
@@ -368,7 +379,9 @@ pub enum SearchTimelineItemKind {
     /// own read marker, or a date divider.
     Virtual(VirtualTimelineItem),
     /// The room header displaying room name for all found messages in a room.
-    RoomHeader(String)
+    RoomHeader(String),
+    /// The text to be displayed at the top of the search result to indicate end of results.
+    NoMoreMessages
 }
 
 /// Actions related to a specific message within a room timeline.
@@ -428,8 +441,8 @@ impl <'a> Eventable for EventableWrapperAEI<'a> {
     fn sender(&self) -> &UserId {
         self.0.sender()
     }
-    fn sender_profile(&self) -> &TimelineDetails<matrix_sdk_ui::timeline::Profile> {
-        &TimelineDetails::Unavailable
+    fn sender_profile(&self) -> Option<&TimelineDetails<matrix_sdk_ui::timeline::Profile>> {
+        None
     }
     fn reactions(&self) -> Option<ReactionsByKeyBySender> {
         None

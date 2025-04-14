@@ -21,11 +21,11 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
 use crate::{
@@ -1049,6 +1049,7 @@ async fn async_worker(
                 });
             }
             MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms } => {
+                abort_core_task(CoreTask::Search).await;
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                 let Some(room_info) = all_room_info.get_mut(&room_id) else {
@@ -1071,7 +1072,7 @@ async fn async_worker(
                 criteria.event_context.before_limit = uint!(1);
                 criteria.event_context.include_profile = true;
                 search_categories.room_events = Some(criteria);
-                Handle::current().spawn(async move {
+                let handle = Handle::current().spawn(async move {
                     match client.send(Request::new(search_categories)).await {
                         Ok(response) => {
                             if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
@@ -1086,6 +1087,7 @@ async fn async_worker(
                         }
                     }
                 });
+                register_core_task(CoreTask::Search, handle.abort_handle());
             }
         }
     }
@@ -2590,5 +2592,27 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
+}
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum CoreTask {
+    Search,            
+}
+static CORE_TASKS: LazyLock<Mutex<HashMap<CoreTask, AbortHandle>>> = LazyLock::new(
+    || Mutex::new(HashMap::new())
+);
+
+fn register_core_task(
+    task_type: CoreTask, 
+    handle: AbortHandle,
+) {
+    if let Ok(mut tasks) = CORE_TASKS.lock() {
+        tasks.insert(task_type, handle);
+    }
+}
+
+async fn abort_core_task(core_task: CoreTask) {
+    if let Ok(mut tasks) = CORE_TASKS.lock() {
+        tasks.remove(&core_task);
     }
 }
