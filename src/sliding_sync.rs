@@ -12,8 +12,8 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, Room, RoomMemberships
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -33,7 +33,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -240,8 +240,17 @@ pub enum MatrixRequest {
     },
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
-    FetchRoomMembers {
+    SyncRoomMemberList {
         room_id: OwnedRoomId,
+    },
+    /// Request to get the actual list of members in a room.
+    /// This returns the list of members that can be displayed in the UI.
+    GetRoomMembers {
+        room_id: OwnedRoomId,
+        memberships: RoomMemberships,
+        /// * If `true` (not recommended), only the local cache will be accessed.
+        /// * If `false` (recommended), details will be fetched from the server.
+        local_only: bool,
     },
     /// Request to fetch profile information for the given user ID.
     GetUserProfile {
@@ -356,6 +365,13 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         timeline_event_id: TimelineEventItemId,
         reason: Option<String>,
+    },
+    /// Sends a request to obtain the room's pill link info for the given Matrix ID.
+    ///
+    /// The MatrixLinkPillInfo::Loaded variant is sent back to the main UI thread via.
+    GetMatrixRoomLinkPillInfo {
+        matrix_id: MatrixId,
+        via: Vec<OwnedServerName>
     },
 }
 
@@ -509,7 +525,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::FetchRoomMembers { room_id } => {
+            MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -522,10 +538,43 @@ async fn async_worker(
 
                 // Spawn a new async task that will make the actual fetch request.
                 let _fetch_task = Handle::current().spawn(async move {
-                    log!("Sending fetch room members request for room {room_id}...");
+                    log!("Sending sync room members request for room {room_id}...");
                     timeline.fetch_members().await;
-                    log!("Completed fetch room members request for room {room_id}.");
-                    sender.send(TimelineUpdate::RoomMembersFetched).unwrap();
+                    log!("Completed sync room members request for room {room_id}.");
+                    sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
+                    SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
+                let (timeline, sender) = {
+                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let Some(room_info) = all_room_info.get(&room_id) else {
+                        log!("BUG: room info not found for get room members request {room_id}");
+                        continue;
+                    };
+                    (room_info.timeline.clone(), room_info.timeline_update_sender.clone())
+                };
+
+                let _get_members_task = Handle::current().spawn(async move {
+                    let room = timeline.room();
+
+                    if local_only {
+                        if let Ok(members) = room.members_no_sync(memberships).await {
+                            log!("Got {} members from cache for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    } else {
+                        if let Ok(members) = room.members(memberships).await {
+                            log!("Successfully fetched {} members from server for room {}", members.len(), room_id);
+                            sender.send(TimelineUpdate::RoomMembersListFetched {
+                                members
+                            }).unwrap();
+                        }
+                    }
+
                     SignalToUI::set_ui_signal();
                 });
             }
@@ -964,6 +1013,32 @@ async fn async_worker(
                     }
                 });
             },
+            MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
+                    let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
+                        MatrixId::Room(room_id) => Some((&**room_id).into()),
+                        MatrixId::RoomAlias(room_alias_id) => Some((&**room_alias_id).into()),
+                        MatrixId::Event(room_or_alias_id, _event_id) => Some(room_or_alias_id),
+                        _ => {
+                            log!("MatrixLinkRoomPillInfoRequest: Unsupported MatrixId type: {matrix_id:?}");
+                            return;
+                        }
+                    };
+                    if let Some(room_or_alias_id) = room_or_alias_id {
+                        match client.get_room_preview(room_or_alias_id, via).await {
+                            Ok(preview) => Cx::post_action(MatrixLinkPillState::Loaded {
+                                matrix_id: matrix_id.clone(),
+                                name: preview.name.unwrap_or_else(|| room_or_alias_id.to_string()),
+                                avatar_url: preview.avatar_url
+                            }),
+                            Err(_e) => {
+                                log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
+                            }
+                        };
+                    }
+                });
+            }
         }
     }
 
