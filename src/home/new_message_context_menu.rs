@@ -4,12 +4,10 @@
 use bitflags::bitflags;
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedEventId;
-use matrix_sdk_ui::timeline::EventTimelineItem;
-use ruma::events::{AnyMessageLikeEventContent, AnyTimelineEvent};
 
 use crate::sliding_sync::UserPowerLevels;
 
-use super::{room_screen::{Eventable, MessageAction, MessageOrSticker, MsgTypeAble}, room_search_result};
+use super::room_screen::{Eventable, MessageAction, MessageOrSticker, MsgTypeAble};
 
 const BUTTON_HEIGHT: f64 = 30.0; // KEEP IN SYNC WITH BUTTON_HEIGHT BELOW
 const MENU_WIDTH: f64 = 215.0;   // KEEP IN SYNC WITH MENU_WIDTH BELOW

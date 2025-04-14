@@ -5,7 +5,6 @@ use crate::utils::human_readable_list;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::receipt::Receipt, EventId, OwnedUserId, RoomId};
-use matrix_sdk_ui::timeline::EventTimelineItem;
 use std::cmp;
 
 use super::room_screen::Eventable;
@@ -222,18 +221,20 @@ impl AvatarRowRef {
 /// room ID, and an EventTimelineItem, this will populate the avatar
 /// row of the item with the read receipts of the event.
 ///
-pub fn populate_read_receipts(
+pub fn populate_read_receipts<T:Eventable>(
     item: &WidgetRef,
     cx: &mut Cx,
     room_id: &RoomId,
-    event_tl_item: &EventTimelineItem,
+    event_tl_item: &T,
 ) {
-    item.avatar_row(id!(avatar_row)).set_avatar_row(
-        cx,
-        room_id,
-        event_tl_item.event_id(),
-        event_tl_item.read_receipts(),
-    );
+    if let Some(read_receipts) = event_tl_item.read_receipts() {
+        item.avatar_row(id!(avatar_row)).set_avatar_row(
+            cx,
+            room_id,
+            event_tl_item.event_id(),
+        read_receipts,
+        );
+    }
 }
 
 pub fn populate_read_receipts_generic<T: Eventable>(
