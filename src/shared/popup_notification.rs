@@ -228,7 +228,7 @@ impl Widget for RobrixPopupNotification {
         self.draw_bg.begin(cx, self.walk, self.layout);
 
         if self.opened {
-            let _ = self.content.draw_all(cx, scope);
+            self.content.draw_all(cx, scope);
         }
 
         self.draw_bg.end(cx);
