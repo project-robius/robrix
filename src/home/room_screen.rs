@@ -1380,6 +1380,8 @@ impl Widget for RoomScreen {
                             TimelineItemContent::Message(message) => {
                                 let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                 let event_tl_item = &EventableWrapperETI(event_tl_item);
+                                let prev_event = prev_event.map(|f| PreviousWrapperTI(f));
+                                let message = &MsgTypeWrapperTM(message);
                                 populate_message_view(
                                     cx,
                                     list,
@@ -1387,9 +1389,10 @@ impl Widget for RoomScreen {
                                     room_id,
                                     event_tl_item,
                                     MessageOrSticker::Message(message),
-                                    prev_event,
+                                    prev_event.as_ref(),
                                     &mut tl_state.media_cache,
                                     &tl_state.user_power,
+                                    false,
                                     item_drawn_status,
                                     room_screen_widget_uid,
                                 )
@@ -1397,16 +1400,18 @@ impl Widget for RoomScreen {
                             TimelineItemContent::Sticker(sticker) => {
                                 let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
                                 let event_tl_item = &EventableWrapperETI(event_tl_item);
+                                let prev_event = prev_event.map(|f| PreviousWrapperTI(f));
                                 populate_message_view(
                                     cx,
                                     list,
                                     item_id,
                                     room_id,
                                     event_tl_item,
-                                    MessageOrSticker::Sticker(sticker.content()),
-                                    prev_event,
+                                    MessageOrSticker::Sticker::<MsgTypeWrapperTM>(sticker.content()),
+                                    prev_event.as_ref(),
                                     &mut tl_state.media_cache,
                                     &tl_state.user_power,
+                                    false,
                                     item_drawn_status,
                                     room_screen_widget_uid,
                                 )
@@ -3068,11 +3073,15 @@ impl ItemDrawnStatus {
 }
 
 /// Abstracts over a message or sticker that can be displayed in a timeline.
-pub enum MessageOrSticker<'e> {
-    Message(&'e timeline::Message),
+// pub enum MessageOrSticker<'e> {
+//     Message(&'e timeline::Message),
+//     Sticker(&'e StickerEventContent),
+// }
+pub enum MessageOrSticker<'e, T:MsgTypeAble> {
+    Message(&'e T),
     Sticker(&'e StickerEventContent),
 }
-impl MessageOrSticker<'_> {
+impl <T> MessageOrSticker<'_, T> where T:MsgTypeAble{
     /// Returns the type of this message or sticker.
     pub fn get_type(&self) -> MessageOrStickerType {
         match self {
@@ -3112,6 +3121,36 @@ impl MessageOrSticker<'_> {
     }
 }
 
+pub trait MsgTypeAble {
+    fn msgtype(&self) -> &MessageType;
+    fn body(&self) -> &str;
+    fn in_reply_to(&self) -> Option<&InReplyToDetails>;
+}
+pub struct MsgTypeWrapperTM<'a>(pub &'a timeline::Message);
+
+impl <'a>MsgTypeAble for MsgTypeWrapperTM<'a> {
+    fn msgtype(&self) -> &MessageType {
+        self.0.msgtype()
+    }
+    fn body(&self) -> &str {
+        self.0.body()
+    }
+    fn in_reply_to(&self) -> Option<&InReplyToDetails> {
+        self.0.in_reply_to()
+    }
+}
+pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent);
+impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
+    fn msgtype(&self) -> &MessageType {
+        &self.0.msgtype
+    }
+    fn body(&self) -> &str {
+        self.0.body()
+    }
+    fn in_reply_to(&self) -> Option<&InReplyToDetails> {
+        None
+    }
+}
 /// Abstracts over the different types of messages or stickers that can be displayed in a timeline.
 pub enum MessageOrStickerType<'e> {
     /// An audio message.
@@ -3226,30 +3265,34 @@ impl <'a> Eventable for EventableWrapperETI<'a> {
 }
 
 pub trait PreviousEventable {
-    
+    fn kind(&self) -> &TimelineItemKind;
 }
-pub struct PreviousWrapperTI(pub Arc<TimelineItem>);
-impl PreviousEventable for PreviousWrapperTI {
-    
+
+pub struct PreviousWrapperTI<'a>(pub &'a Arc<TimelineItem>);
+impl <'a> PreviousEventable for PreviousWrapperTI<'a> {
+    fn kind(&self) -> &TimelineItemKind {
+        self.0.kind()
+    }
 }
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
 /// with the given `item_id`.
 ///
 /// The content of the returned `Message` widget is populated with data from a message
 /// or sticker and its containing `EventTimelineItem`.
-fn populate_message_view<T>(
+pub fn populate_message_view<T,P,M>(
     cx: &mut Cx2d,
     list: &mut PortalList,
     item_id: usize,
     room_id: &OwnedRoomId,
     event_tl_item: &T,
-    message: MessageOrSticker,
-    prev_event: Option<&Arc<TimelineItem>>,
+    message: MessageOrSticker<M>,
+    prev_event: Option<&P>,
     media_cache: &mut MediaCache,
     user_power_levels: &UserPowerLevels,
+    is_contextual: bool,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
-) -> (WidgetRef, ItemDrawnStatus) where T: Eventable {
+) -> (WidgetRef, ItemDrawnStatus) where T: Eventable, P: PreviousEventable, M: MsgTypeAble {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
@@ -3688,7 +3731,9 @@ fn populate_message_view<T>(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-
+    if is_contextual {
+        item.view(id!(overlay_message)).set_visible(cx, true);
+    }
     (item, new_drawn_status)
 }
 
@@ -4245,7 +4290,7 @@ impl SmallStateEventContent for RoomMembershipChange {
 ///
 /// The content of the returned widget is populated with data from the
 /// given room membership change and its parent `EventTimelineItem`.
-fn populate_small_state_event(
+pub fn populate_small_state_event(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
