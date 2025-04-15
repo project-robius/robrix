@@ -2720,7 +2720,8 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     log!("Requesting to close all tabs...");
     Cx::post_action(RoomsPanelAction::CloseAllTabs);
     
-    // wait for UI to update
+    // FIXME just wait for UI update, 
+    // when you have better way to know when all tabs are closed exactly you can fix it;  
     tokio::time::sleep(std::time::Duration::from_millis(400)).await;
 
     // Delete the last user ID file

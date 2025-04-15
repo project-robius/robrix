@@ -1,6 +1,6 @@
 use makepad_widgets::*;
 
-use crate::sliding_sync::{submit_async_request, MatrixRequest};
+use crate::login::logout_confirm_modal::LogoutConfirmModalAction;
 
 live_design! {
     use link::theme::*;
@@ -10,6 +10,7 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
+    use crate::login::logout_confirm_modal::LogoutConfirmModal;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
@@ -182,7 +183,7 @@ live_design! {
             <Home> {}
 
             <Filler> {}
-            
+
             <LogoutButton> {}
 
             <Settings> {}
@@ -210,7 +211,7 @@ impl Widget for Profile {
 
 #[derive(Live, LiveHook, Widget)]
 pub struct LogoutButton{
-    #[deref] view: View
+    #[deref] view: View,
 }
 
 impl Widget for LogoutButton{
@@ -225,9 +226,18 @@ impl Widget for LogoutButton{
 }
 
 impl WidgetMatchEvent for LogoutButton {
-    fn handle_actions(&mut self, _cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
-        if self.button(id!(logout_button)).clicked(actions) {
-            submit_async_request(MatrixRequest::Logout);
-        }
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+
+        let button = self.button(id!(logout_button));
+        if button.clicked(actions) {
+            cx.widget_action(
+                WidgetUid(0), 
+                &Scope::empty().path,
+                LogoutConfirmModalAction::None
+            );
+            log!("Sent LogoutConfirmModalAction::None to root widget");
+
+            self.view.redraw(cx);
+        } 
     }
 }

@@ -4,7 +4,7 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::{login_screen::LoginAction, logout_confirm_modal::LogoutConfirmModalAction}, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, sliding_sync::{submit_async_request, MatrixRequest}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -17,6 +17,7 @@ live_design! {
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::login::logout_confirm_modal::LogoutConfirmModal;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -144,6 +145,15 @@ live_design! {
                             verification_modal_inner = <VerificationModal> {}
                         }
                     }
+
+                    // Logout confirmation modal 
+                    logout_confirm_modal = <Modal> {
+                        align: {x: 0.5, y: 0.5} 
+                        width: Fill, height: Fill 
+                        content: {
+                            logout_confirm_modal_inner = <LogoutConfirmModal> {}
+                        }
+                    }
                 }
             } // end of body
         }
@@ -198,6 +208,26 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
+            if let Some(action_data) = action.as_widget_action() {
+              
+                if let Some(logout_action) = action_data.downcast_ref::<LogoutConfirmModalAction>() {
+                    log!("App received LogoutConfirmModalAction: {:?}", logout_action);
+
+                    match logout_action {
+                        LogoutConfirmModalAction::None => {
+                            self.show_logout_confirm_modal(cx);
+                        },
+                        LogoutConfirmModalAction::Cancel | LogoutConfirmModalAction::Confirm => {
+                            self.hide_logout_confirm_modal(cx);
+
+                            if let LogoutConfirmModalAction::Confirm = logout_action {
+                                submit_async_request(MatrixRequest::Logout);
+                            }
+                        }
+                    }
+                }
+            }
+
             if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
@@ -395,6 +425,18 @@ impl AppMain for App {
 }
 
 impl App {
+   
+    pub fn show_logout_confirm_modal(&self, cx: &mut Cx) {
+        let modal = self.ui.modal(id!(logout_confirm_modal));
+        modal.open(cx);
+    }
+
+    pub fn hide_logout_confirm_modal(&self, cx: &mut Cx) {
+        let modal = self.ui.modal(id!(logout_confirm_modal));
+        log!("Got modal reference for hiding: {:?}", modal);
+        modal.close(cx);
+    }
+
     fn update_login_visibility(&self, cx: &mut Cx) {
         let show_login = !self.app_state.logged_in;
         if !show_login {
