@@ -221,23 +221,7 @@ impl AvatarRowRef {
 /// room ID, and an EventTimelineItem, this will populate the avatar
 /// row of the item with the read receipts of the event.
 ///
-pub fn populate_read_receipts<T:Eventable>(
-    item: &WidgetRef,
-    cx: &mut Cx,
-    room_id: &RoomId,
-    event_tl_item: &T,
-) {
-    if let Some(read_receipts) = event_tl_item.read_receipts() {
-        item.avatar_row(id!(avatar_row)).set_avatar_row(
-            cx,
-            room_id,
-            event_tl_item.event_id(),
-        read_receipts,
-        );
-    }
-}
-
-pub fn populate_read_receipts_generic<T: Eventable>(
+pub fn populate_read_receipts<T: Eventable>(
     item: &WidgetRef,
     cx: &mut Cx,
     room_id: &RoomId,

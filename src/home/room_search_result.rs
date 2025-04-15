@@ -2,7 +2,7 @@ use std::ops::DerefMut;
 
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItemKind, VirtualTimelineItem};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
 use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
 use crate::{event_preview::text_preview_of_other_state,  utils::unix_time_millis_to_datetime};
@@ -267,9 +267,6 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                                 }
                                                 text.formatted = Some(FormattedBody::html(formated_string));
                                             }
-                                            
-                                            println!("text.body {:?} text.formatted {:?}", text.body, text.formatted);
-
                                         }
                                         let event = &EventableWrapperAEI(event);
                                         let prev_event = prev_event.map(|f| PreviousWrapperAEI(f));

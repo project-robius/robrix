@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, populate_read_receipts_generic, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -318,7 +318,7 @@ live_design! {
             width: Fill,
             height: Fit,
             flow: Overlay
-            <View> {
+            body_inner = <View> {
 
                 width: Fill,
                 height: Fit
@@ -407,7 +407,7 @@ live_design! {
             }
         }
         body = {
-            <View> {
+            body_inner = {
                 padding: { top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
                 profile = <View> {
                     align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
@@ -423,7 +423,7 @@ live_design! {
                     height: Fit,
                     flow: Down,
                     padding: { left: 10.0 }
-
+    
                     message = <HtmlOrPlaintext> { }
                     <View> {
                         width: Fill,
@@ -433,6 +433,7 @@ live_design! {
                     }
                 }
             }
+            
         }
     }
 
@@ -440,20 +441,21 @@ live_design! {
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     ImageMessage = <Message> {
         body = {
-            content = {
-                width: Fill,
-                height: Fit
-                padding: { left: 10.0 }
-                message = <TextOrImage> { }
-                v = <View> {
+            body_inner = {
+                content = {
                     width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
+                    height: Fit
+                    padding: { left: 10.0 }
+                    message = <TextOrImage> { }
+                    v = <View> {
+                        width: Fill,
+                        height: Fit,
+                        flow: Right,
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
                 }
             }
-
         }
     }
 
@@ -462,16 +464,17 @@ live_design! {
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     CondensedImageMessage = <CondensedMessage> {
         body = {
-            content = {
-                message = <TextOrImage> { }
-                <View> {
-                    width: Fill,
-                    height: Fit
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
+            body_inner = {
+                content = {
+                    message = <TextOrImage> { }
+                    <View> {
+                        width: Fill,
+                        height: Fit
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
                 }
             }
-
         }
     }
 
@@ -3344,7 +3347,6 @@ pub fn populate_message_view<T,P,M>(
     // Determine whether we can use a more compact UI view that hides the user's profile info
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
     let use_compact_view = prev_event.map_or(false, |p| p.use_compact(event_tl_item));
-    println!("use_compact view {:?}", use_compact_view);
     let has_html_body: bool;
 
     // Sometimes we need to call this up-front, so we save the result in this variable
@@ -3355,35 +3357,30 @@ pub fn populate_message_view<T,P,M>(
             has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
-                //live_id!(Message)
             } else {
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
-            println!("body {:?}", body);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                // let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                // if message.is_searched_result() {
-                //     html_or_plaintext_ref.apply_over(cx, live!(
-                //         html_view = {
-                //             html = {
-                //                 font_color: (vec3(0.0,0.0,0.0)),
-                //                 draw_block: {
-                //                     code_color: (SEARCH_HIGHLIGHT)
-                //                 }
-                //                 font_size: (15.0),
-                //             }
-                //         }
-                //     ));
-                // }
-                println!("use compact_view ,{:?} existed {:?}, item_drawn_status.content_drawn {:?}", use_compact_view, existed, item_drawn_status.content_drawn);
-
+                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                if message.is_searched_result() {
+                    html_or_plaintext_ref.apply_over(cx, live!(
+                        html_view = {
+                            html = {
+                                font_color: (vec3(0.0,0.0,0.0)),
+                                draw_block: {
+                                    code_color: (SEARCH_HIGHLIGHT)
+                                }
+                                font_size: (15.0),
+                            }
+                        }
+                    ));
+                }
                 populate_text_message_content(
                     cx,
-                    //&html_or_plaintext_ref,
-                    &item.html_or_plaintext(id!(content.message)),
+                    &html_or_plaintext_ref,
                     body,
                     formatted.as_ref(),
                 );
@@ -3685,7 +3682,7 @@ pub fn populate_message_view<T,P,M>(
             );
         }
         
-        //populate_read_receipts_generic(&item, cx, room_id, event_tl_item);
+        populate_read_receipts(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3781,9 +3778,9 @@ pub fn populate_message_view<T,P,M>(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-    // if is_contextual {
-    //     item.view(id!(overlay_message)).set_visible(cx, true);
-    // }
+    if is_contextual {
+        item.view(id!(overlay_message)).set_visible(cx, true);
+    }
     (item, new_drawn_status)
 }
 
