@@ -318,7 +318,7 @@ live_design! {
             width: Fill,
             height: Fit,
             flow: Overlay
-            <View> {
+            body_inner = <View> {
 
                 width: Fill,
                 height: Fit
@@ -407,7 +407,7 @@ live_design! {
             }
         }
         body = {
-            <View> {
+            body_inner = {
                 padding: { top: 0, bottom: 2.5, left: 10.0, right: 10.0 },
                 profile = <View> {
                     align: {x: 0.5, y: 0.0} // centered horizontally, top aligned
@@ -423,7 +423,7 @@ live_design! {
                     height: Fit,
                     flow: Down,
                     padding: { left: 10.0 }
-
+    
                     message = <HtmlOrPlaintext> { }
                     <View> {
                         width: Fill,
@@ -433,6 +433,7 @@ live_design! {
                     }
                 }
             }
+            
         }
     }
 
@@ -440,20 +441,21 @@ live_design! {
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     ImageMessage = <Message> {
         body = {
-            content = {
-                width: Fill,
-                height: Fit
-                padding: { left: 10.0 }
-                message = <TextOrImage> { }
-                v = <View> {
+            body_inner = {
+                content = {
                     width: Fill,
-                    height: Fit,
-                    flow: Right,
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
+                    height: Fit
+                    padding: { left: 10.0 }
+                    message = <TextOrImage> { }
+                    v = <View> {
+                        width: Fill,
+                        height: Fit,
+                        flow: Right,
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
                 }
             }
-
         }
     }
 
@@ -462,16 +464,17 @@ live_design! {
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
     CondensedImageMessage = <CondensedMessage> {
         body = {
-            content = {
-                message = <TextOrImage> { }
-                <View> {
-                    width: Fill,
-                    height: Fit
-                    reaction_list = <ReactionList> { }
-                    avatar_row = <AvatarRow> {}
+            body_inner = {
+                content = {
+                    message = <TextOrImage> { }
+                    <View> {
+                        width: Fill,
+                        height: Fit
+                        reaction_list = <ReactionList> { }
+                        avatar_row = <AvatarRow> {}
+                    }
                 }
             }
-
         }
     }
 
@@ -3366,21 +3369,21 @@ pub fn populate_message_view<T,P,M>(
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                if message.is_searched_result() {
-                    html_or_plaintext_ref.apply_over(cx, live!(
-                        html_view = {
-                            html = {
-                                font_color: (vec3(0.0,0.0,0.0)),
-                                draw_block: {
-                                    code_color: (SEARCH_HIGHLIGHT)
-                                }
-                                font_size: (15.0),
-                            }
-                        }
-                    ));
-                }
-                
+                //let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                // if message.is_searched_result() {
+                //     html_or_plaintext_ref.apply_over(cx, live!(
+                //         html_view = {
+                //             html = {
+                //                 font_color: (vec3(0.0,0.0,0.0)),
+                //                 draw_block: {
+                //                     code_color: (SEARCH_HIGHLIGHT)
+                //                 }
+                //                 font_size: (15.0),
+                //             }
+                //         }
+                //     ));
+                // }
+                println!("use compact_view {:?} body {:?}", use_compact_view, body);
                 populate_text_message_content(
                     cx,
                     &item.html_or_plaintext(id!(content.message)),
