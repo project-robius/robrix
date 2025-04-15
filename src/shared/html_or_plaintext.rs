@@ -1,7 +1,7 @@
 //! A `HtmlOrPlaintext` view can display either plaintext or rich HTML content.
 
 use makepad_widgets::{makepad_html::HtmlDoc, *};
-use matrix_sdk::{ruma::{matrix_uri::MatrixId, OwnedMxcUri}, OwnedServerName};
+use matrix_sdk::{ruma::{matrix_uri::MatrixId, MatrixToUri, MatrixUri, OwnedMxcUri}, OwnedServerName};
 
 use crate::{avatar_cache::{self, AvatarCacheEntry}, profile::user_profile_cache, sliding_sync::{current_user_id, submit_async_request, MatrixRequest}, utils};
 
@@ -219,7 +219,14 @@ impl Widget for RobrixHtmlLink {
             self.draw_html_link(cx);
         }
         */
-        self.draw_html_link(cx);
+        // self.draw_html_link(cx);
+        if let Ok(matrix_to_uri) = MatrixToUri::parse(&self.url) {
+            self.draw_matrix_pill(cx, matrix_to_uri.id(), matrix_to_uri.via());
+        } else if let Ok(matrix_uri) = MatrixUri::parse(&self.url) {
+            self.draw_matrix_pill(cx, matrix_uri.id(), matrix_uri.via());
+        } else {
+            self.draw_html_link(cx);
+        }
         self.view.draw_walk(cx, scope, walk)
     }
 
@@ -263,6 +270,11 @@ pub enum MatrixLinkPillState {
     },
     None,
 }
+
+// #[derive(Debug, Clone, DefaultNone)]
+// pub enum MatrixLinkPillAction {
+    
+// }
 
 /// A pill-shaped widget that shows a Matrix link as an avatar and a title.
 ///

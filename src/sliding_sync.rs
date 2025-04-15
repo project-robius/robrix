@@ -12,7 +12,7 @@ use matrix_sdk::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
-        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
+        }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedRoomOrAliasId, OwnedUserId, RoomAliasId, RoomOrAliasId, UserId
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
@@ -373,6 +373,10 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    GetRoomPreview {
+        room_or_alias_id: OwnedRoomOrAliasId,
+        via: Vec<OwnedServerName>,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -1036,6 +1040,21 @@ async fn async_worker(
                                 log!("Failed to get room link pill info for {room_or_alias_id:?}: {_e:?}");
                             }
                         };
+                    }
+                });
+            }
+            MatrixRequest::GetRoomPreview { room_or_alias_id, via } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _fetch_room_preview_task = Handle::current().spawn(async move {
+                    log!("Sending get room preview request for {room_or_alias_id:?}...");
+                    match client.get_room_preview(&room_or_alias_id, via).await {
+                        Ok(preview) => {
+                            log!("Room id: {:?}", preview.room_id);
+                            log!("Room name: {:?}", preview.name);
+                        }
+                        Err(e) => {
+                            error!("Failed to fetch room preview for {room_or_alias_id:?}: {e:?}");
+                        }
                     }
                 });
             }

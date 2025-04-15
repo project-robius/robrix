@@ -12,7 +12,7 @@ use matrix_sdk::{room::RoomMember, ruma::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
         }, ImageInfo, MediaSource
     },
-    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId
+    sticker::StickerEventContent, Mentions}, matrix_uri::MatrixId, uint, EventId, MatrixToUri, MatrixUri, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomId, OwnedRoomOrAliasId
 }, OwnedServerName};
 use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
@@ -20,7 +20,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, rooms_list::{self, RoomsListAction}}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -1743,7 +1743,7 @@ impl RoomScreen {
     ) -> bool {
         // A closure that handles both MatrixToUri and MatrixUri links,
         // and returns whether the link was handled.
-        let mut handle_matrix_link = |id: &MatrixId, _via: &[OwnedServerName]| -> bool {
+        let mut handle_matrix_link = |id: &MatrixId, via: &[OwnedServerName]| -> bool {
             match id {
                 MatrixId::User(user_id) => {
                     // There is no synchronous way to get the user's full profile info
@@ -1776,20 +1776,34 @@ impl RoomScreen {
                         enqueue_popup_notification("You are already viewing that room.".into());
                         return true;
                     }
-                    if let Some(_known_room) = get_client().and_then(|c| c.get_room(room_id)) {
-                        log!("TODO: jump to known room {}", room_id);
+                    if let Some(known_room) = get_client().and_then(|c| c.get_room(room_id)) {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &Scope::empty().path,
+                            RoomsListAction::Selected {
+                                room_index: 0,
+                                room_id: known_room.room_id().to_owned(),
+                                room_name: known_room.name()
+                            }
+                        );
                     } else {
+                        let room_id: OwnedRoomOrAliasId = room_id.clone().into();
                         log!("TODO: fetch and display room preview for room {}", room_id);
                     }
-                    false
+                    true
                 }
                 MatrixId::RoomAlias(room_alias) => {
-                    log!("TODO: open room alias {}", room_alias);
                     // TODO: open a room loading screen that shows a spinner
                     //       while our background async task calls Client::resolve_room_alias()
                     //       and then either jumps to the room if known, or fetches and displays
                     //       a room preview for that room.
-                    false
+                    let room_alias: OwnedRoomOrAliasId = room_alias.clone().into();
+                    log!("TODO: open room alias {}", room_alias);
+                    submit_async_request(MatrixRequest::GetRoomPreview {
+                        room_or_alias_id: room_alias,
+                        via: via.to_vec()
+                    });
+                    true
                 }
                 MatrixId::Event(room_id, event_id) => {
                     log!("TODO: open event {} in room {}", event_id, room_id);
