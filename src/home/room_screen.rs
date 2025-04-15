@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, populate_read_receipts_generic, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, AnyStateEventContentWrapper, EventableWrapperAEI, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, populate_read_receipts_generic, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -1782,7 +1782,7 @@ impl RoomScreen {
                     timeline_events.push_back(SearchTimelineItem::with_no_more_messages());
                     for item in result.room_events.results.iter().rev() {
                         let Some(event) = item.result.clone().and_then(|f|f.deserialize().ok()) else { continue };
-                        timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
+                        
                         if let Some(ref mut last_room_id) = last_room_id {
                             if last_room_id != event.room_id() {
                                 *last_room_id = event.room_id().to_owned();
@@ -1802,6 +1802,7 @@ impl RoomScreen {
                                 timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
                             }
                         });
+                        timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
                         timeline_events.push_back(SearchTimelineItem::with_event(event.clone()));
                         item.context.events_after.iter().for_each(|f| {
                             if let Ok(timeline_event) = f.deserialize() {
@@ -1813,7 +1814,9 @@ impl RoomScreen {
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
                     tl.searched_results = timeline_events;
-                    cx.action(SearchResultAction::Success(result.room_events.results.len(), result.room_events.highlights.join(", ")));
+                    if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<usize>().ok()) {
+                        cx.action(SearchResultAction::Success(size, result.room_events.highlights.join(", ")));
+                    }
                     tl.searched_results_highlighted_strings = result.room_events.highlights;
                     done_loading = true;
                 }
@@ -3166,21 +3169,7 @@ impl <'a>MsgTypeAble for MsgTypeWrapperTM<'a> {
         false
     }
 }
-pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent);
-impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
-    fn msgtype(&self) -> &MessageType {
-        &self.0.msgtype
-    }
-    fn body(&self) -> &str {
-        self.0.body()
-    }
-    fn in_reply_to(&self) -> Option<&InReplyToDetails> {
-        None
-    }
-    fn is_searched_result(&self) -> bool {
-        true
-    }
-}
+
 /// Abstracts over the different types of messages or stickers that can be displayed in a timeline.
 pub enum MessageOrStickerType<'e> {
     /// An audio message.
@@ -3256,6 +3245,7 @@ pub trait Eventable {
     fn can_be_replied_to(&self) -> bool;
     fn read_receipts(&self) -> Option<&IndexMap<OwnedUserId, Receipt>>;
     fn latest_json(&self) -> Option<&Raw<AnySyncTimelineEvent>>;
+    fn room_id(&self) -> Option<&ruma::RoomId>;
 }
 
 pub struct EventableWrapperETI<'a>(pub &'a EventTimelineItem);
@@ -3296,17 +3286,39 @@ impl <'a> Eventable for EventableWrapperETI<'a> {
     fn latest_json(&self) -> Option<&Raw<AnySyncTimelineEvent>> {
         self.0.latest_json()
     }
+    fn room_id(&self) -> Option<&ruma::RoomId> {
+        None
+    }
 }
 
 pub trait PreviousEventable {
     fn kind(&self) -> &TimelineItemKind;
+    fn use_compact(&self) -> bool;
 }
 
-pub struct PreviousWrapperTI<'a>(pub &'a Arc<TimelineItem>);
+pub struct PreviousWrapperTI<'a>(pub Option<&'a Arc<TimelineItem>>);
 impl <'a> PreviousEventable for PreviousWrapperTI<'a> {
-    fn kind(&self) -> &TimelineItemKind {
-        self.0.kind()
+    // fn kind(&self) -> &TimelineItemKind {
+    //     self.0.kind()
+    // }
+    fn use_compact(&self, ) -> bool {
+        let prev_event = self.0;
+        let use_compact_view = match prev_event.map(|p| p.kind()) {
+            Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
+                TimelineItemContent::Message(_) | TimelineItemContent::Sticker(_) => {
+                    let prev_msg_sender = prev_event_tl_item.sender();
+                    prev_msg_sender == event_tl_item.sender()
+                        && ts_millis.0
+                            .checked_sub(prev_event_tl_item.timestamp().0)
+                            .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
+                }
+                _ => false,
+            },
+            _ => false,
+        };
+        use_compact_view
     }
+    
 }
 /// Creates, populates, and adds a Message liveview widget to the given `PortalList`
 /// with the given `item_id`.
@@ -3485,9 +3497,10 @@ pub fn populate_message_view<T,P,M>(
                 (item, true)
             } else {
                 // Draw the profile up front here because we need the username for the emote body.
+                // Prioritize using the room_id encapsulated in the event timeline item.
                 let (username, profile_drawn) = item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    room_id,
+                    event_tl_item.room_id().unwrap_or(room_id),
                     event_tl_item.sender(),
                     event_tl_item.sender_profile(),
                     event_tl_item.event_id(),
@@ -3712,7 +3725,7 @@ pub fn populate_message_view<T,P,M>(
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    room_id,
+                    event_tl_item.room_id().unwrap_or(&room_id),
                     event_tl_item.sender(),
                     event_tl_item.sender_profile(),
                     event_tl_item.event_id(),
@@ -4334,32 +4347,6 @@ impl SmallStateEventContent<EventableWrapperETI<'_>> for RoomMembershipChange {
     }
 }
 
-impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWrapper<'a> {
-    fn populate_item_content(
-        &self,
-        cx: &mut Cx,
-        list: &mut PortalList,
-        item_id: usize,
-        item: WidgetRef,
-        _event_tl_item: &EventableWrapperAEI,
-        username: &str,
-        _item_drawn_status: ItemDrawnStatus,
-        mut new_drawn_status: ItemDrawnStatus,
-    ) -> (WidgetRef, ItemDrawnStatus) {
-        let Some(other_state) = self.into() else { return (list.item(cx, item_id, live_id!(Empty)), ItemDrawnStatus::new()) };
-        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, &self.1) {
-            item.label(id!(content))
-                .set_text(cx, &text_preview.format_with(username));
-            new_drawn_status.content_drawn = true;
-            item
-        } else {
-            let item = list.item(cx, item_id, live_id!(Empty));
-            new_drawn_status = ItemDrawnStatus::new();
-            item
-        };
-        (item, new_drawn_status)
-    }
-}
 
 /// Creates, populates, and adds a SmallStateEvent liveview widget to the given `PortalList`
 /// with the given `item_id`.

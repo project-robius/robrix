@@ -2,12 +2,12 @@ use std::ops::DerefMut;
 
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItemKind, VirtualTimelineItem};
-use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItemKind, VirtualTimelineItem};
+use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
-use crate:: utils::unix_time_millis_to_datetime;
+use crate::{event_preview::text_preview_of_other_state,  utils::unix_time_millis_to_datetime};
 
-use super::room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeWrapperRMC, PreviousEventable, RoomScreen};
+use super::room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent};
 
 live_design! {
     use link::theme::*;
@@ -286,8 +286,6 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                             room_screen_widget_uid,
                                         )
                                     }
-                                    
-                                   
                                     _ => continue
                                 }
                             },
@@ -308,8 +306,6 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                 } else {
                                     continue
                                 }
-                                
-                                
                             }
                         }
                         SearchTimelineItemKind::RoomHeader(room_name) => {
@@ -468,12 +464,58 @@ impl <'a> Eventable for EventableWrapperAEI<'a> {
     fn latest_json(&self) -> Option<&ruma::serde::Raw<ruma::events::AnySyncTimelineEvent>> {
         None
     }
+    fn room_id(&self) -> Option<&ruma::RoomId> {
+        Some(self.0.room_id())
+    }
 }
 
+
+impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWrapper<'a> {
+    fn populate_item_content(
+        &self,
+        cx: &mut Cx,
+        list: &mut PortalList,
+        item_id: usize,
+        item: WidgetRef,
+        _event_tl_item: &EventableWrapperAEI,
+        username: &str,
+        _item_drawn_status: ItemDrawnStatus,
+        mut new_drawn_status: ItemDrawnStatus,
+    ) -> (WidgetRef, ItemDrawnStatus) {
+        let Some(other_state) = self.into() else { return (list.item(cx, item_id, live_id!(Empty)), ItemDrawnStatus::new()) };
+        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, &self.1) {
+            item.label(id!(content))
+                .set_text(cx, &text_preview.format_with(username));
+            new_drawn_status.content_drawn = true;
+            item
+        } else {
+            let item = list.item(cx, item_id, live_id!(Empty));
+            new_drawn_status = ItemDrawnStatus::new();
+            item
+        };
+        (item, new_drawn_status)
+    }
+}
 
 pub struct PreviousWrapperAEI<'a>(pub &'a AnyTimelineEvent);
 impl <'a> PreviousEventable for PreviousWrapperAEI<'a> {
     fn kind(&self) -> &TimelineItemKind {
         &TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker)
+    }
+}
+
+pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent);
+impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
+    fn msgtype(&self) -> &MessageType {
+        &self.0.msgtype
+    }
+    fn body(&self) -> &str {
+        self.0.body()
+    }
+    fn in_reply_to(&self) -> Option<&InReplyToDetails> {
+        None
+    }
+    fn is_searched_result(&self) -> bool {
+        true
     }
 }
