@@ -3,7 +3,7 @@ use std::ops::DerefMut;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItemKind, VirtualTimelineItem};
-use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
+use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
 use crate::{event_preview::text_preview_of_other_state,  utils::unix_time_millis_to_datetime};
 
@@ -227,9 +227,10 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                 let (item, item_new_draw_status) = {
                     let current_item = timeline_item;
                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i))
-                        .and_then(|f| match f.kind { SearchTimelineItemKind::ContextEvent(ref e)=> Some(e),
-                            SearchTimelineItemKind::Event(ref e) => Some(e), 
+                        .and_then(|f| match f.kind { 
+                            SearchTimelineItemKind::ContextEvent(ref e) | SearchTimelineItemKind::Event(ref e) => Some(e),
                             _ => None });
+                    
                     match &current_item.kind {
                         SearchTimelineItemKind::Virtual(virtual_item) => {
                             match virtual_item {
@@ -254,19 +255,21 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                     Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
                                         let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
                                         if let MessageType::Text(text) = &mut message.msgtype {
-                                            if !is_contextual {
-                                                if let Some(ref mut formatted) = text.formatted {
-                                                    for highlight in tl_state.searched_results_highlighted_strings.iter() {
-                                                        formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
-                                                    }
-                                                } else {
-                                                    let mut formated_string = text.body.clone();
-                                                    for highlight in tl_state.searched_results_highlighted_strings.iter() {
-                                                        formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
-                                                    }
-                                                    text.formatted = Some(FormattedBody::html(formated_string));
+                                            
+                                            if let Some(ref mut formatted) = text.formatted {
+                                                for highlight in tl_state.searched_results_highlighted_strings.iter() {
+                                                    formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
                                                 }
+                                            } else {
+                                                let mut formated_string = text.body.clone();
+                                                for highlight in tl_state.searched_results_highlighted_strings.iter() {
+                                                    formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
+                                                }
+                                                text.formatted = Some(FormattedBody::html(formated_string));
                                             }
+                                            
+                                            println!("text.body {:?} text.formatted {:?}", text.body, text.formatted);
+
                                         }
                                         let event = &EventableWrapperAEI(event);
                                         let prev_event = prev_event.map(|f| PreviousWrapperAEI(f));
@@ -498,9 +501,17 @@ impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventCont
 }
 
 pub struct PreviousWrapperAEI<'a>(pub &'a AnyTimelineEvent);
-impl <'a> PreviousEventable for PreviousWrapperAEI<'a> {
-    fn kind(&self) -> &TimelineItemKind {
-        &TimelineItemKind::Virtual(VirtualTimelineItem::ReadMarker)
+impl <'a> PreviousEventable<EventableWrapperAEI<'a>> for PreviousWrapperAEI<'a> {
+    fn use_compact(&self, current: &EventableWrapperAEI<'a>) -> bool {
+        let prev_msg_sender = self.0.sender();
+        let current_sender = current.0.sender();
+        let compact_view = {
+            prev_msg_sender == current_sender && current.0.origin_server_ts().0.checked_sub(self.0.origin_server_ts().0)
+                // Use compact_view within a draw
+                .is_some_and(|d| d < uint!(86400000))
+        };
+        //false
+        compact_view
     }
 }
 

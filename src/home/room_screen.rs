@@ -3291,24 +3291,20 @@ impl <'a> Eventable for EventableWrapperETI<'a> {
     }
 }
 
-pub trait PreviousEventable {
-    fn kind(&self) -> &TimelineItemKind;
-    fn use_compact(&self) -> bool;
+pub trait PreviousEventable<T:Eventable> {
+    fn use_compact(&self, current: &T) -> bool;
 }
 
-pub struct PreviousWrapperTI<'a>(pub Option<&'a Arc<TimelineItem>>);
-impl <'a> PreviousEventable for PreviousWrapperTI<'a> {
-    // fn kind(&self) -> &TimelineItemKind {
-    //     self.0.kind()
-    // }
-    fn use_compact(&self, ) -> bool {
-        let prev_event = self.0;
+pub struct PreviousWrapperTI<'a>(pub &'a Arc<TimelineItem>);
+impl <'a> PreviousEventable<EventableWrapperETI<'a>> for PreviousWrapperTI<'a,> {
+    fn use_compact(&self, current: &EventableWrapperETI<'a>) -> bool {
+        let prev_event = Some(self.0);
         let use_compact_view = match prev_event.map(|p| p.kind()) {
             Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
                 TimelineItemContent::Message(_) | TimelineItemContent::Sticker(_) => {
                     let prev_msg_sender = prev_event_tl_item.sender();
-                    prev_msg_sender == event_tl_item.sender()
-                        && ts_millis.0
+                    prev_msg_sender == current.sender()
+                        && current.timestamp().0
                             .checked_sub(prev_event_tl_item.timestamp().0)
                             .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
                 }
@@ -3338,7 +3334,7 @@ pub fn populate_message_view<T,P,M>(
     is_contextual: bool,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
-) -> (WidgetRef, ItemDrawnStatus) where T: Eventable, P: PreviousEventable, M: MsgTypeAble {
+) -> (WidgetRef, ItemDrawnStatus) where T: Eventable, P: PreviousEventable<T>, M: MsgTypeAble {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
@@ -3347,20 +3343,8 @@ pub fn populate_message_view<T,P,M>(
 
     // Determine whether we can use a more compact UI view that hides the user's profile info
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
-    let use_compact_view = match prev_event.map(|p| p.kind()) {
-        Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
-            TimelineItemContent::Message(_) | TimelineItemContent::Sticker(_) => {
-                let prev_msg_sender = prev_event_tl_item.sender();
-                prev_msg_sender == event_tl_item.sender()
-                    && ts_millis.0
-                        .checked_sub(prev_event_tl_item.timestamp().0)
-                        .is_some_and(|d| d < uint!(600000)) // 10 mins in millis
-            }
-            _ => false,
-        },
-        _ => false,
-    };
-
+    let use_compact_view = prev_event.map_or(false, |p| p.use_compact(event_tl_item));
+    println!("use_compact view {:?}", use_compact_view);
     let has_html_body: bool;
 
     // Sometimes we need to call this up-front, so we save the result in this variable
@@ -3371,30 +3355,34 @@ pub fn populate_message_view<T,P,M>(
             has_html_body = formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
             let template = if use_compact_view {
                 live_id!(CondensedMessage)
+                //live_id!(Message)
             } else {
                 live_id!(Message)
             };
             let (item, existed) = list.item_with_existed(cx, item_id, template);
+            println!("body {:?}", body);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
-                let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
-                if message.is_searched_result() {
-                    html_or_plaintext_ref.apply_over(cx, live!(
-                        html_view = {
-                            html = {
-                                font_color: (vec3(0.0,0.0,0.0)),
-                                draw_block: {
-                                    code_color: (SEARCH_HIGHLIGHT)
-                                }
-                                font_size: (15.0),
-                            }
-                        }
-                    ));
-                }
-                
+                // let html_or_plaintext_ref = item.html_or_plaintext(id!(content.message));
+                // if message.is_searched_result() {
+                //     html_or_plaintext_ref.apply_over(cx, live!(
+                //         html_view = {
+                //             html = {
+                //                 font_color: (vec3(0.0,0.0,0.0)),
+                //                 draw_block: {
+                //                     code_color: (SEARCH_HIGHLIGHT)
+                //                 }
+                //                 font_size: (15.0),
+                //             }
+                //         }
+                //     ));
+                // }
+                println!("use compact_view ,{:?} existed {:?}, item_drawn_status.content_drawn {:?}", use_compact_view, existed, item_drawn_status.content_drawn);
+
                 populate_text_message_content(
                     cx,
+                    //&html_or_plaintext_ref,
                     &item.html_or_plaintext(id!(content.message)),
                     body,
                     formatted.as_ref(),
@@ -3697,7 +3685,7 @@ pub fn populate_message_view<T,P,M>(
             );
         }
         
-        populate_read_receipts_generic(&item, cx, room_id, event_tl_item);
+        //populate_read_receipts_generic(&item, cx, room_id, event_tl_item);
         let (is_reply_fully_drawn, replied_to_ev_id) = draw_replied_to_message(
             cx,
             &item.view(id!(replied_to_message)),
@@ -3793,9 +3781,9 @@ pub fn populate_message_view<T,P,M>(
         item.label(id!(profile.timestamp))
             .set_text(cx, &format!("{}", ts_millis.get()));
     }
-    if is_contextual {
-        item.view(id!(overlay_message)).set_visible(cx, true);
-    }
+    // if is_contextual {
+    //     item.view(id!(overlay_message)).set_visible(cx, true);
+    // }
     (item, new_drawn_status)
 }
 
