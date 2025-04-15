@@ -20,7 +20,6 @@ live_design! {
             height: Fill,
             draw_bg: {
                 color: #42660a,
-                radius: 4.0,
             }
         }
 
@@ -28,8 +27,7 @@ live_design! {
             height: Fill,
             width: Fill,
             draw_bg: {
-                color: #639b0d,   // #42660a
-                radius: 4.0,
+                color: #639b0d,
             }
         }
     }
