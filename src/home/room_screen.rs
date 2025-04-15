@@ -1818,7 +1818,7 @@ impl RoomScreen {
                     jump_to_bottom.update_visibility(cx, true);
                     tl.searched_results = timeline_events;
                     if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<usize>().ok()) {
-                        cx.action(SearchResultAction::Success(size, result.room_events.highlights.join(", ")));
+                        cx.action(SearchResultAction::Success(size));
                     }
                     tl.searched_results_highlighted_strings = result.room_events.highlights;
                     done_loading = true;
@@ -2717,6 +2717,7 @@ impl RoomScreen {
                             self.search_query = keywords.clone();
                             self.other_display = RoomScreenOtherDisplay::SearchResult;
                             self.view(id!(search_result_overlay)).set_visible(cx, true);
+                            self.search_result(id!(search_result_inner)).set_search_criteria(cx,keywords);
                         }
                     }
                 }
@@ -2732,6 +2733,18 @@ impl RoomScreen {
                             self.search_query = String::new();
                             self.other_display = RoomScreenOtherDisplay::None;
                             self.view(id!(search_result_overlay)).set_visible(cx, false);
+                        }
+                    }
+                }
+            }
+            SearchBarAction::ClickSearch => {
+                if let (Some(selected_room), Some(search_widget_id)) = {
+                    let app_state = scope.data.get::<AppState>().unwrap();
+                    (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
+                } {
+                    if let Some(widget_action) = widget_action {
+                        if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
+                            self.view(id!(search_result_overlay)).set_visible(cx, true);
                         }
                     }
                 }

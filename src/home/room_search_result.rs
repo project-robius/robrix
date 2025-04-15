@@ -3,7 +3,7 @@ use std::ops::DerefMut;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
-use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
+use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedUserId, UserId};
 
 use crate::{event_preview::text_preview_of_other_state,  utils::unix_time_millis_to_datetime};
 
@@ -86,6 +86,7 @@ live_design! {
             }
             <SearchIcon> {}
             summary_label = <Html> {
+                margin: {left: 10},
                 align: {x: 0.3}  // Align to top-right
                 width: Fill,
                 height: Fit,
@@ -125,8 +126,7 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchResult {
     #[deref] pub view: View,
-    /// The room ID of the currently-shown room.
-    #[rust] pub room_id: Option<OwnedRoomId>,
+    #[rust] pub search_criteria: String, 
 }
 
 impl Widget for SearchResult {
@@ -147,11 +147,11 @@ impl MatchEvent for SearchResult {
         }
         for action in actions {
             match action.downcast_ref() {
-                Some(SearchResultAction::Success(result_length, search_criteria)) => {
-                    self.set_summary(cx, *result_length, search_criteria.clone());
+                Some(SearchResultAction::Success(result_length)) => {
+                    self.set_result_count(cx, *result_length);
                 }
-                Some(SearchResultAction::Pending) => {
-                    self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
+                Some(SearchResultAction::Pending(search_criteria)) => {
+                    self.set_search_criteria(cx, search_criteria.clone());
                 }
                 _ => {}
             }
@@ -159,15 +159,24 @@ impl MatchEvent for SearchResult {
     }
 }
 impl SearchResult {
-    /// Sets the `search_result_count` and `search_criteria` fields of this `SearchResult`.
+    /// Display search summary.
     ///
     /// This is used to display the number of search results and the search criteria
     /// in the top-right of the room screen.
-    fn set_summary(&mut self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
-        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", search_result_count, search_criteria));
+    fn set_result_count(&self, cx: &mut Cx, search_result_count: usize) {
+        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", search_result_count, self.search_criteria));
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
 
+    /// Set Search criteria.
+    ///
+    /// This is used to display the number of search results and the search criteria
+    /// in the top-right of the room screen.
+    fn set_search_criteria(&mut self, cx: &mut Cx, search_criteria: String) {
+        self.view.html(id!(summary_label)).set_text(cx, &format!("Searching for <b>'{}'</b>", search_criteria));
+        self.search_criteria = search_criteria;
+        self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
+    }
     /// Resets the search result summary and displays the loading view.
     ///
     /// This function clears the summary text and makes the loading indicator visible.
@@ -178,10 +187,15 @@ impl SearchResult {
     }
 }
 impl SearchResultRef {
-    /// See [`SearchResult::set_summary()`].
-    pub fn set_summary(&self, cx: &mut Cx, search_result_count: usize, search_criteria: String) {
+    /// See [`SearchResult::set_result_count()`].
+    pub fn set_result_count(&self, cx: &mut Cx, search_result_count: usize) {
+        let Some(inner) = self.borrow() else { return };
+        inner.set_result_count(cx, search_result_count);
+    }
+    /// See [`SearchResult::set_search_criteria()`].
+    pub fn set_search_criteria(&self, cx: &mut Cx, search_criteria: String) {
         let Some(mut inner) = self.borrow_mut() else { return };
-        inner.set_summary(cx, search_result_count, search_criteria);
+        inner.set_search_criteria(cx, search_criteria);
     }
 
     /// See [`SearchResult::reset_summary()`].
@@ -383,9 +397,10 @@ pub enum SearchTimelineItemKind {
 /// Actions related to a specific message within a room timeline.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum SearchResultAction {
-    /// Search result's length and the search criteria
-    Success(usize, String),
-    Pending,
+    /// Search result's length.
+    Success(usize),
+    /// Pending search result and its search criteria.
+    Pending(String),
     Close,
     None
 }
@@ -504,10 +519,9 @@ impl <'a> PreviousEventable<EventableWrapperAEI<'a>> for PreviousWrapperAEI<'a> 
         let current_sender = current.0.sender();
         let compact_view = {
             prev_msg_sender == current_sender && current.0.origin_server_ts().0.checked_sub(self.0.origin_server_ts().0)
-                // Use compact_view within a draw
+                // Use compact_view within a day
                 .is_some_and(|d| d < uint!(86400000))
         };
-        //false
         compact_view
     }
 }
