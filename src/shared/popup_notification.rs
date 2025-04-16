@@ -183,6 +183,7 @@ impl Widget for RobrixPopupNotification {
 
         if self.animation_timer.is_event(event).is_some() {
             self.start_time = Some(Instant::now());
+            self.redraw_timer = cx.start_interval(0.016);
             self.duration_timer = cx.start_timeout(self.duration);
         }
 
@@ -242,7 +243,6 @@ impl RobrixPopupNotification {
     pub fn open(&mut self, cx: &mut Cx) {
         self.opened = true;
         self.animation_timer = cx.start_timeout(2.0);
-        self.redraw_timer = cx.start_interval(0.016);
         self.animator_play(cx, id!(mode.open));
         self.redraw(cx);
     }
