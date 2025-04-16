@@ -98,10 +98,11 @@ The following table shows which host systems can currently be used to build Robr
    ```
 
 3. Perform the following one-time setup steps:
-   1. If running on a real iOS device, [enable your iPhone's Developer Mode](https://www.delasign.com/blog/how-to-turn-on-developer-mode-on-an-iphone/).
+   1. If running on a real iOS device, enable your iPhone's Developer Mode:
+      Settings --> Privacy & Security --> Developer Mode --> turn on Developer Mode and reboot.
    2. Ensure your Apple Developer account is properly set up on your Mac.
    3. Create an empty "dummy" project in Xcode:
-      * File -> New -> Project to create a new "App"
+      * File --> New --> Project to create a new "App"
       * Set the Product Name as **`robrix`**. (used in the `--org` argument later)
       * Set the Organization Identifier to a value of your choice, e.g.,  **`rs.robius`**. (used in the `--app` argument later)
       * For Project Signing & Capabilities, select the proper Apple Developer team account.
@@ -112,9 +113,9 @@ The following table shows which host systems can currently be used to build Robr
 4. If you're using an iOS simulator, do the following:
    ```sh
    cargo makepad apple ios \
-   --org=rs.robius \
-   --app=robrix \
-   run-sim -p robrix --release
+     --org=rs.robius \
+     --app=robrix \
+     run-sim -p robrix --release
    ```
 
 #### Running on a real iOS device
@@ -130,10 +131,10 @@ The following table shows which host systems can currently be used to build Robr
    cargo makepad apple ios \
      --profile=<unique-starting-hex-string> \
      --cert=<UNIQUE_STARTING_HEX_STRING> \
-   --device=<UNIQUE-STARTING-HEX-STRING> \
+     --device=<UNIQUE-STARTING-HEX-STRING> \
      --org=rs.robius \
-   --app=robrix \
-   run-device -p robrix –release
+     --app=robrix \
+     run-device -p robrix –release
    ```
 
 # Feature status tracker
