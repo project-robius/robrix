@@ -30,4 +30,5 @@ pub fn live_design(cx: &mut Cx) {
     verification_badge::live_design(cx);
     callout_tooltip::live_design(cx);
     mentionable_text_input::live_design(cx);
+    popup_notification::live_design(cx);
 }
