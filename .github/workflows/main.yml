@@ -7,7 +7,7 @@ name: Robrix CI
 on:
     push:
       branches:
-        - search_messages#122
+        - main
       paths:
         - packaging/**
         - resources/**
