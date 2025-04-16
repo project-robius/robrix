@@ -243,6 +243,7 @@ impl MainDesktopUI {
     /// Closes all tabs
     pub fn close_all_tabs(&mut self, cx: &mut Cx) {
         log!("Closing all tabs");
+        // TODO: If room types are differentiated in future, ensure all types are closed here
         let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
         
         for tab_id in tab_ids {
