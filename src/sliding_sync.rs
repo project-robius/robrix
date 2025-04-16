@@ -382,6 +382,7 @@ pub enum MatrixRequest {
         include_all_rooms: bool,
         /// Text in the search bar.
         search_term: String,
+        next_batch: Option<String>
     }
 }
 
@@ -1048,7 +1049,7 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms } => {
+            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms, next_batch } => {
                 abort_core_task(CoreTask::Search).await;
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -1072,8 +1073,10 @@ async fn async_worker(
                 criteria.event_context.before_limit = uint!(1);
                 criteria.event_context.include_profile = true;
                 search_categories.room_events = Some(criteria);
+                let mut req = Request::new(search_categories);
+                req.next_batch = next_batch;
                 let handle = Handle::current().spawn(async move {
-                    match client.send(Request::new(search_categories)).await {
+                    match client.send(req).await {
                         Ok(response) => {
                             if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");

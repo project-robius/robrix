@@ -126,7 +126,8 @@ live_design! {
 #[derive(Live, LiveHook, Widget)]
 pub struct SearchResult {
     #[deref] pub view: View,
-    #[rust] pub search_criteria: String, 
+    #[rust] pub search_criteria: String,
+    #[rust] pub next_batch: Option<String>
 }
 
 impl Widget for SearchResult {
@@ -147,8 +148,12 @@ impl MatchEvent for SearchResult {
         }
         for action in actions {
             match action.downcast_ref() {
-                Some(SearchResultAction::Success(result_length)) => {
-                    self.set_result_count(cx, *result_length);
+                Some(SearchResultAction::Success{
+                    count,
+                    next_batch
+                }) => {
+                    self.set_result_count(cx, *count);
+                    self.next_batch = next_batch.clone();
                 }
                 Some(SearchResultAction::Pending(search_criteria)) => {
                     self.set_search_criteria(cx, search_criteria.clone());
@@ -397,8 +402,11 @@ pub enum SearchTimelineItemKind {
 /// Actions related to a specific message within a room timeline.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum SearchResultAction {
-    /// Search result's length.
-    Success(usize),
+    /// Search result's success.
+    Success{
+        count: usize,
+        next_batch: Option<String>
+    },
     /// Pending search result and its search criteria.
     Pending(String),
     Close,

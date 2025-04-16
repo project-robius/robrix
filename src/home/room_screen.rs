@@ -1020,7 +1020,8 @@ impl Widget for RoomScreen {
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id: room_id.clone(), 
                         include_all_rooms: false,
-                        search_term: self.search_query.clone()
+                        search_term: self.search_query.clone(),
+                        next_batch: None
                     });
                 }
             }
@@ -1230,7 +1231,7 @@ impl Widget for RoomScreen {
                 if let Some(room_id) = self.room_id.clone() {
                     self.view(id!(search_result_overlay)).set_visible(cx, true);
                     self.search_result(id!(search_result_inner)).reset_summary(cx);
-                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone() });
+                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone(), next_batch: None });
                 }
             }
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -1818,9 +1819,10 @@ impl RoomScreen {
                     jump_to_bottom.update_visibility(cx, true);
                     tl.searched_results = timeline_events;
                     if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<usize>().ok()) {
-                        cx.action(SearchResultAction::Success(size));
+                        cx.action(SearchResultAction::Success { count: size, next_batch: result.room_events.next_batch });
                     }
                     tl.searched_results_highlighted_strings = result.room_events.highlights;
+                    //tl.search_next_batch = result.room_events.next_batch;
                     done_loading = true;
                 }
             }
