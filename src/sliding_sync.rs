@@ -1047,7 +1047,7 @@ async fn async_worker(
                 });
             },
             MatrixRequest::GetMatrixRoomLinkPillInfo { matrix_id, via } => {
-                let Some(client) = CLIENT.get() else { continue };
+                let Some(client) = get_client() else { continue };
                 let _fetch_matrix_link_pill_info_task = Handle::current().spawn(async move {
                     let room_or_alias_id: Option<&RoomOrAliasId> = match &matrix_id {
                         MatrixId::Room(room_id) => Some((&**room_id).into()),
@@ -2753,9 +2753,20 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     log!("Requesting to close all tabs...");
     Cx::post_action(RoomsPanelAction::CloseAllTabs);
     
-    // FIXME just wait for UI update, 
-    // when you have better way to know when all tabs are closed exactly you can fix it;  
-    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    // FIXME:
+    // Add a short delay to ensure UI fully updates
+    // because:
+    // 1. When sending closeTab actions to main_desktop_ui's MainDesktopUI::handle_action,
+    //    Makepad needs time to complete UI redraw operations
+    // 2. Without this delay, UI refresh issues may occur:
+    //    - When logging in again without fully exiting, previous user's last open tabs
+    //      might still appear instead of the expected empty Home screen
+    // 3. This happens because Makepad's rendering loop and event handling are asynchronous:
+    //    - The closeTab event marks UI for update
+    //    - Actual redraw occurs in the next render frame
+    // 4. While not ideal, this sleep ensures state consistency across components
+    //    before proceeding with subsequent operations 
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     // Delete the last user ID file
     log!("Deleting last user ID file...");
