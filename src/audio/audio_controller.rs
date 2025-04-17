@@ -120,7 +120,7 @@ impl MatchEvent for AudioController {
                             }
                     }
                     (2, 32) => {
-                        // stereo 24bit
+                        // stereo 32bit
                         output_buffer.zero();
                             let (left, right) = output_buffer.stereo_mut();
                             for i in 0..left.len() {
