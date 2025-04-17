@@ -10,6 +10,7 @@ type Audios = HashMap<TimelineEventItemId, (Audio, Arc<Mutex<usize>>, Arc<Mutex<
 
 pub const WAV_HEADER_SIZE: usize = 44;
 
+// To copilot: is there any other better way instead using Rwlock? Can we just post action `makepad` to replace this?
 pub static AUDIO_SET: LazyLock<RwLock<Audios>> = LazyLock::new(||{
     RwLock::new(HashMap::new())
 });
