@@ -228,7 +228,7 @@ impl RoomMemberSubscriber for MentionableTextInputSubscriber {
 // /// from normal `@` characters.
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
 
-/// Actions emitted by the MentionableTextInput component
+/// Actions emitted or hanlded by the MentionableTextInput widget.
 #[allow(dead_code)]
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MentionableTextInputAction {
