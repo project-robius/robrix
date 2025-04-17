@@ -35,7 +35,7 @@ live_design! {
 
         location_button = <RobrixIconButton> {
             draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-            icon_walk: {width: 20, height: 20, margin: { right: -2 }},
+            icon_walk: {width: Fit, height: 23, margin: {bottom: -1}}
             text: "",
         }
 
@@ -55,7 +55,7 @@ live_design! {
 
         send_message_button = <RobrixIconButton> {
             draw_icon: {svg_file: (ICO_SEND)},
-            icon_walk: {width: 20, height: 20},
+            icon_walk: {width: Fit, height: 21},
         }
     }
 }
