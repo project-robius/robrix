@@ -29,21 +29,20 @@ live_design! {
         // Bottom-align everything to ensure that buttons always stick to the bottom
         // even when the message_input box is very tall.
         align: {y: 1.0},
-        padding: 8.
+        padding: 8,
         show_bg: true
         draw_bg: {color: (COLOR_PRIMARY)}
 
-        location_button = <IconButton> {
+        location_button = <RobrixIconButton> {
             draw_icon: {svg_file: (ICO_LOCATION_PERSON)},
-            icon_walk: {width: 22.0, height: Fit, margin: {left: 0, right: 5}},
+            icon_walk: {width: 20, height: 20, margin: { right: -2 }},
             text: "",
         }
 
         message_input = <MentionableTextInput> {
             width: Fill,
             height: Fit
-            margin: 0
-            align: {y: 0.5}
+            margin: { bottom: 6 },
 
             persistent = {
                 center = {
@@ -54,9 +53,9 @@ live_design! {
             }
         }
 
-        send_message_button = <IconButton> {
+        send_message_button = <RobrixIconButton> {
             draw_icon: {svg_file: (ICO_SEND)},
-            icon_walk: {width: 18.0, height: Fit},
+            icon_walk: {width: 20, height: 20},
         }
     }
 }

@@ -124,71 +124,73 @@ live_design! {
         }
 
         persistent = {
+            top = { height: 0 }
+            bottom = { height: 0 }
             center = {
-                text_input = {
+                text_input = <RobrixTextInput> {
                     empty_message: "Start typing..."
-                    draw_bg: {
-                        color: (COLOR_PRIMARY)
-                        instance border_radius: 2.0
-                        instance border_size: 0.0
-                        instance border_color: #D0D5DD
-                        instance inset: vec4(0.0, 0.0, 0.0, 0.0)
+                    // draw_bg: {
+                    //     color: (COLOR_PRIMARY)
+                    //     instance border_radius: 2.0
+                    //     instance border_size: 0.0
+                    //     instance border_color: #D0D5DD
+                    //     instance inset: vec4(0.0, 0.0, 0.0, 0.0)
 
-                        fn get_color(self) -> vec4 {
-                            return self.color
-                        }
+                    //     fn get_color(self) -> vec4 {
+                    //         return self.color
+                    //     }
 
-                        fn get_border_color(self) -> vec4 {
-                            return self.border_color
-                        }
+                    //     fn get_border_color(self) -> vec4 {
+                    //         return self.border_color
+                    //     }
 
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size)
-                            sdf.box(
-                                self.inset.x + self.border_size,
-                                self.inset.y + self.border_size,
-                                self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
-                                self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
-                                max(1.0, self.border_radius)
-                            )
-                            sdf.fill_keep(self.get_color())
-                            if self.border_size > 0.0 {
-                                sdf.stroke(self.get_border_color(), self.border_size)
-                            }
-                            return sdf.result
-                        }
-                    }
+                    //     fn pixel(self) -> vec4 {
+                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size)
+                    //         sdf.box(
+                    //             self.inset.x + self.border_size,
+                    //             self.inset.y + self.border_size,
+                    //             self.rect_size.x - (self.inset.x + self.inset.z + self.border_size * 2.0),
+                    //             self.rect_size.y - (self.inset.y + self.inset.w + self.border_size * 2.0),
+                    //             max(1.0, self.border_radius)
+                    //         )
+                    //         sdf.fill_keep(self.get_color())
+                    //         if self.border_size > 0.0 {
+                    //             sdf.stroke(self.get_border_color(), self.border_size)
+                    //         }
+                    //         return sdf.result
+                    //     }
+                    // }
 
-                    draw_text: {
-                        color: (MESSAGE_TEXT_COLOR)
-                        text_style: <MESSAGE_TEXT_STYLE>{}
-                        fn get_color(self) -> vec4 {
-                            return mix(self.color, #B, self.is_empty)
-                        }
-                    }
+                    // draw_text: {
+                    //     color: (MESSAGE_TEXT_COLOR)
+                    //     text_style: <MESSAGE_TEXT_STYLE>{}
+                    //     fn get_color(self) -> vec4 {
+                    //         return mix(self.color, #B, self.is_empty)
+                    //     }
+                    // }
 
-                    draw_cursor: {
-                        instance focus: 0.0
-                        uniform border_radius: 0.5
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
-                            sdf.fill(mix(#fff, #bbb, self.focus));
-                            return sdf.result
-                        }
-                    }
+                    // draw_cursor: {
+                    //     instance focus: 0.0
+                    //     uniform border_radius: 0.5
+                    //     fn pixel(self) -> vec4 {
+                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    //         sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
+                    //         sdf.fill(mix(#fff, #bbb, self.focus));
+                    //         return sdf.result
+                    //     }
+                    // }
 
-                    draw_highlight: {
-                        instance hover: 0.0
-                        instance focus: 0.0
-                        uniform border_radius: 2.0
-                        fn pixel(self) -> vec4 {
-                            let sdf = Sdf2d::viewport(self.pos * self.rect_size);
-                            sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
-                            sdf.fill(mix(#eee, #ddd, self.focus));
-                            return sdf.result
-                        }
-                    }
+                    // draw_highlight: {
+                    //     instance hover: 0.0
+                    //     instance focus: 0.0
+                    //     uniform border_radius: 2.0
+                    //     fn pixel(self) -> vec4 {
+                    //         let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    //         sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius)
+                    //         sdf.fill(mix(#eee, #ddd, self.focus));
+                    //         return sdf.result
+                    //     }
+                    // }
                 }
             }
         }
@@ -228,10 +230,13 @@ pub struct MentionableTextInput {
     #[rust] room_members: Arc<Vec<RoomMember>>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
-    /// The set of users that were mentioned (at one point) in this text input.
-    /// Due to characters being deleted/removed, this list is a *superset*
-    /// of possible users who may have been mentioned.
-    /// All of these mentions may not exist in the final text input content;
+    /// The set of users (user ID and display name) that were mentioned
+    /// at one point in this text input.
+    ///
+    /// As characters may have been deleted/removed after the user-to-mention
+    /// was selected, this list is a *superset* of possible users
+    /// who may have been mentioned.
+    /// Thus, all of these mentions may not exist in the final text input content;
     /// this is just a list of users to search the final sent message for
     /// when adding in new mentions.
     #[rust] possible_mentions: BTreeMap<OwnedUserId, String>,
