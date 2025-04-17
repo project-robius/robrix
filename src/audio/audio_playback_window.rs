@@ -60,7 +60,7 @@ impl MatchEvent for AudioPlaybackWindow {
                 self.view.visible = true;
                 self.visible = true;
                 self.redraw(cx);
-                log!("22222222");
+                
             }
         }
     }
