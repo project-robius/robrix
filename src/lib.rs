@@ -14,6 +14,8 @@ pub mod home;
 mod profile;
 /// A modal/dialog popup for interactive verification of users/devices.
 mod verification_modal;
+// A image viewer for viewing images.
+mod image_viewer;
 /// Shared UI components.
 pub mod shared;
 /// Generating text previews of timeline events/messages.
