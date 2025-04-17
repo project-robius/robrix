@@ -8,6 +8,8 @@ use super::audio_message_ui::AudioMessageUIAction;
 
 type Audios = HashMap<TimelineEventItemId, (Audio, Arc<Mutex<usize>>, Arc<Mutex<bool>>)>;
 
+pub const WAV_HEADER_SIZE: usize = 44;
+
 pub static AUDIO_SET: LazyLock<RwLock<Audios>> = LazyLock::new(||{
     RwLock::new(HashMap::new())
 });
@@ -194,7 +196,7 @@ impl MatchEvent for AudioController {
                             if let Some((audio, _new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
                                 *new_playing_status.lock().unwrap() = true;
                                 *self.audio.lock().unwrap() = audio.clone();
-                                *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), 44);
+                                *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), WAV_HEADER_SIZE);
                             }
                         }
                     }
@@ -218,7 +220,7 @@ impl MatchEvent for AudioController {
                             if &current_id == new_id {
                                 if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.write().unwrap().get(&current_id) {
                                     *old_playing_status.lock().unwrap() = false;
-                                    *old_pos.lock().unwrap() = 44;
+                                    *old_pos.lock().unwrap() = WAV_HEADER_SIZE;
                                 }
                                 *self.selected.lock().unwrap() = Selected::None;
                             }
@@ -227,7 +229,7 @@ impl MatchEvent for AudioController {
                             if &current_id == new_id {
                                 if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.write().unwrap().get(&current_id) {
                                     *old_playing_status.lock().unwrap() = false;
-                                    *old_pos.lock().unwrap() = 44;
+                                    *old_pos.lock().unwrap() = WAV_HEADER_SIZE;
                                 }
                                 *self.selected.lock().unwrap() = Selected::None;
                             }
@@ -249,7 +251,7 @@ pub fn insert_new_audio_or_get(timeline_audio_event_item_id: &TimelineEventItemI
                 channels,
                 bit_depth
             };
-            let pos = Arc::new(Mutex::new(44));
+            let pos = Arc::new(Mutex::new(WAV_HEADER_SIZE));
             let is_playing = Arc::new(Mutex::new(false));
             v.insert((audio, pos, is_playing)).clone()
         }
@@ -261,21 +263,9 @@ pub fn insert_new_audio_or_get(timeline_audio_event_item_id: &TimelineEventItemI
 
 
 pub fn parse_wav(data: &[u8]) -> Option<(u16, u16)> {
-    // Check that the data length is sufficient, at least 44 bytes are required (standard WAV file header size)
-    if data.len() < 44 {
+    // Check that the data length is sufficient, at least WAV_HEADER_SIZE bytes are required (standard WAV file header size)
+    if data.len() < WAV_HEADER_SIZE {
         log!("Insufficient data length");
-        return None;
-    }
-
-    // Check if the first 4 bytes are 'RIFF'.
-    if &data[0..4] != b"RIFF" {
-        log!("Not a `RIFF` file");
-        return None;
-    }
-
-    // Check if bytes 8-11 are 'WAVE'.
-    if &data[8..12] != b"WAVE" {
-        log!("Not a `WAVE` file");
         return None;
     }
 
