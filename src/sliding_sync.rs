@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
+        api::client::{receipt::create_receipt::v3::ReceiptType, search::search_events::v3::Categories}, events::{
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
@@ -21,12 +21,13 @@ use matrix_sdk_ui::{
 use robius_open::Uri;
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::JoinHandle,
+    sync::{mpsc::{Receiver, Sender, UnboundedReceiver, UnboundedSender}, watch, Notify}, task::{AbortHandle, JoinHandle},
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
+use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
         room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
@@ -373,6 +374,15 @@ pub enum MatrixRequest {
         matrix_id: MatrixId,
         via: Vec<OwnedServerName>
     },
+    /// General Matrix Search API with given categorie
+    SearchMessages {
+        /// The room to search for message.
+        room_id: OwnedRoomId,
+        /// Filter criteria for searching message.
+        include_all_rooms: bool,
+        /// Text in the search bar.
+        search_term: String,
+    }
 }
 
 /// Submits a request to the worker thread to be executed asynchronously.
@@ -431,7 +441,6 @@ async fn async_worker(
                     let sender = room_info.timeline_update_sender.clone();
                     (timeline_ref, sender)
                 };
-
                 // Spawn a new async task that will make the actual pagination request.
                 let _paginate_task = Handle::current().spawn(async move {
                     log!("Starting {direction} pagination request for room {room_id}...");
@@ -765,7 +774,7 @@ async fn async_worker(
 
                 let _typing_notices_task = Handle::current().spawn(async move {
                     while let Ok(user_ids) = typing_notice_receiver.recv().await {
-                        // log!("Received typing notifications for room {room_id}: {user_ids:?}");
+                        log!("Received typing notifications for room {room_id}: {user_ids:?}");
                         let mut users = Vec::with_capacity(user_ids.len());
                         for user_id in user_ids {
                             users.push(
@@ -1038,6 +1047,47 @@ async fn async_worker(
                         };
                     }
                 });
+            }
+            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms } => {
+                abort_core_task(CoreTask::Search).await;
+                let client = CLIENT.get().unwrap();
+                let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    log!("Skipping pagination request for not-yet-known room {room_id}");
+                    continue;
+                };
+
+                let sender = room_info.timeline_update_sender.clone();
+                let mut search_categories = Categories::new();
+                let mut room_filter = RoomEventFilter::empty();
+                room_filter.rooms = Some(vec![room_id.clone()]);
+                if include_all_rooms {
+                    room_filter.rooms = None;
+                }
+                let mut criteria = Criteria::new(search_term);
+                criteria.filter = room_filter;
+                criteria.order_by = Some(OrderBy::Recent);
+                criteria.event_context = EventContext::new();
+                criteria.event_context.after_limit = uint!(1);
+                criteria.event_context.before_limit = uint!(1);
+                criteria.event_context.include_profile = true;
+                search_categories.room_events = Some(criteria);
+                let handle = Handle::current().spawn(async move {
+                    match client.send(Request::new(search_categories)).await {
+                        Ok(response) => {
+                            if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
+                                error!("Failed to search message in {room_id}; error: {e:?}");
+                                enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
+                            }
+                            SignalToUI::set_ui_signal();
+                        }
+                        Err(e) => {
+                            error!("Failed to search message in {room_id}; error: {e:?}");
+                            enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
+                        }
+                    }
+                });
+                register_core_task(CoreTask::Search, handle.abort_handle());
             }
         }
     }
@@ -2542,5 +2592,27 @@ impl UserPowerLevels {
     #[doc(alias("unpin"))]
     pub fn can_pin(self) -> bool {
         self.contains(UserPowerLevels::RoomPinnedEvents)
+    }
+}
+#[derive(Debug, Eq, PartialEq, Hash)]
+enum CoreTask {
+    Search,            
+}
+static CORE_TASKS: LazyLock<Mutex<HashMap<CoreTask, AbortHandle>>> = LazyLock::new(
+    || Mutex::new(HashMap::new())
+);
+
+fn register_core_task(
+    task_type: CoreTask, 
+    handle: AbortHandle,
+) {
+    if let Ok(mut tasks) = CORE_TASKS.lock() {
+        tasks.insert(task_type, handle);
+    }
+}
+
+async fn abort_core_task(core_task: CoreTask) {
+    if let Ok(mut tasks) = CORE_TASKS.lock() {
+        tasks.remove(&core_task);
     }
 }

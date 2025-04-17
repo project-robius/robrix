@@ -451,8 +451,22 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
-}
 
+    /// Returns an immutable reference to the single set of all known rooms' names.
+    pub fn get_all_rooms_names(&self) -> HashMap<OwnedRoomId, Option<String>> {
+        self.all_rooms.iter().map(|(room_id, room)| (room_id.clone(), room.room_name.clone())).collect()
+    }
+}
+impl RoomsListRef {
+    /// See [`RoomsList::get_all_rooms_names()`].
+    pub fn get_all_rooms_names(&self) -> HashMap<OwnedRoomId, Option<String>> {
+        if let Some(inner) = self.borrow() {
+            inner.get_all_rooms_names()
+        } else {
+            HashMap::new()
+        }
+    }
+}
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         // Process all pending updates to the list of all rooms, and then redraw it.

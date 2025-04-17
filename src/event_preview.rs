@@ -75,7 +75,7 @@ pub fn text_preview_of_timeline_item(
             text_preview_of_member_profile_change(profile_change, sender_username)
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state)
+            text_preview_of_other_state(other_state.content(),other_state.state_key())
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("<i>initiated another state change</i>"),
                     BeforeText::UsernameWithoutColon,
@@ -132,7 +132,7 @@ pub fn body_of_timeline_item(
             ).text
         }
         TimelineItemContent::OtherState(other_state) => {
-            text_preview_of_other_state(other_state)
+            text_preview_of_other_state(other_state.content(), other_state.state_key())
                 .unwrap_or_else(|| TextPreview::from((
                     String::from("initiated another state change."),
                     BeforeText::UsernameWithoutColon,
@@ -290,12 +290,12 @@ pub fn text_preview_of_redacted_message(
     TextPreview::from((text, BeforeText::Nothing))
 }
 
-
 /// Returns a text preview of the given other state event as an Html-formatted string.
 pub fn text_preview_of_other_state(
-    other_state: &timeline::OtherState,
+    other_state: &AnyOtherFullStateEventContent,
+    state_key: &str
 ) -> Option<TextPreview> {
-    let text = match other_state.content() {
+    let text = match other_state {
         AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content, .. }) => {
             let mut s = String::from("set this room's aliases to ");
             let last_alias = content.aliases.len() - 1;
@@ -370,10 +370,10 @@ pub fn text_preview_of_other_state(
             Some(format!("changed this room's topic to {:?}.", content.topic))
         }
         AnyOtherFullStateEventContent::SpaceParent(_) => {
-            Some(format!("set this room's parent space to {}.", other_state.state_key()))
+            Some(format!("set this room's parent space to {}.", state_key))
         }
         AnyOtherFullStateEventContent::SpaceChild(_) => {
-            Some(format!("added a new child to this space: {}.", other_state.state_key()))
+            Some(format!("added a new child to this space: {}.", state_key))
         }
         _other => {
             // log!("*** Unhandled: {:?}.", _other);
@@ -382,8 +382,6 @@ pub fn text_preview_of_other_state(
     };
     text.map(|t| TextPreview::from((t, BeforeText::UsernameWithoutColon)))
 }
-
-
 /// Returns a text preview of the given member profile change as a plaintext string.
 pub fn text_preview_of_member_profile_change(
     change: &MemberProfileChange,
