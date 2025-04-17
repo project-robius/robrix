@@ -4,7 +4,7 @@ use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
-use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::{AppState, RoomsPanelRestoreAction}, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -469,10 +469,16 @@ impl Widget for RoomsList {
                             error!("BUG: Added room {room_id} that already existed");
                         } else {
                             if should_display {
-                                self.displayed_rooms.push(room_id);
+                                self.displayed_rooms.push(room_id.clone());
                             }
                         }
                         self.update_status_rooms_count();
+                        cx.action(RoomsPanelRestoreAction::Success(room_id));
+                        if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
+                            cx.action(RoomsPanelRestoreAction::AllRoomsLoaded);
+                            let app_state = scope.data.get_mut::<AppState>().unwrap();
+                            app_state.all_known_rooms_loaded = true;
+                        }
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
