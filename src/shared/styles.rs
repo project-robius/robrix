@@ -79,8 +79,10 @@ live_design! {
     pub COLOR_DIVIDER = #x00000018
     pub COLOR_DIVIDER_DARK = #x00000044
 
-    pub COLOR_DANGER_RED = #xDC0005
-    pub COLOR_ACCEPT_GREEN = #x138808
+    pub COLOR_ACCEPT_GREEN = #138808
+    pub COLOR_DANGER_RED = #DC0005
+    pub COLOR_DISABLE_GRAY = #B3B3B3
+
 
     pub COLOR_PRIMARY = #ffffff
     pub COLOR_PRIMARY_DARKER = #fefefe
@@ -189,3 +191,7 @@ live_design! {
         }
     }
 }
+
+pub const COLOR_ACCEPT_GREEN: Vec3 = vec3(0.074, 0.533, 0.031); // #138808
+pub const COLOR_DISABLE_GRAY: Vec3 = vec3(0.7, 0.7, 0.7); // #B3B3B3
+pub const COLOR_DANGER_RED: Vec3 = vec3(0.863, 0.0, 0.02); // #DC0005

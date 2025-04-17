@@ -5,6 +5,7 @@ use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscript
 use crate::shared::mentionable_text_input::{
     MentionableTextInputAction, MentionableTextInputWidgetExt,
 };
+use crate::shared::styles::{COLOR_ACCEPT_GREEN, COLOR_DISABLE_GRAY};
 use crate::sliding_sync::{MatrixRequest, submit_async_request};
 use makepad_widgets::*;
 use matrix_sdk::room::RoomMember;
@@ -54,7 +55,11 @@ live_design! {
         }
 
         send_message_button = <RobrixIconButton> {
-            draw_icon: {svg_file: (ICO_SEND)},
+            enabled: false, // is enabled when text is inputted
+            draw_icon: {
+                svg_file: (ICO_SEND),
+                color: (COLOR_DISABLE_GRAY),
+            }
             icon_walk: {width: Fit, height: 21},
         }
     }
@@ -127,8 +132,26 @@ impl Widget for RoomInputBar {
         self.view.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
-            for action in actions {
+            // Set the send_message_button to be enabled/green if the message_input is not empty
+            // or disabled & gray if it is empty.
+            let message_input = self.text_input(id!(message_input.text_input));
+            if let Some(new_text) = message_input.changed(actions) {
+                let send_message_button = self.view.button(id!(send_message_button));
+                let (should_enable, new_color) = if new_text.is_empty() {
+                    (false, COLOR_DISABLE_GRAY)
+                } else {
+                    (true, COLOR_ACCEPT_GREEN)
+                };
+                send_message_button.apply_over(cx, live! {
+                    enabled: (should_enable),
+                    draw_icon: {
+                        color: (new_color),
+                        color_hover: (new_color),
+                    }
+                });
+            }
 
+            for action in actions {
                 if let Some(widget_action) = action.as_widget_action().widget_uid_eq(self.widget_uid())  {
                     log!("Found widget action for my widget_uid: {:?}", self.widget_uid());
                     log!("Widget action type: {}", std::any::type_name_of_val(&widget_action));

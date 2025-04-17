@@ -24,7 +24,7 @@ use crate::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
-        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
+        avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
     }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
@@ -39,7 +39,6 @@ use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_react
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
-const COLOR_DANGER_RED: Vec3 = Vec3 { x: 0.862, y: 0.0, z: 0.02 };
 
 
 live_design! {
@@ -2160,7 +2159,7 @@ impl RoomScreen {
     ) {
         // We must hide the input_bar while the editing pane is shown,
         // otherwise a very-tall input bar might show up underneath a shorter editing pane.
-        self.view(id!(input_bar)).set_visible(cx, false);
+        self.view.room_input_bar(id!(input_bar)).set_visible(cx, false);
 
         self.editing_pane(id!(editing_pane)).show(
             cx,
@@ -2174,7 +2173,7 @@ impl RoomScreen {
     fn on_hide_editing_pane(&mut self, cx: &mut Cx) {
         // In `show_editing_pane()` above, we hid the input_bar while the editing pane
         // is being shown, so here we need to make it visible again.
-        self.view(id!(input_bar)).set_visible(cx, true);
+        self.view.room_input_bar(id!(input_bar)).set_visible(cx, true);
         self.redraw(cx);
         // We don't need to do anything with the editing pane itself here,
         // because it has already been hidden by the time this function gets called.
