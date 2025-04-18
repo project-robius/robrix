@@ -137,7 +137,7 @@ impl MatchEvent for AudioController {
                 }
 
                 // Use `pos + audio.bit_depth.ilog2()` rather than `pos` to ensure no panic when computing isize mentioned above.
-                if pos + audio.bit_depth.ilog2() as usize > audio_data_len {
+                if pos + audio.bit_depth.ilog2() as usize > audio_data_len - 1 {
                     if let Some((_audio, _old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(id) {
                         *old_playing_status.lock().unwrap() = false;
                     }
@@ -157,77 +157,44 @@ impl MatchEvent for AudioController {
         for action in actions {
             match action.downcast_ref() {
                 Some(AudioMessageUIAction::Play(new_id)) => {
-                    let selected =self.selected.clone().lock().unwrap().clone();
+                    let selected = self.selected.lock().unwrap().clone();
                     match selected {
                         Selected::Playing(current_id, current_pos) =>  {
                             if current_id != new_id.clone() {
                                 cx.action(AudioControllerAction::UiToPause(current_id.clone()));
-                                self.restore_audio_play_status(&current_id, current_pos);
-                                // if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(&current_id) {
-                                //     *old_pos.lock().unwrap() = current_pos;
-                                //     *old_playing_status.lock().unwrap() = false;
-                                // }
+                                restore_audio_play_status(&current_id, current_pos);
                                 self.switch_to_audio(new_id);
-                                // if let Some((audio, new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
-                                //     *self.audio.lock().unwrap() = audio.clone();
-                                //     let new_pos_mg = new_pos.lock().unwrap();
-                                //     *new_playing_status.lock().unwrap() = true;
-                                //     *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), *new_pos_mg);
-                                // }
                             }
                         }
                         Selected::Paused(current_id, current_pos) => {
                             if &current_id == new_id {
                                 *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), current_pos);
                             } else {
-                                self.restore_audio_play_status(&current_id, current_pos);
-                                // if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(&current_id) {
-                                //     *old_playing_status.lock().unwrap() = false;
-                                //     *old_pos.lock().unwrap() = current_pos;
-                                // }
+                                restore_audio_play_status(&current_id, current_pos);
                                 self.switch_to_audio(new_id);
-                                // if let Some((audio, new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
-                                //     *self.audio.lock().unwrap() = audio.clone();
-                                //     let new_pos = *new_pos.lock().unwrap();
-                                //     *new_playing_status.lock().unwrap() = true;
-                                //     *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), new_pos);
-                                // }
                             }
                         }
                         Selected::None => {
                             self.switch_to_audio(new_id);
-                            // if let Some((audio, _new_pos, new_playing_status)) = AUDIO_SET.read().unwrap().get(new_id) {
-                            //     *new_playing_status.lock().unwrap() = true;
-                            //     *self.audio.lock().unwrap() = audio.clone();
-                            //     *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), WAV_HEADER_SIZE);
-                            // }
                         }
                     }
                 }
                 Some(AudioMessageUIAction::Pause(new_id)) => {
-                    let selected =self.selected.clone().lock().unwrap().clone();
-                    if let Selected::Playing(current_id, current_pos) = selected {
+                    let mut selected_mg = self.selected.lock().unwrap();
+                    if let Selected::Playing(current_id, current_pos) = selected_mg.clone() {
                         if &current_id == new_id {
-                            self.restore_audio_play_status(&current_id, current_pos);
-                            // if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(&current_id) {
-                            //     *old_playing_status.lock().unwrap() = false;
-                            //     *old_pos.lock().unwrap() = current_pos;
-                            // }
-                            *self.selected.lock().unwrap() = Selected::Paused(new_id.clone(), current_pos);
+                            restore_audio_play_status(&current_id, current_pos);
+                            *selected_mg = Selected::Paused(new_id.clone(), current_pos);
                         }
                     }
                 }
                 Some(AudioMessageUIAction::Stop(new_id)) => {
-                    let selected =self.selected.clone().lock().unwrap().clone();
-                    match selected {
+                    let mut selected_mg = self.selected.lock().unwrap();
+                    match selected_mg.clone() {
                         Selected::Playing(current_id, _current_pos) | Selected::Paused(current_id, _current_pos) => {
+                            restore_audio_play_status(new_id, WAV_HEADER_SIZE);
                             if &current_id == new_id {
-                                self.restore_audio_play_status(&current_id, WAV_HEADER_SIZE);
-                                // if let Some((_audio, old_pos, old_playing_status)) = AUDIO_SET.read().unwrap().get(&current_id) {
-                                //     *old_playing_status.lock().unwrap() = false;
-                                //     *old_pos.lock().unwrap() = WAV_HEADER_SIZE;
-                                // }
-                                *self.selected.lock().unwrap() = Selected::None;
+                                *selected_mg = Selected::None;
                             }
                         }
                         _ => { }
@@ -240,19 +207,19 @@ impl MatchEvent for AudioController {
 }
 
 impl AudioController {
-    fn restore_audio_play_status(&self, current_id: &TimelineEventItemId, current_pos: usize) {
-        if let Some((_, old_pos, old_play_status)) = AUDIO_SET.read().unwrap().get(current_id) {
-            *old_play_status.lock().unwrap() = false;
-            *old_pos.lock().unwrap() = current_pos;
-        }
-    }
-
     fn switch_to_audio(&self, new_id: &TimelineEventItemId) {
         if let Some((audio, new_pos, new_play_status)) = AUDIO_SET.read().unwrap().get(new_id) {
             *self.audio.lock().unwrap() = audio.clone();
             *new_play_status.lock().unwrap() = true;
             *self.selected.lock().unwrap() = Selected::Playing(new_id.clone(), *new_pos.lock().unwrap());
         }
+    }
+}
+
+fn restore_audio_play_status(current_id: &TimelineEventItemId, current_pos: usize) {
+    if let Some((_, old_pos, old_play_status)) = AUDIO_SET.read().unwrap().get(current_id) {
+        *old_play_status.lock().unwrap() = false;
+        *old_pos.lock().unwrap() = current_pos;
     }
 }
 
