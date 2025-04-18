@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -615,7 +615,6 @@ live_design! {
         height: Fill,
         align: {x: 0.5, y: 0.0} // center horizontally, align to top vertically
         flow: Overlay,
-
         list = <PortalList> {
             height: Fill,
             width: Fill
@@ -638,16 +637,6 @@ live_design! {
                 draw_text: {
                     text_style: <REGULAR_TEXT> {
                         font_size: 12.5,
-                    },
-                    color: #000,
-                }
-                text: "??"
-            }
-            NoMoreMessages = <Label> {
-                margin: {left: 10, top: 30},
-                draw_text: {
-                    text_style: <REGULAR_TEXT> {
-                        font_size: 16.5,
                     },
                     color: #000,
                 }
@@ -916,7 +905,10 @@ live_design! {
 
             search_result_overlay = <View> {
                 visible: false,
-                search_result_inner = <SearchResult> { 
+                search_result_inner = <SearchResult> {
+                    timeline_template: <Timeline>{
+                        
+                    }
                 } 
             }
             /*
@@ -938,7 +930,16 @@ live_design! {
             }
             */
         }
-
+        no_more_template: <Label> {
+            margin: {left: 10, top: 30},
+            draw_text: {
+                text_style: <REGULAR_TEXT> {
+                    font_size: 16.5,
+                },
+                color: #000,
+            }
+            text: "No More"
+        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -974,9 +975,7 @@ pub struct RoomScreen {
     #[rust] pub other_display: RoomScreenOtherDisplay,
     /// The timer for sending a search request after a delay when user stops typing.
     #[rust] search_delay_timer: Timer,
-    /// The search query to be sent adter the search delay timer ends.
-    /// This field is reset when the user continues typing before the search delay timer ends.
-    #[rust] search_query: String,
+    #[live] pub no_more_template: Option<LivePtr>,
 }
 impl Drop for RoomScreen {
 
@@ -1013,14 +1012,15 @@ impl Widget for RoomScreen {
         if let Event::Timer(te) = event {
             if self.search_delay_timer.is_timer(te).is_some() {
                 if let Some(room_id) = &self.room_id {
-                    if self.search_query.is_empty() {
+                    let Some(tl_state) = self.tl_state.as_mut() else { return };
+                    if tl_state.search_result_state.search_term.is_empty() {
                         self.other_display = RoomScreenOtherDisplay::None;
                         return; 
                     }
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id: room_id.clone(), 
                         include_all_rooms: false,
-                        search_term: self.search_query.clone(),
+                        search_term: tl_state.search_result_state.search_term.clone(),
                         next_batch: None
                     });
                 }
@@ -1137,6 +1137,8 @@ impl Widget for RoomScreen {
                 self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
                 // Handle sending any read receipts for the current logged-in user.
                 self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
+            } else {
+                send_pagination_request_based_on_scroll_pos_for_search_result( self, cx, actions, &portal_list);
             }
 
             
@@ -1231,7 +1233,9 @@ impl Widget for RoomScreen {
                 if let Some(room_id) = self.room_id.clone() {
                     self.view(id!(search_result_overlay)).set_visible(cx, true);
                     self.search_result(id!(search_result_inner)).reset_summary(cx);
-                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: self.search_query.clone(), next_batch: None });
+                    let Some(tl) = self.tl_state.as_mut() else { return };
+                    tl.items.clear();
+                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: tl.search_result_state.search_term.clone(), next_batch: None });
                 }
             }
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -1775,7 +1779,10 @@ impl RoomScreen {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
 
-                TimelineUpdate::SearchResult(result) => {
+                TimelineUpdate::SearchResult{
+                    result, 
+                    previous_batch_token
+                } => {
                     tl.content_drawn_since_last_update.clear();
                     tl.profile_drawn_since_last_update.clear();
                     tl.fully_paginated = false;
@@ -1783,7 +1790,7 @@ impl RoomScreen {
                     let mut timeline_events= Vector::new();
                     let mut last_room_id = None;
                     let rooms_names = self.view.rooms_list(id!(rooms_list)).get_all_rooms_names();
-                    timeline_events.push_back(SearchTimelineItem::with_no_more_messages());
+                    //timeline_events.push_back(SearchTimelineItem::with_no_more_messages());
                     for item in result.room_events.results.iter().rev() {
                         let Some(event) = item.result.clone().and_then(|f|f.deserialize().ok()) else { continue };
                         
@@ -1817,13 +1824,22 @@ impl RoomScreen {
                     portal_list.set_first_id_and_scroll(timeline_events.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
-                    tl.searched_results = timeline_events;
-                    if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<usize>().ok()) {
-                        cx.action(SearchResultAction::Success { count: size, next_batch: result.room_events.next_batch });
+                    tl.search_result_state.items.extend(timeline_events);
+                    if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()) {
+                        cx.action(SearchResultAction::Success { count: size });
                     }
-                    tl.searched_results_highlighted_strings = result.room_events.highlights;
-                    //tl.search_next_batch = result.room_events.next_batch;
+                    tl.search_result_state.highlighted_strings = result.room_events.highlights;
+                    tl.search_result_state.next_batch = result.room_events.next_batch.clone();
+                    if let Some(next_batch) = previous_batch_token {
+                        tl.search_result_state.batch_tokens.push(next_batch);
+                    }
                     done_loading = true;
+                }
+                TimelineUpdate::SearchFirstUpdate { initial_items, next_batch_token } => {
+
+                }
+                TimelineUpdate::SearchNewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    
                 }
             }
         }
@@ -2422,8 +2438,7 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                searched_results: Vector::new(),
-                searched_results_highlighted_strings: Vec::new()
+                search_result_state: SearchResultState::default(),
             };
             (new_tl_state, true)
         };
@@ -2702,8 +2717,7 @@ impl RoomScreen {
             self.view(id!(search_result_overlay)).set_visible(cx, false);
             self.other_display = RoomScreenOtherDisplay::None;
             if let Some(ref mut tl_state) = self.tl_state {
-                tl_state.searched_results = Vector::new();
-                tl_state.searched_results_highlighted_strings = vec![];
+                tl_state.search_result_state = SearchResultState::default();
             }
         }
         let widget_action = action.as_widget_action();
@@ -2716,7 +2730,10 @@ impl RoomScreen {
                     if let Some(widget_action) = widget_action {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
                             self.search_delay_timer = cx.start_timeout(1.0);
-                            self.search_query = keywords.clone();
+                            if let Some(ref mut tl_state) = self.tl_state {
+                                tl_state.search_result_state.items.clear();
+                                tl_state.search_result_state.search_term = keywords.clone();
+                            }
                             self.other_display = RoomScreenOtherDisplay::SearchResult;
                             self.view(id!(search_result_overlay)).set_visible(cx, true);
                             self.search_result(id!(search_result_inner)).set_search_criteria(cx,keywords);
@@ -2732,7 +2749,8 @@ impl RoomScreen {
                     if let Some(widget_action) = widget_action {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
                             cx.stop_timer(self.search_delay_timer);
-                            self.search_query = String::new();
+                            let Some(tl) = self.tl_state.as_mut() else { return };
+                            tl.search_result_state = SearchResultState::default();
                             self.other_display = RoomScreenOtherDisplay::None;
                             self.view(id!(search_result_overlay)).set_visible(cx, false);
                         }
@@ -2891,8 +2909,32 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-    /// Display Search result in Makepad's widget
-    SearchResult(ResultCategories),
+    /// Save search result in the TimelineUiState.
+    /// Save previous batch token in the TimelineUiState.
+    SearchResult{
+        result: ResultCategories,
+        previous_batch_token: Option<String>,
+    },
+    SearchFirstUpdate {
+        /// The initial list of timeline items (events) for a room.
+        initial_items: Vector<Arc<SearchTimelineItem>>,
+        next_batch_token: Option<String>
+    },
+    /// The content of a room's timeline was updated in the background.
+    SearchNewItems {
+        /// The entire list of timeline items (events) for a room.
+        new_items: Vector<Arc<SearchTimelineItem>>,
+        /// The range of indices in the `items` list that have been changed in this update
+        /// and thus must be removed from any caches of drawn items in the timeline.
+        /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
+        changed_indices: Range<usize>,
+        /// An optimization that informs the UI whether the changes to the timeline
+        /// resulted in new items being *appended to the end* of the timeline.
+        is_append: bool,
+        /// Whether to clear the entire cache of drawn items in the timeline.
+        /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
+        clear_cache: bool,
+    },
 }
 
 /// The global set of all timeline states, one entry per room.
@@ -2920,11 +2962,6 @@ pub struct TimelineUiState {
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
     items: Vector<Arc<TimelineItem>>,
-
-    /// The list of searched events in this room
-    pub searched_results: Vector<SearchTimelineItem>,
-    /// The list of strings that should be highlighted in the search results
-    pub searched_results_highlighted_strings: Vec<String>,
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -2999,6 +3036,28 @@ pub struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+    pub search_result_state: SearchResultState
+}
+#[derive(Default)]
+pub struct SearchResultState {
+    /// The search query to be sent after the search delay timer ends.
+    /// This field is reset when the user continues typing before the search delay timer ends.
+    pub search_query: String,
+    pub search_term: String,
+    /// The list of searched events in this room.
+    pub items: Vector<SearchTimelineItem>,
+    /// The list of batch tokens for the search results.
+    /// 
+    /// This field is used to prevent duplicate search requests when scrolling
+    pub batch_tokens: Vec<String>,
+    /// The list of strings that should be highlighted in the search results.
+    pub highlighted_strings: Vec<String>,
+    /// The next batch token used for pagination of the search results.
+    pub next_batch: Option<String>,
+    pub fully_paginated: bool,
+    pub last_scrolled_index: usize,
+    /// Whether the button "Search All Rooms" is pressed.
+    pub include_all_rooms: bool
 }
 
 #[derive(Default, Debug)]

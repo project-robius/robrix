@@ -5,7 +5,7 @@ use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
 use ruma::{events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedUserId, UserId};
 
-use crate::{event_preview::text_preview_of_other_state,  utils::unix_time_millis_to_datetime};
+use crate::{event_preview::text_preview_of_other_state, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
 use super::room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, SmallStateEventContent};
 
@@ -17,7 +17,7 @@ live_design! {
     use crate::shared::helpers::*;
     use crate::shared::icon_button::*;
     use crate::home::rooms_list::RoomsList;
-
+    use crate::home::room_screen::*;
     COLOR_BUTTON_GREY = #B6BABF
     ICON_SEARCH = dep("crate://self/resources/icons/search.svg")
     SearchIcon = <Icon> {
@@ -127,7 +127,8 @@ live_design! {
 pub struct SearchResult {
     #[deref] pub view: View,
     #[rust] pub search_criteria: String,
-    #[rust] pub next_batch: Option<String>
+    #[rust] pub result_count: u32,
+    #[live] pub timeline_template: Option<LivePtr>,
 }
 
 impl Widget for SearchResult {
@@ -137,7 +138,12 @@ impl Widget for SearchResult {
         self.view.handle_event(cx, event, scope);
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        self.view.draw_walk(cx, scope, walk)
+        while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
+            // We only care about drawing the portal list.
+            let portal_list_ref = subview.as_portal_list();
+
+        }
+        DrawStep::done()
     }
 }
 impl MatchEvent for SearchResult {
@@ -150,10 +156,8 @@ impl MatchEvent for SearchResult {
             match action.downcast_ref() {
                 Some(SearchResultAction::Success{
                     count,
-                    next_batch
                 }) => {
                     self.set_result_count(cx, *count);
-                    self.next_batch = next_batch.clone();
                 }
                 Some(SearchResultAction::Pending(search_criteria)) => {
                     self.set_search_criteria(cx, search_criteria.clone());
@@ -168,9 +172,10 @@ impl SearchResult {
     ///
     /// This is used to display the number of search results and the search criteria
     /// in the top-right of the room screen.
-    fn set_result_count(&self, cx: &mut Cx, search_result_count: usize) {
-        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", search_result_count, self.search_criteria));
-        self.view.view(id!(loading_view)).set_visible(cx, false);
+    fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
+        self.result_count = self.result_count.saturating_add(search_result_count);
+        self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", self.result_count, self.search_criteria));
+        //self.view.view(id!(loading_view)).set_visible(cx, false);
     }
 
     /// Set Search criteria.
@@ -193,8 +198,8 @@ impl SearchResult {
 }
 impl SearchResultRef {
     /// See [`SearchResult::set_result_count()`].
-    pub fn set_result_count(&self, cx: &mut Cx, search_result_count: usize) {
-        let Some(inner) = self.borrow() else { return };
+    pub fn set_result_count(&mut self, cx: &mut Cx, search_result_count: u32) {
+        let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_result_count(cx, search_result_count);
     }
     /// See [`SearchResult::set_search_criteria()`].
@@ -209,7 +214,35 @@ impl SearchResultRef {
         inner.reset_summary(cx);
     }
 }
+pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
+    room_screen: &mut RoomScreen,
+    _cx: &mut Cx,
+    actions: &ActionsBuf,
+    portal_list: &PortalListRef,
+) {
+    let Some(tl) = room_screen.tl_state.as_mut() else { return };
+    let search_result_state = &mut tl.search_result_state;
+    if search_result_state.fully_paginated { return };
+    if !portal_list.scrolled(actions) { return };
 
+    let first_index = portal_list.first_id();
+    if first_index == 0 && search_result_state.last_scrolled_index > 0 {
+        log!("Scrolled up from item {} --> 0, sending back pagination request for room {}",
+            search_result_state.last_scrolled_index, tl.room_id,
+        );
+        if let Some(next_batch) = &search_result_state.next_batch {
+            if !search_result_state.batch_tokens.contains(&next_batch) {
+                submit_async_request(MatrixRequest::SearchMessages {
+                    room_id: tl.room_id.clone(),
+                    include_all_rooms: search_result_state.include_all_rooms,
+                    search_term: search_result_state.search_term.clone(),
+                    next_batch: search_result_state.next_batch.clone(),
+                });
+            }
+        }
+    }
+    tl.search_result_state.last_scrolled_index = first_index;
+}
 pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
     let room_screen_widget_uid = room_screen.widget_uid();
     while let Some(subview) = room_screen.view.draw_walk(cx, scope, walk).step() {
@@ -222,8 +255,9 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
         let Some(tl_state) = room_screen.tl_state.as_mut() else {
             return DrawStep::done();
         };
+        //room_screen.no_more_template
         let room_id = &tl_state.room_id;
-        let tl_items = &tl_state.searched_results;
+        let tl_items = &tl_state.search_result_state.items;
 
         // Set the portal list's range based on the number of timeline items.
         let last_item_id = tl_items.len();
@@ -233,6 +267,9 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
         while let Some(item_id) = list.next_visible_item(cx) {
             let item = {
                 let tl_idx = item_id;
+                if item_id == 0 {
+                    let _ = WidgetRef::new_from_ptr(cx, room_screen.no_more_template).as_label().draw_all(cx, &mut Scope::empty());
+                }
                 let Some(timeline_item) = tl_items.get(tl_idx) else {
                     // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                     // but we can always safely fill the item with an empty widget that takes up no space.
@@ -276,18 +313,18 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                         if let MessageType::Text(text) = &mut message.msgtype {
                                             
                                             if let Some(ref mut formatted) = text.formatted {
-                                                for highlight in tl_state.searched_results_highlighted_strings.iter() {
+                                                for highlight in tl_state.search_result_state.highlighted_strings.iter() {
                                                     formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
                                                 }
                                             } else {
                                                 let mut formated_string = text.body.clone();
-                                                for highlight in tl_state.searched_results_highlighted_strings.iter() {
+                                                for highlight in tl_state.search_result_state.highlighted_strings.iter() {
                                                     formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
                                                 }
                                                 text.formatted = Some(FormattedBody::html(formated_string));
                                             }
                                         }
-                                        let event = &EventableWrapperAEI(event);
+                                        let event = &EventableWrapperAEI(&event);
                                         let prev_event = prev_event.map(|f| PreviousWrapperAEI(f));
                                         let message = MsgTypeWrapperRMC(&message);
                                         populate_message_view(
@@ -404,8 +441,7 @@ pub enum SearchTimelineItemKind {
 pub enum SearchResultAction {
     /// Search result's success.
     Success{
-        count: usize,
-        next_batch: Option<String>
+        count: u32,
     },
     /// Pending search result and its search criteria.
     Pending(String),

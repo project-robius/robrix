@@ -1065,6 +1065,7 @@ async fn async_worker(
                 if include_all_rooms {
                     room_filter.rooms = None;
                 }
+                let search_term_clone = search_term.clone();
                 let mut criteria = Criteria::new(search_term);
                 criteria.filter = room_filter;
                 criteria.order_by = Some(OrderBy::Recent);
@@ -1074,11 +1075,16 @@ async fn async_worker(
                 criteria.event_context.include_profile = true;
                 search_categories.room_events = Some(criteria);
                 let mut req = Request::new(search_categories);
+                let next_batch_clone = next_batch.clone();
                 req.next_batch = next_batch;
                 let handle = Handle::current().spawn(async move {
                     match client.send(req).await {
                         Ok(response) => {
-                            if let Err(e) = sender.send(TimelineUpdate::SearchResult(response.search_categories)) {
+                            log!("Successfully searched message in room {room_id} for {search_term_clone} next_batch in {:?}.", next_batch_clone);
+                            if let Err(e) = sender.send(TimelineUpdate::SearchResult{
+                                result: response.search_categories,
+                                previous_batch_token: next_batch_clone
+                            }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
