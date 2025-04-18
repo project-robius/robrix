@@ -190,14 +190,16 @@ impl AudioMessageUI {
         self.view(id!(fetching_data)).set_visible(cx, false);
         self.view(id!(play_back_control_buttons)).set_visible(cx, true);
     }
+
     fn set_id(&mut self, id: &TimelineEventItemId) {
         self.timeline_audio_event_item_id = Some(id.clone());
-        log!("AudioMessageUI set_id: {:?}", id);
     }
-    fn change_play_status(&mut self, cx: &mut Cx, new_playing_status: bool) {
-        if new_playing_status {
-            self.is_playing = new_playing_status;
-            let playing = if new_playing_status { 1. } else { 0. };
+
+    fn change_play_status(&mut self, cx: &mut Cx, new_play_status: bool) {
+        // Only handle it when `new_play_status` is true because `new_play_status` is false by default.
+        if new_play_status {
+            self.is_playing = new_play_status;
+            let playing = if new_play_status { 1. } else { 0. };
             self.view.button(id!(play_back_control_buttons.button)).apply_over(cx, live! {
                 draw_bg: {
                     playing: (playing)

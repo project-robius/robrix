@@ -3695,7 +3695,7 @@ fn populate_audio_message_content(
     match audio.source.clone() {
         MediaSource::Plain(mxc_uri) => {
             match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
-                (MediaCacheEntry::Loaded(audio_data), _) => {
+                (MediaCacheEntry::Loaded(audio_data), _media_format) => {
                     parse_wav(&audio_data).inspect(|(channels, bit_depth)|{
                         let (_audio, _pos, is_playing) =
                             insert_new_audio_or_get(&event_timeline_item_id, audio_data, *channels, *bit_depth);
@@ -3706,7 +3706,7 @@ fn populate_audio_message_content(
                     });
                     fully_drawn = true;
                 },
-                (MediaCacheEntry::Failed, _) => {
+                (MediaCacheEntry::Failed, _media_format) => {
                     fully_drawn = true;
                 }
                 _ => { }
