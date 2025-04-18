@@ -52,7 +52,7 @@ live_design! {
 
         clear_button = <RobrixIconButton> {
             visible: false,
-            padding: {left: 10, right: 10}
+            padding: 8,
             align: {x: 0.5, y: 0.5}
             draw_icon: {
                 svg_file: (ICON_CLOSE),
