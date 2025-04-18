@@ -5,6 +5,7 @@ use robius_directories::ProjectDirs;
 pub use makepad_widgets;
 pub mod app;
 pub mod persistent_state;
+pub mod audio;
 
 /// Login screen
 pub mod login;
@@ -19,7 +20,6 @@ pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 mod room;
-
 
 // Matrix stuff
 pub mod sliding_sync;

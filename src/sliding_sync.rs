@@ -215,7 +215,6 @@ pub type OnMediaFetchedFn = fn(
     Option<crossbeam_channel::Sender<TimelineUpdate>>,
 );
 
-
 /// The set of requests for async work that can be made to the worker thread.
 pub enum MatrixRequest {
     /// Request from the login screen to log in with the given credentials.

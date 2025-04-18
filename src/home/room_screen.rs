@@ -6,7 +6,7 @@ use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc
 use bytesize::ByteSize;
 use imbl::Vector;
 use makepad_widgets::{image_cache::ImageBuffer, *};
-use matrix_sdk::{room::RoomMember, ruma::{
+use matrix_sdk::{media::MediaFormat, room::RoomMember, ruma::{
     events::{receipt::Receipt, room::{
         message::{
             AudioMessageEventContent, CustomEventContent, EmoteMessageEventContent, FileMessageEventContent, FormattedBody, ImageMessageEventContent, KeyVerificationRequestEventContent, LocationMessageEventContent, MessageFormat, MessageType, NoticeMessageEventContent, RoomMessageEventContent, ServerNoticeMessageEventContent, TextMessageEventContent, VideoMessageEventContent
@@ -20,7 +20,7 @@ use matrix_sdk_ui::timeline::{
 use robius_location::Coordinates;
 
 use crate::{
-    avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    audio::{audio_controller::{insert_new_audio_or_get, parse_wav}, audio_message_ui::{AudioMessageUIRef, AudioMessageUIWidgetRefExt}}, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -51,6 +51,7 @@ live_design! {
     use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
+    use crate::audio::audio_message_ui::AudioMessageUI;
     use crate::shared::html_or_plaintext::*;
     use crate::shared::icon_button::*;
     use crate::home::room_read_receipt::*;
@@ -374,7 +375,6 @@ live_design! {
                     reaction_list = <ReactionList> { }
                     avatar_row = <AvatarRow> {}
                 }
-
             }
         }
     }
@@ -415,6 +415,37 @@ live_design! {
             }
         }
     }
+    AudioMessage = <Message> {
+        body = {
+            content = {
+                width: Fill,
+                height: Fit
+                padding: { left: 10.0 }
+                message = <AudioMessageUI> {}
+                v = <View> {
+                    width: Fill,
+                    height: Fit,
+                    flow: Right,
+                    reaction_list = <ReactionList> { }
+                    avatar_row = <AvatarRow> {}
+                }
+            }
+        }
+    }
+
+    CondensedAudioMessage = <CondensedMessage> {
+        body = {
+            content = {
+                message = <AudioMessageUI> {}
+                <View> {
+                    width: Fill,
+                    height: Fit
+                    reaction_list = <ReactionList> {}
+                    avatar_row = <AvatarRow> {}
+                }
+            }
+        }
+    }
 
     // The view used for each static image-based message event in a room's timeline.
     // This excludes stickers and other animated GIFs, video clips, audio clips, etc.
@@ -433,9 +464,9 @@ live_design! {
                     avatar_row = <AvatarRow> {}
                 }
             }
-
         }
     }
+
 
     // The view used for a condensed image message that came right after another message
     // from the same sender, and thus doesn't need to display the sender's profile again.
@@ -604,8 +635,13 @@ live_design! {
             // Below, we must place all of the possible templates (views) that can be used in the portal list.
             Message = <Message> {}
             CondensedMessage = <CondensedMessage> {}
+
             ImageMessage = <ImageMessage> {}
             CondensedImageMessage = <CondensedImageMessage> {}
+
+            AudioMessage = <AudioMessage> {}
+            CondensedAudioMessage = <CondensedAudioMessage> {}
+
             SmallStateEvent = <SmallStateEvent> {}
             Empty = <Empty> {}
             DateDivider = <DateDivider> {}
@@ -3245,19 +3281,23 @@ fn populate_message_view(
         }
         MessageOrStickerType::Audio(audio) => {
             has_html_body = audio.formatted.as_ref().is_some_and(|f| f.format == MessageFormat::Html);
+
             let template = if use_compact_view {
-                live_id!(CondensedMessage)
+                live_id!(CondensedAudioMessage)
             } else {
-                live_id!(Message)
+                live_id!(AudioMessage)
             };
+
             let (item, existed) = list.item_with_existed(cx, item_id, template);
             if existed && item_drawn_status.content_drawn {
                 (item, true)
             } else {
                 new_drawn_status.content_drawn = populate_audio_message_content(
                     cx,
-                    &item.html_or_plaintext(id!(content.message)),
+                    &item.audio_message_ui(id!(content.message)),
                     audio,
+                    event_tl_item,
+                    media_cache
                 );
                 (item, false)
             }
@@ -3620,9 +3660,13 @@ fn populate_file_message_content(
 /// Returns whether the audio message content was fully drawn.
 fn populate_audio_message_content(
     cx: &mut Cx,
-    message_content_widget: &HtmlOrPlaintextRef,
+    audio_message_ui: &AudioMessageUIRef,
     audio: &AudioMessageEventContent,
+    event_timeline_item: &EventTimelineItem,
+    media_cache: &mut MediaCache
 ) -> bool {
+    let event_timeline_item_id = event_timeline_item.identifier();
+    let mut fully_drawn = false;
     // Display the file name, human-readable size, caption, and a button to download it.
     let filename = audio.filename();
     let (duration, mime, size) = audio
@@ -3630,14 +3674,14 @@ fn populate_audio_message_content(
         .as_ref()
         .map(|info| (
             info.duration
-                .map(|d| format!("  {:.2} sec,", d.as_secs_f64()))
+                .map(|d| format!("  {:.2} sec, ", d.as_secs_f64()))
                 .unwrap_or_default(),
             info.mimetype
                 .as_ref()
-                .map(|m| format!("  {m},"))
+                .map(|m| format!("{m}, "))
                 .unwrap_or_default(),
             info.size
-                .map(|bytes| format!("  ({}),", ByteSize::b(bytes.into())))
+                .map(|bytes| format!("({})", ByteSize::b(bytes.into())))
                 .unwrap_or_default(),
         ))
         .unwrap_or_default();
@@ -3645,14 +3689,35 @@ fn populate_audio_message_content(
         .map(|fb| format!("<br><i>{}</i>", fb.body))
         .or_else(|| audio.caption().map(|c| format!("<br><i>{c}</i>")))
         .unwrap_or_default();
+    audio_message_ui.label(id!(fetching_info)).set_text(cx, &format!("{filename}\n{duration} {mime} {size} {caption}"));
 
-    // TODO: add an audio to play the audio file
-
-    message_content_widget.show_html(
-        cx,
-        format!("Audio: <b>{filename}</b>{mime}{duration}{size}{caption}<br> → <i>Audio playback not yet supported.</i>"),
-    );
-    true
+    match audio.source.clone() {
+        MediaSource::Plain(mxc_uri) => {
+            match media_cache.try_get_media_or_fetch(mxc_uri, MediaFormat::File) {
+                (MediaCacheEntry::Loaded(audio_data), _media_format) => {
+                    parse_wav(&audio_data).inspect(|(channels, bit_depth)|{
+                        let (_audio, _pos, is_playing) =
+                            insert_new_audio_or_get(&event_timeline_item_id, audio_data, *channels, *bit_depth);
+                        audio_message_ui.mark_fully_fetched(cx);
+                        audio_message_ui.set_id(&event_timeline_item_id);
+                        let is_playing_mg = is_playing.lock().unwrap();
+                        audio_message_ui.change_play_status(cx, *is_playing_mg);
+                    });
+                    fully_drawn = true;
+                },
+                (MediaCacheEntry::Failed, _media_format) => {
+                    fully_drawn = true;
+                }
+                _ => { }
+            }
+        }
+        MediaSource::Encrypted(_e) => {
+            log!("Encrypted audio media is not supported.");
+            audio_message_ui.label(id!(fetching_info)).set_text(cx, "Encrypted audio media is not supported.");
+            fully_drawn = true;
+        }
+    }
+    fully_drawn
 }
 
 
