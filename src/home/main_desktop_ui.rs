@@ -239,11 +239,36 @@ impl MainDesktopUI {
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
     }
+
+    /// Closes all tabs
+    pub fn close_all_tabs(&mut self, cx: &mut Cx) {
+        log!("Closing all tabs");
+        // TODO: If room types are differentiated in future, ensure all types are closed here
+        let tab_ids: Vec<LiveId> = self.open_rooms.keys().cloned().collect();
+        
+        for tab_id in tab_ids {
+            self.tab_to_close = Some(tab_id);
+            self.close_tab(cx, tab_id);
+        }
+        
+        self.redraw(cx);
+        cx.action(RoomsPanelAction::DockSave);
+    }
+
 }
 
 impl MatchEvent for MainDesktopUI {
     fn handle_action(&mut self, cx: &mut Cx, action: &Action) {
         let dock = self.view.dock(id!(dock));
+
+        // handle close all tabs action directly
+        if let Some(close_tabs) = action.downcast_ref::<RoomsPanelAction>() {
+            if matches!(close_tabs, RoomsPanelAction::CloseAllTabs) {
+                log!("Directly handling CloseAllTabs action");
+                self.close_all_tabs(cx);
+                return; 
+            }
+        }
 
         if let Some(action) = action.as_widget_action() {
             // Handle Dock actions
@@ -318,7 +343,8 @@ impl MatchEvent for MainDesktopUI {
                 // a redraw to be happening in order to draw the tab content.
                 self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name });
             }
-        }
+        } 
+
     }
 }
 
@@ -335,4 +361,6 @@ pub enum RoomsPanelAction {
     DockSave,
     /// Load the room panel state from the AppState to the dock.
     DockLoad,
+    /// Close all tabs (used during logout)
+    CloseAllTabs,
 }

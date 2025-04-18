@@ -1,5 +1,7 @@
 use makepad_widgets::*;
 
+use crate::login::logout_confirm_modal::LogoutConfirmModalAction;
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -8,9 +10,11 @@ live_design! {
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::verification_badge::*;
+    use crate::login::logout_confirm_modal::LogoutConfirmModal;
 
     ICON_HOME = dep("crate://self/resources/icons/home.svg")
     ICON_SETTINGS = dep("crate://self/resources/icons/settings.svg")
+    ICON_LOGOUT = dep("crate://self/resources/icons/logout.svg")
 
     Filler = <View> {
         height: Fill, width: Fill
@@ -88,6 +92,29 @@ live_design! {
         }
     }
 
+    LogoutButton= {{LogoutButton}} {
+        width: Fit, height: Fit
+        padding: {top: 8, left: 8, right: 12, bottom: 8}
+        align: {x: 0.5, y: 0.5}
+        logout_button = <Button> {
+            draw_bg: {
+                fn pixel(self) -> vec4 {
+                    let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                    return sdf.result
+                }
+            }
+
+            draw_icon: {
+                svg_file: (ICON_LOGOUT),
+                fn get_color(self) -> vec4 {
+                    return (COLOR_DANGER_RED);
+                }
+            }
+
+            icon_walk: {width: 25, height: Fit}
+        }
+    }
+
     Settings = <View> {
         width: Fit, height: Fit
         // FIXME: the extra padding on the right is because the icon is not correctly centered
@@ -132,6 +159,8 @@ live_design! {
 
             <Filler> {}
 
+            <LogoutButton> {}
+
             <Settings> {}
         }
 
@@ -155,6 +184,8 @@ live_design! {
 
             <Filler> {}
 
+            <LogoutButton> {}
+
             <Settings> {}
 
             <Filler> {}
@@ -174,5 +205,39 @@ impl Widget for Profile {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+
+#[derive(Live, LiveHook, Widget)]
+pub struct LogoutButton{
+    #[deref] view: View,
+}
+
+impl Widget for LogoutButton{
+    fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
+        self.widget_match_event(cx, event, scope);
+        self.view.handle_event(cx, event, scope)
+    }
+
+    fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
+        self.view.draw_walk(cx, scope, walk)
+    }
+}
+
+impl WidgetMatchEvent for LogoutButton {
+    fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions, _scope: &mut Scope) {
+
+        let button = self.button(id!(logout_button));
+        if button.clicked(actions) {
+            cx.widget_action(
+                WidgetUid(0), 
+                &Scope::empty().path,
+                LogoutConfirmModalAction::None
+            );
+            log!("Sent LogoutConfirmModalAction::None to root widget");
+
+            self.view.redraw(cx);
+        } 
     }
 }
