@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use makepad_widgets::*;
 
 live_design! {
@@ -28,6 +26,30 @@ live_design! {
             width: Fill,
             draw_bg: {
                 color: #639b0d,
+            }
+        }
+
+        animator: {  
+            mode = {
+                default: close,
+                close = {
+                    redraw: true,
+                    from: {all: Forward {duration: 0.0}}
+                    apply: {
+                        progress_bar = {
+                            height: -25,     // height = 100 * 0.5 / self.duration
+                        }
+                    }
+                }
+                progress = {
+                    redraw: true,
+                    from: {all: Forward {duration: 2.5}}   // self.duratin + 0.5
+                    apply: {
+                        progress_bar = {
+                            height: 100,
+                        }
+                    }
+                }
             }
         }
     }
@@ -95,7 +117,6 @@ live_design! {
         width: Fit
         height: Fit
         flow: Overlay
-        abs_pos: vec2(10.0, 10.0)
         duration: 2.0
 
         draw_bg: {
@@ -111,7 +132,7 @@ live_design! {
                 default: close,
                 open = {
                     redraw: true,
-                    from: {all: Forward {duration: 2.0}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: OutQuad
                     apply: {
                         abs_pos: vec2(60.0, 10.0),
@@ -119,7 +140,7 @@ live_design! {
                 }
                 close = {
                     redraw: true,
-                    from: {all: Forward {duration: 1.0}}
+                    from: {all: Forward {duration: 0.5}}
                     ease: InQuad
                     apply: {
                         abs_pos: vec2(-1000.0, 10.0),
@@ -151,22 +172,11 @@ pub struct RobrixPopupNotification {
     walk: Walk,
 
     #[rust]
-    opened: bool,
-
-    #[rust]
     animation_timer: Timer,
-
-    #[rust]
-    duration_timer: Timer,
-
-    #[rust]
-    start_time: Option<Instant>,
 
     #[animator]
     animator: Animator,
 
-    #[rust]
-    redraw_timer: Timer,
 }
 
 impl LiveHook for RobrixPopupNotification {
@@ -177,34 +187,12 @@ impl LiveHook for RobrixPopupNotification {
 
 impl Widget for RobrixPopupNotification {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        if !self.opened {
-            return;
-        }
+
 
         if self.animation_timer.is_event(event).is_some() {
-            self.start_time = Some(Instant::now());
-            self.redraw_timer = cx.start_interval(0.016);
-            self.duration_timer = cx.start_timeout(self.duration);
+            self.close(cx);
+           
         }
-
-        if self.duration_timer.is_event(event).is_some() {
-            self.update_animation(cx);
-        }
-
-        if self.redraw_timer.is_event(event).is_some() {
-            if let Some(start_time) = self.start_time {
-                let elapsed = start_time.elapsed().as_secs_f64();
-                let progress = (elapsed / self.duration).min(1.0);
-                let progress_bar_height = 100.0 * progress;
-    
-                self.view(id!(progress_bar)).apply_over(
-                    cx,
-                    live! {
-                        height: (progress_bar_height)
-                    } 
-                );
-            }
-        };
 
         if self.animator_handle_event(cx, event).must_redraw() {
             self.redraw(cx);
@@ -216,7 +204,6 @@ impl Widget for RobrixPopupNotification {
                 return;
             }
         }
-
         self.content.handle_event(cx, event, scope);
     }
 
@@ -225,11 +212,7 @@ impl Widget for RobrixPopupNotification {
 
         cx.begin_pass_sized_turtle(self.layout);
         self.draw_bg.begin(cx, self.walk, self.layout);
-
-        if self.opened {
-            self.content.draw_all(cx, scope);
-        }
-
+        self.content.draw_all(cx, scope);
         self.draw_bg.end(cx);
 
         cx.end_pass_sized_turtle();
@@ -241,23 +224,16 @@ impl Widget for RobrixPopupNotification {
 
 impl RobrixPopupNotification {
     pub fn open(&mut self, cx: &mut Cx) {
-        self.opened = true;
-        self.animation_timer = cx.start_timeout(2.0);
+        self.animation_timer = cx.start_timeout(self.duration + 0.5);
+        self.view(id!(progress)).animator_play(cx, id!(mode.progress));
         self.animator_play(cx, id!(mode.open));
         self.redraw(cx);
     }
 
     pub fn close(&mut self, cx: &mut Cx) {
-        cx.stop_timer(self.redraw_timer);
         self.animator_play(cx, id!(mode.close));
+        self.view(id!(progress)).animator_play(cx, id!(mode.close));
         self.redraw(cx);
-    }
-
-    pub fn update_animation(&mut self, cx: &mut Cx) {
-        if self.animator_in_state(cx, id!(mode.open)) {
-            cx.stop_timer(self.redraw_timer);
-            self.animator_play(cx, id!(mode.close));
-        }
     }
 }
 
