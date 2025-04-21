@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_screen_traits::Stateable, room_search_result::{self, handle_search_first_update, handle_search_new_items, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -763,7 +763,7 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
-
+                search_timeline = <Timeline> {}
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice = <View> {
                     visible: false
@@ -940,6 +940,9 @@ live_design! {
             }
             text: "No More"
         }
+        search_result_timeline_template: <Timeline>{
+                        
+        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -976,6 +979,8 @@ pub struct RoomScreen {
     /// The timer for sending a search request after a delay when user stops typing.
     #[rust] search_delay_timer: Timer,
     #[live] pub no_more_template: Option<LivePtr>,
+    #[live] pub search_result_timeline_template: Option<LivePtr>,
+    #[rust] pub search_result_timeline_view: Option<ViewRef>,
 }
 impl Drop for RoomScreen {
 
@@ -994,13 +999,14 @@ impl Widget for RoomScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         let room_screen_widget_uid = self.widget_uid();
         let portal_list = self.portal_list(id!(timeline.list));
+        let search_portal_list = self.portal_list(id!(search_timeline.list));
         let user_profile_sliding_pane = self.user_profile_sliding_pane(id!(user_profile_sliding_pane));
         let loading_pane = self.loading_pane(id!(loading_pane));
 
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            self.process_timeline_updates(cx, &portal_list);
+            self.process_timeline_updates(cx, &portal_list, &search_portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -1515,7 +1521,7 @@ impl RoomScreen {
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
-    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
+    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef, search_portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let curr_first_id = portal_list.first_id();
@@ -1836,10 +1842,10 @@ impl RoomScreen {
                     done_loading = true;
                 }
                 TimelineUpdate::SearchFirstUpdate { initial_items, next_batch_token } => {
-
+                    handle_search_first_update(tl, search_portal_list, cx, initial_items,  next_batch_token,  &mut done_loading);
                 }
-                TimelineUpdate::SearchNewItems { new_items, changed_indices, is_append, clear_cache } => {
-                    
+                TimelineUpdate::SearchNewItems { new_items, next_batch_token, changed_indices, is_append, clear_cache,  } => {
+                    handle_search_new_items(self.view, tl, search_portal_list, cx, ui, new_items, next_batch_token, changed_indices, is_append, clear_cache,  &mut done_loading, &mut should_continue_backwards_pagination);
                 }
             }
         }
@@ -2481,8 +2487,9 @@ impl RoomScreen {
         // we can proceed to processing pending background updates, and if any were processed,
         // the timeline will also be redrawn.
         if first_time_showing_room {
-            let portal_list = self.portal_list(id!(list));
-            self.process_timeline_updates(cx, &portal_list);
+            let portal_list = self.portal_list(id!(timeline.list));
+            let search_portal_list = self.portal_list(id!(search_timeline.list));
+            self.process_timeline_updates(cx, &portal_list, &search_portal_list);
         }
 
         self.redraw(cx);
@@ -2716,6 +2723,8 @@ impl RoomScreen {
             self.search_result(id!(search_result_inner)).reset_summary(cx);
             self.view(id!(search_result_overlay)).set_visible(cx, false);
             self.other_display = RoomScreenOtherDisplay::None;
+            self.view(id!(timeline)).set_visible(cx, true);
+            self.view(id!(search_timeline)).set_visible(cx, false);
             if let Some(ref mut tl_state) = self.tl_state {
                 tl_state.search_result_state = SearchResultState::default();
             }
@@ -2737,6 +2746,9 @@ impl RoomScreen {
                             self.other_display = RoomScreenOtherDisplay::SearchResult;
                             self.view(id!(search_result_overlay)).set_visible(cx, true);
                             self.search_result(id!(search_result_inner)).set_search_criteria(cx,keywords);
+                            self.search_result_timeline_view = Some(WidgetRef::new_from_ptr(cx, self.search_result_timeline_template).as_view());
+                            self.view(id!(timeline)).set_visible(cx, false);
+                            self.view(id!(search_timeline)).set_visible(cx, true);
                         }
                     }
                 }
@@ -2917,13 +2929,13 @@ pub enum TimelineUpdate {
     },
     SearchFirstUpdate {
         /// The initial list of timeline items (events) for a room.
-        initial_items: Vector<Arc<SearchTimelineItem>>,
+        initial_items: Vector<SearchTimelineItem>,
         next_batch_token: Option<String>
     },
     /// The content of a room's timeline was updated in the background.
     SearchNewItems {
         /// The entire list of timeline items (events) for a room.
-        new_items: Vector<Arc<SearchTimelineItem>>,
+        new_items: Vector<SearchTimelineItem>,
         /// The range of indices in the `items` list that have been changed in this update
         /// and thus must be removed from any caches of drawn items in the timeline.
         /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
@@ -2934,6 +2946,7 @@ pub enum TimelineUpdate {
         /// Whether to clear the entire cache of drawn items in the timeline.
         /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
         clear_cache: bool,
+        next_batch_token: Option<String>
     },
 }
 
@@ -2961,7 +2974,7 @@ pub struct TimelineUiState {
     fully_paginated: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
-    items: Vector<Arc<TimelineItem>>,
+    items: Vector<Arc<EventTimelineItem>>,
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -3037,6 +3050,29 @@ pub struct TimelineUiState {
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
     pub search_result_state: SearchResultState
+}
+impl Stateable<EventableWrapperETI<'_>> for TimelineUiState {
+    fn get_content_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
+        &mut self.content_drawn_since_last_update
+    }
+    fn get_profile_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
+        &mut self.profile_drawn_since_last_update
+    }
+    fn get_fully_paginated(&mut self) -> &mut bool {
+        self.get_fully_paginated
+    }
+    fn get_items(&mut self) -> &mut Vector<EventableWrapperETI<'_>> {
+        self.items.iter_mut().map(|f| EventableWrapperETI(f))
+    }
+    fn room_id(&self) -> &ruma::RoomId {
+        
+    }
+    fn get_prev_first_index(&mut self) -> &mut Option<usize> {
+        
+    }
+    fn get_scrolled_past_read_marker(&mut self) -> &mut bool {
+        
+    }
 }
 #[derive(Default)]
 pub struct SearchResultState {
