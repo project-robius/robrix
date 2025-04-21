@@ -117,7 +117,6 @@ live_design! {
         width: Fit
         height: Fit
         flow: Overlay
-        duration: 2.0
 
         draw_bg: {
             fn pixel(self) -> vec4 {
@@ -156,9 +155,6 @@ pub struct RobrixPopupNotification {
     #[live]
     #[find]
     content: View,
-
-    #[live]
-    duration: f64,
 
     #[rust(DrawList2d::new(cx))]
     draw_list: DrawList2d,
@@ -224,7 +220,7 @@ impl Widget for RobrixPopupNotification {
 
 impl RobrixPopupNotification {
     pub fn open(&mut self, cx: &mut Cx) {
-        self.animation_timer = cx.start_timeout(self.duration + 0.5);
+        self.animation_timer = cx.start_timeout(2.5);
         self.view(id!(progress)).animator_play(cx, id!(mode.progress));
         self.animator_play(cx, id!(mode.open));
         self.redraw(cx);
