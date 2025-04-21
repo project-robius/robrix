@@ -2791,11 +2791,7 @@ async fn logout_and_refresh() -> Result<RefreshState> {
     // This way, when users log in again, they can still benefit from cached data
     // while avoiding the invalid token errors.
     if let Err(e) = delete_last_user_id().await {
-        let error_msg = format!("Failed to delete last user ID file: {}", e);
-        log!("Warning: {}", error_msg);
-        errors.push(error_msg);
-    } else {
-        log!("Last user ID file deleted successfully.");
+        errors.push(e.to_string());
     }
 
     // Restart the Matrix tokio runtime
