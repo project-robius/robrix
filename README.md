@@ -43,7 +43,7 @@ The following table shows which host systems can currently be used to build Robr
  - Ignoring/unignoring a user clears all timelines  (see: https://github.com/matrix-org/matrix-rust-sdk/issues/1703); the timeline will be re-filled gradually via back pagination, but the viewport position is not maintained.
  - Currently, accessing system geolocation on Android may not succeed due to failing to prompt the user for permission. Please enable the location permission in the App Info settings page for Robrix, and then it should work as expected.
 
-## Building and Running
+## Building & Running Robrix on Desktop
 
 1. First, [install Rust](https://www.rust-lang.org/tools/install).
 
@@ -56,26 +56,27 @@ The following table shows which host systems can currently be used to build Robr
    sudo apt-get install libssl-dev libsqlite3-dev pkg-config binfmt-support libxcursor-dev libx11-dev libasound2-dev libpulse-dev
    ```
 
-3. Then, build and run Robrix (you can optionally add `--release`):
+3. Then, build and run Robrix (`--release` is optional):
    ```sh
-   cargo run
+   cargo run --release
    ```
    Optionally, you can provide a username and password on the command line for fast auto-login. Note that you only have to specify this once; after one successful login, Robrix will automatically re-login the most recent user without having to specify the user ID or password.
    ```sh
-   cargo run -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
+   cargo run --release -- 'USERNAME' 'PASSWORD' ['HOMESERVER_URL']
    ```
     * Note that if you enter your password on the command line, you should wrap it in **single quotes** (not double quotes) in order to prevent your shell from treating certain symbols as globs/regex patterns.
     * The `HOMESERVER_URL` argument is optional and uses the `matrix.org` homeserver by default.
     * The Matrix homeserver must support native Sliding Sync, the same requirement as Element X.
 
 
-### Building Robrix for Android
+## Building & Running Robrix on Mobile: Android, iOS, iPadOS
 
 1. Install the `cargo-makepad` build tool:
    ```sh
    cargo install --force --git https://github.com/makepad/makepad.git --branch rik cargo-makepad
    ```
 
+### Android
 2. Use `cargo-makepad` to install the Android toolchain, with the full NDK:
    ```sh
    cargo makepad android install-toolchain --full-ndk
@@ -89,7 +90,54 @@ The following table shows which host systems can currently be used to build Robr
         * API version 33 or higher is required, which is Android 13 and up.
 
 
-## Feature status tracker
+### iOS / iPadOS
+2. Use `cargo-makepad` to install the iOS toolchain:
+   ```sh
+   rustup toolchain install nightly
+   cargo makepad apple ios install-toolchain
+   ```
+
+3. Perform the following one-time setup steps:
+   1. If running on a real iOS device, enable your iPhone's Developer Mode:
+      Settings → Privacy & Security → Developer Mode → turn on Developer Mode and reboot.
+   2. Ensure your Apple Developer account is properly set up on your Mac.
+   3. Create an empty "dummy" project in Xcode:
+      * File → New → Project to create a new "App"
+      * Set the Product Name as **`robrix`**. (used in the `--org` argument later)
+      * Set the Organization Identifier to a value of your choice, e.g.,  **`rs.robius`**. (used in the `--app` argument later)
+      * For Project Signing & Capabilities, select the proper Apple Developer team account.
+   4. In Xcode, Build/Run this project once to install and run the app on the simulator (or device).
+   5. Once the simulator or device has the empty "dummy" app installed and running properly, then you're ready to build the actual Robrix application below.
+
+#### Running on an iOS simulator
+4. If you're using an iOS simulator, do the following:
+   ```sh
+   cargo makepad apple ios \
+     --org=rs.robius \
+     --app=robrix \
+     run-sim -p robrix --release
+   ```
+
+#### Running on a real iOS device
+4. Run the following command to show all provisioning profiles, signing identities, and device identifiers on your Mac.
+   ```sh
+   cargo makepad apple list
+   ```
+    * You must select which values you need to use for each of the 3 above items.
+    * If you get an error from the above command, then please ensure you performed the full iOS setup instructions above, and that you have a valid Apple Developer account with certificates installed on your Mac.
+
+2. Run the following command, filling in the **unique starting characters** chosen above.
+   ```sh
+   cargo makepad apple ios \
+     --profile=<unique-starting-hex-string> \
+     --cert=<UNIQUE_STARTING_HEX_STRING> \
+     --device=<UNIQUE-STARTING-HEX-STRING> \
+     --org=rs.robius \
+     --app=robrix \
+     run-device -p robrix –release
+   ```
+
+# Feature status tracker
 
 These are generally sorted in order of priority. If you're interested in helping out with anything here, please reach out via a GitHub issue or on our Robius matrix channel.
 
@@ -128,6 +176,7 @@ These are generally sorted in order of priority. If you're interested in helping
 - [x] Side panel showing detailed user profile info (click on their Avatar)
 - [x] Ignore and unignore users (see known issues)
 - [x] Display read receipts besides messages: https://github.com/project-robius/robrix/pull/162
+- [x] Mention users within a room (or the whole `@room`): https://github.com/project-robius/robrix/issues/452
 - [ ] Collapsible/expandable view of contiguous "small" events: https://github.com/project-robius/robrix/issues/118
 - [ ] User settings screen
 - [ ] Dedicated view of spaces
@@ -210,5 +259,5 @@ You can immediately double-click the `Robrix.app` bundle to run it, or you can d
 
 If you'd like to modify the .dmg background, here is the [Google Drawings file used to generate the MacOS .dmg background image](https://docs.google.com/drawings/d/10ALUgNV7v-4bRTIE5Wb2vNyXpl2Gj3YJcl7Q2AGpvDw/edit?usp=sharing).
 
-# Credits
+## Credits
 X logo: https://www.vecteezy.com/png/42148611-new-twitter-x-logo-twitter-icon-x-social-media-icon (shobumiah)
