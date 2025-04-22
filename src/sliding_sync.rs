@@ -25,12 +25,12 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::{Not, Range}, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, room_search_result::convert_result_categories_to_search_item, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -382,7 +382,7 @@ pub enum MatrixRequest {
         include_all_rooms: bool,
         /// Text in the search bar.
         search_term: String,
-        next_batch: Option<String>
+        backward_pagination_batch: Option<String>,
     }
 }
 
@@ -1049,12 +1049,16 @@ async fn async_worker(
                     }
                 });
             }
-            MatrixRequest::SearchMessages { room_id, search_term, include_all_rooms, next_batch } => {
+            MatrixRequest::SearchMessages { room_id,
+                search_term, 
+                include_all_rooms, 
+                backward_pagination_batch, 
+            } => {
                 abort_core_task(CoreTask::Search).await;
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
                 let Some(room_info) = all_room_info.get_mut(&room_id) else {
-                    log!("Skipping pagination request for not-yet-known room {room_id}");
+                    log!("Skipping Search request for not-yet-known room {room_id}");
                     continue;
                 };
 
@@ -1075,19 +1079,30 @@ async fn async_worker(
                 criteria.event_context.include_profile = true;
                 search_categories.room_events = Some(criteria);
                 let mut req = Request::new(search_categories);
-                let next_batch_clone = next_batch.clone();
-                req.next_batch = next_batch;
+                let forward_pagination_batch_token = backward_pagination_batch.clone();
+                req.next_batch = backward_pagination_batch;
                 let handle = Handle::current().spawn(async move {
+                    sender.send(TimelineUpdate::PaginationRunning(PaginationDirection::Backwards)).unwrap();
                     match client.send(req).await {
                         Ok(response) => {
-                            log!("Successfully searched message in room {room_id} for {search_term_clone} next_batch in {:?}.", next_batch_clone);
-                            if let Err(e) = sender.send(TimelineUpdate::SearchResult{
-                                result: response.search_categories,
-                                previous_batch_token: next_batch_clone
-                            }) {
+                            sender.send(TimelineUpdate::PaginationIdle {
+                                fully_paginated: true,
+                                direction: PaginationDirection::Backwards,
+                            }).unwrap();
+                            let backward_pagination_batch = response.search_categories.room_events.next_batch.clone();
+                            let count =  response.search_categories.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()).unwrap_or(0);
+                            let search_timeline_events = convert_result_categories_to_search_item(response.search_categories);
+                            println!("search_timeline_events {:?}", search_timeline_events.len());
+                            log!("Successfully searched message in room {room_id} for {search_term_clone} forward_pagination_batch_token in {:?} backward_pagination_batch {:?}.", forward_pagination_batch_token, backward_pagination_batch);
+                            if let Err(e) = sender.send(TimelineUpdate::SearchNewItems {
+                                new_items: search_timeline_events, 
+                                forward_pagination_batch_token: forward_pagination_batch_token,
+                                backward_pagination_batch_token: backward_pagination_batch,
+                                count }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
+                            
                             SignalToUI::set_ui_signal();
                         }
                         Err(e) => {

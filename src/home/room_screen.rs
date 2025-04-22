@@ -19,10 +19,10 @@ use matrix_sdk_ui::timeline::{
     self, EventTimelineItem, InReplyToDetails, MemberProfileChange, ReactionsByKeyBySender, RepliedToInfo, RoomMembershipChange, TimelineDetails, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem
 };
 use robius_location::Coordinates;
-use ruma::{api::client::search::search_events::v3::ResultCategories, events::AnySyncTimelineEvent, serde::Raw, OwnedUserId, UserId};
+use ruma::{api::client::search::search_events::v3::ResultCategories, events::{AnySyncTimelineEvent, AnyTimelineEvent}, serde::Raw, OwnedUserId, UserId};
 
 use crate::{
-    app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
+    app::AppState, avatar_cache, event_preview::{body_of_timeline_item, text_preview_of_member_profile_change, text_preview_of_other_state, text_preview_of_redacted_message, text_preview_of_room_membership_change, text_preview_of_timeline_item}, home::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_search_result::SearchTimelineItemKind}, location::{get_latest_location, init_location_subscriber, request_location_update, LocationAction, LocationRequest, LocationUpdate}, media_cache::{MediaCache, MediaCacheEntry}, profile::{
         user_profile::{AvatarState, ShowUserProfileAction, UserProfile, UserProfileAndRoomId, UserProfilePaneInfo, UserProfileSlidingPaneRef, UserProfileSlidingPaneWidgetExt},
         user_profile_cache,
     }, shared::{
@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_screen_traits::Stateable, room_search_result::{self, handle_search_first_update, handle_search_new_items, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_screen_traits::{Stateable, TimelineItemAble, TimelineItemWrapper}, room_search_result::{self, display_search, handle_search_first_update, handle_search_new_items, hide_search, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -763,7 +763,9 @@ live_design! {
 
                 // First, display the timeline of all messages/events.
                 timeline = <Timeline> {}
-                search_timeline = <Timeline> {}
+                search_timeline = <Timeline> {
+                    visible: false
+                }
                 // Below that, display a typing notice when other users in the room are typing.
                 typing_notice = <View> {
                     visible: false
@@ -940,9 +942,6 @@ live_design! {
             }
             text: "No More"
         }
-        search_result_timeline_template: <Timeline>{
-                        
-        }
         animator: {
             typing_notice_animator = {
                 default: show,
@@ -967,7 +966,6 @@ live_design! {
 pub struct RoomScreen {
     #[deref] pub view: View,
     #[animator] animator: Animator,
-
     /// The room ID of the currently-shown room.
     #[rust] pub room_id: Option<OwnedRoomId>,
     /// The display name of the currently-shown room.
@@ -979,9 +977,9 @@ pub struct RoomScreen {
     /// The timer for sending a search request after a delay when user stops typing.
     #[rust] search_delay_timer: Timer,
     #[live] pub no_more_template: Option<LivePtr>,
-    #[live] pub search_result_timeline_template: Option<LivePtr>,
     #[rust] pub search_result_timeline_view: Option<ViewRef>,
 }
+
 impl Drop for RoomScreen {
 
     fn drop(&mut self) {
@@ -1021,13 +1019,14 @@ impl Widget for RoomScreen {
                     let Some(tl_state) = self.tl_state.as_mut() else { return };
                     if tl_state.search_result_state.search_term.is_empty() {
                         self.other_display = RoomScreenOtherDisplay::None;
+                        //hide_search(&mut self.other_display, &self.view, cx, &mut tl_state.search_result_state);
                         return; 
                     }
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id: room_id.clone(), 
                         include_all_rooms: false,
                         search_term: tl_state.search_result_state.search_term.clone(),
-                        next_batch: None
+                        backward_pagination_batch: None,
                     });
                 }
             }
@@ -1144,7 +1143,7 @@ impl Widget for RoomScreen {
                 // Handle sending any read receipts for the current logged-in user.
                 self.send_user_read_receipts_based_on_scroll_pos(cx, actions, &portal_list);
             } else {
-                send_pagination_request_based_on_scroll_pos_for_search_result( self, cx, actions, &portal_list);
+                send_pagination_request_based_on_scroll_pos_for_search_result( self, cx, actions, &search_portal_list);
             }
 
             
@@ -1241,7 +1240,12 @@ impl Widget for RoomScreen {
                     self.search_result(id!(search_result_inner)).reset_summary(cx);
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     tl.items.clear();
-                    submit_async_request(MatrixRequest::SearchMessages { room_id, include_all_rooms: true, search_term: tl.search_result_state.search_term.clone(), next_batch: None });
+                    submit_async_request(MatrixRequest::SearchMessages { 
+                        room_id, 
+                        include_all_rooms: true, 
+                        search_term: tl.search_result_state.search_term.clone(), 
+                        backward_pagination_batch: None,
+                    });
                 }
             }
             // Handle the jump to bottom button: update its visibility, and handle clicks.
@@ -1368,6 +1372,7 @@ impl Widget for RoomScreen {
         }
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
+            //let portal_list_ref = self.view.portal_list(id!(timeline.list));
             let portal_list_ref = subview.as_portal_list();
             let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
                 error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
@@ -1402,9 +1407,9 @@ impl Widget for RoomScreen {
                         content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
                         profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
                     };
-                    let (item, item_new_draw_status) = match timeline_item.kind() {
+                    let (item, item_new_draw_status) = match timeline_item.0.kind() {
                         TimelineItemKind::Event(event_tl_item) => {
-                            let event_tl_item_wrapper = &EventableWrapperETI(event_tl_item);
+                            let event_tl_item_wrapper = &EventableWrapperETI(&event_tl_item);
                             match event_tl_item.content() {
                                 TimelineItemContent::Message(message) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
@@ -1543,11 +1548,14 @@ impl RoomScreen {
                     portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
                     portal_list.set_tail_range(true);
                     jump_to_bottom.update_visibility(cx, true);
-
-                    tl.items = initial_items;
+                    tl.items = Vector::new();
+                    for item in initial_items.iter() {
+                        tl.items.push_back(TimelineItemWrapper(item.clone()));    
+                    }
                     done_loading = true;
                 }
                 TimelineUpdate::NewItems { new_items, changed_indices, is_append, clear_cache } => {
+                    println!("changed_indices {:?} is_append {:?} clear_cache {:?}", changed_indices, is_append, clear_cache);
                     if new_items.is_empty() {
                         if !tl.items.is_empty() {
                             log!("Timeline::handle_event(): timeline (had {} items) was cleared for room {}", tl.items.len(), tl.room_id);
@@ -1583,7 +1591,10 @@ impl RoomScreen {
                     // Maybe todo?: we can often avoid the following loops that iterate over the `items` list
                     //       by only doing that if `clear_cache` is true, or if `changed_indices` range includes
                     //       any index that comes before (is less than) the above `curr_first_id`.
-
+                    let mut new_items_processed = Vector::new();
+                    for item in new_items.iter() {
+                        new_items_processed.push_back(TimelineItemWrapper(item.clone()));
+                    }
                     if new_items.len() == tl.items.len() {
                         // log!("Timeline::handle_event(): no jump necessary for updated timeline of same length: {}", items.len());
                     }
@@ -1594,7 +1605,7 @@ impl RoomScreen {
                         jump_to_bottom.update_visibility(cx, true);
                     }
                     else if let Some((curr_item_idx, new_item_idx, new_item_scroll, _event_id)) =
-                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items)
+                        find_new_item_matching_current_item(cx, portal_list, curr_first_id, &tl.items, &new_items_processed)
                     {
                         if curr_item_idx != new_item_idx {
                             log!("Timeline::handle_event(): jumping view from event index {curr_item_idx} to new index {new_item_idx}, scroll {new_item_scroll}, event ID {_event_id}");
@@ -1653,7 +1664,10 @@ impl RoomScreen {
                         tl.profile_drawn_since_last_update.remove(changed_indices.clone());
                         // log!("Timeline::handle_event(): changed_indices: {changed_indices:?}, items len: {}\ncontent drawn: {:#?}\nprofile drawn: {:#?}", items.len(), tl.content_drawn_since_last_update, tl.profile_drawn_since_last_update);
                     }
-                    tl.items = new_items;
+                    tl.items = Vector::new();
+                    for item in new_items.iter() {
+                        tl.items.push_back(TimelineItemWrapper(item.clone()));
+                    }
                     done_loading = true;
                 }
                 TimelineUpdate::NewUnreadMessagesCount(unread_messages_count) => {
@@ -1784,68 +1798,9 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-
-                TimelineUpdate::SearchResult{
-                    result, 
-                    previous_batch_token
-                } => {
-                    tl.content_drawn_since_last_update.clear();
-                    tl.profile_drawn_since_last_update.clear();
-                    tl.fully_paginated = false;
-                    // Set the portal list to the very bottom of the timeline.
-                    let mut timeline_events= Vector::new();
-                    let mut last_room_id = None;
-                    let rooms_names = self.view.rooms_list(id!(rooms_list)).get_all_rooms_names();
-                    //timeline_events.push_back(SearchTimelineItem::with_no_more_messages());
-                    for item in result.room_events.results.iter().rev() {
-                        let Some(event) = item.result.clone().and_then(|f|f.deserialize().ok()) else { continue };
-                        
-                        if let Some(ref mut last_room_id) = last_room_id {
-                            if last_room_id != event.room_id() {
-                                *last_room_id = event.room_id().to_owned();
-                                if let Some(room_name) = rooms_names.get(last_room_id).and_then(|f|f.clone()) {
-                                    timeline_events.push_back(SearchTimelineItem::with_room_header(room_name));
-                                }
-                            }
-                        } else {
-                            last_room_id = Some(event.room_id().to_owned());
-                            if let Some(room_name) = rooms_names.get(event.room_id()).and_then(|f|f.clone()) {
-                                timeline_events.push_back(SearchTimelineItem::with_room_header(room_name));
-                            }
-                        }
-                        
-                        item.context.events_before.iter().for_each(|f| {
-                            if let Ok(timeline_event) = f.deserialize() {
-                                timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
-                            }
-                        });
-                        timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
-                        timeline_events.push_back(SearchTimelineItem::with_event(event.clone()));
-                        item.context.events_after.iter().for_each(|f| {
-                            if let Ok(timeline_event) = f.deserialize() {
-                                timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
-                            }
-                        });
-                    }
-                    portal_list.set_first_id_and_scroll(timeline_events.len().saturating_sub(1), 0.0);
-                    portal_list.set_tail_range(true);
-                    jump_to_bottom.update_visibility(cx, true);
-                    tl.search_result_state.items.extend(timeline_events);
-                    if let Some(size) = result.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()) {
-                        cx.action(SearchResultAction::Success { count: size });
-                    }
-                    tl.search_result_state.highlighted_strings = result.room_events.highlights;
-                    tl.search_result_state.next_batch = result.room_events.next_batch.clone();
-                    if let Some(next_batch) = previous_batch_token {
-                        tl.search_result_state.batch_tokens.push(next_batch);
-                    }
-                    done_loading = true;
-                }
-                TimelineUpdate::SearchFirstUpdate { initial_items, next_batch_token } => {
-                    handle_search_first_update(tl, search_portal_list, cx, initial_items,  next_batch_token,  &mut done_loading);
-                }
-                TimelineUpdate::SearchNewItems { new_items, next_batch_token, changed_indices, is_append, clear_cache,  } => {
-                    handle_search_new_items(self.view, tl, search_portal_list, cx, ui, new_items, next_batch_token, changed_indices, is_append, clear_cache,  &mut done_loading, &mut should_continue_backwards_pagination);
+                TimelineUpdate::SearchNewItems { new_items, forward_pagination_batch_token, backward_pagination_batch_token, count } => {
+                    cx.action(SearchResultAction::Success { count });
+                    handle_search_new_items(&self.view, &mut tl.search_result_state, search_portal_list, cx, ui, new_items, forward_pagination_batch_token, backward_pagination_batch_token);
                 }
             }
         }
@@ -2085,6 +2040,7 @@ impl RoomScreen {
                     enqueue_popup_notification("Unpinning messages is not yet implemented.".to_string());
                 }
                 MessageAction::CopyText(details) => {
+                    println!("details {:?}", details);
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     if let Some(text) = tl.items
                         .get(details.item_id)
@@ -2444,7 +2400,9 @@ impl RoomScreen {
                 prev_first_index: None,
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
-                search_result_state: SearchResultState::default(),
+                backward_pagination_batch: None,
+                search_result_state: SearchResultState::new(room_id.clone()),
+                batch_list: Vec::new(),
             };
             (new_tl_state, true)
         };
@@ -2722,16 +2680,17 @@ impl RoomScreen {
         if let Some(SearchResultAction::Close) = action.downcast_ref() {
             self.search_result(id!(search_result_inner)).reset_summary(cx);
             self.view(id!(search_result_overlay)).set_visible(cx, false);
-            self.other_display = RoomScreenOtherDisplay::None;
-            self.view(id!(timeline)).set_visible(cx, true);
-            self.view(id!(search_timeline)).set_visible(cx, false);
-            if let Some(ref mut tl_state) = self.tl_state {
-                tl_state.search_result_state = SearchResultState::default();
-            }
+            // self.other_display = RoomScreenOtherDisplay::None;
+            // self.view(id!(timeline)).set_visible(cx, true);
+            // self.view(id!(search_timeline)).set_visible(cx, false);
+            // if let Some(ref mut tl_state) = self.tl_state {
+            //     tl_state.search_result_state = SearchResultState::default();
+            // }
+            hide_search(&mut self.other_display, &self.view, cx, &mut self.tl_state);
         }
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
-            SearchBarAction::Search(keywords) => {
+            SearchBarAction::Search(search_query) => {
                 if let (Some(selected_room), Some(search_widget_id)) = {
                     let app_state = scope.data.get::<AppState>().unwrap();
                     (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
@@ -2741,14 +2700,14 @@ impl RoomScreen {
                             self.search_delay_timer = cx.start_timeout(1.0);
                             if let Some(ref mut tl_state) = self.tl_state {
                                 tl_state.search_result_state.items.clear();
-                                tl_state.search_result_state.search_term = keywords.clone();
+                                tl_state.search_result_state.search_term = search_query.clone();
                             }
-                            self.other_display = RoomScreenOtherDisplay::SearchResult;
-                            self.view(id!(search_result_overlay)).set_visible(cx, true);
-                            self.search_result(id!(search_result_inner)).set_search_criteria(cx,keywords);
-                            self.search_result_timeline_view = Some(WidgetRef::new_from_ptr(cx, self.search_result_timeline_template).as_view());
-                            self.view(id!(timeline)).set_visible(cx, false);
-                            self.view(id!(search_timeline)).set_visible(cx, true);
+                            // self.other_display = RoomScreenOtherDisplay::SearchResult;
+                            // self.view(id!(search_result_overlay)).set_visible(cx, true);
+                            // self.search_result(id!(search_result_inner)).set_search_criteria(cx,keywords);
+                            // self.view(id!(timeline)).set_visible(cx, false);
+                            // self.view(id!(search_timeline)).set_visible(cx, true);
+                            display_search(&mut self.other_display, &self.view, cx, search_query);
                         }
                     }
                 }
@@ -2762,7 +2721,9 @@ impl RoomScreen {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
                             cx.stop_timer(self.search_delay_timer);
                             let Some(tl) = self.tl_state.as_mut() else { return };
-                            tl.search_result_state = SearchResultState::default();
+                            if let Some(room_id) = &self.room_id {
+                                tl.search_result_state = SearchResultState::new(room_id.clone());
+                            }
                             self.other_display = RoomScreenOtherDisplay::None;
                             self.view(id!(search_result_overlay)).set_visible(cx, false);
                         }
@@ -2921,32 +2882,19 @@ pub enum TimelineUpdate {
     UserPowerLevels(UserPowerLevels),
     /// An update to the currently logged-in user's own read receipt for this room.
     OwnUserReadReceipt(Receipt),
-    /// Save search result in the TimelineUiState.
-    /// Save previous batch token in the TimelineUiState.
-    SearchResult{
-        result: ResultCategories,
-        previous_batch_token: Option<String>,
-    },
-    SearchFirstUpdate {
-        /// The initial list of timeline items (events) for a room.
-        initial_items: Vector<SearchTimelineItem>,
-        next_batch_token: Option<String>
-    },
+    // /// Save search result in the TimelineUiState.
+    // /// Save previous batch token in the TimelineUiState.
+    // SearchResult{
+    //     result: ResultCategories,
+    //     previous_batch_token: Option<String>,
+    // },
     /// The content of a room's timeline was updated in the background.
     SearchNewItems {
         /// The entire list of timeline items (events) for a room.
         new_items: Vector<SearchTimelineItem>,
-        /// The range of indices in the `items` list that have been changed in this update
-        /// and thus must be removed from any caches of drawn items in the timeline.
-        /// Any items outside of this range are assumed to be unchanged and need not be redrawn.
-        changed_indices: Range<usize>,
-        /// An optimization that informs the UI whether the changes to the timeline
-        /// resulted in new items being *appended to the end* of the timeline.
-        is_append: bool,
-        /// Whether to clear the entire cache of drawn items in the timeline.
-        /// This supersedes `index_of_first_change` and is used when the entire timeline is being redrawn.
-        clear_cache: bool,
-        next_batch_token: Option<String>
+        forward_pagination_batch_token: Option<String>,
+        backward_pagination_batch_token: Option<String>,
+        count: u32
     },
 }
 
@@ -2974,7 +2922,7 @@ pub struct TimelineUiState {
     fully_paginated: bool,
 
     /// The list of items (events) in this room's timeline that our client currently knows about.
-    items: Vector<Arc<EventTimelineItem>>,
+    items: Vector<TimelineItemWrapper>,
     /// The range of items (indices in the above `items` list) whose event **contents** have been drawn
     /// since the last update and thus do not need to be re-populated on future draw events.
     ///
@@ -3049,9 +2997,11 @@ pub struct TimelineUiState {
     /// When new message come in, this value is reset to `false`.
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
+    backward_pagination_batch: Option<String>,
+    batch_list: Vec<String>,
     pub search_result_state: SearchResultState
 }
-impl Stateable<EventableWrapperETI<'_>> for TimelineUiState {
+impl Stateable<TimelineItemWrapper> for TimelineUiState {
     fn get_content_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
         &mut self.content_drawn_since_last_update
     }
@@ -3059,23 +3009,62 @@ impl Stateable<EventableWrapperETI<'_>> for TimelineUiState {
         &mut self.profile_drawn_since_last_update
     }
     fn get_fully_paginated(&mut self) -> &mut bool {
-        self.get_fully_paginated
+        &mut self.fully_paginated
     }
-    fn get_items(&mut self) -> &mut Vector<EventableWrapperETI<'_>> {
-        self.items.iter_mut().map(|f| EventableWrapperETI(f))
+    fn get_items(&mut self) -> &mut Vector<TimelineItemWrapper> {
+        &mut self.items
     }
-    fn room_id(&self) -> &ruma::RoomId {
-        
+
+    fn room_id(&self) -> Option<OwnedRoomId> {
+        Some(self.room_id.clone())
     }
     fn get_prev_first_index(&mut self) -> &mut Option<usize> {
-        
+        &mut self.prev_first_index
     }
     fn get_scrolled_past_read_marker(&mut self) -> &mut bool {
-        
+        &mut self.scrolled_past_read_marker
+    }
+    fn get_backward_pagination(&mut self) -> &mut Option<String> {
+        &mut self.backward_pagination_batch
+    }
+    fn get_batch_list(&mut self) -> &mut Vec<String> {
+        &mut self.batch_list
     }
 }
+impl Stateable<SearchTimelineItem> for SearchResultState {
+    fn get_content_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
+        &mut self.content_drawn_since_last_update
+    }
+    fn get_profile_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
+        &mut self.profile_drawn_since_last_update
+    }
+    fn get_fully_paginated(&mut self) -> &mut bool {
+        &mut self.fully_paginated
+    }
+    fn get_items(&mut self) -> &mut Vector<SearchTimelineItem> {
+        &mut self.items
+    }
+
+    fn room_id(&self) -> Option<OwnedRoomId> {
+        self.room_id.clone()
+    }
+    fn get_prev_first_index(&mut self) -> &mut Option<usize> {
+        &mut self.prev_first_index
+    }
+    fn get_scrolled_past_read_marker(&mut self) -> &mut bool {
+        &mut self.scrolled_past_read_marker
+    }
+    fn get_backward_pagination(&mut self) -> &mut Option<String> {
+        &mut self.backward_pagination_batch
+    }
+    fn get_batch_list(&mut self) -> &mut Vec<String> {
+        &mut self.batch_list
+    }
+}
+
 #[derive(Default)]
 pub struct SearchResultState {
+    pub room_id: Option<OwnedRoomId>,
     /// The search query to be sent after the search delay timer ends.
     /// This field is reset when the user continues typing before the search delay timer ends.
     pub search_query: String,
@@ -3085,17 +3074,45 @@ pub struct SearchResultState {
     /// The list of batch tokens for the search results.
     /// 
     /// This field is used to prevent duplicate search requests when scrolling
-    pub batch_tokens: Vec<String>,
+    pub batch_list: Vec<String>,
     /// The list of strings that should be highlighted in the search results.
     pub highlighted_strings: Vec<String>,
     /// The next batch token used for pagination of the search results.
-    pub next_batch: Option<String>,
+    pub backward_pagination_batch: Option<String>,
+    pub forward_pagination_batch: Option<String>,
     pub fully_paginated: bool,
     pub last_scrolled_index: usize,
     /// Whether the button "Search All Rooms" is pressed.
-    pub include_all_rooms: bool
-}
+    pub include_all_rooms: bool,
+    pub content_drawn_since_last_update: RangeSet<usize>,
+    pub profile_drawn_since_last_update: RangeSet<usize>,
 
+    /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
+    ///
+    /// This index is saved before the timeline undergoes any jumps, e.g.,
+    /// receiving new items, major scroll changes, or other timeline view jumps.
+    prev_first_index: Option<usize>,
+
+    /// Whether the user has scrolled past their latest read marker.
+    ///
+    /// This is used to determine whether we should send a fully-read receipt
+    /// after the user scrolls past their "read marker", i.e., their latest fully-read receipt.
+    /// Its value is determined by comparing the fully-read event's timestamp with the
+    /// first and last timestamp of displayed events in the timeline.
+    /// When scrolling down, if the value is true, we send a fully-read receipt
+    /// for the last visible event in the timeline.
+    ///
+    /// When new message come in, this value is reset to `false`.
+    scrolled_past_read_marker: bool,
+    previous_first_index: Option<usize>,
+}
+impl SearchResultState {
+    pub fn new(room_id: OwnedRoomId) -> Self {
+        let mut state = Self::default();
+        state.room_id = Some(room_id);
+        state
+    }
+}
 #[derive(Default, Debug)]
 enum MessageHighlightAnimationState {
     Pending { item_id: usize },
@@ -3130,12 +3147,12 @@ struct SavedState {
 /// 2. the index of the item in the new items list,
 /// 3. the positional "scroll" offset of the corresponding current item in the portal list,
 /// 4. the unique event ID of the item.
-fn find_new_item_matching_current_item(
+pub fn find_new_item_matching_current_item<T:TimelineItemAble>(
     cx: &mut Cx,
     portal_list: &PortalListRef,
     starting_at_curr_idx: usize,
-    curr_items: &Vector<Arc<TimelineItem>>,
-    new_items: &Vector<Arc<TimelineItem>>,
+    curr_items: &Vector<T>,
+    new_items: &Vector<T>,
 ) -> Option<(usize, usize, f64, OwnedEventId)> {
     let mut curr_item_focus = curr_items.focus();
     let mut idx_curr = starting_at_curr_idx;
@@ -3147,7 +3164,7 @@ fn find_new_item_matching_current_item(
     // TODO: if this is slow, we could limit it to 3-5 events at the most.
     if curr_items_with_ids.len() <= portal_list.visible_items() {
         while let Some(curr_item) = curr_item_focus.get(idx_curr) {
-            if let Some(event_id) = curr_item.as_event().and_then(|ev| ev.event_id()) {
+            if let Some(event_id) = curr_item.event_id() {
                 curr_items_with_ids.push((idx_curr, event_id.to_owned()));
             }
             if curr_items_with_ids.len() >= portal_list.visible_items() {
@@ -3159,12 +3176,12 @@ fn find_new_item_matching_current_item(
 
     // Find a new item that has the same real event ID as any of the current items.
     for (idx_new, new_item) in new_items.iter().enumerate() {
-        let Some(event_id) = new_item.as_event().and_then(|ev| ev.event_id()) else {
+        let Some(event_id) = new_item.event_id() else {
             continue;
         };
         if let Some((idx_curr, _)) = curr_items_with_ids
             .iter()
-            .find(|(_, ev_id)| ev_id == event_id)
+            .find(|(_, ev_id)| *ev_id == event_id)
         {
             // Not all items in the portal list are guaranteed to have a position offset,
             // some may be zeroed-out, so we need to account for that possibility by only
@@ -3408,11 +3425,11 @@ pub trait PreviousEventable<T:Eventable> {
     fn use_compact(&self, current: &T) -> bool;
 }
 
-pub struct PreviousWrapperTI<'a>(pub &'a Arc<TimelineItem>);
-impl <'a> PreviousEventable<EventableWrapperETI<'a>> for PreviousWrapperTI<'a,> {
+pub struct PreviousWrapperTI<'a>(pub &'a TimelineItemWrapper);
+impl <'a> PreviousEventable<EventableWrapperETI<'a>> for PreviousWrapperTI<'a> {
     fn use_compact(&self, current: &EventableWrapperETI<'a>) -> bool {
         let prev_event = Some(self.0);
-        let use_compact_view = match prev_event.map(|p| p.kind()) {
+        let use_compact_view = match prev_event.map(|p| p.0.kind()) {
             Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
                 TimelineItemContent::Message(_) | TimelineItemContent::Sticker(_) => {
                     let prev_msg_sender = prev_event_tl_item.sender();
