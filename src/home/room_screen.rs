@@ -907,7 +907,10 @@ live_design! {
 
             search_result_overlay = <View> {
                 visible: false,
-                search_result_inner = <SearchResult> {} 
+                search_result_inner = <SearchResult> {
+                    
+                }
+                
             }
             /*
              * This is broken currently, so I'm disabling it.
@@ -1525,6 +1528,7 @@ impl RoomScreen {
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef, search_portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
+        let search_result_widget = self.search_result(id!(search_result_inner));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -1715,6 +1719,7 @@ impl RoomScreen {
                     println!("TimelineUpdate::PaginationRunning({direction}) in room {}", tl.room_id);
                     if direction == PaginationDirection::Backwards {
                         top_space.set_visible(cx, true);
+                        search_result_widget.display_top_space(cx);
                         done_loading = false;
                     } else {
                         error!("Unexpected PaginationRunning update in the Forwards direction");
@@ -1788,6 +1793,7 @@ impl RoomScreen {
                 TimelineUpdate::SearchNewItems { new_items, forward_pagination_batch_token, backward_pagination_batch_token, count } => {
                     cx.action(SearchResultAction::Success { count });
                     self.other_display = RoomScreenOtherDisplay::SearchResult;
+                    done_loading = true;
                     handle_search_new_items(&self.view, &mut tl.search_result_state, search_portal_list, cx, ui, new_items, forward_pagination_batch_token, backward_pagination_batch_token);
                 }
             }
@@ -1803,6 +1809,7 @@ impl RoomScreen {
 
         if done_loading {
             top_space.set_visible(cx, false);
+            search_result_widget.hide_top_space(cx);
         }
 
         if !typing_users.is_empty() {

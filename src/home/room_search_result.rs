@@ -58,6 +58,28 @@ live_design! {
         }
         icon_walk: {width: 16, height: 16}
     }
+    TopSpace = <View> {
+        visible: false,
+        width: Fill,
+        height: Fit,
+        align: {x: 0.5, y: 0}
+        show_bg: true,
+        draw_bg: {
+            color: #xDAF5E5F0, // mostly opaque light green
+        }
+
+        label = <Label> {
+            width: Fill,
+            height: Fit,
+            align: {x: 0.5, y: 0.5},
+            padding: { top: 10.0, bottom: 7.0, left: 15.0, right: 15.0 }
+            draw_text: {
+                text_style: <MESSAGE_TEXT_STYLE> { font_size: 10 },
+                color: (TIMESTAMP_TEXT_COLOR)
+            }
+            text: "Loading more search results..."
+        }
+    }
     pub SearchResult = {{SearchResult}} {
         width: Fill,
         height: Fill,
@@ -79,46 +101,56 @@ live_design! {
         }
         <View> {
             width: Fill,
-            height: 60,
-            show_bg: true,
-            align: {y: 0.5}
-            draw_bg: {
-                color: (COLOR_SECONDARY)
-            }
-            <SearchIcon> {}
-            summary_label = <Html> {
-                margin: {left: 10},
-                align: {x: 0.3}  // Align to top-right
+            height: Fit,
+            flow: Down,
+            <View> {
                 width: Fill,
-                height: Fit,
-                padding: 0,
-                font_color: (MESSAGE_TEXT_COLOR),
-                font_size: (MESSAGE_FONT_SIZE),
-                body: ""
-            }
-            search_all_rooms_button = <Button> {
-                align: {x: 0.8},
-                margin: {right:10, top: -2}
-                draw_text:{color:#000}
-                text: "Search All Rooms"
-            }
-            cancel_button = <RobrixIconButton> {
-                align: {x: 1.0}
-                margin: {right: 10, top:0},
-                width: Fit,
-                height: Fit,
-                padding: {left: 15, right: 15}
+                height: 60,
+                show_bg: true,
+                align: {y: 0.5}
                 draw_bg: {
-                    border_color: (COLOR_DANGER_RED),
-                    color: #fff0f0 // light red
+                    color: (COLOR_SECONDARY)
                 }
-                draw_icon: {
-                    svg_file: (ICON_CLOSE),
-                    color: (COLOR_DANGER_RED)
+                <SearchIcon> {}
+                summary_label = <Html> {
+                    margin: {left: 10},
+                    align: {x: 0.3}  // Align to top-right
+                    width: Fill,
+                    height: Fit,
+                    padding: 0,
+                    font_color: (MESSAGE_TEXT_COLOR),
+                    font_size: (MESSAGE_FONT_SIZE),
+                    body: ""
                 }
-                icon_walk: {width: 16, height: 16, margin: 0}
+                search_all_rooms_button = <Button> {
+                    align: {x: 0.8},
+                    margin: {right:10, top: -2}
+                    draw_text:{color:#000}
+                    text: "Search All Rooms"
+                }
+                cancel_button = <RobrixIconButton> {
+                    align: {x: 1.0}
+                    margin: {right: 10, top:0},
+                    width: Fit,
+                    height: Fit,
+                    padding: {left: 15, right: 15}
+                    draw_bg: {
+                        border_color: (COLOR_DANGER_RED),
+                        color: #fff0f0 // light red
+                    }
+                    draw_icon: {
+                        svg_file: (ICON_CLOSE),
+                        color: (COLOR_DANGER_RED)
+                    }
+                    icon_walk: {width: 16, height: 16, margin: 0}
+                }
+            }
+            top_space = <TopSpace> {
+                visible: true
             }
         }
+        
+        
         
     }
 }
@@ -191,6 +223,15 @@ impl SearchResult {
         self.view.html(id!(summary_label)).set_text(cx, "");
         self.view.view(id!(loading_view)).set_visible(cx, true);
     }
+    /// Displays the loading view for backwards pagination for search result.
+    fn display_top_space(&mut self, cx: &mut Cx) {
+        self.view.view(id!(top_space)).set_visible(cx, true);
+    }
+    /// Hides the loading view for backwards pagination for search result.
+    fn hide_top_space(&mut self, cx: &mut Cx) {
+        self.view.view(id!(top_space)).set_visible(cx, false);
+    }
+
 }
 impl SearchResultRef {
     /// See [`SearchResult::set_result_count()`].
@@ -203,11 +244,20 @@ impl SearchResultRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_search_criteria(cx, search_criteria);
     }
-
     /// See [`SearchResult::reset_summary()`].
     pub fn reset_summary(&self, cx: &mut Cx) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.reset_summary(cx);
+    }
+    /// See [`SearchResult::display_top_space()`].
+    pub fn display_top_space(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.display_top_space(cx);
+    }
+    /// See [`SearchResult::hide_top_space()`].
+    pub fn hide_top_space(&self, cx: &mut Cx) {
+        let Some(mut inner) = self.borrow_mut() else { return };
+        inner.hide_top_space(cx);
     }
 }
 pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
