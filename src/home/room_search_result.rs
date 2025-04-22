@@ -1,14 +1,14 @@
-use std::{ops::{DerefMut, Index, Range}, sync::Arc};
+use std::ops::{DerefMut, Index};
 
 use imbl::Vector;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
-use ruma::{api::client::search::search_events::v3::ResultCategories, events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, UserId};
+use ruma::{api::client::search::search_events::v3::ResultCategories, events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, UserId};
 
 use crate::{event_preview::text_preview_of_other_state, home::room_screen::RoomScreenTooltipActions, room, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::unix_time_millis_to_datetime};
 
-use super::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_screen::{find_new_item_matching_current_item, populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, RoomScreenOtherDisplay, SearchResultState, SmallStateEventContent, TimelineUiState}, room_screen_traits::{Stateable, TimelineItemAble}, rooms_list::RoomsListWidgetExt};
+use super::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, RoomScreenOtherDisplay, SearchResultState, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
 
 live_design! {
     use link::theme::*;
@@ -129,8 +129,7 @@ pub struct SearchResult {
     #[deref] pub view: View,
     #[rust] pub search_criteria: String,
     #[rust] pub result_count: u32,
-    #[live] pub timeline_template: Option<LivePtr>,
-    #[rust] pub timeline_view: Option<ViewRef>,
+
 }
 
 impl Widget for SearchResult {
@@ -141,24 +140,6 @@ impl Widget for SearchResult {
     }
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         self.view.draw_walk(cx, scope, walk)
-        // if let Some(timeline_view) = &self.timeline_view {
-        //     while let Some(subview) = timeline_view.draw_walk(cx, scope, walk).step() {
-        //         let portal_list_ref = subview.as_portal_list();
-        //         let Some(mut list_ref) = portal_list_ref.borrow_mut() else {
-        //             error!("!!! RoomScreen::draw_walk(): BUG: expected a PortalList widget, but got something else");
-        //             continue;
-        //         };
-        //         let list = list_ref.deref_mut();
-        //         list.set_item_range(cx, 0, 10);
-        //         while let Some(item_id) = list.next_visible_item(cx) {
-        //             let item = list.item(cx, item_id, live_id!(RoomHeader));
-        //             item.as_label().set_text(cx, "ss");
-        //             item.draw_all(cx, &mut Scope::empty());
-        //         }
-        //     }
-        // }
-
-        // DrawStep::done()
     }
 }
 impl MatchEvent for SearchResult {
@@ -200,8 +181,7 @@ impl SearchResult {
     fn set_search_criteria(&mut self, cx: &mut Cx, search_criteria: String) {
         self.view.html(id!(summary_label)).set_text(cx, &format!("Searching for <b>'{}'</b>", search_criteria));
         self.search_criteria = search_criteria;
-        self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
-        self.timeline_view = Some(WidgetRef::new_from_ptr(cx, self.timeline_template).as_view());
+        //self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
     }
     /// Resets the search result summary and displays the loading view.
     ///
@@ -258,32 +238,6 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
             }
         }
     }
-    // if portal_list.is_at_end() && portal_list.scrolled(actions) && first_index > search_result_state.last_scrolled_index {
-    //     println!("portal_list.is_at_end {:?}", portal_list.is_at_end());
-    //     if let Some(forward_pagination_batch) = &search_result_state.forward_pagination_batch {
-    //         let index = search_result_state.batch_list.iter().position(|batch| batch == forward_pagination_batch);
-    //         println!("----index {:?}", index);
-    //         if let Some(index) = index {
-    //             submit_async_request(MatrixRequest::SearchMessages {
-    //                 room_id: tl.room_id.clone(),
-    //                 include_all_rooms: search_result_state.include_all_rooms,
-    //                 search_term: search_result_state.search_term.clone(),
-    //                 backward_pagination_batch: search_result_state.batch_list.get(index.saturating_sub(1)).map(|f| f.clone()),
-    //                 forward_pagination_batch: search_result_state.forward_pagination_batch.clone(),
-    //                 direction: PaginationDirection::Forwards
-    //             });
-    //         }
-    //     } else {
-    //         submit_async_request(MatrixRequest::SearchMessages {
-    //             room_id: tl.room_id.clone(),
-    //             include_all_rooms: search_result_state.include_all_rooms,
-    //             search_term: search_result_state.search_term.clone(),
-    //             backward_pagination_batch: None,
-    //             forward_pagination_batch: search_result_state.forward_pagination_batch.clone(),
-    //             direction: PaginationDirection::Forwards
-    //         });
-    //     }
-    // }
     tl.search_result_state.last_scrolled_index = first_index;
 }
 pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -304,7 +258,6 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
         let room_id = &tl_state.room_id;
         let tl_items = &tl_state.search_result_state.items;
         let list = list_ref.deref_mut();
-        println!("tl_items.len() {:?} current batch {:?} next batch {:?}", tl_items.len(), tl_state.search_result_state.forward_pagination_batch, tl_state.search_result_state.backward_pagination_batch);
         list.set_item_range(cx, 0, tl_items.len());
         while let Some(item_id) = list.next_visible_item(cx) {
             let item = {
@@ -462,6 +415,27 @@ impl SearchTimelineItem{
         SearchTimelineItem {
             kind: SearchTimelineItemKind::NoMoreMessages
         }
+    }
+    pub fn body_of_timeline_item(&self) -> Option<String> {
+        match &self.kind {
+            SearchTimelineItemKind::Event(event) => {
+                match event {
+                    AnyTimelineEvent::MessageLike(msg) => {
+                       match msg {
+                            AnyMessageLikeEvent::RoomMessage(room_msg) => {
+                                if let Some(room_msg) = room_msg.as_original() {
+                                    return Some(room_msg.content.body().to_string())
+                                }
+                            }
+                            _ => {}
+                       }
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        return None
     }
 }
 #[derive(Clone)]
@@ -629,47 +603,22 @@ impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
     }
 }
 
-//pub fn handle_search_first_update<'a, S: Stateable<EventableWrapperAEI<'a>>>(tl: &mut S, portal_list: &PortalListRef,  cx: &mut Cx, initial_items: Vector<EventableWrapperAEI<'a>>, backward_pagination_batch: Option<String>, done_loading: &mut bool) {
-pub fn handle_search_first_update<'a, S: Stateable<T>, T:TimelineItemAble >(
-    tl: &mut S, 
-    portal_list: &PortalListRef, 
-    cx: &mut Cx, 
-    initial_items: Vector<T>, 
-    forward_pagination_batch: Option<String>, 
-    backward_pagination_batch: Option<String>, 
-    done_loading: &mut bool
-) {
-    tl.get_content_drawn_since_last_update().clear();
-    tl.get_profile_drawn_since_last_update().clear();
-    *tl.get_fully_paginated() = false;
-    // Set the portal list to the very bottom of the timeline.
-    portal_list.set_first_id_and_scroll(initial_items.len().saturating_sub(1), 0.0);
-    portal_list.set_tail_range(true);
- //   jump_to_bottom.update_visibility(cx, true);
-
-    *tl.get_items() = initial_items;
-    println!("*tl.get_items() len{:?} backward_pagination_batch {:?}", tl.get_items().len(), backward_pagination_batch);
-    *tl.get_backward_pagination() = backward_pagination_batch;
-    *done_loading = true;
-}
-
-pub fn handle_search_new_items<'a, S: Stateable<T>, T:TimelineItemAble + Clone>(
+pub fn handle_search_new_items(
     view: &View,
-    tl: &mut S, 
+    tl: &mut SearchResultState, 
     portal_list: &PortalListRef, 
     cx: &mut Cx, 
     ui: WidgetUid,
-    new_items: Vector<T>, 
+    new_items: Vector<SearchTimelineItem>, 
     forward_pagination_batch: Option<String>, 
     backward_pagination_batch: Option<String>,
 ) {
     if let Some(forward_pagination_batch) = forward_pagination_batch.clone() {
-        tl.get_batch_list().push(forward_pagination_batch);
+        tl.batch_list.push(forward_pagination_batch);
     }
-    *tl.get_backward_pagination() = backward_pagination_batch;
-    let b = tl.get_items();
+    tl.backward_pagination_batch = backward_pagination_batch;
     for item in new_items.iter().rev() {
-        b.push_front(item.clone());
+        tl.items.push_front(item.clone());
     }
 }
 
@@ -706,8 +655,7 @@ pub fn convert_result_categories_to_search_item(results: ResultCategories) -> Ve
     timeline_events
 }
 
-pub fn display_search(other_display: &mut RoomScreenOtherDisplay, view: &View, cx: &mut Cx, search_query: String) {
-    *other_display = RoomScreenOtherDisplay::SearchResult;
+pub fn display_search(view: &View, cx: &mut Cx, search_query: String) {
     view.view(id!(search_result_overlay)).set_visible(cx, true);
     view.search_result(id!(search_result_inner)).set_search_criteria(cx,search_query);
     view.view(id!(timeline)).set_visible(cx, false);

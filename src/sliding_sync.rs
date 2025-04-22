@@ -1083,6 +1083,8 @@ async fn async_worker(
                 req.next_batch = backward_pagination_batch;
                 let handle = Handle::current().spawn(async move {
                     sender.send(TimelineUpdate::PaginationRunning(PaginationDirection::Backwards)).unwrap();
+                    SignalToUI::set_ui_signal();
+                    tokio::time::sleep(std::time::Duration::new(5, 0)).await;
                     match client.send(req).await {
                         Ok(response) => {
                             sender.send(TimelineUpdate::PaginationIdle {
