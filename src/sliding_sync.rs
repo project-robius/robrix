@@ -25,7 +25,7 @@ use tokio::{
 };
 use unicode_segmentation::UnicodeSegmentation;
 use url::Url;
-use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::{Not, Range}, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
+use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet, HashMap}, ops::Not, path:: Path, sync::{Arc, LazyLock, Mutex, OnceLock}};
 use std::io;
 use ruma::{api::client::{filter::RoomEventFilter, search::search_events::v3::{Criteria, EventContext, OrderBy, Request}}, uint};
 use crate::{
@@ -1069,7 +1069,6 @@ async fn async_worker(
                 if include_all_rooms {
                     room_filter.rooms = None;
                 }
-                let search_term_clone = search_term.clone();
                 let mut criteria = Criteria::new(search_term);
                 criteria.filter = room_filter;
                 criteria.order_by = Some(OrderBy::Recent);
@@ -1094,13 +1093,13 @@ async fn async_worker(
                             let backward_pagination_batch = response.search_categories.room_events.next_batch.clone();
                             let count =  response.search_categories.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()).unwrap_or(0);
                             let search_timeline_events = convert_result_categories_to_search_item(response.search_categories);
-                            println!("search_timeline_events {:?}", search_timeline_events.len());
-                            log!("Successfully searched message in room {room_id} for {search_term_clone} forward_pagination_batch_token in {:?} backward_pagination_batch {:?}.", forward_pagination_batch_token, backward_pagination_batch);
-                            if let Err(e) = sender.send(TimelineUpdate::SearchNewItems {
-                                new_items: search_timeline_events, 
-                                forward_pagination_batch_token: forward_pagination_batch_token,
-                                backward_pagination_batch_token: backward_pagination_batch,
-                                count }) {
+                            if let Err(e) = sender.send(
+                                TimelineUpdate::SearchNewItems {
+                                    new_items: search_timeline_events,
+                                    forward_pagination_batch_token,
+                                    backward_pagination_batch_token: backward_pagination_batch,
+                                    count
+                                }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }

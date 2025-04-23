@@ -85,16 +85,13 @@ impl Widget for SearchBar {
         self.view.handle_event(cx, event, scope);
         self.widget_match_event(cx, event, scope);
         let area = self.text_input(id!(input)).area();
-        match event.hits(cx, area) {
-            Hit::FingerDown(..) => {
-                let widget_uid = self.widget_uid(); 
-                cx.widget_action(
-                    widget_uid,
-                    &scope.path,
-                    SearchBarAction::ClickSearch
-                );
-            }
-            _ => {}
+        if let Hit::FingerDown(..) = event.hits(cx, area) {
+            let widget_uid = self.widget_uid(); 
+            cx.widget_action(
+                widget_uid,
+                &scope.path,
+                SearchBarAction::ClickSearch
+            );
         }
     }
 

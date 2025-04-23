@@ -1,14 +1,14 @@
-use std::ops::{DerefMut, Index};
+use std::ops::DerefMut;
 
 use imbl::Vector;
 use indexmap::IndexMap;
 use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
-use ruma::{api::client::search::search_events::v3::ResultCategories, events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedRoomId, OwnedUserId, UserId};
+use ruma::{api::client::search::search_events::v3::ResultCategories, events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
-use crate::{event_preview::text_preview_of_other_state, home::room_screen::RoomScreenTooltipActions, room, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}, utils::unix_time_millis_to_datetime};
+use crate::{event_preview::text_preview_of_other_state, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
-use super::{loading_pane::{LoadingPaneState, LoadingPaneWidgetExt}, room_screen::{populate_message_view, populate_small_state_event, Eventable, ItemDrawnStatus, MessageOrSticker, MsgTypeAble, PreviousEventable, RoomScreen, RoomScreenOtherDisplay, SearchResultState, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListWidgetExt};
+use super::{new_message_context_menu::ContextMenuFromEvent, room_screen::{populate_message_view, populate_small_state_event, MessageViewFromEvent, ItemDrawnStatus, MessageOrSticker, PreviousMessageViewFromEvent, RoomScreen, RoomScreenOtherDisplay, SearchResultState, SmallStateEventContent, TimelineUiState}};
 
 live_design! {
     use link::theme::*;
@@ -275,7 +275,7 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
     let first_index = portal_list.first_id();
     if first_index == 0 && search_result_state.last_scrolled_index > 0 {
         if let Some(backward_pagination_batch) = &search_result_state.backward_pagination_batch {
-            if !search_result_state.batch_list.contains(&backward_pagination_batch) {
+            if !search_result_state.batch_list.contains(backward_pagination_batch) {
                 log!("Scrolled up from item {} --> 0, sending back search_result request for room {} &search_result_state.backward_pagination_batch {:?}",
                     search_result_state.last_scrolled_index, tl.room_id, search_result_state.backward_pagination_batch
                 );
@@ -313,7 +313,7 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
             let item = {
                 let tl_idx = item_id;
                 if item_id == 0 {
-                    let _ = WidgetRef::new_from_ptr(cx, room_screen.no_more_template).as_label().draw_all(cx, &mut Scope::empty());
+                    WidgetRef::new_from_ptr(cx, room_screen.no_more_template).as_label().draw_all(cx, &mut Scope::empty());
                 }
                 let Some(timeline_item) = tl_items.get(tl_idx) else {
                     // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
@@ -369,8 +369,8 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                                 text.formatted = Some(FormattedBody::html(formated_string));
                                             }
                                         }
-                                        let event = &EventableWrapperAEI(&event);
-                                        let prev_event = prev_event.map(|f| PreviousWrapperAEI(f));
+                                        let event = &MessageViewFromEventWrapperAEI(event);
+                                        let prev_event = prev_event.map(PreviousWrapperAEI);
                                         let message = MsgTypeWrapperRMC(&message);
                                         populate_message_view(
                                             cx,
@@ -394,7 +394,7 @@ pub fn search_result_draw_walk(room_screen: &mut RoomScreen, cx: &mut Cx2d, scop
                                 let state_key = state.state_key();
                                 if let Some(content) = state.original_content() {
                                     let wrapper = AnyStateEventContentWrapper(&content, state_key);
-                                    let event = &EventableWrapperAEI(event);
+                                    let event = &MessageViewFromEventWrapperAEI(event);
                                     populate_small_state_event(
                                         cx,
                                         list,
@@ -467,25 +467,12 @@ impl SearchTimelineItem{
         }
     }
     pub fn body_of_timeline_item(&self) -> Option<String> {
-        match &self.kind {
-            SearchTimelineItemKind::Event(event) => {
-                match event {
-                    AnyTimelineEvent::MessageLike(msg) => {
-                       match msg {
-                            AnyMessageLikeEvent::RoomMessage(room_msg) => {
-                                if let Some(room_msg) = room_msg.as_original() {
-                                    return Some(room_msg.content.body().to_string())
-                                }
-                            }
-                            _ => {}
-                       }
-                    }
-                    _ => {}
-                }
+        if let SearchTimelineItemKind::Event(AnyTimelineEvent::MessageLike(AnyMessageLikeEvent::RoomMessage(room_msg))) = &self.kind {
+            if let Some(room_msg) = room_msg.as_original() {
+                return Some(room_msg.content.body().to_string())
             }
-            _ => {}
         }
-        return None
+        None
     }
 }
 #[derive(Clone)]
@@ -516,10 +503,10 @@ pub enum SearchResultAction {
     None
 }
 
-
+/// Wrapper for `AnyStateEventContent` that provides the state key for the event.
 pub struct AnyStateEventContentWrapper<'a>(pub &'a AnyStateEventContent, pub &'a str);
 
-impl <'a>Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrapper<'a> {
+impl Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrapper<'_> {
     fn into(self) -> Option<AnyOtherFullStateEventContent> {
         match self.0.clone() {
             AnyStateEventContent::RoomAliases(p) => Some(AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content: p, prev_content: None})),
@@ -551,9 +538,13 @@ impl <'a>Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWr
     }
 }
 
-pub struct EventableWrapperAEI<'a>(pub &'a AnyTimelineEvent);
+/// A wrapper for `AnyTimelineEvent` that implements `MessageViewFromEvent`.
+pub struct MessageViewFromEventWrapperAEI<'a>(pub &'a AnyTimelineEvent);
 
-impl <'a> Eventable for EventableWrapperAEI<'a> {
+/// A trait for abstracting over the different types of timeline events for populating messages.
+/// 
+/// This is used for populating messages in the timeline and the search result.
+impl MessageViewFromEvent for MessageViewFromEventWrapperAEI<'_> {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
         self.0.origin_server_ts()
     }
@@ -596,20 +587,20 @@ impl <'a> Eventable for EventableWrapperAEI<'a> {
 }
 
 
-impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventContentWrapper<'a> {
+impl SmallStateEventContent<MessageViewFromEventWrapperAEI<'_>> for AnyStateEventContentWrapper<'_> {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
         list: &mut PortalList,
         item_id: usize,
         item: WidgetRef,
-        _event_tl_item: &EventableWrapperAEI,
+        _event_tl_item: &MessageViewFromEventWrapperAEI,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
     ) -> (WidgetRef, ItemDrawnStatus) {
         let Some(other_state) = self.into() else { return (list.item(cx, item_id, live_id!(Empty)), ItemDrawnStatus::new()) };
-        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, &self.1) {
+        let item = if let Some(text_preview) = text_preview_of_other_state(&other_state, self.1) {
             item.label(id!(content))
                 .set_text(cx, &text_preview.format_with(username));
             new_drawn_status.content_drawn = true;
@@ -623,22 +614,20 @@ impl  <'a> SmallStateEventContent<EventableWrapperAEI<'_>> for AnyStateEventCont
     }
 }
 
+/// A wrapper for `AnyTimelineEvent` that implements `PreviousMessageViewFromEvent`.
 pub struct PreviousWrapperAEI<'a>(pub &'a AnyTimelineEvent);
-impl <'a> PreviousEventable<EventableWrapperAEI<'a>> for PreviousWrapperAEI<'a> {
-    fn use_compact(&self, current: &EventableWrapperAEI<'a>) -> bool {
+impl <'a> PreviousMessageViewFromEvent<MessageViewFromEventWrapperAEI<'a>> for PreviousWrapperAEI<'a> {
+    fn use_compact(&self, current: &MessageViewFromEventWrapperAEI<'a>) -> bool {
         let prev_msg_sender = self.0.sender();
         let current_sender = current.0.sender();
-        let compact_view = {
-            prev_msg_sender == current_sender && current.0.origin_server_ts().0.checked_sub(self.0.origin_server_ts().0)
-                // Use compact_view within a day
-                .is_some_and(|d| d < uint!(86400000))
-        };
-        compact_view
+        prev_msg_sender == current_sender && current.0.origin_server_ts().0.checked_sub(self.0.origin_server_ts().0)
+            // Use compact_view within a day
+            .is_some_and(|d| d < uint!(86400000))
     }
 }
 
 pub struct MsgTypeWrapperRMC<'a>(pub &'a RoomMessageEventContent);
-impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
+impl ContextMenuFromEvent for MsgTypeWrapperRMC<'_> {
     fn msgtype(&self) -> &MessageType {
         &self.0.msgtype
     }
@@ -654,11 +643,7 @@ impl <'a>MsgTypeAble for MsgTypeWrapperRMC<'a> {
 }
 
 pub fn handle_search_new_items(
-    view: &View,
     tl: &mut SearchResultState, 
-    portal_list: &PortalListRef, 
-    cx: &mut Cx, 
-    ui: WidgetUid,
     new_items: Vector<SearchTimelineItem>, 
     forward_pagination_batch: Option<String>, 
     backward_pagination_batch: Option<String>,

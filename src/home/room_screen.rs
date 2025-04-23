@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, display_search, handle_search_new_items, hide_search, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails, ContextMenuFromEvent}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, display_search, handle_search_new_items, hide_search, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -1003,7 +1003,7 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
-            self.process_timeline_updates(cx, &portal_list, &search_portal_list);
+            self.process_timeline_updates(cx, &portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
             // but it doesn't hurt to do it here.
@@ -1018,7 +1018,6 @@ impl Widget for RoomScreen {
                     let Some(tl_state) = self.tl_state.as_mut() else { return };
                     if tl_state.search_result_state.search_term.is_empty() {
                         self.other_display = RoomScreenOtherDisplay::None;
-                        //hide_search(&mut self.other_display, &self.view, cx, &mut tl_state.search_result_state);
                         return; 
                     }
                     submit_async_request(MatrixRequest::SearchMessages { 
@@ -1408,12 +1407,12 @@ impl Widget for RoomScreen {
                     };
                     let (item, item_new_draw_status) = match timeline_item.kind() {
                         TimelineItemKind::Event(event_tl_item) => {
-                            let event_tl_item_wrapper = &EventableWrapperETI(&event_tl_item);
+                            let event_tl_item_wrapper = &MessageViewFromEventWrapperETI(event_tl_item);
                             match event_tl_item.content() {
                                 TimelineItemContent::Message(message) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                    let prev_event = prev_event.map(|f| PreviousWrapperTI(f));
-                                    let message = &MsgTypeWrapperTM(message);
+                                    let prev_event = prev_event.map(PreviousWrapperTI);
+                                    let message = &MessageWrapperTM(message);
                                     populate_message_view(
                                         cx,
                                         list,
@@ -1431,14 +1430,14 @@ impl Widget for RoomScreen {
                                 }
                                 TimelineItemContent::Sticker(sticker) => {
                                     let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i));
-                                    let prev_event = prev_event.map(|f| PreviousWrapperTI(f));
+                                    let prev_event = prev_event.map(PreviousWrapperTI);
                                     populate_message_view(
                                         cx,
                                         list,
                                         item_id,
                                         room_id,
                                         event_tl_item_wrapper,
-                                        MessageOrSticker::Sticker::<MsgTypeWrapperTM>(sticker.content()),
+                                        MessageOrSticker::Sticker::<MessageWrapperTM>(sticker.content()),
                                         prev_event.as_ref(),
                                         &mut tl_state.media_cache,
                                         &tl_state.user_power,
@@ -1492,7 +1491,7 @@ impl Widget for RoomScreen {
                         }
                         TimelineItemKind::Virtual(VirtualTimelineItem::DateDivider(millis)) => {
                             let item = list.item(cx, item_id, live_id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(&millis)
+                            let text = unix_time_millis_to_datetime(millis)
                                 // format the time as a shortened date (Sat, Sept 5, 2021)
                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
                                 .unwrap_or_else(|| format!("{:?}", millis));
@@ -1525,7 +1524,7 @@ impl RoomScreen {
     /// Processes all pending background updates to the currently-shown timeline.
     ///
     /// Redraws this RoomScreen view if any updates were applied.
-    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef, search_portal_list: &PortalListRef) {
+    fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
         let search_result_widget = self.search_result(id!(search_result_inner));
@@ -1794,7 +1793,7 @@ impl RoomScreen {
                     cx.action(SearchResultAction::Success { count });
                     self.other_display = RoomScreenOtherDisplay::SearchResult;
                     done_loading = true;
-                    handle_search_new_items(&self.view, &mut tl.search_result_state, search_portal_list, cx, ui, new_items, forward_pagination_batch_token, backward_pagination_batch_token);
+                    handle_search_new_items(&mut tl.search_result_state, new_items, forward_pagination_batch_token, backward_pagination_batch_token);
                 }
             }
         }
@@ -2443,8 +2442,7 @@ impl RoomScreen {
         // the timeline will also be redrawn.
         if first_time_showing_room {
             let portal_list = self.portal_list(id!(timeline.list));
-            let search_portal_list = self.portal_list(id!(search_timeline.list));
-            self.process_timeline_updates(cx, &portal_list, &search_portal_list);
+            self.process_timeline_updates(cx, &portal_list);
         }
 
         self.redraw(cx);
@@ -2677,12 +2675,6 @@ impl RoomScreen {
         if let Some(SearchResultAction::Close) = action.downcast_ref() {
             self.search_result(id!(search_result_inner)).reset_summary(cx);
             self.view(id!(search_result_overlay)).set_visible(cx, false);
-            // self.other_display = RoomScreenOtherDisplay::None;
-            // self.view(id!(timeline)).set_visible(cx, true);
-            // self.view(id!(search_timeline)).set_visible(cx, false);
-            // if let Some(ref mut tl_state) = self.tl_state {
-            //     tl_state.search_result_state = SearchResultState::default();
-            // }
             hide_search(&mut self.other_display, &self.view, cx, &mut self.tl_state);
         }
         let widget_action = action.as_widget_action();
@@ -3046,18 +3038,13 @@ pub struct SearchResultState {
     pub include_all_rooms: bool,
     pub content_drawn_since_last_update: RangeSet<usize>,
     pub profile_drawn_since_last_update: RangeSet<usize>,
-
-    /// The index of the first item shown in the timeline's PortalList from *before* the last "jump".
-    ///
-    /// This index is saved before the timeline undergoes any jumps, e.g.,
-    /// receiving new items, major scroll changes, or other timeline view jumps.
-    prev_first_index: Option<usize>,
 }
+
 impl SearchResultState {
     pub fn new(room_id: OwnedRoomId) -> Self {
-        let mut state = Self::default();
-        state.room_id = Some(room_id);
-        state
+        SearchResultState { 
+            room_id: Some(room_id), ..Default::default()
+        }
     }
 }
 #[derive(Default, Debug)]
@@ -3172,11 +3159,11 @@ impl ItemDrawnStatus {
 //     Message(&'e timeline::Message),
 //     Sticker(&'e StickerEventContent),
 // }
-pub enum MessageOrSticker<'e, T:MsgTypeAble> {
+pub enum MessageOrSticker<'e, T:ContextMenuFromEvent> {
     Message(&'e T),
     Sticker(&'e StickerEventContent),
 }
-impl <T> MessageOrSticker<'_, T> where T:MsgTypeAble{
+impl <T> MessageOrSticker<'_, T> where T:ContextMenuFromEvent{
     /// Returns the type of this message or sticker.
     pub fn get_type(&self) -> MessageOrStickerType {
         match self {
@@ -3224,15 +3211,10 @@ impl <T> MessageOrSticker<'_, T> where T:MsgTypeAble{
     }
 }
 
-pub trait MsgTypeAble {
-    fn msgtype(&self) -> &MessageType;
-    fn body(&self) -> &str;
-    fn in_reply_to(&self) -> Option<&InReplyToDetails>;
-    fn is_searched_result(&self) -> bool;
-}
-pub struct MsgTypeWrapperTM<'a>(pub &'a timeline::Message);
+/// A wrapper around a [`timeline::Message`] that implements [`ContextMenuFromEvent`].
+pub struct MessageWrapperTM<'a>(pub &'a timeline::Message);
 
-impl <'a>MsgTypeAble for MsgTypeWrapperTM<'a> {
+impl ContextMenuFromEvent for MessageWrapperTM<'_> {
     fn msgtype(&self) -> &MessageType {
         self.0.msgtype()
     }
@@ -3309,7 +3291,8 @@ impl MessageOrStickerType<'_> {
         }
     }
 }
-pub trait Eventable {
+/// Abstracts over a message or sticker that can be displayed in a timeline.
+pub trait MessageViewFromEvent {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch;
     fn event_id(&self) -> Option<&EventId>;
     fn sender(&self) -> &UserId;
@@ -3325,8 +3308,9 @@ pub trait Eventable {
     fn room_id(&self) -> Option<&ruma::RoomId>;
 }
 
-pub struct EventableWrapperETI<'a>(pub &'a EventTimelineItem);
-impl <'a> Eventable for EventableWrapperETI<'a> {
+/// A wrapper around a [`EventTimelineItem`] that implements [`MessageViewFromEvent`].
+pub struct MessageViewFromEventWrapperETI<'a>(pub &'a EventTimelineItem);
+impl MessageViewFromEvent for MessageViewFromEventWrapperETI<'_> {
     fn timestamp(&self) -> MilliSecondsSinceUnixEpoch {
         self.0.timestamp()
     }
@@ -3368,13 +3352,15 @@ impl <'a> Eventable for EventableWrapperETI<'a> {
     }
 }
 
-pub trait PreviousEventable<T:Eventable> {
+/// A trait over a function to decide whether to use a compact view for a message.
+pub trait PreviousMessageViewFromEvent<T:MessageViewFromEvent> {
     fn use_compact(&self, current: &T) -> bool;
 }
 
+/// A wrapper around a [`TimelineItem`] that implements [`PreviousMessageViewFromEvent`].
 pub struct PreviousWrapperTI<'a>(pub &'a Arc<TimelineItem>);
-impl <'a> PreviousEventable<EventableWrapperETI<'a>> for PreviousWrapperTI<'a> {
-    fn use_compact(&self, current: &EventableWrapperETI<'a>) -> bool {
+impl <'a> PreviousMessageViewFromEvent<MessageViewFromEventWrapperETI<'a>> for PreviousWrapperTI<'a> {
+    fn use_compact(&self, current: &MessageViewFromEventWrapperETI<'a>) -> bool {
         let prev_event = Some(self.0);
         let use_compact_view = match prev_event.map(|p| p.kind()) {
             Some(TimelineItemKind::Event(prev_event_tl_item)) => match prev_event_tl_item.content() {
@@ -3411,7 +3397,7 @@ pub fn populate_message_view<T,P,M>(
     is_contextual: bool,
     item_drawn_status: ItemDrawnStatus,
     room_screen_widget_uid: WidgetUid,
-) -> (WidgetRef, ItemDrawnStatus) where T: Eventable, P: PreviousEventable<T>, M: MsgTypeAble {
+) -> (WidgetRef, ItemDrawnStatus) where T: MessageViewFromEvent, P: PreviousMessageViewFromEvent<T>, M: ContextMenuFromEvent {
     let mut new_drawn_status = item_drawn_status;
     let ts_millis = event_tl_item.timestamp();
 
@@ -3420,7 +3406,7 @@ pub fn populate_message_view<T,P,M>(
 
     // Determine whether we can use a more compact UI view that hides the user's profile info
     // if the previous message (including stickers) was sent by the same user within 10 minutes.
-    let use_compact_view = prev_event.map_or(false, |p| p.use_compact(event_tl_item));
+    let use_compact_view = prev_event.is_some_and(|p| p.use_compact(event_tl_item));
     let has_html_body: bool;
 
     // Sometimes we need to call this up-front, so we save the result in this variable
@@ -3784,7 +3770,7 @@ pub fn populate_message_view<T,P,M>(
             let (username, profile_drawn) = set_username_and_get_avatar_retval.unwrap_or_else(||
                 item.avatar(id!(profile.avatar)).set_avatar_and_get_username(
                     cx,
-                    event_tl_item.room_id().unwrap_or(&room_id),
+                    event_tl_item.room_id().unwrap_or(room_id),
                     event_tl_item.sender(),
                     event_tl_item.sender_profile(),
                     event_tl_item.event_id(),
@@ -3830,7 +3816,7 @@ pub fn populate_message_view<T,P,M>(
         item_id,
         related_event_id: replied_to_event_id,
         room_screen_widget_uid,
-        abilities: MessageAbilities::from_user_power_and_event_generic(
+        abilities: MessageAbilities::from_user_power_and_event(
             user_power_levels,
             event_tl_item,
             &message,
@@ -4279,7 +4265,7 @@ fn populate_preview_of_timeline_item(
 
 /// A trait for abstracting over the different types of timeline events
 /// that can be displayed in a `SmallStateEvent` widget.
-pub trait SmallStateEventContent<T:Eventable> {
+pub trait SmallStateEventContent<T:MessageViewFromEvent> {
     /// Populates the *content* (not the profile) of the given `item` with data from
     /// the given `event_tl_item` and `self` (the specific type of event content).
     ///
@@ -4310,14 +4296,14 @@ pub trait SmallStateEventContent<T:Eventable> {
 /// An empty marker struct used for populating redacted messages.
 struct RedactedMessageEventMarker;
 
-impl SmallStateEventContent<EventableWrapperETI<'_>> for RedactedMessageEventMarker {
+impl SmallStateEventContent<MessageViewFromEventWrapperETI<'_>> for RedactedMessageEventMarker {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
         _list: &mut PortalList,
         _item_id: usize,
         item: WidgetRef,
-        event_tl_item: &EventableWrapperETI,
+        event_tl_item: &MessageViewFromEventWrapperETI,
         original_sender: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
@@ -4332,14 +4318,14 @@ impl SmallStateEventContent<EventableWrapperETI<'_>> for RedactedMessageEventMar
     }
 }
 
-impl SmallStateEventContent<EventableWrapperETI<'_>> for timeline::OtherState {
+impl SmallStateEventContent<MessageViewFromEventWrapperETI<'_>> for timeline::OtherState {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
         list: &mut PortalList,
         item_id: usize,
         item: WidgetRef,
-        _event_tl_item: &EventableWrapperETI,
+        _event_tl_item: &MessageViewFromEventWrapperETI,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
@@ -4358,14 +4344,14 @@ impl SmallStateEventContent<EventableWrapperETI<'_>> for timeline::OtherState {
     }
 }
 
-impl SmallStateEventContent<EventableWrapperETI<'_>> for MemberProfileChange {
+impl SmallStateEventContent<MessageViewFromEventWrapperETI<'_>> for MemberProfileChange {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
         _list: &mut PortalList,
         _item_id: usize,
         item: WidgetRef,
-        _event_tl_item: &EventableWrapperETI,
+        _event_tl_item: &MessageViewFromEventWrapperETI,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
@@ -4379,14 +4365,14 @@ impl SmallStateEventContent<EventableWrapperETI<'_>> for MemberProfileChange {
     }
 }
 
-impl SmallStateEventContent<EventableWrapperETI<'_>> for RoomMembershipChange {
+impl SmallStateEventContent<MessageViewFromEventWrapperETI<'_>> for RoomMembershipChange {
     fn populate_item_content(
         &self,
         cx: &mut Cx,
         list: &mut PortalList,
         item_id: usize,
         item: WidgetRef,
-        _event_tl_item: &EventableWrapperETI,
+        _event_tl_item: &MessageViewFromEventWrapperETI,
         username: &str,
         _item_drawn_status: ItemDrawnStatus,
         mut new_drawn_status: ItemDrawnStatus,
@@ -4412,7 +4398,7 @@ impl SmallStateEventContent<EventableWrapperETI<'_>> for RoomMembershipChange {
 ///
 /// The content of the returned widget is populated with data from the
 /// given room membership change and its parent `EventTimelineItem`.
-pub fn populate_small_state_event<T: Eventable>(
+pub fn populate_small_state_event<T: MessageViewFromEvent>(
     cx: &mut Cx,
     list: &mut PortalList,
     item_id: usize,
@@ -4491,7 +4477,7 @@ pub fn set_timestamp(
 }
 
 /// Returns the display name of the sender of the given `event_tl_item`, if available.
-fn get_profile_display_name<T: Eventable>(event_tl_item: &T) -> Option<String> {
+fn get_profile_display_name<T: MessageViewFromEvent>(event_tl_item: &T) -> Option<String> {
     if let Some(TimelineDetails::Ready(profile)) = event_tl_item.sender_profile() {
         profile.display_name.clone()
     } else {
