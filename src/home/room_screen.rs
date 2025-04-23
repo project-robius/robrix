@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, handle_search_new_items, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{handle_search_new_items, populate_search_result_item, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchResultWidgetRefExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -977,6 +977,7 @@ pub struct RoomScreen {
     #[rust] search_delay_timer: Timer,
     #[live] pub no_more_template: Option<LivePtr>,
     #[rust] pub search_result_timeline_view: Option<ViewRef>,
+    #[rust] pub search_bar_widget_uid: Option<WidgetUid>
 }
 
 impl Drop for RoomScreen {
@@ -1362,13 +1363,12 @@ impl Widget for RoomScreen {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let room_screen_widget_uid = self.widget_uid();
+        let search_timeline_widget = self.view(id!(search_timeline));
+        let rooms_list_widget = self.rooms_list(id!(rooms_list));
         if self.tl_state.is_none() {
             // Tl_state may not be ready after dock loading.
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
-        }
-        if self.view(id!(search_timeline)).visible() {
-            return room_search_result::search_result_draw_walk(self, &self.rooms_list(id!(rooms_list)), cx, scope, walk);
         }
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -1382,18 +1382,28 @@ impl Widget for RoomScreen {
             let Some(tl_state) = self.tl_state.as_mut() else {
                 return DrawStep::done();
             };
-            let room_id = &tl_state.room_id;
-            let tl_items = &tl_state.items;
 
             // Set the portal list's range based on the number of timeline items.
-            let last_item_id = tl_items.len();
+            let last_item_id = if !search_timeline_widget.visible() {
+                tl_state.items.len() 
+            } else {
+                tl_state.search_result_state.items.len()
+            };
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
 
             while let Some(item_id) = list.next_visible_item(cx) {
-                let item = {
+                
+                let item = if search_timeline_widget.visible() {
+                    let Some(item) = populate_search_result_item(cx, list, item_id, tl_state, &rooms_list_widget, room_screen_widget_uid, self.no_more_template) else {
+                        continue
+                    };
+                    item
+                } else {
                     let tl_idx = item_id;
+                    let room_id = &tl_state.room_id;
+                    let tl_items = &tl_state.items;
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -1792,11 +1802,18 @@ impl RoomScreen {
                 TimelineUpdate::OwnUserReadReceipt(receipt) => {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
-                TimelineUpdate::SearchNewItems { new_items, forward_pagination_batch_token, backward_pagination_batch_token, count } => {
+                TimelineUpdate::SearchNewItems { new_items, forward_pagination_batch_token, backward_pagination_batch_token, highlights, count } => {
                     cx.action(SearchResultAction::Success { count });
                     self.view.view(id!(search_timeline)).set_visible(cx, true);
                     done_loading = true;
-                    handle_search_new_items(&mut tl.search_result_state, new_items, forward_pagination_batch_token, backward_pagination_batch_token);
+                    tl.search_result_state.highlighted_strings = highlights;
+                    if let Some(forward_pagination_batch) = forward_pagination_batch_token.clone() {
+                        tl.search_result_state.batch_list.push(forward_pagination_batch);
+                    }
+                    tl.search_result_state.backward_pagination_batch = backward_pagination_batch_token;
+                    for item in new_items.iter().rev() {
+                        tl.search_result_state.items.push_front(item.clone());
+                    }
                 }
             }
         }
@@ -2675,6 +2692,7 @@ impl RoomScreen {
         action: &Action,
         scope: &mut Scope,
     ) {
+        // use widget action!!
         if let Some(SearchResultAction::Close) = action.downcast_ref() {
             self.search_result(id!(search_result_plane)).reset(cx);
             self.search_result(id!(search_result_plane)).set_visible(cx, false);
@@ -2691,6 +2709,7 @@ impl RoomScreen {
                     let app_state = scope.data.get::<AppState>().unwrap();
                     (app_state.rooms_panel.selected_room.clone(), app_state.search_widget)
                 } {
+                    self.search_bar_widget_uid = Some(search_widget_id);
                     if let Some(widget_action) = widget_action {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
                             self.search_delay_timer = cx.start_timeout(1.0);
@@ -2700,7 +2719,6 @@ impl RoomScreen {
                             }
                             self.search_result(id!(search_result_plane)).set_search_criteria(cx, search_query.clone());
                             self.view(id!(timeline)).set_visible(cx, false);
-                            //display_search(&self, cx, search_query);
                         }
                     }
                 }
@@ -2757,6 +2775,12 @@ impl RoomScreenRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
+    }
+    pub fn close_search(&self, cx: &mut Cx) {
+        self.search_result(id!(search_result_plane)).reset(cx);
+        self.search_result(id!(search_result_plane)).set_visible(cx, false);
+        let Some(search_bar_widget_uid) = self.borrow().and_then(|inner| inner.search_bar_widget_uid) else { return };
+        cx.widget_action(search_bar_widget_uid, &Scope::empty().path, SearchBarAction::Clear);
     }
 }
 
@@ -2881,6 +2905,7 @@ pub enum TimelineUpdate {
         new_items: Vector<SearchTimelineItem>,
         forward_pagination_batch_token: Option<String>,
         backward_pagination_batch_token: Option<String>,
+        highlights: Vec<String>,
         count: u32
     },
 }
@@ -2986,36 +3011,6 @@ pub struct TimelineUiState {
     latest_own_user_receipt: Option<Receipt>,
     pub search_result_state: SearchResultState
 }
-// impl Stateable<TimelineItemWrapper> for TimelineUiState {
-//     fn get_content_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
-//         &mut self.content_drawn_since_last_update
-//     }
-//     fn get_profile_drawn_since_last_update(&mut self) -> &mut RangeSet<usize> {
-//         &mut self.profile_drawn_since_last_update
-//     }
-//     fn get_fully_paginated(&mut self) -> &mut bool {
-//         &mut self.fully_paginated
-//     }
-//     fn get_items(&mut self) -> &mut Vector<TimelineItemWrapper> {
-//         &mut self.items
-//     }
-
-//     fn room_id(&self) -> Option<OwnedRoomId> {
-//         Some(self.room_id.clone())
-//     }
-//     fn get_prev_first_index(&mut self) -> &mut Option<usize> {
-//         &mut self.prev_first_index
-//     }
-//     fn get_scrolled_past_read_marker(&mut self) -> &mut bool {
-//         &mut self.scrolled_past_read_marker
-//     }
-//     fn get_backward_pagination(&mut self) -> &mut Option<String> {
-//         &mut self.backward_pagination_batch
-//     }
-//     fn get_batch_list(&mut self) -> &mut Vec<String> {
-//         &mut self.batch_list
-//     }
-// }
 
 #[derive(Default)]
 pub struct SearchResultState {

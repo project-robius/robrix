@@ -1091,12 +1091,14 @@ async fn async_worker(
                             }).unwrap();
                             let backward_pagination_batch = response.search_categories.room_events.next_batch.clone();
                             let count =  response.search_categories.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()).unwrap_or(0);
+                            let highlights = response.search_categories.room_events.highlights.clone();
                             let search_timeline_events = convert_result_categories_to_search_item(response.search_categories);
                             if let Err(e) = sender.send(
                                 TimelineUpdate::SearchNewItems {
                                     new_items: search_timeline_events,
                                     forward_pagination_batch_token,
                                     backward_pagination_batch_token: backward_pagination_batch,
+                                    highlights,
                                     count
                                 }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");

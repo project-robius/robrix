@@ -234,11 +234,10 @@ impl MainDesktopUI {
                 self.most_recently_selected_room = None;
             }
         }
-
         dock.close_tab(cx, tab_id);
         self.tab_to_close = None;
         self.open_rooms.remove(&tab_id);
-        cx.action(SearchResultAction::Close);
+        dock.item(tab_id).as_room_screen().close_search(cx);
     }
 }
 

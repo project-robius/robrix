@@ -77,6 +77,8 @@ pub enum SearchBarAction {
     ResetSearch,
     /// The user has clicked the search bar.
     ClickSearch,
+    /// The user has clear the text in the search bar.
+    Clear,
     None
 }
 
@@ -86,13 +88,13 @@ impl Widget for SearchBar {
         self.widget_match_event(cx, event, scope);
         let area = self.text_input(id!(input)).area();
         if let Hit::FingerDown(..) = event.hits(cx, area) {
-            let widget_uid = self.widget_uid(); 
-            cx.widget_action(
-                widget_uid,
-                &scope.path,
-                SearchBarAction::ClickSearch
-            );
-        }
+                let widget_uid = self.widget_uid(); 
+                cx.widget_action(
+                    widget_uid,
+                    &scope.path,
+                    SearchBarAction::ClickSearch
+                );
+            }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -134,6 +136,12 @@ impl WidgetMatchEvent for SearchBar {
                 &scope.path,
                 SearchBarAction::ResetSearch,
             );
+        }
+        for action in actions {
+            if let SearchBarAction::Clear = action.as_widget_action().widget_uid_eq(self.widget_uid()).cast() {
+                println!("clear search bar");
+                self.text_input(id!(input)).set_text(cx, "");
+            }
         }
     }
 }

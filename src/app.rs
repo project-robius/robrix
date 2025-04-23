@@ -305,10 +305,6 @@ impl MatchEvent for App {
             if let VerificationModalAction::Close = action.as_widget_action().cast() {
                 self.ui.modal(id!(verification_modal)).close(cx);
             }
-
-            if let Some(SearchResultAction::Close) = action.downcast_ref() {
-                self.ui.search_bar(id!(home_screen_search_bar)).text_input(id!(input)).set_text(cx, "");
-            }
             // // message source modal handling.
             // match action.as_widget_action().cast() {
             //     MessageAction::MessageSourceModalOpen { room_id: _, event_id: _, original_json: _ } => {
