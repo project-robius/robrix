@@ -109,7 +109,7 @@ live_design! {
             color: #d3f297,
         }
 
-        <Progress> {}
+        progress = <Progress> {}
         <TipContent> {}
     }
 
