@@ -146,7 +146,7 @@ live_design! {
                         }
                     }
 
-                    popup = <RobrixPopupNotification> {}
+                    test_popup = <RobrixPopupNotification> {}
                 }
             } // end of body
         }
@@ -205,7 +205,7 @@ impl MatchEvent for App {
                 log!("Received LoginAction::LoginSuccess, hiding login view.");
                 self.app_state.logged_in = true;
                 self.update_login_visibility(cx);
-                self.ui.robrix_popup_notification(id!(popup)).open(cx);
+                self.ui.robrix_popup_notification(id!(test_popup)).open(cx);
                 self.ui.redraw(cx);
             }
 
