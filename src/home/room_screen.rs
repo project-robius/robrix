@@ -971,8 +971,6 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] pub tl_state: Option<TimelineUiState>,
-    /// By typing inside the Search input, search result
-    #[rust] pub other_display: RoomScreenOtherDisplay,
     /// The timer for sending a search request after a delay when user stops typing.
     #[rust] search_delay_timer: Timer,
     #[live] pub no_more_template: Option<LivePtr>,
@@ -1017,12 +1015,13 @@ impl Widget for RoomScreen {
                 if let Some(room_id) = &self.room_id {
                     let Some(tl_state) = self.tl_state.as_mut() else { return };
                     if tl_state.search_result_state.search_term.is_empty() {
-                        self.other_display = RoomScreenOtherDisplay::None;
+                        self.view(id!(search_timeline)).set_visible(cx, false);
                         return; 
                     }
+                    tl_state.search_result_state.include_all_rooms = false;
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id: room_id.clone(), 
-                        include_all_rooms: false,
+                        include_all_rooms: tl_state.search_result_state.include_all_rooms,
                         search_term: tl_state.search_result_state.search_term.clone(),
                         backward_pagination_batch: None,
                     });
@@ -1135,7 +1134,7 @@ impl Widget for RoomScreen {
                 message_action_bar_popup.close(cx);
             }
             */
-            if let RoomScreenOtherDisplay::None = self.other_display {
+            if !self.view(id!(search_timeline)).visible() {
                 // Set visibility of loading message banner based of pagination logic
                 self.send_pagination_request_based_on_scroll_pos(cx, actions, &portal_list);
                 // Handle sending any read receipts for the current logged-in user.
@@ -1238,9 +1237,10 @@ impl Widget for RoomScreen {
                     self.search_result(id!(search_result_inner)).reset_summary(cx);
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     tl.items.clear();
+                    tl.search_result_state.include_all_rooms = true;
                     submit_async_request(MatrixRequest::SearchMessages { 
                         room_id, 
-                        include_all_rooms: true, 
+                        include_all_rooms: tl.search_result_state.include_all_rooms, 
                         search_term: tl.search_result_state.search_term.clone(), 
                         backward_pagination_batch: None,
                     });
@@ -1365,9 +1365,10 @@ impl Widget for RoomScreen {
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
-        if let RoomScreenOtherDisplay::SearchResult = self.other_display {
+        if self.view(id!(search_timeline)).visible() {
             return room_search_result::search_result_draw_walk(self, cx, scope, walk);
         }
+
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             //let portal_list_ref = self.view.portal_list(id!(timeline.list));
@@ -1791,7 +1792,7 @@ impl RoomScreen {
                 }
                 TimelineUpdate::SearchNewItems { new_items, forward_pagination_batch_token, backward_pagination_batch_token, count } => {
                     cx.action(SearchResultAction::Success { count });
-                    self.other_display = RoomScreenOtherDisplay::SearchResult;
+                    self.view.view(id!(search_timeline)).set_visible(cx, true);
                     done_loading = true;
                     handle_search_new_items(&mut tl.search_result_state, new_items, forward_pagination_batch_token, backward_pagination_batch_token);
                 }
@@ -2036,7 +2037,7 @@ impl RoomScreen {
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
 
-                    if let Some(text) = if matches!(self.other_display, RoomScreenOtherDisplay::None) {
+                    if let Some(text) = if !self.view.view(id!(search_timeline)).visible() {
                         tl.items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().map(body_of_timeline_item))
@@ -2675,7 +2676,7 @@ impl RoomScreen {
         if let Some(SearchResultAction::Close) = action.downcast_ref() {
             self.search_result(id!(search_result_inner)).reset_summary(cx);
             self.view(id!(search_result_overlay)).set_visible(cx, false);
-            hide_search(&mut self.other_display, &self.view, cx, &mut self.tl_state);
+            hide_search(&self.view, cx, &mut self.tl_state, self.room_id.clone());
         }
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
@@ -2708,7 +2709,7 @@ impl RoomScreen {
                             if let Some(room_id) = &self.room_id {
                                 tl.search_result_state = SearchResultState::new(room_id.clone());
                             }
-                            self.other_display = RoomScreenOtherDisplay::None;
+                            self.view(id!(search_timeline)).set_visible(cx, false);
                             self.view(id!(search_result_overlay)).set_visible(cx, false);
                         }
                     }
@@ -2746,15 +2747,6 @@ impl RoomScreenRef {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
     }
-}
-
-/// Various display types other than timeline in the room screen  
-#[derive(Clone, Debug, DefaultNone)]
-pub enum RoomScreenOtherDisplay{
-    /// Display Search Result
-    SearchResult,
-    /// Display timeline
-    None
 }
 
 /// Actions for the room screen's tooltip.

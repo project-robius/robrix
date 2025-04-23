@@ -8,7 +8,7 @@ use ruma::{api::client::search::search_events::v3::ResultCategories, events::{re
 
 use crate::{event_preview::text_preview_of_other_state, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
-use super::{new_message_context_menu::ContextMenuFromEvent, room_screen::{populate_message_view, populate_small_state_event, MessageViewFromEvent, ItemDrawnStatus, MessageOrSticker, PreviousMessageViewFromEvent, RoomScreen, RoomScreenOtherDisplay, SearchResultState, SmallStateEventContent, TimelineUiState}};
+use super::{new_message_context_menu::ContextMenuFromEvent, room_screen::{populate_message_view, populate_small_state_event, MessageViewFromEvent, ItemDrawnStatus, MessageOrSticker, PreviousMessageViewFromEvent, RoomScreen, SearchResultState, SmallStateEventContent, TimelineUiState}};
 
 live_design! {
     use link::theme::*;
@@ -506,9 +506,9 @@ pub enum SearchResultAction {
 /// Wrapper for `AnyStateEventContent` that provides the state key for the event.
 pub struct AnyStateEventContentWrapper<'a>(pub &'a AnyStateEventContent, pub &'a str);
 
-impl Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrapper<'_> {
-    fn into(self) -> Option<AnyOtherFullStateEventContent> {
-        match self.0.clone() {
+impl From<&AnyStateEventContentWrapper<'_>> for Option<AnyOtherFullStateEventContent> {
+    fn from(val: &AnyStateEventContentWrapper<'_>) -> Self {
+        match val.0.clone() {
             AnyStateEventContent::RoomAliases(p) => Some(AnyOtherFullStateEventContent::RoomAliases(FullStateEventContent::Original { content: p, prev_content: None})),
             AnyStateEventContent::RoomAvatar(p) => Some(AnyOtherFullStateEventContent::RoomAvatar(FullStateEventContent::Original { content: p, prev_content: None})),
             AnyStateEventContent::RoomCanonicalAlias(p) => Some(AnyOtherFullStateEventContent::RoomCanonicalAlias(FullStateEventContent::Original { content: p, prev_content: None})),
@@ -535,9 +535,9 @@ impl Into<Option<AnyOtherFullStateEventContent>> for &AnyStateEventContentWrappe
             AnyStateEventContent::RoomMember(_) => None,
             _ => None,
         }
+
     }
 }
-
 /// A wrapper for `AnyTimelineEvent` that implements `MessageViewFromEvent`.
 pub struct MessageViewFromEventWrapperAEI<'a>(pub &'a AnyTimelineEvent);
 
@@ -694,15 +694,13 @@ pub fn display_search(view: &View, cx: &mut Cx, search_query: String) {
     view.view(id!(search_result_overlay)).set_visible(cx, true);
     view.search_result(id!(search_result_inner)).set_search_criteria(cx,search_query);
     view.view(id!(timeline)).set_visible(cx, false);
-    view.view(id!(search_timeline)).set_visible(cx, true);
 }
 
-pub fn hide_search(other_display: &mut RoomScreenOtherDisplay, view: &View, cx: &mut Cx, tl_state: &mut Option<TimelineUiState>) {
-    *other_display = RoomScreenOtherDisplay::None;
+pub fn hide_search(view: &View, cx: &mut Cx, tl_state: &mut Option<TimelineUiState>, room_id: Option<OwnedRoomId>) {
     view.view(id!(search_result_overlay)).set_visible(cx, false);
     view.view(id!(timeline)).set_visible(cx, true);
     view.view(id!(search_timeline)).set_visible(cx, false);
-    if let Some(tl_state) = tl_state {
-        tl_state.search_result_state = SearchResultState::default();
+    if let (Some(tl_state), Some(room_id)) = (tl_state, room_id) {
+        tl_state.search_result_state = SearchResultState::new(room_id);
     }
 }
