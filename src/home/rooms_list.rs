@@ -451,19 +451,18 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
-
-    /// Returns an immutable reference to the single set of all known rooms' names.
-    pub fn get_all_rooms_names(&self) -> HashMap<OwnedRoomId, Option<String>> {
-        self.all_rooms.iter().map(|(room_id, room)| (room_id.clone(), room.room_name.clone())).collect()
+    /// Returns the name of the room associated with the given room_id if it exists.
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
+        self.all_rooms.get(room_id).and_then(|room| room.room_name.clone())
     }
 }
 impl RoomsListRef {
-    /// See [`RoomsList::get_all_rooms_names()`].
-    pub fn get_all_rooms_names(&self) -> HashMap<OwnedRoomId, Option<String>> {
+    // See [`RoomsList::get_room_name`].
+    pub fn get_room_name(&self, room_id: &OwnedRoomId) -> Option<String> {
         if let Some(inner) = self.borrow() {
-            inner.get_all_rooms_names()
+            inner.get_room_name(room_id)
         } else {
-            HashMap::new()
+            None
         }
     }
 }

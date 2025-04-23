@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails, ContextMenuFromEvent}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, display_search, handle_search_new_items, hide_search, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{self, handle_search_new_items, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -904,14 +904,16 @@ live_design! {
             // The loading pane appears while the user is waiting for something in the room screen
             // to finish loading, e.g., when loading an older replied-to message.
             loading_pane = <LoadingPane> { }
-
-            search_result_overlay = <View> {
-                visible: false,
-                search_result_inner = <SearchResult> {
-                    
-                }
-                
+            search_result_plane = <SearchResult> {
+                visible: false
             }
+            // search_result_overlay = <View> {
+            //     visible: false,
+            //     search_result_plane = <SearchResult> {
+                    
+            //     }
+                
+            // }
             /*
              * This is broken currently, so I'm disabling it.
              *
@@ -1233,8 +1235,8 @@ impl Widget for RoomScreen {
             }
             if self.view.button(id!(search_all_rooms_button)).clicked(actions) {
                 if let Some(room_id) = self.room_id.clone() {
-                    self.view(id!(search_result_overlay)).set_visible(cx, true);
-                    self.search_result(id!(search_result_inner)).reset_summary(cx);
+                    self.search_result(id!(search_result_plane)).set_visible(cx, true);
+                    self.search_result(id!(search_result_plane)).reset(cx);
                     let Some(tl) = self.tl_state.as_mut() else { return };
                     tl.items.clear();
                     tl.search_result_state.include_all_rooms = true;
@@ -1366,7 +1368,7 @@ impl Widget for RoomScreen {
             return DrawStep::done();
         }
         if self.view(id!(search_timeline)).visible() {
-            return room_search_result::search_result_draw_walk(self, cx, scope, walk);
+            return room_search_result::search_result_draw_walk(self, &self.rooms_list(id!(rooms_list)), cx, scope, walk);
         }
 
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
@@ -1528,7 +1530,7 @@ impl RoomScreen {
     fn process_timeline_updates(&mut self, cx: &mut Cx, portal_list: &PortalListRef) {
         let top_space = self.view(id!(top_space));
         let jump_to_bottom = self.jump_to_bottom_button(id!(jump_to_bottom));
-        let search_result_widget = self.search_result(id!(search_result_inner));
+        let search_result_widget = self.search_result(id!(search_result_plane));
         let curr_first_id = portal_list.first_id();
         let ui = self.widget_uid();
         let Some(tl) = self.tl_state.as_mut() else { return };
@@ -2674,9 +2676,13 @@ impl RoomScreen {
         scope: &mut Scope,
     ) {
         if let Some(SearchResultAction::Close) = action.downcast_ref() {
-            self.search_result(id!(search_result_inner)).reset_summary(cx);
-            self.view(id!(search_result_overlay)).set_visible(cx, false);
-            hide_search(&self.view, cx, &mut self.tl_state, self.room_id.clone());
+            self.search_result(id!(search_result_plane)).reset(cx);
+            self.search_result(id!(search_result_plane)).set_visible(cx, false);
+            if let (Some(tl_state), Some(room_id)) = (&mut self.tl_state, &self.room_id) {
+                tl_state.search_result_state = SearchResultState::new(room_id.clone());
+            }
+            self.view(id!(timeline)).set_visible(cx, true);
+            self.view(id!(search_timeline)).set_visible(cx, false);
         }
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
@@ -2692,7 +2698,9 @@ impl RoomScreen {
                                 tl_state.search_result_state.items.clear();
                                 tl_state.search_result_state.search_term = search_query.clone();
                             }
-                            display_search(&self.view, cx, search_query);
+                            self.search_result(id!(search_result_plane)).set_search_criteria(cx, search_query.clone());
+                            self.view(id!(timeline)).set_visible(cx, false);
+                            //display_search(&self, cx, search_query);
                         }
                     }
                 }
@@ -2722,7 +2730,10 @@ impl RoomScreen {
                 } {
                     if let Some(widget_action) = widget_action {
                         if widget_action.widget_uid == search_widget_id && Some(selected_room.room_id) == self.room_id {
-                            self.view(id!(search_result_overlay)).set_visible(cx, true);
+                            //self.view(id!(search_result_overlay)).set_visible(cx, true);
+                            let search_term = if let Some(ref mut tl_state) = self.tl_state { tl_state.search_result_state.search_term.clone() } else { return };
+                            self.search_result(id!(search_result_plane)).set_search_criteria(cx, search_term);
+                            self.view(id!(timeline)).set_visible(cx, false);
                         }
                     }
                 }
