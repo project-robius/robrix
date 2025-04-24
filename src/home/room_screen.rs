@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{handle_search_new_items, populate_search_result_item, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultAction, SearchResultWidgetExt, SearchResultWidgetRefExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{handle_search_new_items, populate_search_result_item, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultDrawState, SearchResultWidgetExt, SearchResultWidgetRefExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -1370,7 +1370,7 @@ impl Widget for RoomScreen {
             // If return DrawStep::done() inside self.view.draw_walk, turtle will misalign and panic.
             return DrawStep::done();
         }
-
+        
         while let Some(subview) = self.view.draw_walk(cx, scope, walk).step() {
             // We only care about drawing the portal list.
             //let portal_list_ref = self.view.portal_list(id!(timeline.list));
@@ -1392,11 +1392,11 @@ impl Widget for RoomScreen {
 
             let list = list_ref.deref_mut();
             list.set_item_range(cx, 0, last_item_id);
-
+            let mut draw_state = SearchResultDrawState::default();
             while let Some(item_id) = list.next_visible_item(cx) {
                 
                 let item = if search_timeline_widget.visible() {
-                    let Some(item) = populate_search_result_item(cx, list, item_id, tl_state, &rooms_list_widget, room_screen_widget_uid, self.no_more_template) else {
+                    let Some(item) = populate_search_result_item(cx, list, item_id, tl_state, &mut draw_state,&rooms_list_widget, room_screen_widget_uid, self.no_more_template) else {
                         continue
                     };
                     item
@@ -1803,7 +1803,7 @@ impl RoomScreen {
                     tl.latest_own_user_receipt = Some(receipt);
                 }
                 TimelineUpdate::SearchNewItems { new_items, forward_pagination_batch_token, backward_pagination_batch_token, highlights, count } => {
-                    cx.action(SearchResultAction::Success { count });
+                    self.view.search_result(id!(search_result_plane)).set_result_count(cx, count);
                     self.view.view(id!(search_timeline)).set_visible(cx, true);
                     done_loading = true;
                     tl.search_result_state.highlighted_strings = highlights;
@@ -2692,16 +2692,7 @@ impl RoomScreen {
         action: &Action,
         scope: &mut Scope,
     ) {
-        // use widget action!!
-        if let Some(SearchResultAction::Close) = action.downcast_ref() {
-            self.search_result(id!(search_result_plane)).reset(cx);
-            self.search_result(id!(search_result_plane)).set_visible(cx, false);
-            if let (Some(tl_state), Some(room_id)) = (&mut self.tl_state, &self.room_id) {
-                tl_state.search_result_state = SearchResultState::new(room_id.clone());
-            }
-            self.view(id!(timeline)).set_visible(cx, true);
-            self.view(id!(search_timeline)).set_visible(cx, false);
-        }
+        let search_plane_widget_uid = self.search_result(id!(search_result_plane)).widget_uid();
         let widget_action = action.as_widget_action();
         match widget_action.cast() {
             SearchBarAction::Search(search_query) => {
@@ -2760,7 +2751,15 @@ impl RoomScreen {
 
             }
         }
-        
+        if let SearchBarAction::ResetSearch = widget_action.widget_uid_eq(search_plane_widget_uid).cast() {
+            self.search_result(id!(search_result_plane)).reset(cx);
+            self.search_result(id!(search_result_plane)).set_visible(cx, false);
+            if let (Some(tl_state), Some(room_id)) = (&mut self.tl_state, &self.room_id) {
+                tl_state.search_result_state = SearchResultState::new(room_id.clone());
+            }
+            self.view(id!(timeline)).set_visible(cx, true);
+            self.view(id!(search_timeline)).set_visible(cx, false);
+        }
     }
 
 }

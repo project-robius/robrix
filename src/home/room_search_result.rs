@@ -4,9 +4,9 @@ use makepad_widgets::*;
 use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
 use ruma::{api::client::search::search_events::v3::ResultCategories, events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
-use crate::{event_preview::text_preview_of_other_state, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
+use crate::{event_preview::text_preview_of_other_state, room, shared::search_bar::SearchBarAction, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
 
-use super::{new_message_context_menu::ContextMenuFromEvent, room_screen::{populate_message_view, populate_small_state_event, ItemDrawnStatus, MessageOrSticker, MessageViewFromEvent, PreviousMessageViewFromEvent, RoomScreen, SearchResultState, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListRef};
+use super::{new_message_context_menu::ContextMenuFromEvent, room_screen::{self, populate_message_view, populate_small_state_event, ItemDrawnStatus, MessageOrSticker, MessageViewFromEvent, PreviousMessageViewFromEvent, RoomScreen, SearchResultState, SmallStateEventContent, TimelineUiState}, rooms_list::RoomsListRef};
 
 live_design! {
     use link::theme::*;
@@ -159,7 +159,7 @@ pub struct SearchResult {
     #[deref] pub view: View,
     #[rust] pub search_criteria: String,
     #[rust] pub result_count: u32,
-    #[live(true)] visible: bool
+    #[live(true)] visible: bool,
 }
 
 impl Widget for SearchResult {
@@ -182,17 +182,7 @@ impl MatchEvent for SearchResult {
     fn handle_actions(&mut self, cx: &mut Cx, actions:&Actions) {
         let cancel_button_clicked = self.view.button(id!(cancel_button)).clicked(actions);
         if cancel_button_clicked {
-            cx.action(SearchResultAction::Close);
-        }
-        for action in actions {
-            match action.downcast_ref() {
-                Some(SearchResultAction::Success{
-                    count,
-                }) => {
-                    self.set_result_count(cx, *count);
-                }
-                _ => {}
-            }
+            cx.widget_action(self.widget_uid(), &Scope::empty().path, SearchBarAction::ResetSearch);
         }
     }
 }
@@ -206,7 +196,6 @@ impl SearchResult {
         self.view.html(id!(summary_label)).set_text(cx, &format!("{} results for <b>'{}'</b>", self.result_count, self.search_criteria));
         self.view.view(id!(loading_view)).set_visible(cx, false);
     }
-
     /// Set Search criteria.
     ///
     /// This is used to display the number of search results and the search criteria
@@ -215,14 +204,12 @@ impl SearchResult {
         self.view.html(id!(summary_label)).set_text(cx, &format!("Searching for <b>'{}'</b>", search_criteria));
         self.search_criteria = search_criteria;
         self.visible = true;
-        //self.view.search_result(id!(search_result_overlay)).set_visible(cx, true);
     }
     /// Resets the search result summary and set the loading view back to visible.
     ///
     /// This function clears the summary text and makes the loading indicator visible.
     /// It is typically used when a new search is initiated or search results are being cleared.
     fn reset(&mut self, cx: &mut Cx) {
-        println!("reset");
         self.view.html(id!(summary_label)).set_text(cx, "");
         self.view.view(id!(loading_view)).set_visible(cx, true);
         self.search_criteria = String::from("");
@@ -322,6 +309,7 @@ pub fn populate_search_result_item(
     list: &mut PortalList, 
     item_id: usize,
     tl_state: &mut TimelineUiState, 
+    search_result_draw_state: &mut SearchResultDrawState,
     room_list: &RoomsListRef, 
     room_screen_widget_uid: WidgetUid,
     no_more_template: Option<LivePtr>
@@ -373,6 +361,40 @@ pub fn populate_search_result_item(
                 }
                 SearchTimelineItemKind::ContextEvent(event) | SearchTimelineItemKind::Event(event) => match event {
                     AnyTimelineEvent::MessageLike(msg) => {
+                        // let date_text = unix_time_millis_to_datetime(&event.origin_server_ts())
+                        // // format the time as a shortened date (Sat, Sept 5, 2021)
+                        // .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+                        // .unwrap_or_else(|| format!("{:?}", event.origin_server_ts()));
+                        // if !search_result_draw_state.last_date_divider_string.is_empty() {
+                        //     if search_result_draw_state.last_date_divider_string != date_text {
+                        //         let item = list.item(cx, item_id, live_id!(DateDivider));
+                        //         item.label(id!(date)).set_text(cx, &date_text);
+                        //         item.draw_all(cx, &mut Scope::empty());
+                        //         search_result_draw_state.last_date_divider_string = date_text;
+                        //     }
+                        // } else {
+                        //     let item = list.item(cx, item_id, live_id!(DateDivider));
+                        //     item.label(id!(date)).set_text(cx, &date_text);
+                        //     item.draw_all(cx, &mut Scope::empty());
+                        //     search_result_draw_state.last_date_divider_string = date_text;                            
+                        // }
+                        let room_id = event.room_id().to_owned();
+
+                        if let Some(ref mut last_room_id) = search_result_draw_state.last_room_id{
+                            if room_id != *last_room_id {
+                                *last_room_id = room_id.clone().to_owned();
+                                let item = list.item(cx, item_id, live_id!(RoomHeader));
+                                let room_name = room_list.get_room_name(&room_id).unwrap_or(room_id.to_string());
+                                item.set_text(cx, &format!("Room {}", room_name));
+                                item.draw_all(cx, &mut Scope::empty());
+                            }
+                        } else {
+                            let item = list.item(cx, item_id, live_id!(RoomHeader));
+                            let room_name = room_list.get_room_name(&room_id).unwrap_or(room_id.to_string());
+                            item.set_text(cx, &format!("Room {}", room_name));
+                            item.draw_all(cx, &mut Scope::empty());
+                            search_result_draw_state.last_room_id = Some(room_id.to_owned());
+                        }
                         match msg.original_content() {
                             Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
                                 let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
@@ -396,7 +418,7 @@ pub fn populate_search_result_item(
                                     cx,
                                     list,
                                     item_id,
-                                    room_id,
+                                    &room_id,
                                     event,
                                     MessageOrSticker::Message(&message),
                                     prev_event.as_ref(),
@@ -492,17 +514,6 @@ pub enum SearchTimelineItemKind {
     Virtual(VirtualTimelineItem),
     /// The room header displaying room name for all found messages in a room.
     RoomHeader(OwnedRoomId),
-}
-
-/// Actions related to a specific message within a room timeline.
-#[derive(Clone, DefaultNone, Debug)]
-pub enum SearchResultAction {
-    /// Search result's success.
-    Success{
-        count: u32,
-    },
-    Close,
-    None
 }
 
 /// Wrapper for `AnyStateEventContent` that provides the state key for the event.
@@ -661,10 +672,9 @@ pub fn handle_search_new_items(
 
 pub fn convert_result_categories_to_search_item(results: ResultCategories) -> Vector<SearchTimelineItem> {
     let mut timeline_events= Vector::new();
-    let mut last_room_id = None;
+    let mut last_room_id: Option<OwnedRoomId> = None;
     for item in results.room_events.results.iter().rev() {
         let Some(event) = item.result.clone().and_then(|f|f.deserialize().ok()) else { continue };
-        
         if let Some(ref mut last_room_id) = last_room_id {
             if last_room_id != event.room_id() {
                 *last_room_id = event.room_id().to_owned();
@@ -675,23 +685,39 @@ pub fn convert_result_categories_to_search_item(results: ResultCategories) -> Ve
             timeline_events.push_back(SearchTimelineItem::with_room_header(event.room_id().to_owned()));
 
         }
-        item.context.events_before.iter().for_each(|f| {
-            if let Ok(timeline_event) = f.deserialize() {
-                timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
-            }
-        });
         timeline_events.push_back(SearchTimelineItem::with_virtual(VirtualTimelineItem::DateDivider(event.origin_server_ts())));
-        timeline_events.push_back(SearchTimelineItem::with_event(event.clone()));
         item.context.events_after.iter().for_each(|f| {
-            if let Ok(timeline_event) = f.deserialize() {
-                timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
+            // if let Ok(timeline_event) = f.deserialize() {
+            //     timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
+            // }
+            match f.deserialize() {
+                Ok(timeline_event) => timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event)),
+                Err(e) => println!("Error deserializing after event: {e:?}")
             }
         });
+        timeline_events.push_back(SearchTimelineItem::with_event(event.clone()));
+        item.context.events_before.iter().for_each(|f| {
+            // if let Ok(timeline_event) = f.deserialize() {
+            //     timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event));
+            // } else if Err(e) {
+
+            // }
+            match f.deserialize() {
+                Ok(timeline_event) => timeline_events.push_back(SearchTimelineItem::with_context_event(timeline_event)),
+                Err(e) => println!("Error deserializing before event: {e:?}")
+            }
+        });
+        
+        
+        
+        
     }
     timeline_events
 }
 
+#[derive(Default)]
 pub struct SearchResultDrawState {
     pub last_room_id: Option<OwnedRoomId>,
-    pub done_loading: bool
+    pub done_loading: bool,
+    pub last_date_divider_string: String,
 }

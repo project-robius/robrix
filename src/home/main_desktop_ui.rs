@@ -3,7 +3,7 @@ use std::collections::HashMap;
 
 use crate::app::{AppState, SelectedRoom};
 
-use super::{room_screen::RoomScreenWidgetRefExt, room_search_result::SearchResultAction};
+use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
     use link::theme::*;
     use link::shaders::*;

@@ -1722,6 +1722,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         room.init_timeline_with_builder(builder).await?;
         room.timeline().ok_or_else(|| anyhow::anyhow!("BUG: room timeline not found for room {room_id}"))?
     };
+    
     let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
