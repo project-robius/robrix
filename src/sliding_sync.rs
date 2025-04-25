@@ -1569,7 +1569,7 @@ async fn update_room(
         if let Ok(new_tags) = new_room.tags().await {
             enqueue_rooms_list_update(RoomsListUpdate::Tags {
                 room_id: new_room_id.clone(),
-                new_tags,
+                new_tags: new_tags.unwrap_or_default(),
             });
         }
 
@@ -1706,7 +1706,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id: room_id.clone(),
         latest,
-        tags: room.tags().await.ok().flatten(),
+        tags: room.tags().await.ok().flatten().unwrap_or_default(),
         num_unread_messages: room.num_unread_messages(),
         num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.

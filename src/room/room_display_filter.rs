@@ -1,9 +1,89 @@
-use std::{cmp::Ordering, collections::HashSet, ops::Deref};
+use std::{
+    borrow::Cow, cmp::Ordering, collections::{BTreeMap, HashSet}, ops::Deref
+};
 use bitflags::bitflags;
-use matrix_sdk::ruma::events::tag::TagName;
+use matrix_sdk::ruma::{
+    events::tag::{TagName, Tags},
+    OwnedRoomAliasId, RoomAliasId, RoomId,
+};
 
-use crate::home::rooms_list::JoinedRoomInfo;
+use crate::home::rooms_list::{InvitedRoomInfo, JoinedRoomInfo};
 
+static EMPTY_TAGS: Tags = BTreeMap::new();
+
+/// A trait that abstracts the common properties of a room used to filter/sort it.
+pub trait FilterableRoom {
+    fn room_id(&self) -> &RoomId;
+    fn room_name(&self) -> Cow<'_, str>;
+    fn unread_mentions(&self) -> u64;
+    fn unread_messages(&self) -> u64;
+    fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>>;
+    fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]>;
+    fn tags(&self) -> &Tags;
+}
+
+impl FilterableRoom for JoinedRoomInfo {
+    fn room_id(&self) -> &RoomId {
+        &self.room_id
+    }
+
+    fn room_name(&self) -> Cow<'_, str> {
+        self.room_name.as_deref().map(Into::into).unwrap_or_default()
+    }
+
+    fn unread_mentions(&self) -> u64 {
+        self.num_unread_mentions
+    }
+
+    fn unread_messages(&self) -> u64 {
+        self.num_unread_messages
+    }
+
+    fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
+        self.canonical_alias
+            .as_deref()
+            .map(|alias| Cow::Borrowed(alias))
+    }
+
+    fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
+        Cow::Borrowed(&self.alt_aliases)
+    }
+
+    fn tags(&self) -> &Tags {
+        &self.tags
+    }
+}
+
+impl FilterableRoom for InvitedRoomInfo {
+    fn room_id(&self) -> &RoomId {
+        &self.room.room_id()
+    }
+
+    fn room_name(&self) -> Cow<'_, str> {
+        self.room.cached_display_name().map(|dn| dn.to_string().into()).unwrap_or_default()
+    }
+
+    fn unread_mentions(&self) -> u64 {
+        1
+    }
+
+    fn unread_messages(&self) -> u64 {
+        0
+    }
+
+    fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
+        self.room.canonical_alias()
+            .map(|alias| Cow::Owned(alias))
+    }
+
+    fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
+        Cow::Owned(self.room.alt_aliases())
+    }
+
+    fn tags(&self) -> &Tags {
+        &EMPTY_TAGS
+    }
+}
 
 /// A filter function that is called for each room to determine whether it should be displayed.
 ///
@@ -22,14 +102,14 @@ use crate::home::rooms_list::JoinedRoomInfo;
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
-pub struct RoomDisplayFilter(Box<dyn Fn(&JoinedRoomInfo) -> bool>);
+pub struct RoomDisplayFilter(Box<dyn Fn(&dyn FilterableRoom) -> bool>);
 impl Default for RoomDisplayFilter {
     fn default() -> Self {
         RoomDisplayFilter(Box::new(|_| true))
     }
 }
 impl Deref for RoomDisplayFilter {
-    type Target = Box<dyn Fn(&JoinedRoomInfo) -> bool>;
+    type Target = Box<dyn Fn(&dyn FilterableRoom) -> bool>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -48,10 +128,12 @@ bitflags! {
 }
 
 impl Default for RoomFilterCriteria {
-    fn default() -> Self { RoomFilterCriteria::All }
+    fn default() -> Self {
+        RoomFilterCriteria::All
+    }
 }
 
-type SortFn = dyn Fn(&JoinedRoomInfo, &JoinedRoomInfo) -> Ordering;
+pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 
 /// A builder for creating a `RoomDisplayFilter` with a specific set of filter types and a sorting function.
 pub struct RoomDisplayFilterBuilder {
@@ -94,53 +176,60 @@ impl RoomDisplayFilterBuilder {
 
     pub fn sort_by<F>(mut self, sort_fn: F) -> Self
     where
-        F: Fn(&JoinedRoomInfo, &JoinedRoomInfo) -> Ordering + 'static
+        F: Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering + 'static,
     {
         self.sort_fn = Some(Box::new(sort_fn));
         self
     }
 
-    fn matches_room_id(room: &JoinedRoomInfo, keywords: &str) -> bool {
-        room.room_id.to_string().eq_ignore_ascii_case(keywords)
+    fn matches_room_id(room: &dyn FilterableRoom, keywords: &str) -> bool {
+        room.room_id().as_str().eq_ignore_ascii_case(keywords)
     }
 
-    fn matches_room_name(room: &JoinedRoomInfo, keywords: &str) -> bool {
-        room.room_name
-            .as_ref()
-            .is_some_and(|name| name.to_lowercase().contains(keywords))
+    fn matches_room_name(room: &dyn FilterableRoom, keywords: &str) -> bool {
+        room.room_name()
+            .to_lowercase()
+            .contains(keywords)
     }
 
-    fn matches_room_alias(room: &JoinedRoomInfo, keywords: &str) -> bool {
-        let matches_canonical_alias = room.canonical_alias
-            .as_ref()
-            .is_some_and(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
-        let matches_alt_aliases = room.alt_aliases
+    fn matches_room_alias(room: &dyn FilterableRoom, keywords: &str) -> bool {
+        room.canonical_alias()
+            .is_some_and(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
+        ||
+        room.alt_aliases()
             .iter()
-            .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords));
-
-        matches_canonical_alias || matches_alt_aliases
+            .any(|alias| alias.as_str().eq_ignore_ascii_case(keywords))
     }
 
-    fn matches_room_tags(room: &JoinedRoomInfo, keywords: &str) -> bool {
-        let search_tags: HashSet<&str> = keywords
-            .split_whitespace()
-            .map(|tag| tag.trim_start_matches(':'))
-            .collect();
-
+    fn matches_room_tags(room: &dyn FilterableRoom, keywords: &str) -> bool {
         fn is_tag_match(search_tag: &str, tag_name: &TagName) -> bool {
             match tag_name {
-                TagName::Favorite => ["favourite", "favorite"].contains(&search_tag),
-                TagName::LowPriority => ["low_priority", "low-priority", "lowpriority", "lowPriority"].contains(&search_tag),
-                TagName::ServerNotice => ["server_notice", "server-notice", "servernotice", "serverNotice"].contains(&search_tag),
+                TagName::Favorite => ["favourite", "favorite", "fav"].contains(&search_tag),
+                TagName::LowPriority => {
+                    ["low_priority", "low-priority", "lowpriority", "lowPriority"]
+                        .contains(&search_tag)
+                }
+                TagName::ServerNotice => [
+                    "server_notice",
+                    "server-notice",
+                    "servernotice",
+                    "serverNotice",
+                ]
+                .contains(&search_tag),
                 TagName::User(user_tag) => user_tag.as_ref().eq_ignore_ascii_case(search_tag),
                 _ => false,
             }
         }
 
-        room.tags.as_ref().is_some_and(|room_tags| {
-            search_tags.iter().all(|search_tag| {
-                room_tags.iter().any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
-            })
+        let search_tags: HashSet<&str> = keywords
+            .split_whitespace()
+            .map(|tag| tag.trim_start_matches(':'))
+            .collect();
+
+        let tags = room.tags();
+        search_tags.iter().all(|search_tag| {
+            tags.iter()
+                .any(|(tag_name, _)| is_tag_match(search_tag, tag_name))
         })
     }
 
@@ -154,7 +243,11 @@ impl RoomDisplayFilterBuilder {
         }
     }
 
-    fn matches_filter(room: &JoinedRoomInfo, keywords: &str, filter_criteria: RoomFilterCriteria) -> bool {
+    fn matches_filter(
+        room: &dyn FilterableRoom,
+        keywords: &str,
+        filter_criteria: RoomFilterCriteria,
+    ) -> bool {
         if filter_criteria.is_empty() {
             return false;
         }
@@ -164,16 +257,22 @@ impl RoomDisplayFilterBuilder {
         if specific_type != RoomFilterCriteria::All {
             // When using a special prefix, only check that specific type
             match specific_type {
-                RoomFilterCriteria::RoomId if filter_criteria.contains(RoomFilterCriteria::RoomId) => {
+                RoomFilterCriteria::RoomId
+                    if filter_criteria.contains(RoomFilterCriteria::RoomId) =>
+                {
                     Self::matches_room_id(room, cleaned_keywords)
                 }
-                RoomFilterCriteria::RoomAlias if filter_criteria.contains(RoomFilterCriteria::RoomAlias) => {
+                RoomFilterCriteria::RoomAlias
+                    if filter_criteria.contains(RoomFilterCriteria::RoomAlias) =>
+                {
                     Self::matches_room_alias(room, cleaned_keywords)
                 }
-                RoomFilterCriteria::RoomTags if filter_criteria.contains(RoomFilterCriteria::RoomTags) => {
+                RoomFilterCriteria::RoomTags
+                    if filter_criteria.contains(RoomFilterCriteria::RoomTags) =>
+                {
                     Self::matches_room_tags(room, cleaned_keywords)
                 }
-                _ => false
+                _ => false,
             }
         } else {
             // No special prefix, check all enabled filter types
@@ -210,7 +309,6 @@ impl RoomDisplayFilterBuilder {
 
         (filter, self.sort_fn)
     }
-
 }
 
 impl Default for RoomDisplayFilterBuilder {

@@ -2,7 +2,13 @@ use std::collections::HashMap;
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
 use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, Room};
-use crate::{app::AppState, room::room_display_filter::{RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria}, shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory}, jump_to_bottom_button::UnreadMessageCount}, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{
+    app::AppState,
+    room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
+    shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
+    jump_to_bottom_button::UnreadMessageCount},
+    sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
+};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -115,7 +121,7 @@ pub enum RoomsListUpdate {
     /// Update the tags for the given room.
     Tags {
         room_id: OwnedRoomId,
-        new_tags: Option<Tags>,
+        new_tags: Tags,
     },
     /// Update the status label at the bottom of the list of all rooms.
     Status {
@@ -159,7 +165,7 @@ pub struct JoinedRoomInfo {
     /// The tags associated with this room, if any.
     /// This includes things like is_favourite, is_low_priority,
     /// whether the room is a server notice room, etc.
-    pub tags: Option<Tags>,
+    pub tags: Tags,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
     /// The avatar for this room: either an array of bytes holding the avatar image
@@ -252,12 +258,8 @@ impl RoomsList {
             num_updates += 1;
             match update {
                 RoomsListUpdate::AddInvitedRoom(invited_room) => {
-                    // TODO: add a trait to abstract across InvitedRoomInfo and JoinedRoomInfo (and others in the future)
-                    //       such that we can call the `display_filter` on both types of rooms.
-                    // let should_display = (self.display_filter)(&invited_room);
-                    let should_display = true;
-
                     let room_id = invited_room.room.room_id().to_owned();
+                    let should_display = (self.display_filter)(&invited_room);
                     let _replaced = self.invited_rooms.insert(room_id.clone(), invited_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added invited room {room_id} that already existed");
@@ -354,6 +356,8 @@ impl RoomsList {
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
                     self.displayed_joined_rooms.clear();
+                    self.invited_rooms.clear();
+                    self.displayed_invited_rooms.clear();
                     self.update_status_rooms_count();
                 }
                 RoomsListUpdate::NotLoaded => {
@@ -393,7 +397,8 @@ impl RoomsList {
     /// Updates the status message to show how many rooms are currently displayed
     /// that match the current search filter.
     fn update_status_matching_rooms(&mut self) {
-        self.status = match self.displayed_joined_rooms.len() {
+        let total = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
+        self.status = match total {
             0 => "No matching rooms found.".to_string(),
             1 => "Found 1 matching room.".to_string(),
             n => format!("Found {} matching rooms.", n),
@@ -405,6 +410,64 @@ impl RoomsList {
     fn is_room_displayable(&self, room: &OwnedRoomId) -> bool {
         self.displayed_invited_rooms.contains(room)
         || self.displayed_joined_rooms.contains(room)
+    }
+
+    /// Updates the lists of displayed rooms based on the current search filter
+    /// and redraws the RoomsList.
+    fn update_displayed_rooms(&mut self, cx: &mut Cx, keywords: &str) {
+        let portal_list = self.view.portal_list(id!(list));
+        if keywords.is_empty() {
+            // Reset the displayed rooms list to show all rooms.
+            self.display_filter = RoomDisplayFilter::default();
+            self.displayed_joined_rooms = self.all_joined_rooms.keys().cloned().collect();
+            self.displayed_invited_rooms = self.invited_rooms.keys().cloned().collect();
+            self.update_status_rooms_count();
+            portal_list.set_first_id_and_scroll(0, 0.0);
+            self.redraw(cx);
+            return;
+        }
+
+        // Create a new filter function based on the given keywords
+        // and store it in this RoomsList such that we can apply it to newly-added rooms.
+        let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
+            .set_keywords(keywords.to_owned())
+            .set_filter_criteria(RoomFilterCriteria::All)
+            .build();
+        self.display_filter = filter;
+
+        /// An inner function that generates a sorted, filtered list of rooms to display.
+        fn generate_displayed_rooms<FR: FilterableRoom>(
+            rooms_map: &HashMap<OwnedRoomId, FR>,
+            display_filter: &RoomDisplayFilter,
+            sort_fn: Option<&SortFn>,
+        ) -> Vec<OwnedRoomId> {
+            if let Some(sort_fn) = sort_fn {
+                let mut filtered_rooms: Vec<_> = rooms_map
+                    .iter()
+                    .filter(|(_, ref room)| display_filter(&**room))
+                    .collect();
+
+                filtered_rooms.sort_by(|(_, ref room_a), (_, ref room_b)| sort_fn(&**room_a, &**room_b));
+
+                filtered_rooms
+                    .into_iter()
+                    .map(|(room_id, _)| room_id.clone())
+                    .collect()
+            } else {
+                rooms_map
+                    .iter()
+                    .filter(|(_, ref room)| display_filter(&**room))
+                    .map(|(room_id, _)| room_id.clone())
+                    .collect()
+            }
+        }
+
+        // Update the displayed rooms list and redraw it.
+        self.displayed_joined_rooms = generate_displayed_rooms(&self.all_joined_rooms, &self.display_filter, sort_fn.as_deref());
+        self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms, &self.display_filter, sort_fn.as_deref());
+        self.update_status_matching_rooms();
+        portal_list.set_first_id_and_scroll(0, 0.0);
+        self.redraw(cx);
     }
 }
 
@@ -454,7 +517,14 @@ impl Widget for RoomsList {
                 self.redraw(cx);
             }
         }
-        self.widget_match_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                if let RoomsViewAction::Search(search_text) = action.as_widget_action().cast() {
+                    self.update_displayed_rooms(cx, &search_text);
+                }
+            }
+        }
     }
 
 
@@ -580,57 +650,6 @@ impl Widget for RoomsList {
         DrawStep::done()
     }
 
-}
-
-impl WidgetMatchEvent for RoomsList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        for action in actions {
-            if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
-                let portal_list = self.view.portal_list(id!(list));
-                if keywords.is_empty() {
-                    // Reset the displayed rooms list to show all rooms.
-                    self.display_filter = RoomDisplayFilter::default();
-                    self.displayed_joined_rooms = self.all_joined_rooms.keys().cloned().collect();
-                    self.update_status_rooms_count();
-                    portal_list.set_first_id_and_scroll(0, 0.0);
-                    self.redraw(cx);
-                    return;
-                }
-
-                let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                    .set_keywords(keywords.clone())
-                    .set_filter_criteria(RoomFilterCriteria::All)
-                    .build();
-                self.display_filter = filter;
-
-                let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
-                    let mut filtered_rooms: Vec<_> = self.all_joined_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .collect();
-
-                    filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
-
-                    filtered_rooms
-                        .into_iter()
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
-                } else {
-                    self.all_joined_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
-                };
-
-                // Update the displayed rooms list and redraw it.
-                self.displayed_joined_rooms = new_displayed_rooms;
-                self.update_status_matching_rooms();
-                portal_list.set_first_id_and_scroll(0, 0.0);
-                self.redraw(cx);
-            }
-        }
-    }
 }
 
 pub struct RoomsListScopeProps {
