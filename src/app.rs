@@ -292,6 +292,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //

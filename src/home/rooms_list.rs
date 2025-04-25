@@ -463,7 +463,7 @@ impl Widget for RoomsList {
         // Update the currently-selected room from the AppState data.
         self.current_active_room = app_state.rooms_panel.selected_room.as_ref()
             .map(|sel_room| sel_room.room_id.clone())
-            .filter(|room_id| self.is_room_displayable(&room_id));
+            .filter(|room_id| self.is_room_displayable(room_id));
 
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indices in the PortalList where the headers and rooms should be drawn.

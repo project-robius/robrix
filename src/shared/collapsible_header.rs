@@ -1,7 +1,7 @@
 //! This module defines a collapsible header wrapper with a triangle icon
 //! that indicates whether the header is expanded or collapsed.
 //!
-//! This widget can be clicked to toggle wheter it is expanded or collapsed.
+//! This widget can be clicked to toggle between expanded and collapsed.
 //!
 //! The collapsible header is *just* the header, it doesn't actually contain any content.
 //! This design is necessary because the header is drawn within a PortalList,

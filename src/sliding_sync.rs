@@ -1624,7 +1624,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             let latest = room.latest_event().await.as_ref().map(
                 |ev| get_latest_event_details(ev, &room_id)
             );
-            let room_avatar = room_avatar(&room, room_name.as_deref()).await;
+            let room_avatar = room_avatar(room, room_name.as_deref()).await;
 
             let inviter_info = if let Some(inviter) = invite_details.inviter.as_ref() {
                 Some(InviterInfo {
