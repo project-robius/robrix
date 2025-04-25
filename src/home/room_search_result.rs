@@ -1,7 +1,9 @@
+use std::sync::Arc;
+
 use imbl::Vector;
 use indexmap::IndexMap;
 use makepad_widgets::*;
-use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, VirtualTimelineItem};
+use matrix_sdk_ui::timeline::{AnyOtherFullStateEventContent, InReplyToDetails, ReactionsByKeyBySender, TimelineDetails, TimelineEventItemId, TimelineItem, VirtualTimelineItem};
 use ruma::{api::client::search::search_events::v3::ResultCategories, events::{receipt::Receipt, room::message::{FormattedBody, MessageType, RoomMessageEventContent}, AnyMessageLikeEvent, AnyMessageLikeEventContent, AnyStateEventContent, AnyTimelineEvent, FullStateEventContent}, uint, EventId, MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, UserId};
 
 use crate::{event_preview::text_preview_of_other_state, room, shared::search_bar::SearchBarAction, sliding_sync::{submit_async_request, MatrixRequest}, utils::unix_time_millis_to_datetime};
@@ -304,171 +306,171 @@ pub fn send_pagination_request_based_on_scroll_pos_for_search_result(
     /// 
     /// `room_screen_widget_uid` is the widget uid of the room screen widget that this widget is inside.
     ///
-pub fn populate_search_result_item(
-    cx: &mut Cx2d, 
-    list: &mut PortalList, 
-    item_id: usize,
-    tl_state: &mut TimelineUiState, 
-    search_result_draw_state: &mut SearchResultDrawState,
-    room_list: &RoomsListRef, 
-    room_screen_widget_uid: WidgetUid,
-    no_more_template: Option<LivePtr>
-) -> Option<WidgetRef> {
-    let media_cache = &mut tl_state.media_cache;
-    let search_result_state = &tl_state.search_result_state;
-    let user_power = &tl_state.user_power;
-    let tl_items = &search_result_state.items;
-    let room_id= &tl_state.room_id;
-    let item = {
-        let tl_idx = item_id;
-        if item_id == 0 {
-            WidgetRef::new_from_ptr(cx, no_more_template).as_label().draw_all(cx, &mut Scope::empty());
-        }
-        let Some(timeline_item) = tl_items.get(tl_idx) else {
-            // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
-            // but we can always safely fill the item with an empty widget that takes up no space.
-            list.item(cx, item_id, live_id!(Empty));
-            return None
-        };
-        let item_drawn_status = ItemDrawnStatus {
-            content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
-            profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
-        };
-        let (item, item_new_draw_status) = {
-            let current_item = timeline_item;
-            let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i))
-                .and_then(|f| match f.kind { 
-                    SearchTimelineItemKind::ContextEvent(ref e) | SearchTimelineItemKind::Event(ref e) => Some(e),
-                    _ => None });
+// pub fn populate_search_result_item(
+//     cx: &mut Cx2d, 
+//     list: &mut PortalList, 
+//     item_id: usize,
+//     tl_state: &mut TimelineUiState, 
+//     search_result_draw_state: &mut SearchResultDrawState,
+//     room_list: &RoomsListRef, 
+//     room_screen_widget_uid: WidgetUid,
+//     no_more_template: Option<LivePtr>
+// ) -> Option<WidgetRef> {
+//     let media_cache = &mut tl_state.media_cache;
+//     let search_result_state = &tl_state.search_result_state;
+//     let user_power = &tl_state.user_power;
+//     let tl_items = &search_result_state.items;
+//     let room_id= &tl_state.room_id;
+//     let item = {
+//         let tl_idx = item_id;
+//         if item_id == 0 {
+//             WidgetRef::new_from_ptr(cx, no_more_template).as_label().draw_all(cx, &mut Scope::empty());
+//         }
+//         let Some(timeline_item) = tl_items.get(tl_idx) else {
+//             // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
+//             // but we can always safely fill the item with an empty widget that takes up no space.
+//             list.item(cx, item_id, live_id!(Empty));
+//             return None
+//         };
+//         let item_drawn_status = ItemDrawnStatus {
+//             content_drawn: tl_state.content_drawn_since_last_update.contains(&tl_idx),
+//             profile_drawn: tl_state.profile_drawn_since_last_update.contains(&tl_idx),
+//         };
+//         let (item, item_new_draw_status) = {
+//             let current_item = timeline_item;
+//             let prev_event = tl_idx.checked_sub(1).and_then(|i| tl_items.get(i))
+//                 .and_then(|f| match f.kind { 
+//                     SearchTimelineItemKind::ContextEvent(ref e) | SearchTimelineItemKind::Event(ref e) => Some(e),
+//                     _ => None });
             
-            match &current_item.kind {
-                SearchTimelineItemKind::Virtual(virtual_item) => {
-                    match virtual_item {
-                        VirtualTimelineItem::DateDivider(millis) => {
-                            let item = list.item(cx, item_id, live_id!(DateDivider));
-                            let text = unix_time_millis_to_datetime(millis)
-                                // format the time as a shortened date (Sat, Sept 5, 2021)
-                                .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                                .unwrap_or_else(|| format!("{:?}", millis));
-                            item.label(id!(date)).set_text(cx, &text);
-                            (item, ItemDrawnStatus::both_drawn())
-                        }
-                        VirtualTimelineItem::ReadMarker => {
-                            return None
-                        }
-                    }
+//             match &current_item.kind {
+//                 SearchTimelineItemKind::Virtual(virtual_item) => {
+//                     match virtual_item {
+//                         VirtualTimelineItem::DateDivider(millis) => {
+//                             let item = list.item(cx, item_id, live_id!(DateDivider));
+//                             let text = unix_time_millis_to_datetime(millis)
+//                                 // format the time as a shortened date (Sat, Sept 5, 2021)
+//                                 .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+//                                 .unwrap_or_else(|| format!("{:?}", millis));
+//                             item.label(id!(date)).set_text(cx, &text);
+//                             (item, ItemDrawnStatus::both_drawn())
+//                         }
+//                         VirtualTimelineItem::ReadMarker => {
+//                             return None
+//                         }
+//                     }
                     
-                }
-                SearchTimelineItemKind::ContextEvent(event) | SearchTimelineItemKind::Event(event) => match event {
-                    AnyTimelineEvent::MessageLike(msg) => {
-                        // let date_text = unix_time_millis_to_datetime(&event.origin_server_ts())
-                        // // format the time as a shortened date (Sat, Sept 5, 2021)
-                        // .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
-                        // .unwrap_or_else(|| format!("{:?}", event.origin_server_ts()));
-                        // if !search_result_draw_state.last_date_divider_string.is_empty() {
-                        //     if search_result_draw_state.last_date_divider_string != date_text {
-                        //         let item = list.item(cx, item_id, live_id!(DateDivider));
-                        //         item.label(id!(date)).set_text(cx, &date_text);
-                        //         item.draw_all(cx, &mut Scope::empty());
-                        //         search_result_draw_state.last_date_divider_string = date_text;
-                        //     }
-                        // } else {
-                        //     let item = list.item(cx, item_id, live_id!(DateDivider));
-                        //     item.label(id!(date)).set_text(cx, &date_text);
-                        //     item.draw_all(cx, &mut Scope::empty());
-                        //     search_result_draw_state.last_date_divider_string = date_text;                            
-                        // }
-                        let room_id = event.room_id().to_owned();
+//                 }
+//                 SearchTimelineItemKind::ContextEvent(event) | SearchTimelineItemKind::Event(event) => match event {
+//                     AnyTimelineEvent::MessageLike(msg) => {
+//                         // let date_text = unix_time_millis_to_datetime(&event.origin_server_ts())
+//                         // // format the time as a shortened date (Sat, Sept 5, 2021)
+//                         // .map(|dt| format!("{}", dt.date_naive().format("%a %b %-d, %Y")))
+//                         // .unwrap_or_else(|| format!("{:?}", event.origin_server_ts()));
+//                         // if !search_result_draw_state.last_date_divider_string.is_empty() {
+//                         //     if search_result_draw_state.last_date_divider_string != date_text {
+//                         //         let item = list.item(cx, item_id, live_id!(DateDivider));
+//                         //         item.label(id!(date)).set_text(cx, &date_text);
+//                         //         item.draw_all(cx, &mut Scope::empty());
+//                         //         search_result_draw_state.last_date_divider_string = date_text;
+//                         //     }
+//                         // } else {
+//                         //     let item = list.item(cx, item_id, live_id!(DateDivider));
+//                         //     item.label(id!(date)).set_text(cx, &date_text);
+//                         //     item.draw_all(cx, &mut Scope::empty());
+//                         //     search_result_draw_state.last_date_divider_string = date_text;                            
+//                         // }
+//                         let room_id = event.room_id().to_owned();
 
-                        if let Some(ref mut last_room_id) = search_result_draw_state.last_room_id{
-                            if room_id != *last_room_id {
-                                *last_room_id = room_id.clone().to_owned();
-                                let item = list.item(cx, item_id, live_id!(RoomHeader));
-                                let room_name = room_list.get_room_name(&room_id).unwrap_or(room_id.to_string());
-                                item.set_text(cx, &format!("Room {}", room_name));
-                                item.draw_all(cx, &mut Scope::empty());
-                            }
-                        } else {
-                            let item = list.item(cx, item_id, live_id!(RoomHeader));
-                            let room_name = room_list.get_room_name(&room_id).unwrap_or(room_id.to_string());
-                            item.set_text(cx, &format!("Room {}", room_name));
-                            item.draw_all(cx, &mut Scope::empty());
-                            search_result_draw_state.last_room_id = Some(room_id.to_owned());
-                        }
-                        match msg.original_content() {
-                            Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
-                                let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
-                                if let MessageType::Text(text) = &mut message.msgtype {
-                                    if let Some(ref mut formatted) = text.formatted {
-                                        for highlight in search_result_state.highlighted_strings.iter() {
-                                            formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
-                                        }
-                                    } else {
-                                        let mut formated_string = text.body.clone();
-                                        for highlight in search_result_state.highlighted_strings.iter() {
-                                            formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
-                                        }
-                                        text.formatted = Some(FormattedBody::html(formated_string));
-                                    }
-                                }
-                                let event = &MessageViewFromEventWrapperAEI(event);
-                                let prev_event = prev_event.map(PreviousWrapperAEI);
-                                let message = RoomMessageWrapper(&message);
-                                populate_message_view(
-                                    cx,
-                                    list,
-                                    item_id,
-                                    &room_id,
-                                    event,
-                                    MessageOrSticker::Message(&message),
-                                    prev_event.as_ref(),
-                                    media_cache,
-                                    user_power,
-                                    is_contextual,
-                                    item_drawn_status,
-                                    room_screen_widget_uid,
-                                )
-                            }
-                            _ => return None
-                        }
-                    },
-                    AnyTimelineEvent::State(state) => {
-                        let state_key = state.state_key();
-                        if let Some(content) = state.original_content() {
-                            let wrapper = AnyStateEventContentWrapper(&content, state_key);
-                            let event = &MessageViewFromEventWrapperAEI(event);
-                            populate_small_state_event(
-                                cx,
-                                list,
-                                item_id,
-                                room_id,
-                                event,
-                                &wrapper,
-                                item_drawn_status,
-                            )
-                        } else {
-                            return None
-                        }
-                    }
-                }
-                SearchTimelineItemKind::RoomHeader(room_id) => {
-                    let item = list.item(cx, item_id, live_id!(RoomHeader));
-                    let room_name = room_list.get_room_name(room_id).unwrap_or(room_id.to_string());
-                    item.set_text(cx, &format!("Room {}", room_name));
-                    (item, ItemDrawnStatus::both_drawn())
-                }
-            }
-        };
-        if item_new_draw_status.content_drawn {
-            tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
-        }
-        if item_new_draw_status.profile_drawn {
-            tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
-        }
-        item
-    };
-   Some(item)
-}
+//                         if let Some(ref mut last_room_id) = search_result_draw_state.last_room_id{
+//                             if room_id != *last_room_id {
+//                                 *last_room_id = room_id.clone().to_owned();
+//                                 let item = list.item(cx, item_id, live_id!(RoomHeader));
+//                                 let room_name = room_list.get_room_name(&room_id).unwrap_or(room_id.to_string());
+//                                 item.set_text(cx, &format!("Room {}", room_name));
+//                                 item.draw_all(cx, &mut Scope::empty());
+//                             }
+//                         } else {
+//                             let item = list.item(cx, item_id, live_id!(RoomHeader));
+//                             let room_name = room_list.get_room_name(&room_id).unwrap_or(room_id.to_string());
+//                             item.set_text(cx, &format!("Room {}", room_name));
+//                             item.draw_all(cx, &mut Scope::empty());
+//                             search_result_draw_state.last_room_id = Some(room_id.to_owned());
+//                         }
+//                         match msg.original_content() {
+//                             Some(AnyMessageLikeEventContent::RoomMessage(mut message)) => {
+//                                 let is_contextual = matches!(&current_item.kind, SearchTimelineItemKind::ContextEvent(_));
+//                                 if let MessageType::Text(text) = &mut message.msgtype {
+//                                     if let Some(ref mut formatted) = text.formatted {
+//                                         for highlight in search_result_state.highlighted_strings.iter() {
+//                                             formatted.body = formatted.body.replace(highlight, &format!("<code>{}</code>", highlight));
+//                                         }
+//                                     } else {
+//                                         let mut formated_string = text.body.clone();
+//                                         for highlight in search_result_state.highlighted_strings.iter() {
+//                                             formated_string = formated_string.replace(highlight, &format!("<code>{}</code>", highlight));
+//                                         }
+//                                         text.formatted = Some(FormattedBody::html(formated_string));
+//                                     }
+//                                 }
+//                                 let event = &MessageViewFromEventWrapperAEI(event);
+//                                 let prev_event = prev_event.map(PreviousWrapperAEI);
+//                                 let message = RoomMessageWrapper(&message);
+//                                 populate_message_view(
+//                                     cx,
+//                                     list,
+//                                     item_id,
+//                                     &room_id,
+//                                     event,
+//                                     MessageOrSticker::Message(&message),
+//                                     prev_event.as_ref(),
+//                                     media_cache,
+//                                     user_power,
+//                                     is_contextual,
+//                                     item_drawn_status,
+//                                     room_screen_widget_uid,
+//                                 )
+//                             }
+//                             _ => return None
+//                         }
+//                     },
+//                     AnyTimelineEvent::State(state) => {
+//                         let state_key = state.state_key();
+//                         if let Some(content) = state.original_content() {
+//                             let wrapper = AnyStateEventContentWrapper(&content, state_key);
+//                             let event = &MessageViewFromEventWrapperAEI(event);
+//                             populate_small_state_event(
+//                                 cx,
+//                                 list,
+//                                 item_id,
+//                                 room_id,
+//                                 event,
+//                                 &wrapper,
+//                                 item_drawn_status,
+//                             )
+//                         } else {
+//                             return None
+//                         }
+//                     }
+//                 }
+//                 SearchTimelineItemKind::RoomHeader(room_id) => {
+//                     let item = list.item(cx, item_id, live_id!(RoomHeader));
+//                     let room_name = room_list.get_room_name(room_id).unwrap_or(room_id.to_string());
+//                     item.set_text(cx, &format!("Room {}", room_name));
+//                     (item, ItemDrawnStatus::both_drawn())
+//                 }
+//             }
+//         };
+//         if item_new_draw_status.content_drawn {
+//             tl_state.content_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+//         }
+//         if item_new_draw_status.profile_drawn {
+//             tl_state.profile_drawn_since_last_update.insert(tl_idx .. tl_idx + 1);
+//         }
+//         item
+//     };
+//    Some(item)
+// }
 #[derive(Clone)]
 pub struct SearchTimelineItem{
     pub kind: SearchTimelineItemKind
@@ -657,7 +659,7 @@ impl ContextMenuFromEvent for RoomMessageWrapper<'_> {
 
 pub fn handle_search_new_items(
     tl: &mut SearchResultState, 
-    new_items: Vector<SearchTimelineItem>, 
+    new_items: Vector<Arc<TimelineItem>>, 
     forward_pagination_batch: Option<String>, 
     backward_pagination_batch: Option<String>,
 ) {

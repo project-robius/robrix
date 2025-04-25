@@ -36,7 +36,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{handle_search_new_items, populate_search_result_item, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultDrawState, SearchResultWidgetExt, SearchResultWidgetRefExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{ContextMenuFromEvent, MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, room_search_result::{handle_search_new_items, send_pagination_request_based_on_scroll_pos_for_search_result, SearchResultDrawState, SearchResultWidgetExt, SearchResultWidgetRefExt, SearchTimelineItem}, rooms_list::RoomsListWidgetExt};
 const GEO_URI_SCHEME: &str = "geo:";
 
 const MESSAGE_NOTICE_TEXT_COLOR: Vec3 = Vec3 { x: 0.5, y: 0.5, z: 0.5 };
@@ -1395,15 +1395,18 @@ impl Widget for RoomScreen {
             let mut draw_state = SearchResultDrawState::default();
             while let Some(item_id) = list.next_visible_item(cx) {
                 
-                let item = if search_timeline_widget.visible() {
-                    let Some(item) = populate_search_result_item(cx, list, item_id, tl_state, &mut draw_state,&rooms_list_widget, room_screen_widget_uid, self.no_more_template) else {
-                        continue
-                    };
-                    item
-                } else {
+                // let item = if search_timeline_widget.visible() {
+                //     let Some(item) = populate_search_result_item(cx, list, item_id, tl_state, &mut draw_state,&rooms_list_widget, room_screen_widget_uid, self.no_more_template) else {
+                //         continue
+                //     };
+                //     item
+                // } else {
+                let item = {
                     let tl_idx = item_id;
                     let room_id = &tl_state.room_id;
-                    let tl_items = &tl_state.items;
+                    let tl_items = if search_timeline_widget.visible() { &tl_state.search_result_state.items } else {
+                        &tl_state.items
+                    };
                     let Some(timeline_item) = tl_items.get(tl_idx) else {
                         // This shouldn't happen (unless the timeline gets corrupted or some other weird error),
                         // but we can always safely fill the item with an empty widget that takes up no space.
@@ -2056,13 +2059,10 @@ impl RoomScreen {
                 MessageAction::CopyText(details) => {
                     let Some(tl) = self.tl_state.as_mut() else { return };
 
-                    if let Some(text) = if !self.view.view(id!(search_timeline)).visible() {
+                    if let Some(text) = 
                         tl.items
                         .get(details.item_id)
                         .and_then(|tl_item| tl_item.as_event().map(body_of_timeline_item))
-                    } else {
-                        tl.search_result_state.items.get(details.item_id).and_then(|tl_item| tl_item.body_of_timeline_item())
-                    }
                     {
                         cx.copy_to_clipboard(&text);
                     }
@@ -2901,7 +2901,8 @@ pub enum TimelineUpdate {
     /// The content of a room's timeline was updated in the background.
     SearchNewItems {
         /// The entire list of timeline items (events) for a room.
-        new_items: Vector<SearchTimelineItem>,
+        //new_items: Vector<SearchTimelineItem>,
+        new_items: Vector<Arc<TimelineItem>>,
         forward_pagination_batch_token: Option<String>,
         backward_pagination_batch_token: Option<String>,
         highlights: Vec<String>,
@@ -3019,7 +3020,7 @@ pub struct SearchResultState {
     pub search_query: String,
     pub search_term: String,
     /// The list of searched events in this room.
-    pub items: Vector<SearchTimelineItem>,
+    pub items: Vector<Arc<TimelineItem>>,
     /// The list of batch tokens for the search results.
     /// 
     /// This field is used to prevent duplicate search requests when scrolling
