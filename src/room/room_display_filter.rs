@@ -40,9 +40,7 @@ impl FilterableRoom for JoinedRoomInfo {
     }
 
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
-        self.canonical_alias
-            .as_deref()
-            .map(|alias| Cow::Borrowed(alias))
+        self.canonical_alias.as_deref().map(Cow::Borrowed)
     }
 
     fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
@@ -56,7 +54,7 @@ impl FilterableRoom for JoinedRoomInfo {
 
 impl FilterableRoom for InvitedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        &self.room.room_id()
+        self.room.room_id()
     }
 
     fn room_name(&self) -> Cow<'_, str> {
@@ -72,8 +70,7 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
-        self.room.canonical_alias()
-            .map(|alias| Cow::Owned(alias))
+        self.room.canonical_alias().map(Cow::Owned)
     }
 
     fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
@@ -84,6 +81,11 @@ impl FilterableRoom for InvitedRoomInfo {
         &EMPTY_TAGS
     }
 }
+
+
+pub type RoomFilterFn = dyn Fn(&dyn FilterableRoom) -> bool;
+pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
+
 
 /// A filter function that is called for each room to determine whether it should be displayed.
 ///
@@ -102,14 +104,14 @@ impl FilterableRoom for InvitedRoomInfo {
 ///    .collect();
 /// // Then redraw the rooms_list widget.
 /// ```
-pub struct RoomDisplayFilter(Box<dyn Fn(&dyn FilterableRoom) -> bool>);
+pub struct RoomDisplayFilter(Box<RoomFilterFn>);
 impl Default for RoomDisplayFilter {
     fn default() -> Self {
         RoomDisplayFilter(Box::new(|_| true))
     }
 }
 impl Deref for RoomDisplayFilter {
-    type Target = Box<dyn Fn(&dyn FilterableRoom) -> bool>;
+    type Target = Box<RoomFilterFn>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -132,8 +134,6 @@ impl Default for RoomFilterCriteria {
         RoomFilterCriteria::All
     }
 }
-
-pub type SortFn = dyn Fn(&dyn FilterableRoom, &dyn FilterableRoom) -> Ordering;
 
 /// A builder for creating a `RoomDisplayFilter` with a specific set of filter types and a sorting function.
 pub struct RoomDisplayFilterBuilder {

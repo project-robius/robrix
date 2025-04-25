@@ -444,11 +444,11 @@ impl RoomsList {
             if let Some(sort_fn) = sort_fn {
                 let mut filtered_rooms: Vec<_> = rooms_map
                     .iter()
-                    .filter(|(_, ref room)| display_filter(&**room))
+                    .filter(|(_, room)| display_filter(*room))
                     .collect();
-
-                filtered_rooms.sort_by(|(_, ref room_a), (_, ref room_b)| sort_fn(&**room_a, &**room_b));
-
+                filtered_rooms.sort_by(
+                    |(_, room_a), (_, room_b)| sort_fn(*room_a, *room_b)
+                );
                 filtered_rooms
                     .into_iter()
                     .map(|(room_id, _)| room_id.clone())
@@ -456,7 +456,7 @@ impl RoomsList {
             } else {
                 rooms_map
                     .iter()
-                    .filter(|(_, ref room)| display_filter(&**room))
+                    .filter(|(_, room)| display_filter(*room))
                     .map(|(room_id, _)| room_id.clone())
                     .collect()
             }
