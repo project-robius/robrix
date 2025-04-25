@@ -232,7 +232,7 @@ impl MatchEvent for App {
 
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomsListAction::Selected { room_id, room_index: _, room_name } => {
+                RoomsListAction::Selected { room_id, room_name } => {
                     self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
                         room_id: room_id.clone(),
                         room_name: room_name.clone(),
@@ -292,6 +292,7 @@ impl MatchEvent for App {
                 }
                 _ => {}
             }
+
             // `VerificationAction`s come from a background thread, so they are NOT widget actions.
             // Therefore, we cannot use `as_widget_action().cast()` to match them.
             //

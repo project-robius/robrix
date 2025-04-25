@@ -47,7 +47,8 @@ impl Widget for MainMobileUI {
         let app_state = scope.data.get::<AppState>().unwrap();
 
         if let Some(room) = app_state.rooms_panel.selected_room.as_ref() {
-            let displayed_room_name = room.room_name.clone().unwrap_or_else(|| format!("Room ID {}", &room.room_id));
+            let displayed_room_name = room.room_name.clone()
+                .unwrap_or_else(|| format!("Room ID {}", &room.room_id));
             
             // Get a reference to the `RoomScreen` widget and tell it which room's data to show.
             self.view
