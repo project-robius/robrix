@@ -60,7 +60,7 @@ live_design! {
             }
         }
         unread_badge = <UnreadBadge> {
-            margin: {right: 4.5},
+            margin: {right: 5.5},
         }
     }
 }
