@@ -165,7 +165,7 @@ live_design! {
                         spacing: 5,
                         flow: Right,
                         room_name = <RoomName> {}
-                        // Use a small top margin to align the timestamp text baseline with the room name text baseline. 
+                        // Use a small top margin to align the timestamp text baseline with the room name text baseline.
                         timestamp = <Timestamp> { margin: { top: 1.3 } }
                     }
                     bottom = <View> {
@@ -262,6 +262,7 @@ impl Widget for RoomPreviewContent {
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(joined_room_info) = scope.props.get::<JoinedRoomInfo>() {
+            log!("draw1");
             self.draw_joined_room(cx, joined_room_info);
         } else if let Some(invited_room_info) = scope.props.get::<InvitedRoomInfo>() {
             self.draw_invited_room(cx, invited_room_info);
@@ -278,6 +279,7 @@ impl RoomPreviewContent {
         cx: &mut Cx,
         room_info: &JoinedRoomInfo,
     ) {
+        log!("draw2");
         if let Some(ref name) = room_info.room_name {
             self.view.label(id!(room_name)).set_text(cx, name);
         }
@@ -344,7 +346,7 @@ impl RoomPreviewContent {
         self.draw_common(cx, &room_info.room_avatar, room_info.is_selected);
     }
 
-    /// Populates the widgets common to both invited and joined room previews. 
+    /// Populates the widgets common to both invited and joined room previews.
     pub fn draw_common(
         &mut self,
         cx: &mut Cx,

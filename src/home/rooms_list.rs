@@ -181,38 +181,6 @@ pub struct JoinedRoomInfo {
     pub is_direct: bool,
 }
 
-#[derive(Debug)]
-pub struct DirectMessageInfo {
-    /// The matrix ID of this room.
-    pub room_id: OwnedRoomId,
-    /// The displayable name of this room, if known.
-    pub room_name: Option<String>,
-    /// The number of unread messages in this room.
-    pub num_unread_messages: u64,
-    /// The number of unread mentions in this room.
-    pub num_unread_mentions: u64,
-    /// The canonical alias for this room, if any.
-    pub canonical_alias: Option<OwnedRoomAliasId>,
-    /// The alternative aliases for this room, if any.
-    pub alt_aliases: Vec<OwnedRoomAliasId>,
-    /// The tags associated with this room, if any.
-    /// This includes things like is_favourite, is_low_priority,
-    /// whether the room is a server notice room, etc.
-    pub tags: Tags,
-    /// The timestamp and Html text content of the latest message in this room.
-    pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
-    /// The avatar for this room: either an array of bytes holding the avatar image
-    /// or a string holding the first Unicode character of the room name.
-    pub avatar: RoomPreviewAvatar,
-    /// Whether this room has been paginated at least once.
-    /// We pre-paginate visible rooms at least once in order to
-    /// be able to display the latest message in the room preview,
-    /// and to have something to immediately show when a user first opens a room.
-    pub has_been_paginated: bool,
-    /// Whether this room is currently selected in the UI.
-    pub is_selected: bool,
-}
-
 /// A room that the user has been invited to.
 pub struct InvitedRoomInfo {
     pub room: Room,
@@ -272,10 +240,12 @@ pub struct RoomsList {
     /// The list of joined rooms currently displayed in the UI, in order from top to bottom.
     /// This is a strict subset of the rooms present in `all_joined_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_joined_rooms`.
-    #[rust] displayed_joined_rooms: Vec<OwnedRoomId>,
-    #[rust(true)] is_joined_rooms_header_expanded: bool,
+    ///
+    /// **Direct messages are excluded.**
+    #[rust] displayed_rooms: Vec<OwnedRoomId>,
+    #[rust(true)] is_rooms_header_expanded: bool,
 
-    /// The list of joined rooms currently displayed in the UI, in order from top to bottom.
+    /// The list of direct messages currently displayed in the UI, in order from top to bottom.
     /// This is a strict subset of the rooms present in `all_joined_rooms`, and should be determined
     /// by applying the `display_filter` to the set of `all_joined_rooms`.
     #[rust] displayed_direct_messages: Vec<OwnedRoomId>,
@@ -321,7 +291,7 @@ impl RoomsList {
                             if is_direct {
                                 self.displayed_direct_messages.push(room_id);
                             } else {
-                                self.displayed_joined_rooms.push(room_id);
+                                self.displayed_rooms.push(room_id);
                             }
                         }
                     }
@@ -362,11 +332,11 @@ impl RoomsList {
                             }
                             (true, false) => {
                                 // Room was displayed but should no longer be displayed.
-                                self.displayed_joined_rooms.retain(|r| r != &room_id);
+                                self.displayed_rooms.retain(|r| r != &room_id);
                             }
                             (false, true) => {
                                 // Room was not displayed but should now be displayed.
-                                self.displayed_joined_rooms.push(room_id);
+                                self.displayed_rooms.push(room_id);
                             }
                         }
                     } else {
@@ -377,11 +347,11 @@ impl RoomsList {
                     self.all_joined_rooms
                         .remove(&room_id)
                         .and_then(|_removed|
-                            self.displayed_joined_rooms.iter().position(|r| r == &room_id)
+                            self.displayed_rooms.iter().position(|r| r == &room_id)
                         )
                         .map(|index_to_remove| {
                             // Remove the room from the list of displayed rooms.
-                            self.displayed_joined_rooms.remove(index_to_remove);
+                            self.displayed_rooms.remove(index_to_remove);
                         })
                         .unwrap_or_else(|| {
                             error!("Error: couldn't find room {room_id} to remove room");
@@ -399,7 +369,7 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
-                    self.displayed_joined_rooms.clear();
+                    self.displayed_rooms.clear();
                     self.invited_rooms.clear();
                     self.displayed_invited_rooms.clear();
                     self.update_status_rooms_count();
@@ -441,7 +411,7 @@ impl RoomsList {
     /// Updates the status message to show how many rooms are currently displayed
     /// that match the current search filter.
     fn update_status_matching_rooms(&mut self) {
-        let total = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
+        let total = self.displayed_invited_rooms.len() + self.displayed_rooms.len();
         self.status = match total {
             0 => "No matching rooms found.".to_string(),
             1 => "Found 1 matching room.".to_string(),
@@ -450,10 +420,10 @@ impl RoomsList {
     }
 
     /// Returns true if the given room is contained in any of the displayed room sets,
-    /// i.e., either the invited rooms or the joined rooms.
+    /// i.e., either the invited rooms or the joined rooms, or the direct messages.
     fn is_room_displayable(&self, room: &OwnedRoomId) -> bool {
         self.displayed_invited_rooms.contains(room)
-        || self.displayed_joined_rooms.contains(room)
+        || self.displayed_rooms.contains(room) || self.displayed_direct_messages.contains(room)
     }
 
     /// Updates the lists of displayed rooms based on the current search filter
@@ -463,8 +433,18 @@ impl RoomsList {
         if keywords.is_empty() {
             // Reset the displayed rooms list to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
-            self.displayed_joined_rooms = self.all_joined_rooms.keys().cloned().collect();
             self.displayed_invited_rooms = self.invited_rooms.keys().cloned().collect();
+
+            self.displayed_rooms = self.all_joined_rooms.iter()
+                .filter(|(_id, info)|{!info.is_direct})
+                .map(|(id, _info)| id.clone())
+                .collect();
+
+            self.displayed_direct_messages = self.all_joined_rooms.iter()
+                .filter(|(_id, info)|{info.is_direct})
+                .map(|(id, _info)| id.clone())
+                .collect();
+
             self.update_status_rooms_count();
             portal_list.set_first_id_and_scroll(0, 0.0);
             self.redraw(cx);
@@ -507,7 +487,7 @@ impl RoomsList {
         }
 
         // Update the displayed rooms list and redraw it.
-        self.displayed_joined_rooms = generate_displayed_rooms(&self.all_joined_rooms, &self.display_filter, sort_fn.as_deref());
+        self.displayed_rooms = generate_displayed_rooms(&self.all_joined_rooms, &self.display_filter, sort_fn.as_deref());
         self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms, &self.display_filter, sort_fn.as_deref());
         self.update_status_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
@@ -554,7 +534,7 @@ impl Widget for RoomsList {
                         self.is_invited_rooms_header_expanded = !self.is_invited_rooms_header_expanded;
                     }
                     HeaderCategory::JoinedRooms => {
-                        self.is_joined_rooms_header_expanded = !self.is_joined_rooms_header_expanded;
+                        self.is_rooms_header_expanded = !self.is_rooms_header_expanded;
                     }
                     HeaderCategory::DirectMessages => {
                         self.is_direct_messages_header_expanded = !self.is_direct_messages_header_expanded;
@@ -585,7 +565,7 @@ impl Widget for RoomsList {
         // Based on the various displayed room lists and is_expanded state of each room header,
         // calculate the indices in the PortalList where the headers and rooms should be drawn.
         let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
-        let should_show_joined_rooms_header = !self.displayed_joined_rooms.is_empty();
+        let should_show_joined_rooms_header = !self.displayed_rooms.is_empty();
         let should_show_direct_messages_header = !self.displayed_direct_messages.is_empty();
 
         let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(0);
@@ -596,7 +576,7 @@ impl Widget for RoomsList {
         let index_of_joined_rooms_header = should_show_joined_rooms_header.then_some(index_after_invited_rooms);
         let index_of_first_joined_room = index_after_invited_rooms + should_show_joined_rooms_header as usize;
         let index_after_joined_rooms = index_of_first_joined_room
-            + if self.is_joined_rooms_header_expanded { self.displayed_joined_rooms.len() } else { 0 };
+            + if self.is_rooms_header_expanded { self.displayed_rooms.len() } else { 0 };
 
         let index_of_direct_messages_header = should_show_direct_messages_header.then_some(index_after_joined_rooms);
         let index_of_first_direct_message = index_after_joined_rooms + should_show_direct_messages_header as usize;
@@ -617,8 +597,8 @@ impl Widget for RoomsList {
         };
         let get_joined_room_id = |portal_list_index: usize| {
             let index = portal_list_index - index_of_first_joined_room;
-            self.is_joined_rooms_header_expanded.then(||
-                self.displayed_joined_rooms.get(index)
+            self.is_rooms_header_expanded.then(||
+                self.displayed_rooms.get(index)
             )
             .flatten()
         };
@@ -666,7 +646,7 @@ impl Widget for RoomsList {
                     let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
                     item.as_collapsible_header().set_details(
                         cx,
-                        self.is_joined_rooms_header_expanded,
+                        self.is_rooms_header_expanded,
                         HeaderCategory::JoinedRooms,
                         0, // TODO: sum up all the unread mentions in all displayed joined rooms
                         // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
@@ -709,23 +689,21 @@ impl Widget for RoomsList {
                 }
                 else if let Some(direct_message_id) = get_direct_message_id(portal_list_index) {
                     if let Some(joined_room) = self.all_joined_rooms.get_mut(direct_message_id) {
-                        if joined_room.is_direct {
-                            let item = list.item(cx, portal_list_index, live_id!(room_preview));
-                            joined_room.is_selected = self.current_active_room.as_ref() == Some(direct_message_id);
+                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                        joined_room.is_selected = self.current_active_room.as_ref() == Some(direct_message_id);
 
-                            // Paginate the room if it hasn't been paginated yet.
-                            if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
-                                joined_room.has_been_paginated = true;
-                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                    room_id: joined_room.room_id.clone(),
-                                    num_events: 50,
-                                    direction: PaginationDirection::Backwards,
-                                });
-                            }
-                            // Pass the room info down to the RoomPreview widget via Scope.
-                            scope = Scope::with_props(&*joined_room);
-                            item.draw_all(cx, &mut scope);
+                        // Paginate the room if it hasn't been paginated yet.
+                        if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
+                            joined_room.has_been_paginated = true;
+                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                room_id: joined_room.room_id.clone(),
+                                num_events: 50,
+                                direction: PaginationDirection::Backwards,
+                            });
                         }
+                        // Pass the room info down to the RoomPreview widget via Scope.
+                        scope = Scope::with_props(&*joined_room);
+                        item.draw_all(cx, &mut scope);
                     } else {
                         list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
                     }
