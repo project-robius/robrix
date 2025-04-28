@@ -46,6 +46,7 @@ live_design! {
             rooms_sidebar = <RoomsSideBar> {}
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
+            // TODO: add a tab template for an invited room
         }
     }
 }
@@ -322,11 +323,7 @@ impl MatchEvent for MainDesktopUI {
                 cx.action(DockStateAction::SaveToAppState);
             }
             // Handle RoomsList actions
-            if let super::rooms_list::RoomsListAction::Selected {
-                room_id,
-                room_index: _,
-                room_name,
-            } = action.cast() {
+            if let super::rooms_list::RoomsListAction::Selected { room_id, room_name } = action.cast() {
                 // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                 // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                 // a redraw to be happening in order to draw the tab content.

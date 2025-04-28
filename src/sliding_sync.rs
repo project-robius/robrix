@@ -13,7 +13,7 @@ use matrix_sdk::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
         }, matrix_uri::MatrixId, MilliSecondsSinceUnixEpoch, OwnedEventId, OwnedMxcUri, OwnedRoomAliasId, OwnedRoomId, OwnedUserId, RoomOrAliasId, UserId
-    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
+    }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships, RoomState
 };
 use matrix_sdk_ui::{
     room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventTimelineItem, MembershipChange, RepliedToInfo, TimelineEventItemId, TimelineItem, TimelineItemContent}, RoomListService, Timeline
@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app::{RoomsPanelRestoreAction, WindowGeomState}, app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, RoomPreviewAvatar, RoomsListEntry, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, load_rooms_panel_state, load_window_state, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -1572,7 +1572,7 @@ async fn update_room(
         if let Ok(new_tags) = new_room.tags().await {
             enqueue_rooms_list_update(RoomsListUpdate::Tags {
                 room_id: new_room_id.clone(),
-                new_tags,
+                new_tags: new_tags.unwrap_or_default(),
             });
         }
 
@@ -1607,17 +1607,55 @@ fn remove_room(room: &room_list_service::Room) {
 async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
 
-    // NOTE: the call to `sync_up()` never returns, so I'm not sure how to force a room to fully sync.
-    //       I suspect that's the problem -- we can't get the room's tombstone event content because
-    //       the room isn't fully synced yet. But I don't know how to force it to fully sync.
-    //
-    // if !room.is_state_fully_synced() {
-    //     log!("Room {room_id} is not fully synced yet; waiting for sync_up...");
-    //     room.sync_up().await;
-    //     log!("Room {room_id} is now fully synced? {}", room.is_state_fully_synced());
-    // }
+    match room.state() {
+        RoomState::Banned => {
+            // TODO: handle rooms that this user has been banned from.
+            return Ok(());
+        }
+        RoomState::Left => {
+            // TODO: add this to the list of left rooms,
+            //       which is collapsed by default.
+            //       Upon clicking a left room, we can show a splash page
+            //       that prompts the user to rejoin the room or forget it.
+            return Ok(());
+        }
+        RoomState::Invited => {
+            // We must call `display_name()` here to calculate and cache the room's name.
+            let room_name = room.display_name().await.map(|n| n.to_string()).ok();
+            let invite_details = room.invite_details().await
+                .map_err(|e| anyhow::anyhow!("Failed to get room invite details: {e:?}"))?;
+            let latest = room.latest_event().await.as_ref().map(
+                |ev| get_latest_event_details(ev, &room_id)
+            );
+            let room_avatar = room_avatar(room, room_name.as_deref()).await;
 
-    // This will sync the room
+            let inviter_info = if let Some(inviter) = invite_details.inviter.as_ref() {
+                Some(InviterInfo {
+                    user_id: inviter.user_id().to_owned(),
+                    display_name: inviter.display_name().map(|n| n.to_string()),
+                    avatar: inviter.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await.ok().flatten(),
+                })
+            } else {
+                None
+            };
+
+            rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
+                room: room.inner_room().clone(),
+                inviter_info,
+                room_avatar,
+                latest,
+                is_selected: false,
+            }));
+            return Ok(());
+        }
+        RoomState::Knocked => {
+            // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
+            return Ok(());
+        }
+        RoomState::Joined => { } // Fall through to adding the joined room below.
+    }
+
+    // Subscribe to all updates for this room in order to properly receive all of its states.
     room_list_service.subscribe_to_rooms(&[&room_id]);
 
     // Do not add tombstoned rooms to the rooms list; they require special handling.
@@ -1668,14 +1706,14 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         |ev| get_latest_event_details(ev, &room_id)
     );
 
-    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddRoom(RoomsListEntry {
+    rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
         room_id: room_id.clone(),
         latest,
-        tags: room.tags().await.ok().flatten(),
+        tags: room.tags().await.ok().flatten().unwrap_or_default(),
         num_unread_messages: room.num_unread_messages(),
         num_unread_mentions: room.num_unread_mentions(),
         // start with a basic text avatar; the avatar image will be fetched asynchronously below.
-        avatar: avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
+        avatar: avatar_from_room_name(room_name.as_deref()),
         room_name,
         canonical_alias: room.canonical_alias(),
         alt_aliases: room.alt_aliases(),
@@ -2254,10 +2292,10 @@ fn update_latest_event(
 
 /// Spawn a new async task to fetch the room's new avatar.
 fn spawn_fetch_room_avatar(room: Room) {
-    let room_id = room.room_id().to_owned();
-    let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
     Handle::current().spawn(async move {
-        let avatar = room_avatar(&room, &room_name_str).await;
+        let room_id = room.room_id().to_owned();
+        let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
+        let avatar = room_avatar(&room, room_name_str.as_deref()).await;
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
@@ -2267,36 +2305,34 @@ fn spawn_fetch_room_avatar(room: Room) {
 
 /// Fetches and returns the avatar image for the given room (if one exists),
 /// otherwise returns a text avatar string of the first character of the room name.
-async fn room_avatar(room: &Room, room_name: &Option<String>) -> RoomPreviewAvatar {
+async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
         Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
         _ => {
             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
                 if room_members.len() == 2 {
                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
-                        return match non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
-                            _ => avatar_from_room_name(room_name.as_deref().unwrap_or_default()),
-                        };
+                        if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
+                            return RoomPreviewAvatar::Image(avatar);
+                        }
                     }
-                } else {
-                    return avatar_from_room_name(room_name.as_deref().unwrap_or_default());
                 }
             }
-            avatar_from_room_name(room_name.as_deref().unwrap_or_default())
+            avatar_from_room_name(room_name)
         }
     }
 }
 
 /// Returns a text avatar string containing the first character of the room name.
-fn avatar_from_room_name(room_name: &str) -> RoomPreviewAvatar {
-    RoomPreviewAvatar::Text(
-        room_name
-            .graphemes(true)
-            .find(|&g| g != "@")
-            .map(ToString::to_string)
-            .unwrap_or_default()
-    )
+///
+/// Skips the first character if it is a `#` or `!`, the sigils used for Room aliases and Room IDs.
+fn avatar_from_room_name(room_name: Option<&str>) -> RoomPreviewAvatar {
+    let first = room_name.and_then(|rn| rn
+        .graphemes(true)
+        .find(|&g| g != "#" && g != "!")
+        .map(ToString::to_string)
+    ).unwrap_or_else(|| String::from("?"));
+    RoomPreviewAvatar::Text(first)
 }
 
 /// Spawn an async task to login to the given Matrix homeserver using the given SSO identity provider ID.
