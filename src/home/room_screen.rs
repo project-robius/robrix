@@ -34,7 +34,7 @@ use crate::shared::mentionable_text_input::MentionableTextInputWidgetRefExt;
 
 use rangemap::RangeSet;
 
-use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}};
+use super::{editing_pane::{EditingPaneAction, EditingPaneWidgetExt}, event_reaction_list::ReactionData, loading_pane::LoadingPaneRef, new_message_context_menu::{MessageAbilities, MessageDetails}, room_read_receipt::{self, populate_read_receipts, MAX_VISIBLE_AVATARS_IN_READ_RECEIPT}, rooms_list::RoomsListWidgetExt};
 
 const GEO_URI_SCHEME: &str = "geo:";
 
@@ -63,6 +63,7 @@ live_design! {
     use crate::home::event_reaction_list::*;
     use crate::home::editing_pane::*;
     use crate::room::room_input_bar::*;
+    use crate::rooms_list::*;
 
     IMG_DEFAULT_AVATAR = dep("crate://self/resources/img/default_avatar.png")
 
@@ -722,7 +723,11 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY_DARKER)
             }
-
+            // Used to retreive the list of loaded rooms.
+            <CachedWidget> {
+                width:0, height:0,
+                rooms_list = <RoomsList> {}
+            }
             restore_status_label = <Label> {
                 align: {x: 0.0, y: 0.5},
                 padding: {left: 5.0, right: 0.0}
@@ -930,10 +935,6 @@ pub struct RoomScreen {
     #[rust] room_name: String,
     /// The persistent UI-relevant states for the room that this widget is currently displaying.
     #[rust] tl_state: Option<TimelineUiState>,
-    /// The status of this room being restored from previously-saved data in storage.
-    /// If `Pending` or `AllRoomsLoaded`, this RoomScreen will display a message;
-    /// otherwise, the regular RoomScreen content (the room timeline) will be shown.
-    #[rust] restore_status: RoomsPanelRestoreAction,
 }
 impl Drop for RoomScreen {
     fn drop(&mut self) {
@@ -957,6 +958,23 @@ impl Widget for RoomScreen {
         // Currently, a Signal event is only used to tell this widget
         // that its timeline events have been updated in the background.
         if let Event::Signal = event {
+            if let Some(room_id) = &self.room_id {
+                let rooms_list = self.rooms_list(id!(rooms_list));
+                if !rooms_list.is_room_loaded(room_id) {
+                    let status_text = if rooms_list.all_known_rooms_loaded() {
+                        format!(
+                            "Room {} was not found in the homeserver's list of all rooms.",
+                            self.room_name
+                        )
+                    } else {
+                        "[Placeholder for Spinner]".to_string()
+                    };
+                    self.view
+                        .label(id!(restore_status_label))
+                        .set_text(cx, &status_text);
+                    return;
+                }
+            }
             self.process_timeline_updates(cx, &portal_list);
 
             // Ideally we would do this elsewhere on the main thread, because it's not room-specific,
@@ -965,6 +983,7 @@ impl Widget for RoomScreen {
             //       and wrap it in a `if let Event::Signal` conditional.
             user_profile_cache::process_user_profile_updates(cx);
             avatar_cache::process_avatar_updates(cx);
+
         }
 
         if let Event::Actions(actions) = event {
@@ -1037,15 +1056,13 @@ impl Widget for RoomScreen {
                 match action.downcast_ref() {
                     Some(RoomsPanelRestoreAction::Success(room_id)) => {
                         if self.room_id.as_ref().is_some_and(|r| r == room_id) {                            
-                            self.set_restore_status(cx, RoomsPanelRestoreAction::Success(room_id.clone()));
                             // Reset room_id before displaying room.
                             self.room_id = None;
                             self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
+                            self.view
+                                .label(id!(restore_status_label)).set_text(cx, "");
                             return;
                         }
-                    }
-                    Some(RoomsPanelRestoreAction::AllRoomsLoaded) => {
-                        self.set_restore_status(cx, RoomsPanelRestoreAction::AllRoomsLoaded);
                     }
                     _ => {}
                 }
@@ -1295,11 +1312,10 @@ impl Widget for RoomScreen {
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
-        if matches!(
-            &self.restore_status,
-            RoomsPanelRestoreAction::Pending(_) | RoomsPanelRestoreAction::AllRoomsLoaded
-        ) {
-            return self.view.draw_walk(cx, scope, walk);
+        if let Some(room_id) = &self.room_id {
+            if !self.rooms_list(id!(rooms_list)).is_room_loaded(room_id) {
+                return self.view.draw_walk(cx, scope, walk);
+            }
         }
 
         if self.tl_state.is_none() {
@@ -2280,12 +2296,6 @@ impl RoomScreen {
     fn show_timeline(&mut self, cx: &mut Cx) {
         let room_id = self.room_id.clone()
             .expect("BUG: Timeline::show_timeline(): no room_id was set.");
-        // just an optional sanity check
-        // Remove this as there is restoring state RoomsPanelRestoreAction::Pending with early return
-        // assert!(self.tl_state.is_none(),
-        //     "BUG: tried to show_timeline() into a timeline with existing state. \
-        //     Did you forget to save the timeline state back to the global map of states?",
-        // );
 
         // Obtain the current user's power levels for this room.
         submit_async_request(MatrixRequest::GetRoomPowerLevels { room_id: room_id.clone() });
@@ -2295,7 +2305,6 @@ impl RoomScreen {
             (existing, false)
         } else {
             let Some((update_sender, update_receiver, request_sender)) = take_timeline_endpoints(&room_id) else {
-                self.set_restore_status(cx, RoomsPanelRestoreAction::Pending(room_id.clone()));
                 return;
             };
             let new_tl_state = TimelineUiState {
@@ -2484,36 +2493,6 @@ impl RoomScreen {
         self.show_timeline(cx);
     }
 
-    /// This sets the RoomScreen widget to display a text label in place of the timeline.
-    pub fn set_restore_status(&mut self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
-        match &status {
-            RoomsPanelRestoreAction::Pending(room_id) => {
-                // Set this RoomScreen's room_id such that it can handle a `RoomsPanelRestoreAction::Success` action.
-                self.room_id = Some(room_id.clone());
-                self.view
-                    .label(id!(restore_status_label))
-                    .set_text(cx, "[Placeholder for Spinner]");
-                self.restore_status = status;
-            }
-            RoomsPanelRestoreAction::AllRoomsLoaded => {
-                if let RoomsPanelRestoreAction::Pending(_) = self.restore_status {
-                    self.view.label(id!(restore_status_label)).set_text(
-                        cx,
-                        &format!(
-                            "Room {} was not found in the homeserver's list of all rooms.",
-                            self.room_name
-                        ),
-                    );
-                }
-            }
-            _ => {
-                self.view.label(id!(restore_status_label)).set_text(cx, "");
-                self.restore_status = status;
-            }
-        }
-        self.redraw(cx);
-    }
-
     /// Sends read receipts based on the current scroll position of the timeline.
     fn send_user_read_receipts_based_on_scroll_pos(
         &mut self,
@@ -2623,13 +2602,6 @@ impl RoomScreenRef {
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);
-    }
-
-    /// See [`RoomScreen::set_restore_status()`].
-    pub fn set_restore_status(&self, cx: &mut Cx, status: RoomsPanelRestoreAction) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_restore_status(cx, status);
-        }
     }
 }
 

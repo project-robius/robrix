@@ -1693,7 +1693,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     ALL_ROOM_INFO.lock().unwrap().insert(
         room_id.clone(),
         RoomInfo {
-            room_id,
+            room_id: room_id.clone(),
             timeline,
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
             timeline_update_sender,
@@ -1702,6 +1702,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
         },
     );
+    Cx::post_action(RoomsPanelRestoreAction::Success(room_id));
     Ok(())
 }
 

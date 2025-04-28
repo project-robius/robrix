@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 use std::collections::HashMap;
 
-use crate::app::{AppState, RoomsPanelRestoreAction, SelectedRoom};
+use crate::app::{AppState, SelectedRoom};
 
 use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
@@ -119,10 +119,6 @@ impl Widget for MainDesktopUI {
 
                         if let Some(ref selected_room) = &app_state.rooms_panel.selected_room {
                             self.focus_or_create_tab(cx, selected_room.clone());
-                        }
-                        // Re-emit the action to notify recently-created RoomScreens that all rooms are loaded.
-                        if app_state.all_known_rooms_loaded {
-                            Cx::post_action(RoomsPanelRestoreAction::AllRoomsLoaded);
                         }
                     }
                     Some(DockStateAction::SaveToAppState) => {
@@ -354,7 +350,7 @@ pub enum RoomsPanelAction {
 /// Actions related to saving/restoring the UI state of the dock widget.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum DockStateAction {
-    /// Save the dock state from the dock widget into the [`AppState`].
+    /// Save the room panel state from the dock widget into the [`AppState`].
     SaveToAppState,
     /// Restores the room panel state from the [`AppState`] to the dock widget.
     RestoreFromAppState,

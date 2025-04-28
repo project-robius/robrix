@@ -4,7 +4,7 @@ use imbl::HashSet;
 use makepad_widgets::*;
 use matrix_sdk::ruma::{events::tag::{TagName, Tags}, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId};
 use bitflags::bitflags;
-use crate::{app::{AppState, RoomsPanelRestoreAction}, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
+use crate::{app::AppState, shared::jump_to_bottom_button::UnreadMessageCount, sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection}};
 
 use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 
@@ -451,6 +451,21 @@ impl RoomsList {
             n => format!("Found {} matching rooms.", n),
         }
     }
+
+/// Determines if all known rooms have been loaded.
+///
+/// Returns `true` if the number of rooms in `all_rooms` equals or exceeds
+/// `max_known_rooms`, or `false` if `max_known_rooms` is `None`.
+
+    fn all_known_rooms_loaded(&self) -> bool {
+        self.max_known_rooms.map_or(false, |max_rooms| self.all_rooms.len() >= max_rooms as usize)
+    }
+
+    /// Returns `true` if the given `room_id` is already in the `all_rooms` list,
+    /// and `false` if it is not.
+    fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_rooms.contains_key(room_id)
+    }
 }
 
 impl Widget for RoomsList {
@@ -473,12 +488,8 @@ impl Widget for RoomsList {
                             }
                         }
                         self.update_status_rooms_count();
-                        cx.action(RoomsPanelRestoreAction::Success(room_id));
-                        if self.all_rooms.len() == self.max_known_rooms.unwrap_or(u32::MAX) as usize {
-                            cx.action(RoomsPanelRestoreAction::AllRoomsLoaded);
-                            let app_state = scope.data.get_mut::<AppState>().unwrap();
-                            app_state.all_known_rooms_loaded = true;
-                        }
+                        // Signal the UI to update the RoomScreen
+                        SignalToUI::set_ui_signal();
                     }
                     RoomsListUpdate::UpdateRoomAvatar { room_id, avatar } => {
                         if let Some(room) = self.all_rooms.get_mut(&room_id) {
@@ -749,6 +760,20 @@ impl WidgetMatchEvent for RoomsList {
     }
 }
 
+impl RoomsListRef {
+    /// See [`RoomsList::all_known_rooms_loaded()`].
+    pub fn all_known_rooms_loaded(
+        &self,
+    ) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.all_known_rooms_loaded()
+    }
+    /// See [`RoomsList::is_room_loaded()`].
+    pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
+        let Some(inner) = self.borrow() else { return false };
+        inner.is_room_loaded(room_id)
+    }
+}
 pub struct RoomsListScopeProps {
     /// Whether the RoomsList's inner PortalList was scrolling
     /// when the latest finger down event occurred.
