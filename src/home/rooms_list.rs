@@ -54,14 +54,13 @@ live_design! {
         width: Fill, height: Fill
         flow: Down
         cursor: Default,
-        
-        
+
         list = <PortalList> {
             keep_invisible: false,
             auto_tail: false,
             width: Fill, height: Fill
             flow: Down, spacing: 0.0
-            
+
             collapsible_header = <CollapsibleHeader> {}
             room_preview = <RoomPreview> {}
             empty = <Empty> {}
@@ -178,6 +177,40 @@ pub struct JoinedRoomInfo {
     pub has_been_paginated: bool,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
+    /// Whether this room is a direct message.
+    pub is_direct: bool,
+}
+
+#[derive(Debug)]
+pub struct DirectMessageInfo {
+    /// The matrix ID of this room.
+    pub room_id: OwnedRoomId,
+    /// The displayable name of this room, if known.
+    pub room_name: Option<String>,
+    /// The number of unread messages in this room.
+    pub num_unread_messages: u64,
+    /// The number of unread mentions in this room.
+    pub num_unread_mentions: u64,
+    /// The canonical alias for this room, if any.
+    pub canonical_alias: Option<OwnedRoomAliasId>,
+    /// The alternative aliases for this room, if any.
+    pub alt_aliases: Vec<OwnedRoomAliasId>,
+    /// The tags associated with this room, if any.
+    /// This includes things like is_favourite, is_low_priority,
+    /// whether the room is a server notice room, etc.
+    pub tags: Tags,
+    /// The timestamp and Html text content of the latest message in this room.
+    pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    /// The avatar for this room: either an array of bytes holding the avatar image
+    /// or a string holding the first Unicode character of the room name.
+    pub avatar: RoomPreviewAvatar,
+    /// Whether this room has been paginated at least once.
+    /// We pre-paginate visible rooms at least once in order to
+    /// be able to display the latest message in the room preview,
+    /// and to have something to immediately show when a user first opens a room.
+    pub has_been_paginated: bool,
+    /// Whether this room is currently selected in the UI.
+    pub is_selected: bool,
 }
 
 /// A room that the user has been invited to.
@@ -242,6 +275,12 @@ pub struct RoomsList {
     #[rust] displayed_joined_rooms: Vec<OwnedRoomId>,
     #[rust(true)] is_joined_rooms_header_expanded: bool,
 
+    /// The list of joined rooms currently displayed in the UI, in order from top to bottom.
+    /// This is a strict subset of the rooms present in `all_joined_rooms`, and should be determined
+    /// by applying the `display_filter` to the set of `all_joined_rooms`.
+    #[rust] displayed_direct_messages: Vec<OwnedRoomId>,
+    #[rust(false)] is_direct_messages_header_expanded: bool,
+
     /// The latest status message that should be displayed in the bottom status label.
     #[rust] status: String,
     /// The ID of the currently-selected room.
@@ -272,13 +311,18 @@ impl RoomsList {
                 }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();
+                    let is_direct = joined_room.is_direct;
                     let should_display = (self.display_filter)(&joined_room);
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added joined room {room_id} that already existed");
                     } else {
                         if should_display {
-                            self.displayed_joined_rooms.push(room_id);
+                            if is_direct {
+                                self.displayed_direct_messages.push(room_id);
+                            } else {
+                                self.displayed_joined_rooms.push(room_id);
+                            }
                         }
                     }
                     self.update_status_rooms_count();
@@ -473,7 +517,7 @@ impl RoomsList {
 
 impl Widget for RoomsList {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        // Process all pending updates to the list of all rooms, and then redraw it. 
+        // Process all pending updates to the list of all rooms, and then redraw it.
         if matches!(event, Event::Signal) {
             self.handle_rooms_list_updates(cx, event, scope);
         }
@@ -512,6 +556,9 @@ impl Widget for RoomsList {
                     HeaderCategory::JoinedRooms => {
                         self.is_joined_rooms_header_expanded = !self.is_joined_rooms_header_expanded;
                     }
+                    HeaderCategory::DirectMessages => {
+                        self.is_direct_messages_header_expanded = !self.is_direct_messages_header_expanded;
+                    }
                     _todo => todo!("Handle other header categories"),
                 }
                 self.redraw(cx);
@@ -539,17 +586,27 @@ impl Widget for RoomsList {
         // calculate the indices in the PortalList where the headers and rooms should be drawn.
         let should_show_invited_rooms_header = !self.displayed_invited_rooms.is_empty();
         let should_show_joined_rooms_header = !self.displayed_joined_rooms.is_empty();
+        let should_show_direct_messages_header = !self.displayed_direct_messages.is_empty();
 
         let index_of_invited_rooms_header = should_show_invited_rooms_header.then_some(0);
         let index_of_first_invited_room = should_show_invited_rooms_header as usize;
         let index_after_invited_rooms = index_of_first_invited_room
             + if self.is_invited_rooms_header_expanded { self.displayed_invited_rooms.len() } else { 0 };
+
         let index_of_joined_rooms_header = should_show_joined_rooms_header.then_some(index_after_invited_rooms);
         let index_of_first_joined_room = index_after_invited_rooms + should_show_joined_rooms_header as usize;
         let index_after_joined_rooms = index_of_first_joined_room
             + if self.is_joined_rooms_header_expanded { self.displayed_joined_rooms.len() } else { 0 };
-        let status_label_id = index_after_joined_rooms;
-        let total_count = status_label_id + 1; // +1 for the status label
+
+        let index_of_direct_messages_header = should_show_direct_messages_header.then_some(index_after_joined_rooms);
+        let index_of_first_direct_message = index_after_joined_rooms + should_show_direct_messages_header as usize;
+        let index_after_direct_messages = index_of_first_direct_message
+            + if self.is_direct_messages_header_expanded { self.displayed_direct_messages.len() } else { 0 };
+
+        let status_label_id = index_after_direct_messages;
+
+        // Add one for the status label
+        let total_count = status_label_id + 1;
 
         let get_invited_room_id = |portal_list_index: usize| {
             let index = portal_list_index - index_of_first_invited_room;
@@ -562,6 +619,13 @@ impl Widget for RoomsList {
             let index = portal_list_index - index_of_first_joined_room;
             self.is_joined_rooms_header_expanded.then(||
                 self.displayed_joined_rooms.get(index)
+            )
+            .flatten()
+        };
+        let get_direct_message_id = |portal_list_index: usize| {
+            let index = portal_list_index - index_of_first_direct_message;
+            self.is_direct_messages_header_expanded.then(||
+                self.displayed_direct_messages.get(index)
             )
             .flatten()
         };
@@ -611,21 +675,57 @@ impl Widget for RoomsList {
                 }
                 else if let Some(joined_room_id) = get_joined_room_id(portal_list_index) {
                     if let Some(joined_room) = self.all_joined_rooms.get_mut(joined_room_id) {
-                        let item = list.item(cx, portal_list_index, live_id!(room_preview));
-                        joined_room.is_selected = self.current_active_room.as_ref() == Some(joined_room_id);
+                        if !joined_room.is_direct {
+                            let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                            joined_room.is_selected = self.current_active_room.as_ref() == Some(joined_room_id);
 
-                        // Paginate the room if it hasn't been paginated yet.
-                        if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
-                            joined_room.has_been_paginated = true;
-                            submit_async_request(MatrixRequest::PaginateRoomTimeline {
-                                room_id: joined_room.room_id.clone(),
-                                num_events: 50,
-                                direction: PaginationDirection::Backwards,
-                            });
+                            // Paginate the room if it hasn't been paginated yet.
+                            if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
+                                joined_room.has_been_paginated = true;
+                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                    room_id: joined_room.room_id.clone(),
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            // Pass the room info down to the RoomPreview widget via Scope.
+                            scope = Scope::with_props(&*joined_room);
+                            item.draw_all(cx, &mut scope);
                         }
-                        // Pass the room info down to the RoomPreview widget via Scope.
-                        scope = Scope::with_props(&*joined_room);
-                        item.draw_all(cx, &mut scope);
+                    } else {
+                        list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
+                    }
+                }
+                else if index_of_direct_messages_header == Some(portal_list_index) {
+                    let item = list.item(cx, portal_list_index, live_id!(collapsible_header));
+                    item.as_collapsible_header().set_details(
+                        cx,
+                        self.is_direct_messages_header_expanded,
+                        HeaderCategory::DirectMessages,
+                        0, // TODO: sum up all the unread mentions in all displayed joined rooms
+                        // NOTE: this might be really slow, so we should maintain a running total of mentions in this struct
+                    );
+                    item.draw_all(cx, &mut scope);
+                }
+                else if let Some(direct_message_id) = get_direct_message_id(portal_list_index) {
+                    if let Some(joined_room) = self.all_joined_rooms.get_mut(direct_message_id) {
+                        if joined_room.is_direct {
+                            let item = list.item(cx, portal_list_index, live_id!(room_preview));
+                            joined_room.is_selected = self.current_active_room.as_ref() == Some(direct_message_id);
+
+                            // Paginate the room if it hasn't been paginated yet.
+                            if PREPAGINATE_VISIBLE_ROOMS && !joined_room.has_been_paginated {
+                                joined_room.has_been_paginated = true;
+                                submit_async_request(MatrixRequest::PaginateRoomTimeline {
+                                    room_id: joined_room.room_id.clone(),
+                                    num_events: 50,
+                                    direction: PaginationDirection::Backwards,
+                                });
+                            }
+                            // Pass the room info down to the RoomPreview widget via Scope.
+                            scope = Scope::with_props(&*joined_room);
+                            item.draw_all(cx, &mut scope);
+                        }
                     } else {
                         list.item(cx, portal_list_index, live_id!(empty)).draw_all(cx, &mut scope);
                     }

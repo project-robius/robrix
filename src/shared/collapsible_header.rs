@@ -82,7 +82,7 @@ impl HeaderCategory {
             HeaderCategory::Invites => "Invites",
             HeaderCategory::Favorites => "Favorites",
             HeaderCategory::JoinedRooms => "Rooms",
-            HeaderCategory::DirectMessages => "Direct Messages", // "People"
+            HeaderCategory::DirectMessages => "People",
             HeaderCategory::LowPriority => "Low Priority",
             HeaderCategory::LeftRooms => "Left Rooms",
             HeaderCategory::None => "",
