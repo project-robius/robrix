@@ -84,7 +84,6 @@ pub struct MainDesktopUI {
 
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-
         let dock = self.view.dock(id!(dock));
         if let Event::Actions(actions) = event {
             for action in actions {
@@ -94,24 +93,23 @@ impl Widget for MainDesktopUI {
                         self.room_order = app_state.rooms_panel.room_order.clone();
                         self.most_recently_selected_room = app_state.rooms_panel.selected_room.clone();
                         self.open_rooms = HashMap::with_capacity(app_state.rooms_panel.open_rooms.len());
-                        for (k, v) in app_state.rooms_panel.open_rooms.iter() {
-                            self.open_rooms.insert(LiveId(*k), v.clone());
-                        }
                         if app_state.rooms_panel.dock_state.is_empty() {
                             return;
                         }
 
                         if let Some(mut dock) = dock.borrow_mut() {
                             dock.load_state(cx, app_state.rooms_panel.dock_state.clone());
-                            dock.items().iter().for_each(|(head_liveid, (_, widget))| {
+                            dock.items().iter().for_each(|(tab_id, (_, widget))| {
                                 if let Some(room) =
-                                    app_state.rooms_panel.open_rooms.get(&head_liveid.0)
+                                    app_state.rooms_panel.open_rooms.get(&tab_id.0)
                                 {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
                                         room.room_id.clone(),
                                         room.room_name.clone().unwrap_or_default(),
                                     );
+                                    // Open rooms should not contain rooms that are not in the dock.
+                                    self.open_rooms.insert(LiveId(tab_id.0), room.clone());
                                 }
                             });
                         } else {
@@ -337,11 +335,11 @@ impl MatchEvent for MainDesktopUI {
 /// or one of the RoomScreen widgets.
 #[derive(Clone, DefaultNone, Debug)]
 pub enum RoomsPanelAction {
+    None,
     /// Notifies that a room was focused.
     RoomFocused(SelectedRoom),
     /// Resets the focus to none, meaning that no room has focus.
     FocusNone,
-    None,
 }
 
 /// Actions related to saving/restoring the UI state of the dock widget.

@@ -195,22 +195,25 @@ pub async fn save_session(
 
 /// Save the current display state of the room panel to persistent storage.
 pub fn save_room_panel(
-    rooms_panel_state: &RoomsPanelState,
-    user_id: &UserId,
+    rooms_panel_state: RoomsPanelState,
+    user_id: OwnedUserId,
 ) -> anyhow::Result<()> {
     std::fs::write(
-        persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
+        persistent_state_dir(&user_id).join(LATEST_DOCK_STATE_FILE_NAME),
         rooms_panel_state.dock_state.serialize_ron(),
     )?;
+    for (tab_id, room) in &rooms_panel_state.open_rooms {
+        assert!(rooms_panel_state.dock_state.contains_key(&LiveId(*tab_id)), "Open room id: {} not found in dock state", &room.room_id);
+    }
     std::fs::write(
-        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
+        persistent_state_dir(&user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
         serde_json::to_string(&rooms_panel_state)?,
     )?;
     Ok(())
 }
 
 /// Save the current state of window geometry state to persistent storage.
-pub fn save_window_state(window_geom: &WindowGeom) -> anyhow::Result<()> {
+pub fn save_window_state(window_geom: WindowGeom) -> anyhow::Result<()> {
     let window_geom_state = WindowGeomState {
         window_is_fullscreen: window_geom.is_fullscreen,
         window_position: crate::utils::DVec2Wrapper(window_geom.position),

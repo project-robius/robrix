@@ -1052,18 +1052,14 @@ impl Widget for RoomScreen {
 
             for action in actions {
                 // Handle actions related to restoring the previously-saved state of rooms.
-                match action.downcast_ref() {
-                    Some(RoomsPanelRestoreAction::Success(room_id)) => {
-                        if self.room_id.as_ref().is_some_and(|r| r == room_id) {                            
-                            // Reset room_id before displaying room.
-                            self.room_id = None;
-                            self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
-                            self.view
-                                .label(id!(restore_status_label)).set_text(cx, "");
-                            return;
-                        }
+                if let Some(RoomsPanelRestoreAction::Success(room_id)) = action.downcast_ref() {
+                    if self.room_id.as_ref().is_some_and(|r| r == room_id) {                            
+                        // Reset room_id before displaying room.
+                        self.room_id = None;
+                        self.set_displayed_room(cx, room_id.clone(), self.room_name.clone());
+                        self.view.label(id!(restore_status_label)).set_text(cx, "");
+                        return;
                     }
-                    _ => {}
                 }
                 // Handle the highlight animation.
                 let Some(tl) = self.tl_state.as_mut() else { continue };

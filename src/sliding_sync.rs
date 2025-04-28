@@ -1796,6 +1796,11 @@ fn handle_ignore_user_list_subscriber(client: Client) {
     });
 }
 
+/// Asynchronously loads and restores the rooms panel state from persistent storage for the given user.
+/// 
+/// If the loaded state contains open rooms and dock state, it logs a message and posts an action
+/// to restore the rooms panel state in the UI. If loading fails, it enqueues a notification
+/// with the error message.
 fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
     Handle::current().spawn(async move {
         match load_rooms_panel_state(&user_id).await {
@@ -1814,6 +1819,11 @@ fn handle_load_rooms_panel_state(user_id: OwnedUserId) {
     });
 }
 
+/// Asynchronously loads and restores the window geometry state from persistent storage.
+/// 
+/// If the loaded state is different from the default, it posts an action to restore
+/// the window's geometry in the UI. If loading fails, it enqueues a notification
+/// with the error message.
 fn handle_load_window_state() {
     Handle::current().spawn(async move {
         match load_window_state().await {

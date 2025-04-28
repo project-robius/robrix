@@ -251,13 +251,18 @@ pub struct RoomsList {
 }
 
 impl RoomsList {
+
     /// Determines if all known rooms have been loaded.
     ///
-    /// Returns `true` if the number of rooms in `all_rooms` equals or exceeds
+    /// Returns `true` if the number of rooms in `all_joined_rooms` and `invited_rooms` equals or exceeds
     /// `max_known_rooms`, or `false` if `max_known_rooms` is `None`.
-
-    fn all_known_rooms_loaded(&self) -> bool {
-        self.max_known_rooms.map_or(false, |max_rooms| self.all_rooms.len() >= max_rooms as usize)
+    pub fn all_known_rooms_loaded(&self) -> bool {
+        self.max_known_rooms.is_some_and(|max_rooms| self.all_joined_rooms.len() + self.invited_rooms.len() >= max_rooms as usize)
+    }
+    /// Returns `true` if the given `room_id` is already in the `all_joined_rooms` and `invited_rooms` lists.
+    /// and `false` if it is not.
+    pub fn is_room_loaded(&self, room_id: &OwnedRoomId) -> bool {
+        self.all_joined_rooms.contains_key(room_id) || self.invited_rooms.contains_key(room_id)
     }
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
@@ -660,57 +665,6 @@ impl Widget for RoomsList {
         DrawStep::done()
     }
 
-}
-
-impl WidgetMatchEvent for RoomsList {
-    fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions, _scope: &mut Scope) {
-        for action in actions {
-            if let RoomsViewAction::Search(keywords) = action.as_widget_action().cast() {
-                let portal_list = self.view.portal_list(id!(list));
-                if keywords.is_empty() {
-                    // Reset the displayed rooms list to show all rooms.
-                    self.display_filter = RoomDisplayFilter::default();
-                    self.displayed_rooms = self.all_rooms.keys().cloned().collect();
-                    self.update_status_rooms_count();
-                    portal_list.set_first_id_and_scroll(0, 0.0);
-                    self.redraw(cx);
-                    return;
-                }
-
-                let (filter, sort_fn) = RoomDisplayFilterBuilder::new()
-                    .set_keywords(keywords.clone())
-                    .set_filter_criteria(RoomFilterCriteria::All)
-                    .build();
-                self.display_filter = filter;
-
-                let new_displayed_rooms = if let Some(sort_fn) = sort_fn {
-                    let mut filtered_rooms: Vec<_> = self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .collect();
-
-                    filtered_rooms.sort_by(|(_, room_a), (_, room_b)| sort_fn(room_a, room_b));
-
-                    filtered_rooms
-                        .into_iter()
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
-                } else {
-                    self.all_rooms
-                        .iter()
-                        .filter(|(_, room)| (self.display_filter)(room))
-                        .map(|(room_id, _)| room_id.clone())
-                        .collect()
-                };
-
-                // Update the displayed rooms list and redraw it.
-                self.displayed_rooms = new_displayed_rooms;
-                self.update_status_matching_rooms();
-                portal_list.set_first_id_and_scroll(0, 0.0);
-                self.redraw(cx);
-            }
-        }
-    }
 }
 
 impl RoomsListRef {

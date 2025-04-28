@@ -371,14 +371,21 @@ impl AppMain for App {
         }
         if let Event::WindowClosed(_) | Event::Shutdown = event {
             if let Some(window_geom) = &self.app_state.window_geom {
-                if let Err(e) = save_window_state(window_geom) {
-                    log!("Bug! Failed to save window_state: {}", e);
-                }
+                let window_geom = window_geom.clone();
+                cx.spawn_thread(move || {
+                    if let Err(e) = save_window_state(window_geom) {
+                        error!("Bug! Failed to save window_state: {}", e);
+                    }
+                });
             }
             if let Some(user_id) = current_user_id(){
-                if let Err(e) = save_room_panel(&self.app_state.rooms_panel, &user_id) {
-                    log!("Bug! Failed to save room panel: {}", e);
-                }
+                let rooms_panel = self.app_state.rooms_panel.clone();
+                let user_id = user_id.clone();
+                cx.spawn_thread(move || {
+                    if let Err(e) = save_room_panel(rooms_panel, user_id) {
+                        error!("Bug! Failed to save room panel: {}", e);
+                    }
+                });
             }
         }
         // Forward events to the MatchEvent trait implementation.
@@ -491,11 +498,6 @@ pub enum RoomsPanelRestoreAction {
     /// and is now ready to be restored to the dock UI widget.
     /// This will be handled by the top-level App and by each RoomScreen in the dock.
     Restore(RoomsPanelState),
-    /// The given room has not yet been loaded from the homeserver
-    /// and is waiting to be known by our client so that it can be displayed.
-    /// Each RoomScreen widget will handle and update its own status
-    /// to be pending, and should thus display a loading spinner / notice.
-    Pending(OwnedRoomId),
     /// The given room was successfully loaded from the homeserver
     /// and is known to our client.
     /// The RoomScreen for this room can now fully display the room's timeline.
