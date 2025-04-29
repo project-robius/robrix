@@ -38,7 +38,7 @@ live_design! {
         }
         search_bar = <SearchBar> {
             input = {
-                empty_message: "Search rooms..."
+                empty_message: "Filter rooms..."
             }
         }
         <CachedWidget> {

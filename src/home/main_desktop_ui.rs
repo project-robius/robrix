@@ -2,8 +2,8 @@ use makepad_widgets::*;
 use std::collections::HashMap;
 
 use crate::app::{AppState, SelectedRoom};
+use super::{invite_screen::InviteScreenWidgetRefExt, room_screen::RoomScreenWidgetRefExt};
 
-use super::room_screen::RoomScreenWidgetRefExt;
 live_design! {
     use link::theme::*;
     use link::shaders::*;
@@ -11,11 +11,12 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::home::light_themed_dock::*;
-    use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::rooms_sidebar::RoomsSideBar;
+    use crate::home::welcome_screen::WelcomeScreen;
     use crate::home::room_screen::RoomScreen;
+    use crate::home::invite_screen::InviteScreen;
 
-   pub MainDesktopUI = {{MainDesktopUI}} {
+    pub MainDesktopUI = {{MainDesktopUI}} {
         dock = <Dock> {
             width: Fill,
             height: Fill,
@@ -43,10 +44,11 @@ live_design! {
                 template: PermanentTab
             }
 
+            // Below are the templates of widgets that can be created within dock tabs.
             rooms_sidebar = <RoomsSideBar> {}
             welcome_screen = <WelcomeScreen> {}
             room_screen = <RoomScreen> {}
-            // TODO: add a tab template for an invited room
+            invite_screen = <InviteScreen> {}
         }
     }
 }
@@ -84,7 +86,6 @@ pub struct MainDesktopUI {
 
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
@@ -99,24 +100,32 @@ impl Widget for MainDesktopUI {
 
                         if let Some(mut dock) = dock.borrow_mut() {
                             dock.load_state(cx, app_state.rooms_panel.dock_state.clone());
-                            dock.items().iter().for_each(|(head_liveid, (_, widget))| {
-                                if let Some(room) =
-                                    app_state.rooms_panel.open_rooms.get(head_liveid)
-                                {
-                                    widget.as_room_screen().set_displayed_room(
-                                        cx,
-                                        room.room_id.clone(),
-                                        room.room_name.clone().unwrap_or_default(),
-                                    );
+                            for (head_live_id, (_, widget)) in dock.items().iter() {
+                                match app_state.rooms_panel.open_rooms.get(head_live_id) {
+                                    Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
+                                        widget.as_room_screen().set_displayed_room(
+                                            cx,
+                                            room_id.clone(),
+                                            room_name.clone(),
+                                        );
+                                    }
+                                    Some(SelectedRoom::InvitedRoom { room_id, room_name: _ }) => {
+                                        widget.as_invite_screen().set_displayed_invite(cx, room_id.clone());
+                                    }
+                                    _ => { }
                                 }
-                            });
-                        } else {
-                            return;
+                            }
                         }
+                        else {
+                            error!("BUG: failed to load dock state upon RoomsPanelAction::DockLoad");
+                            continue;
+                        }
+                        // Note: the borrow of `dock` must end here *before* we call `self.focus_or_create_tab()`.
 
                         if let Some(ref selected_room) = &app_state.rooms_panel.selected_room {
                             self.focus_or_create_tab(cx, selected_room.clone());
                         }
+                        self.view.redraw(cx);
                     }
                     Some(RoomsPanelAction::DockSave) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
@@ -146,7 +155,7 @@ impl Widget for MainDesktopUI {
 }
 
 impl MainDesktopUI {
-    /// Focuses on a room if it is already open, otherwise creates a new tab for the room
+    /// Focuses on a room if it is already open, otherwise creates a new tab for the room.
     fn focus_or_create_tab(&mut self, cx: &mut Cx, room: SelectedRoom) {
         let dock = self.view.dock(id!(dock));
 
@@ -156,46 +165,52 @@ impl MainDesktopUI {
         }
 
         // If the room is already open, select (jump to) its existing tab
-        let room_id_as_live_id = LiveId::from_str(room.room_id.as_str());
+        let room_id_as_live_id = LiveId::from_str(room.room_id().as_str());
         if self.open_rooms.contains_key(&room_id_as_live_id) {
             dock.select_tab(cx, room_id_as_live_id);
             self.most_recently_selected_room = Some(room);
             return;
         }
 
-        self.open_rooms.insert(room_id_as_live_id, room.clone());
-
-        let displayed_room_name = room.room_name.clone()
-            .unwrap_or_else(|| format!("Room ID {}", &room.room_id));
-
-        // create a new tab for the room
+        // Create a new tab for the room
         let (tab_bar, _pos) = dock.find_tab_bar_of_tab(live_id!(home_tab)).unwrap();
-        let kind = live_id!(room_screen);
-
-        let result = dock.create_and_select_tab(
+        let kind = match room {
+            SelectedRoom::JoinedRoom { .. }  => live_id!(room_screen),
+            SelectedRoom::InvitedRoom { .. } => live_id!(invite_screen),
+        };
+        let new_tab_widget = dock.create_and_select_tab(
             cx,
             tab_bar,
             room_id_as_live_id,
             kind,
-            displayed_room_name.clone(),
+            room.room_name().cloned()
+                .unwrap_or_else(|| format!("Room ID {}", room.room_id())),
             live_id!(CloseableTab),
             // `None` will insert the tab at the end
             None,
         );
 
         // if the tab was created, set the room screen and add the room to the room order
-        if let Some(widget) = result {
+        if let Some(new_widget) = new_tab_widget {
             self.room_order.push(room.clone());
-            widget.as_room_screen().set_displayed_room(
-                cx,
-                room.room_id.clone(),
-                displayed_room_name,
-            );
+            match &room {
+                SelectedRoom::JoinedRoom { room_id, .. }  => {
+                    new_widget.as_room_screen().set_displayed_room(
+                        cx,
+                        room_id.clone(),
+                        room.room_name().cloned(),
+                    );
+                }
+                SelectedRoom::InvitedRoom { room_id, room_name: _ } => {
+                    new_widget.as_invite_screen().set_displayed_invite(cx, room_id.clone());
+                }
+            }
             cx.action(RoomsPanelAction::DockSave);
         } else {
-            error!("Failed to create tab for room {}, {:?}", room.room_id, room.room_name);
+            error!("BUG: failed to create tab for {room:?}");
         }
 
+        self.open_rooms.insert(room_id_as_live_id, room.clone());
         self.most_recently_selected_room = Some(room);
     }
 
@@ -309,11 +324,11 @@ impl MatchEvent for MainDesktopUI {
                 cx.action(RoomsPanelAction::DockSave);
             }
             // Handle RoomsList actions
-            if let super::rooms_list::RoomsListAction::Selected { room_id, room_name } = action.cast() {
+            if let super::rooms_list::RoomsListAction::Selected(selected_room) = action.cast() {
                 // Note that this cannot be performed within draw_walk() as the draw flow prevents from
                 // performing actions that would trigger a redraw, and the Dock internally performs (and expects)
                 // a redraw to be happening in order to draw the tab content.
-                self.focus_or_create_tab(cx, SelectedRoom { room_id, room_name });
+                self.focus_or_create_tab(cx, selected_room);
             }
         }
     }

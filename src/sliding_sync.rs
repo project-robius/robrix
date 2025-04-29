@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InviterInfo, InvitedRoomInfo, RoomPreviewAvatar, JoinedRoomInfo, RoomsListUpdate}
+        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -421,7 +421,7 @@ async fn async_worker(
             }
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
@@ -470,7 +470,7 @@ async fn async_worker(
 
             MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         error!("BUG: room info not found for edit request, room {room_id}");
                         continue;
@@ -496,7 +496,7 @@ async fn async_worker(
 
             MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         error!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
@@ -527,7 +527,7 @@ async fn async_worker(
 
             MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         error!("BUG: room info not found for fetch members request {room_id}");
                         continue;
@@ -548,7 +548,7 @@ async fn async_worker(
 
             MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
                 let (timeline, sender) = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for get room members request {room_id}");
                         continue;
@@ -648,7 +648,7 @@ async fn async_worker(
             }
             MatrixRequest::GetNumberUnreadMessages { room_id } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
                         continue;
@@ -737,7 +737,7 @@ async fn async_worker(
 
             MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
                 let (room, timeline_update_sender, mut typing_notice_receiver) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
                         continue;
@@ -793,7 +793,7 @@ async fn async_worker(
                     continue;
                 }
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
@@ -862,7 +862,7 @@ async fn async_worker(
 
             MatrixRequest::SendMessage { room_id, message, replied_to } => {
                 let timeline = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for send message request {room_id}");
                         continue;
@@ -896,7 +896,7 @@ async fn async_worker(
 
             MatrixRequest::ReadReceipt { room_id, event_id } => {
                 let timeline = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
                         continue;
@@ -919,7 +919,7 @@ async fn async_worker(
 
             MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
                 let timeline = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
@@ -944,7 +944,7 @@ async fn async_worker(
 
             MatrixRequest::GetRoomPowerLevels { room_id } => {
                 let (timeline, sender) = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
@@ -974,7 +974,7 @@ async fn async_worker(
             },
             MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
                 let timeline = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for send toggle reaction {room_id}");
                         continue;
@@ -995,7 +995,7 @@ async fn async_worker(
             },
             MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
                 let timeline = {
-                    let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
                         log!("BUG: room info not found for redact message {room_id}");
                         continue;
@@ -1144,8 +1144,8 @@ pub fn start_matrix_tokio() -> Result<()> {
 pub type TimelineRequestSender = watch::Sender<Vec<BackwardsPaginateUntilEventRequest>>;
 
 
-/// Info about a room that our client currently knows about.
-struct RoomInfo {
+/// Backend-specific details about a joined room that our client currently knows about.
+struct JoinedRoomDetails {
     #[allow(unused)]
     room_id: OwnedRoomId,
     /// A reference to this room's timeline of events.
@@ -1173,7 +1173,7 @@ struct RoomInfo {
     /// The ID of the old tombstoned room that this room has replaced, if any.
     replaces_tombstoned_room: Option<OwnedRoomId>,
 }
-impl Drop for RoomInfo {
+impl Drop for JoinedRoomDetails {
     fn drop(&mut self) {
         log!("Dropping RoomInfo for room {}", self.room_id);
         self.timeline_subscriber_handler_task.abort();
@@ -1187,8 +1187,9 @@ impl Drop for RoomInfo {
     }
 }
 
-/// Information about all of the rooms we currently know about.
-static ALL_ROOM_INFO: Mutex<BTreeMap<OwnedRoomId, RoomInfo>> = Mutex::new(BTreeMap::new());
+
+/// Information about all joined rooms that our client currently know about.
+static ALL_JOINED_ROOMS: Mutex<BTreeMap<OwnedRoomId, JoinedRoomDetails>> = Mutex::new(BTreeMap::new());
 
 /// Information about all of the rooms that have been tombstoned.
 ///
@@ -1234,7 +1235,7 @@ pub fn is_user_ignored(user_id: &UserId) -> bool {
 }
 
 
-/// Returns three channel endpoints related to the timeline for the given room.
+/// Returns three channel endpoints related to the timeline for the given joined room.
 ///
 /// 1. A timeline update sender.
 /// 2. The timeline update receiver, which is a singleton, and can only be taken once.
@@ -1249,7 +1250,7 @@ pub fn take_timeline_endpoints(
         TimelineRequestSender,
     )>
 {
-    ALL_ROOM_INFO.lock().unwrap()
+    ALL_JOINED_ROOMS.lock().unwrap()
         .get_mut(room_id)
         .and_then(|ri| ri.timeline_singleton_endpoints.take()
             .map(|(receiver, request_sender)| {
@@ -1429,7 +1430,7 @@ async fn async_main_loop(
                 VectorDiff::Clear => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Clear"); }
                     all_known_rooms.clear();
-                    ALL_ROOM_INFO.lock().unwrap().clear();
+                    ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                 }
                 VectorDiff::PushFront { value: new_room } => {
@@ -1517,7 +1518,7 @@ async fn async_main_loop(
                     }
                     // ALL_ROOM_INFO should already be empty due to successive calls to `remove_room()`,
                     // so this is just a sanity check.
-                    ALL_ROOM_INFO.lock().unwrap().clear();
+                    ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
                     for room in &new_rooms {
                         add_new_room(room, &room_list_service).await?;
@@ -1593,7 +1594,7 @@ async fn update_room(
 
 /// Invoked when the room list service has received an update to remove an existing room.
 fn remove_room(room: &room_list_service::Room) {
-    ALL_ROOM_INFO.lock().unwrap().remove(room.room_id());
+    ALL_JOINED_ROOMS.lock().unwrap().remove(room.room_id());
     enqueue_rooms_list_update(
         RoomsListUpdate::RemoveRoom(room.room_id().to_owned())
     );
@@ -1630,16 +1631,24 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
                     display_name: inviter.display_name().map(|n| n.to_string()),
-                    avatar: inviter.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await.ok().flatten(),
+                    avatar: inviter
+                        .avatar(AVATAR_THUMBNAIL_FORMAT.into())
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(Into::into),
                 })
             } else {
                 None
             };
 
             rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddInvitedRoom(InvitedRoomInfo {
-                room: room.inner_room().clone(),
+                room_id,
+                room_name,
                 inviter_info,
                 room_avatar,
+                canonical_alias: room.canonical_alias(),
+                alt_aliases: room.alt_aliases(),
                 latest,
                 is_selected: false,
             }));
@@ -1664,7 +1673,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         // If so, we can immediately update the replacement room's room info
         // to indicate that it replaces this tombstoned room.
         let replacement_room_id = tombstoned_info.replacement_room;
-        if let Some(room_info) = ALL_ROOM_INFO.lock().unwrap().get_mut(&replacement_room_id) {
+        if let Some(room_info) = ALL_JOINED_ROOMS.lock().unwrap().get_mut(&replacement_room_id) {
             room_info.replaces_tombstoned_room = Some(replacement_room_id.clone());
         }
         // But if we don't know about the replacement room yet, we need to save this tombstoned room
@@ -1725,9 +1734,9 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         .remove(&room_id);
 
     log!("Adding new room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
-    ALL_ROOM_INFO.lock().unwrap().insert(
+    ALL_JOINED_ROOMS.lock().unwrap().insert(
         room_id.clone(),
-        RoomInfo {
+        JoinedRoomDetails {
             room_id,
             timeline,
             timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
@@ -2269,13 +2278,13 @@ fn spawn_fetch_room_avatar(room: Room) {
 /// otherwise returns a text avatar string of the first character of the room name.
 async fn room_avatar(room: &Room, room_name: Option<&str>) -> RoomPreviewAvatar {
     match room.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-        Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar),
+        Ok(Some(avatar)) => RoomPreviewAvatar::Image(avatar.into()),
         _ => {
             if let Ok(room_members) = room.members(RoomMemberships::ACTIVE).await {
                 if room_members.len() == 2 {
                     if let Some(non_account_member) = room_members.iter().find(|m| !m.is_account_user()) {
                         if let Ok(Some(avatar)) = non_account_member.avatar(AVATAR_THUMBNAIL_FORMAT.into()).await {
-                            return RoomPreviewAvatar::Image(avatar);
+                            return RoomPreviewAvatar::Image(avatar.into());
                         }
                     }
                 }

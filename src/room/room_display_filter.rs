@@ -54,11 +54,11 @@ impl FilterableRoom for JoinedRoomInfo {
 
 impl FilterableRoom for InvitedRoomInfo {
     fn room_id(&self) -> &RoomId {
-        self.room.room_id()
+        &self.room_id
     }
 
     fn room_name(&self) -> Cow<'_, str> {
-        self.room.cached_display_name().map(|dn| dn.to_string().into()).unwrap_or_default()
+        self.room_name.as_deref().map(Into::into).unwrap_or_default()
     }
 
     fn unread_mentions(&self) -> u64 {
@@ -70,11 +70,11 @@ impl FilterableRoom for InvitedRoomInfo {
     }
 
     fn canonical_alias(&self) -> Option<Cow<'_, RoomAliasId>> {
-        self.room.canonical_alias().map(Cow::Owned)
+        self.canonical_alias.as_deref().map(Cow::Borrowed)
     }
 
     fn alt_aliases(&self) -> Cow<'_, [OwnedRoomAliasId]> {
-        Cow::Owned(self.room.alt_aliases())
+        Cow::Borrowed(&self.alt_aliases)
     }
 
     fn tags(&self) -> &Tags {
