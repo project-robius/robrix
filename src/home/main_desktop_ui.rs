@@ -84,30 +84,32 @@ pub struct MainDesktopUI {
 
 impl Widget for MainDesktopUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
-        
+        let dock = self.view.dock(id!(dock));
         if let Event::Actions(actions) = event {
             for action in actions {
                 match action.downcast_ref() {
-                    Some(RoomsPanelAction::DockLoad) => {
+                    Some(DockStateAction::RestoreFromAppState) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        let dock = self.view.dock(id!(dock));
                         self.room_order = app_state.rooms_panel.room_order.clone();
-                        self.open_rooms = app_state.rooms_panel.open_rooms.clone();
+                        self.most_recently_selected_room = app_state.rooms_panel.selected_room.clone();
+                        self.open_rooms = HashMap::with_capacity(app_state.rooms_panel.open_rooms.len());
                         if app_state.rooms_panel.dock_state.is_empty() {
                             return;
                         }
 
                         if let Some(mut dock) = dock.borrow_mut() {
                             dock.load_state(cx, app_state.rooms_panel.dock_state.clone());
-                            dock.items().iter().for_each(|(head_liveid, (_, widget))| {
+                            dock.items().iter().for_each(|(tab_id, (_, widget))| {
                                 if let Some(room) =
-                                    app_state.rooms_panel.open_rooms.get(head_liveid)
+                                    app_state.rooms_panel.open_rooms.get(&tab_id.0)
                                 {
                                     widget.as_room_screen().set_displayed_room(
                                         cx,
                                         room.room_id.clone(),
                                         room.room_name.clone().unwrap_or_default(),
                                     );
+                                    // Open rooms should not contain rooms that are not in the dock.
+                                    self.open_rooms.insert(LiveId(tab_id.0), room.clone());
                                 }
                             });
                         } else {
@@ -118,14 +120,18 @@ impl Widget for MainDesktopUI {
                             self.focus_or_create_tab(cx, selected_room.clone());
                         }
                     }
-                    Some(RoomsPanelAction::DockSave) => {
+                    Some(DockStateAction::SaveToAppState) => {
                         let app_state = scope.data.get_mut::<AppState>().unwrap();
-                        let dock = self.view.dock(id!(dock));
                         if let Some(dock_state) = dock.clone_state() {
                             app_state.rooms_panel.dock_state = dock_state;
                         }
-                        app_state.rooms_panel.open_rooms = self.open_rooms.clone();
+                        app_state.rooms_panel.open_rooms = HashMap::with_capacity(self.open_rooms.len());
+                        for (live_id, room) in self.open_rooms.iter() {
+                            // Create LiveId for u64 value
+                            app_state.rooms_panel.open_rooms.insert(live_id.0, room.clone());
+                        }
                         app_state.rooms_panel.room_order = self.room_order.clone();
+                        app_state.rooms_panel.selected_room = self.most_recently_selected_room.clone();
                     }
                     _ => {}
                 }
@@ -138,7 +144,10 @@ impl Widget for MainDesktopUI {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         // When changing from mobile to Desktop, we need to restore the rooms panel state
         if !self.drawn_previously {
-            cx.action(RoomsPanelAction::DockLoad);
+            let app_state = scope.data.get_mut::<AppState>().unwrap();
+            if !app_state.rooms_panel.open_rooms.is_empty() {
+                cx.action(DockStateAction::RestoreFromAppState);
+            }
             self.drawn_previously = true;
         }
         self.view.draw_walk(cx, scope, walk)
@@ -191,7 +200,7 @@ impl MainDesktopUI {
                 room.room_id.clone(),
                 displayed_room_name,
             );
-            cx.action(RoomsPanelAction::DockSave);
+            cx.action(DockStateAction::SaveToAppState);
         } else {
             error!("Failed to create tab for room {}, {:?}", room.room_id, room.room_name);
         }
@@ -303,10 +312,13 @@ impl MatchEvent for MainDesktopUI {
                     }
                     should_save_dock_action = true;
                 }
+                DockAction::SplitPanelChanged { panel_id: _, axis: _, align: _ } => {
+                    should_save_dock_action = true;
+                }
                 _ => (),
             }
             if should_save_dock_action {
-                cx.action(RoomsPanelAction::DockSave);
+                cx.action(DockStateAction::SaveToAppState);
             }
             // Handle RoomsList actions
             if let super::rooms_list::RoomsListAction::Selected { room_id, room_name } = action.cast() {
@@ -328,8 +340,14 @@ pub enum RoomsPanelAction {
     RoomFocused(SelectedRoom),
     /// Resets the focus to none, meaning that no room has focus.
     FocusNone,
-    /// Save the dock state from the dock to the AppState.
-    DockSave,
-    /// Load the room panel state from the AppState to the dock.
-    DockLoad,
+}
+
+/// Actions related to saving/restoring the UI state of the dock widget.
+#[derive(Clone, DefaultNone, Debug)]
+pub enum DockStateAction {
+    /// Save the room panel state from the dock widget into the [`AppState`].
+    SaveToAppState,
+    /// Restores the room panel state from the [`AppState`] to the dock widget.
+    RestoreFromAppState,
+    None
 }
