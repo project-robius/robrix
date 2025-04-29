@@ -100,52 +100,54 @@ live_design! {
     }
 
     App = {{App}} {
-        ui: <Window> {
-            window: {inner_size: vec2(1280, 800), title: "Robrix"},
-            caption_bar = {caption_label = {label = {text: "Robrix"}}}
-            pass: {clear_color: #2A}
+        ui: <Root>{
+            main_window = <Window> {
+                window: {inner_size: vec2(1280, 800), title: "Robrix"},
+                caption_bar = {caption_label = {label = {text: "Robrix"}}}
+                pass: {clear_color: #2A}
 
-            body = {
-                // A wrapper view for showing top-level app modals/dialogs/popups
-                <View> {
-                    width: Fill, height: Fill,
-                    flow: Overlay,
+                body = {
+                    // A wrapper view for showing top-level app modals/dialogs/popups
+                    <View> {
+                        width: Fill, height: Fill,
+                        flow: Overlay,
 
-                    home_screen_view = <View> {
-                        visible: false
-                        home_screen = <HomeScreen> {}
-                    }
-                    login_screen_view = <View> {
-                        visible: true
-                        login_screen = <LoginScreen> {}
-                    }
-                    app_tooltip = <CalloutTooltip> {}
-                    popup = <PopupNotification> {
-                        margin: {top: 45, right: 13},
-                        content: {
-                            <PopupList> {}
+                        home_screen_view = <View> {
+                            visible: false
+                            home_screen = <HomeScreen> {}
+                        }
+                        login_screen_view = <View> {
+                            visible: true
+                            login_screen = <LoginScreen> {}
+                        }
+                        app_tooltip = <CalloutTooltip> {}
+                        popup = <PopupNotification> {
+                            margin: {top: 45, right: 13},
+                            content: {
+                                <PopupList> {}
+                            }
+                        }
+
+                        // Context menus should be shown above other UI elements,
+                        // but beneath the verification modal.
+                        new_message_context_menu = <NewMessageContextMenu> { }
+
+                        // message_source_modal = <Modal> {
+                        //     content: {
+                        //         message_source_modal_inner = <MessageSourceModal> {}
+                        //     }
+                        // }
+
+                        // We want the verification modal to always show up on top of
+                        // all other elements when an incoming verification request is received.
+                        verification_modal = <Modal> {
+                            content: {
+                                verification_modal_inner = <VerificationModal> {}
+                            }
                         }
                     }
-
-                    // Context menus should be shown above other UI elements,
-                    // but beneath the verification modal.
-                    new_message_context_menu = <NewMessageContextMenu> { }
-
-                    // message_source_modal = <Modal> {
-                    //     content: {
-                    //         message_source_modal_inner = <MessageSourceModal> {}
-                    //     }
-                    // }
-
-                    // We want the verification modal to always show up on top of
-                    // all other elements when an incoming verification request is received.
-                    verification_modal = <Modal> {
-                        content: {
-                            verification_modal_inner = <VerificationModal> {}
-                        }
-                    }
-                }
-            } // end of body
+                } // end of body
+            }
         }
     }
 }
@@ -235,16 +237,13 @@ impl MatchEvent for App {
                     cx.action(DockStateAction::RestoreFromAppState);
                 }
                 Some(RoomsPanelRestoreAction::RestoreWindow(window_state)) => {
-                    cx.push_unique_platform_op(CxOsOp::ResizeWindow(
-                        CxWindowPool::id_zero(),
-                        window_state.window_size.0,
-                    ));
-                    cx.push_unique_platform_op(CxOsOp::RepositionWindow(
-                        CxWindowPool::id_zero(),
-                        window_state.window_position.0,
-                    ));
-                    if window_state.window_is_fullscreen {
-                        cx.push_unique_platform_op(CxOsOp::MaximizeWindow(CxWindowPool::id_zero()));
+                    let window = self.ui.window(id!(main_window));
+                    window.resize(cx, window_state.inner_size.0);
+                    window.reposition(cx, window_state.position.0);
+                    if window_state.is_fullscreen {                        
+                        if let Some(mut window) = window.borrow_mut() {
+                            window.fullscreen(cx);
+                        }
                     }
                 }
                 _ => {}
@@ -366,18 +365,21 @@ impl MatchEvent for App {
 
 impl AppMain for App {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event) {
-        if let Event::WindowGeomChange(window_geom_change_event) = event {
-            self.app_state.window_geom = Some(window_geom_change_event.new_geom.clone());
-        }
-        if let Event::WindowClosed(_) | Event::Shutdown = event {
-            if let Some(window_geom) = &self.app_state.window_geom {
-                let window_geom = window_geom.clone();
-                cx.spawn_thread(move || {
-                    if let Err(e) = save_window_state(window_geom) {
-                        error!("Bug! Failed to save window_state: {}", e);
-                    }
-                });
-            }
+        // Handling Event::Shutdown is not required as Window Closed event is guaranteed when closing.
+        if let Event::WindowClosed(_) = event {
+            let window = self.ui.window(id!(main_window));
+            let inner_size = DVec2Wrapper(window.get_inner_size(cx));
+            let position = DVec2Wrapper(window.get_position(cx));
+            let window_geom = WindowGeomState{
+                inner_size,
+                position,
+                is_fullscreen: window.is_fullscreen(cx),
+            };
+            cx.spawn_thread(move || {
+                if let Err(e) = save_window_state(window_geom) {
+                    error!("Bug! Failed to save window_state: {}", e);
+                }
+            });
             if let Some(user_id) = current_user_id(){
                 let rooms_panel = self.app_state.rooms_panel.clone();
                 let user_id = user_id.clone();
@@ -446,8 +448,6 @@ pub struct AppState {
     pub rooms_panel: RoomsPanelState,
     /// Whether a user is currently logged in.
     pub logged_in: bool,
-    /// The current window geometry.
-    pub window_geom: Option<event::WindowGeom>,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -469,11 +469,11 @@ pub struct RoomsPanelState {
 /// The state of the window geometry
 pub struct WindowGeomState {
     /// A tuple containing the window's width and height.
-    pub window_size: DVec2Wrapper,
+    pub inner_size: DVec2Wrapper,
     /// A tuple containing the window's x and y position.
-    pub window_position: DVec2Wrapper,
+    pub position: DVec2Wrapper,
     /// Maximise fullscreen if true.
-    pub window_is_fullscreen: bool
+    pub is_fullscreen: bool
 }
 
 /// Represents a room currently or previously selected by the user.

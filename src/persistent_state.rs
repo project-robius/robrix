@@ -2,7 +2,7 @@
 use std::{collections::HashMap, path::PathBuf};
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
-    event::WindowGeom, log, makepad_micro_serde::{DeRon, SerRon}, Cx, DockItem, LiveId
+    log, makepad_micro_serde::{DeRon, SerRon}, Cx, DockItem, LiveId
 };
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
@@ -213,19 +213,13 @@ pub fn save_room_panel(
 }
 
 /// Save the current state of window geometry state to persistent storage.
-pub fn save_window_state(window_geom: WindowGeom) -> anyhow::Result<()> {
-    let window_geom_state = WindowGeomState {
-        window_is_fullscreen: window_geom.is_fullscreen,
-        window_position: crate::utils::DVec2Wrapper(window_geom.position),
-        window_size: crate::utils::DVec2Wrapper(window_geom.inner_size),
-    };
+pub fn save_window_state(window_geom_state: WindowGeomState) -> anyhow::Result<()> {
     std::fs::write(
         app_data_dir().join(WINDOW_GEOM_STATE_FILE_NAME),
         serde_json::to_string(&window_geom_state)?,
     )?;
     Ok(())
 }
-
 /// Loads the rooms panel's state from persistent storage.
 pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPanelState> {
     let mut file = match tokio::fs::File::open(
