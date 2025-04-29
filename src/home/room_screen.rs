@@ -48,7 +48,6 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
-    use crate::shared::search_bar::SearchBar;
     use crate::shared::avatar::Avatar;
     use crate::shared::text_or_image::TextOrImage;
     use crate::shared::html_or_plaintext::*;
@@ -2415,23 +2414,21 @@ impl RoomScreen {
     }
 
     /// Sets this `RoomScreen` widget to display the timeline for the given room.
-    pub fn set_displayed_room(
+    pub fn set_displayed_room<S: Into<Option<String>>>(
         &mut self,
         cx: &mut Cx,
         room_id: OwnedRoomId,
-        room_name: String,
+        room_name: S,
     ) {
         // If the room is already being displayed, then do nothing.
-        if let Some(current_room_id) = &self.room_id {
-            if current_room_id.eq(&room_id) {
-                return;
-            }
-        }
+        if self.room_id.as_ref().is_some_and(|id| id == &room_id) { return; }
+        
 
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
-        self.room_name = room_name;
+        self.room_name = room_name.into()
+            .unwrap_or_else(|| format!("Room ID {}", room_id));
         self.room_id = Some(room_id.clone());
 
         // Clear any mention input state
@@ -2543,11 +2540,11 @@ impl RoomScreen {
 
 impl RoomScreenRef {
     /// See [`RoomScreen::set_displayed_room()`].
-    pub fn set_displayed_room(
+    pub fn set_displayed_room<S: Into<Option<String>>>(
         &self,
         cx: &mut Cx,
         room_id: OwnedRoomId,
-        room_name: String,
+        room_name: S,
     ) {
         let Some(mut inner) = self.borrow_mut() else { return };
         inner.set_displayed_room(cx, room_id, room_name);

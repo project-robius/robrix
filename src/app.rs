@@ -14,7 +14,6 @@ live_design! {
 
     use crate::shared::styles::*;
     use crate::home::home_screen::HomeScreen;
-    use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
     use crate::shared::popup_list::PopupList;
@@ -232,22 +231,21 @@ impl MatchEvent for App {
 
             match action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomsListAction::Selected { room_id, room_name } => {
-                    self.app_state.rooms_panel.selected_room = Some(SelectedRoom {
-                        room_id: room_id.clone(),
-                        room_name: room_name.clone(),
-                    });
+                RoomsListAction::Selected(selected_room) => {
+                    let display_name = selected_room.room_name().cloned()
+                        .unwrap_or_else(|| format!("Room ID {}", selected_room.room_id()));
+                    self.app_state.rooms_panel.selected_room = Some(selected_room);
+                    // Set the Stack Navigation header to show the name of the newly-selected room.
+                    self.ui
+                        .label(id!(main_content_view.header.content.title_container.title))
+                        .set_text(cx, &display_name);
 
-                    let widget_uid = self.ui.widget_uid();
                     // Navigate to the main content view
                     cx.widget_action(
-                        widget_uid,
+                        self.ui.widget_uid(),
                         &Scope::default().path,
                         StackNavigationAction::NavigateTo(live_id!(main_content_view))
                     );
-                    // Update the Stack Navigation header with the room name
-                    self.ui.label(id!(main_content_view.header.content.title_container.title))
-                        .set_text(cx, &room_name.unwrap_or_else(|| format!("Room ID {}", &room_id)));
                     self.ui.redraw(cx);
                 }
                 RoomsListAction::None => { }
@@ -425,13 +423,34 @@ pub struct RoomsPanelState {
 ///
 /// One `SelectedRoom` is considered equal to another if their `room_id`s are equal.
 #[derive(Clone, Debug)]
-pub struct SelectedRoom {
-    pub room_id: OwnedRoomId,
-    pub room_name: Option<String>,
+pub enum SelectedRoom {
+    JoinedRoom {
+        room_id: OwnedRoomId,
+        room_name: Option<String>,
+    },
+    InvitedRoom {
+        room_id: OwnedRoomId,
+        room_name: Option<String>,
+    },
+}
+impl SelectedRoom {
+    pub fn room_id(&self) -> &OwnedRoomId {
+        match self {
+            SelectedRoom::JoinedRoom { room_id, .. } => room_id,
+            SelectedRoom::InvitedRoom { room_id, .. } => room_id,
+        }
+    }
+
+    pub fn room_name(&self) -> Option<&String> {
+        match self {
+            SelectedRoom::JoinedRoom { room_name, .. } => room_name.as_ref(),
+            SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
+        }
+    }
 }
 impl PartialEq for SelectedRoom {
     fn eq(&self, other: &Self) -> bool {
-        self.room_id == other.room_id
+        self.room_id() == other.room_id()
     }
 }
 impl Eq for SelectedRoom {}

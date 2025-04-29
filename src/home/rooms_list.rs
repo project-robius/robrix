@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, Room};
+use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
 use crate::{
-    app::AppState,
+    app::{AppState, SelectedRoom},
     room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
     jump_to_bottom_button::UnreadMessageCount},
@@ -17,12 +17,29 @@ use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
 /// and to have something to immediately show when a user first opens a room.
 const PREPAGINATE_VISIBLE_ROOMS: bool = true;
 
+thread_local! {
+    /// The list of all invited rooms, which is only tracked here
+    /// because the backend doesn't need to track any info about them.
+    ///
+    /// This must only be accessed by the main UI thread.
+    static ALL_INVITED_ROOMS: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>> = Rc::new(RefCell::new(HashMap::new()));
+}
+
+/// Returns a reference to the list of all invited rooms.
+///
+/// This function requires passing in a reference to `Cx`,
+/// which isn't used, but acts as a guarantee that this function
+/// must only be called by the main UI thread.
+pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>> {
+    ALL_INVITED_ROOMS.with(|rc| Rc::clone(rc))
+}
+
+
 live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
 
-    use crate::shared::search_bar::SearchBar;
     use crate::shared::styles::*;
     use crate::shared::helpers::*;
     use crate::shared::avatar::Avatar;
@@ -54,8 +71,7 @@ live_design! {
         width: Fill, height: Fill
         flow: Down
         cursor: Default,
-        
-        
+
         list = <PortalList> {
             keep_invisible: false,
             auto_tail: false,
@@ -141,13 +157,14 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
 
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
-    Selected {
-        room_id: OwnedRoomId,
-        room_name: Option<String>,
-    },
+    Selected(SelectedRoom),
     None,
 }
 
+/// UI-related info about a joined room.
+///
+/// This includes info needed display a preview of that room in the RoomsList
+/// and to filter the list of rooms based on the current search filter.
 #[derive(Debug)]
 pub struct JoinedRoomInfo {
     /// The matrix ID of this room.
@@ -180,9 +197,19 @@ pub struct JoinedRoomInfo {
     pub is_selected: bool,
 }
 
-/// A room that the user has been invited to.
+/// UI-related info about a room that the user has been invited to.
+///
+/// This includes info needed display a preview of that room in the RoomsList
+/// and to filter the list of rooms based on the current search filter.
 pub struct InvitedRoomInfo {
-    pub room: Room,
+    /// The matrix ID of this room.
+    pub room_id: OwnedRoomId,
+    /// The displayable name of this room, if known.
+    pub room_name: Option<String>,
+    /// The canonical alias for this room, if any.
+    pub canonical_alias: Option<OwnedRoomAliasId>,
+    /// The alternative aliases for this room, if any.
+    pub alt_aliases: Vec<OwnedRoomAliasId>,
     /// The avatar for this room: either an array of bytes holding the avatar image
     /// or a string holding the first Unicode character of the room name.
     pub room_avatar: RoomPreviewAvatar,
@@ -195,16 +222,17 @@ pub struct InvitedRoomInfo {
 }
 
 /// Info about the user who invited us to a room.
+#[derive(Clone)]
 pub struct InviterInfo {
     pub user_id: OwnedUserId,
     pub display_name: Option<String>,
-    pub avatar: Option<Vec<u8>>,
+    pub avatar: Option<Arc<[u8]>>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum RoomPreviewAvatar {
     Text(String),
-    Image(Vec<u8>),
+    Image(Arc<[u8]>),
 }
 impl Default for RoomPreviewAvatar {
     fn default() -> Self {
@@ -213,12 +241,14 @@ impl Default for RoomPreviewAvatar {
 }
 
 
-#[derive(Live, LiveHook, Widget)]
+#[derive(Live, Widget)]
 pub struct RoomsList {
     #[deref] view: View,
 
     /// The list of all rooms that the user has been invited to.
-    #[rust] invited_rooms: HashMap<OwnedRoomId, InvitedRoomInfo>,
+    ///
+    /// This is a shared reference to the thread-local [`ALL_INVITED_ROOMS`] variable.
+    #[rust] invited_rooms: Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>>,
 
     /// The set of all joined rooms and their cached preview info.
     #[rust] all_joined_rooms: HashMap<OwnedRoomId, JoinedRoomInfo>,
@@ -250,6 +280,12 @@ pub struct RoomsList {
     #[rust] max_known_rooms: Option<u32>,
 }
 
+impl LiveHook for RoomsList {
+    fn after_new_from_doc(&mut self, _: &mut Cx) {
+        self.invited_rooms = ALL_INVITED_ROOMS.with(|rc| Rc::clone(&rc));
+    }
+}
+
 impl RoomsList {
     /// Handle all pending updates to the list of all rooms.
     fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
@@ -258,9 +294,9 @@ impl RoomsList {
             num_updates += 1;
             match update {
                 RoomsListUpdate::AddInvitedRoom(invited_room) => {
-                    let room_id = invited_room.room.room_id().to_owned();
+                    let room_id = invited_room.room_id.clone();
                     let should_display = (self.display_filter)(&invited_room);
-                    let _replaced = self.invited_rooms.insert(room_id.clone(), invited_room);
+                    let _replaced = self.invited_rooms.borrow_mut().insert(room_id.clone(), invited_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added invited room {room_id} that already existed");
                     } else {
@@ -356,7 +392,7 @@ impl RoomsList {
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
                     self.displayed_joined_rooms.clear();
-                    self.invited_rooms.clear();
+                    self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
                     self.update_status_rooms_count();
                 }
@@ -420,7 +456,7 @@ impl RoomsList {
             // Reset the displayed rooms list to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
             self.displayed_joined_rooms = self.all_joined_rooms.keys().cloned().collect();
-            self.displayed_invited_rooms = self.invited_rooms.keys().cloned().collect();
+            self.displayed_invited_rooms = self.invited_rooms.borrow().keys().cloned().collect();
             self.update_status_rooms_count();
             portal_list.set_first_id_and_scroll(0, 0.0);
             self.redraw(cx);
@@ -464,7 +500,7 @@ impl RoomsList {
 
         // Update the displayed rooms list and redraw it.
         self.displayed_joined_rooms = generate_displayed_rooms(&self.all_joined_rooms, &self.display_filter, sort_fn.as_deref());
-        self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms, &self.display_filter, sort_fn.as_deref());
+        self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms.borrow(), &self.display_filter, sort_fn.as_deref());
         self.update_status_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
         self.redraw(cx);
@@ -488,8 +524,18 @@ impl Widget for RoomsList {
         );
         for list_action in list_actions {
             if let RoomPreviewAction::Clicked(clicked_room_id) = list_action.as_widget_action().cast() {
-                let Some(room_details) = self.all_joined_rooms.get(&clicked_room_id) else {
-                    error!("BUG: couldn't get room details for room {clicked_room_id}");
+                let new_selected_room = if let Some(jr) = self.all_joined_rooms.get(&clicked_room_id) {
+                    SelectedRoom::JoinedRoom {
+                        room_id: jr.room_id.clone(),
+                        room_name: jr.room_name.clone(),
+                    }
+                } else if let Some(ir) = self.invited_rooms.borrow().get(&clicked_room_id) {
+                    SelectedRoom::InvitedRoom {
+                        room_id: ir.room_id.to_owned(),
+                        room_name: ir.room_name.clone(),
+                    }
+                } else {
+                    error!("BUG: couldn't find clicked room details for room {clicked_room_id}");
                     continue;
                 };
 
@@ -497,10 +543,7 @@ impl Widget for RoomsList {
                 cx.widget_action(
                     self.widget_uid(),
                     &scope.path,
-                    RoomsListAction::Selected {
-                        room_id: room_details.room_id.to_owned(),
-                        room_name: room_details.room_name.clone(),
-                    }
+                    RoomsListAction::Selected(new_selected_room),
                 );
                 self.redraw(cx);
             }
@@ -532,7 +575,7 @@ impl Widget for RoomsList {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
         self.current_active_room = app_state.rooms_panel.selected_room.as_ref()
-            .map(|sel_room| sel_room.room_id.clone())
+            .map(|sel_room| sel_room.room_id().clone())
             .filter(|room_id| self.is_room_displayable(room_id));
 
         // Based on the various displayed room lists and is_expanded state of each room header,
@@ -588,7 +631,7 @@ impl Widget for RoomsList {
                     item.draw_all(cx, &mut scope);
                 }
                 else if let Some(invited_room_id) = get_invited_room_id(portal_list_index) {
-                    if let Some(invited_room) = self.invited_rooms.get_mut(invited_room_id)  {
+                    if let Some(invited_room) = self.invited_rooms.borrow_mut().get_mut(invited_room_id) {
                         let item = list.item(cx, portal_list_index, live_id!(room_preview));
                         invited_room.is_selected = self.current_active_room.as_deref() == Some(invited_room_id);
                         // Pass the room info down to the RoomPreview widget via Scope.
