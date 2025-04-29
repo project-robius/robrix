@@ -4,7 +4,11 @@ use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction},
+    login::{login_screen::LoginAction, register_screen::{RegisterAction, RegisterScreenWidgetRefExt}},
+    shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction},
+    verification::VerificationAction,
+    verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -17,6 +21,7 @@ live_design! {
     use crate::profile::my_profile_screen::MyProfileScreen;
     use crate::verification_modal::VerificationModal;
     use crate::login::login_screen::LoginScreen;
+    use crate::login::register_screen::RegisterScreen;
     use crate::shared::popup_list::PopupList;
     use crate::home::new_message_context_menu::*;
     use crate::shared::callout_tooltip::CalloutTooltip;
@@ -119,6 +124,10 @@ live_design! {
                         visible: true
                         login_screen = <LoginScreen> {}
                     }
+                    register_screen_view = <View> {
+                        visible: false
+                        register_screen = <RegisterScreen> {}
+                    }
                     app_tooltip = <CalloutTooltip> {}
                     popup = <PopupNotification> {
                         margin: {top: 45, right: 13},
@@ -198,10 +207,32 @@ impl MatchEvent for App {
 
     fn handle_actions(&mut self, cx: &mut Cx, actions: &Actions) {
         for action in actions {
-            if let Some(LoginAction::LoginSuccess) = action.downcast_ref() {
-                log!("Received LoginAction::LoginSuccess, hiding login view.");
-                self.app_state.logged_in = true;
-                self.update_login_visibility(cx);
+            match action.downcast_ref() {
+                Some(LoginAction::LoginSuccess) => {
+                    log!("Received LoginAction::LoginSuccess, hiding login view.");
+                    self.app_state.logged_in = true;
+                    self.update_login_visibility(cx);
+                    self.ui.redraw(cx);
+                },
+                Some(LoginAction::SwitchToRegister(server_url)) => {
+                    log!("Switching to register screen");
+                    self.ui.view(id!(login_screen_view)).set_visible(cx, false);
+
+                    if !server_url.is_empty() {
+                        self.ui.register_screen(id!(register_screen_view.register_screen))
+                            .apply_over(cx, live!{ server_url: (server_url) });
+                    }
+
+                    self.ui.view(id!(register_screen_view)).set_visible(cx, true);
+                    self.ui.redraw(cx);
+                },
+                _ => {}
+            }
+
+            if let Some(RegisterAction::SwitchToLogin) = action.downcast_ref() {
+                log!("Switching back to login screen");
+                self.ui.view(id!(register_screen_view)).set_visible(cx, false);
+                self.ui.view(id!(login_screen_view)).set_visible(cx, true);
                 self.ui.redraw(cx);
             }
 
@@ -397,6 +428,7 @@ impl App {
                 .close(cx);
         }
         self.ui.view(id!(login_screen_view)).set_visible(cx, show_login);
+        self.ui.view(id!(register_screen_view)).set_visible(cx, false); 
         self.ui.view(id!(home_screen_view)).set_visible(cx, !show_login);
     }
 }

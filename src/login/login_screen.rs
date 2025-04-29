@@ -63,7 +63,7 @@ live_design! {
             draw_bg: {
                 color: (COLOR_PRIMARY)
             }
-        
+
             <RoundedView> {
                 margin: 40
                 width: Fit, height: Fit
@@ -149,7 +149,7 @@ live_design! {
                             }
                         }
                     }
-                    
+
 
                     login_button = <RobrixIconButton> {
                         width: 250,
@@ -243,7 +243,7 @@ live_design! {
                             draw_bg: { color: #C8C8C8 }
                         }
                     }
-                    
+
                     signup_button = <RobrixIconButton> {
                         width: Fit, height: Fit
                         padding: {left: 15, right: 15, top: 10, bottom: 10}
@@ -275,8 +275,6 @@ live_design! {
         }
     }
 }
-
-static MATRIX_SIGN_UP_URL: &str = "https://matrix.org/docs/chat_basics/matrix-for-im/#creating-a-matrix-account";
 
 #[derive(Live, LiveHook, Widget)]
 pub struct LoginScreen {
@@ -311,8 +309,9 @@ impl MatchEvent for LoginScreen {
         let login_status_modal_inner = self.view.login_status_modal(id!(login_status_modal_inner));
 
         if signup_button.clicked(actions) {
-            log!("Opening URL \"{}\"", MATRIX_SIGN_UP_URL);
-            let _ = robius_open::Uri::new(MATRIX_SIGN_UP_URL).open();
+            log!("Sign up button clicked, showing register screen");
+            let server_url = homeserver_input.text();
+            cx.action(LoginAction::SwitchToRegister(server_url.to_string()));
         }
 
         if login_button.clicked(actions)
@@ -344,14 +343,14 @@ impl MatchEvent for LoginScreen {
             login_status_modal.open(cx);
             self.redraw(cx);
         }
-        
+
         let provider_brands = ["apple", "facebook", "github", "gitlab", "google", "twitter"];
         let button_set: &[&[LiveId]] = ids!(
-            apple_button, 
-            facebook_button, 
-            github_button, 
-            gitlab_button, 
-            google_button, 
+            apple_button,
+            facebook_button,
+            github_button,
+            gitlab_button,
+            google_button,
             twitter_button
         );
         for action in actions {
@@ -474,14 +473,16 @@ pub enum LoginAction {
     /// informing it that the SSO login process is either still in flight (`true`) or has finished (`false`).
     ///
     /// Note that an inner value of `false` does *not* imply that the login request has
-    /// successfully finished. 
+    /// successfully finished.
     /// The login screen can use this to prevent the user from submitting
-    /// additional SSO login requests while a previous request is in flight. 
+    /// additional SSO login requests while a previous request is in flight.
     SsoPending(bool),
     /// Set the SSO redirect URL in the LoginScreen.
     ///
     /// When an SSO-based login is pendng, pressing the cancel button will send
     /// an HTTP request to this SSO server URL to gracefully shut it down.
     SsoSetRedirectUrl(Url),
+    /// Switch to the register screen
+    SwitchToRegister(String),
     None,
 }
