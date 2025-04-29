@@ -31,7 +31,7 @@ thread_local! {
 /// which isn't used, but acts as a guarantee that this function
 /// must only be called by the main UI thread.
 pub fn get_invited_rooms(_cx: &mut Cx) -> Rc<RefCell<HashMap<OwnedRoomId, InvitedRoomInfo>>> {
-    ALL_INVITED_ROOMS.with(|rc| Rc::clone(rc))
+    ALL_INVITED_ROOMS.with(Rc::clone)
 }
 
 
@@ -282,7 +282,7 @@ pub struct RoomsList {
 
 impl LiveHook for RoomsList {
     fn after_new_from_doc(&mut self, _: &mut Cx) {
-        self.invited_rooms = ALL_INVITED_ROOMS.with(|rc| Rc::clone(&rc));
+        self.invited_rooms = ALL_INVITED_ROOMS.with(Rc::clone);
     }
 }
 
