@@ -22,32 +22,42 @@ live_design! {
     use crate::shared::avatar::*;
     use crate::shared::icon_button::*;
 
-    pub InviteScreen = {{InviteScreen}}<ScrollYView> {
+    pub InviteScreen = {{InviteScreen}}<ScrollXYView> {
         width: Fill,
-        height: Fit,
+        height: Fill,
         flow: Down,
         align: {x: 0.5, y: 0}
+        padding: {left: 20, right: 20, top: 50}
+        spacing: 30,
 
         inviter_view = <View> {
             width: Fill, height: Fit
-            flow: Right,
+            align: {x: 0.5, y: 0}
+            spacing: 15,
+            flow: Down,
 
-            inviter_avatar = <Avatar> {
-                width: 30,
-                height: 30,
-    
-                text_view = { text = { draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 10.0 }
-                }}}
-            }
+            <View> {
+                width: Fill, height: Fit
+                align: {x: 0.5, y: 0}
+                spacing: 10
+                inviter_avatar = <Avatar> {
+                    width: 30,
+                    height: 30,
+        
+                    text_view = { text = { draw_text: {
+                        text_style: <TITLE_TEXT>{ font_size: 10.0 }
+                    }}}
+                }
 
-            inviter_name = <Label> {
-                text: ""
-                draw_text: {
-                    text_style: <TITLE_TEXT>{
-                        font_size: 15,
-                    },
-                    color: #000
+                inviter_name = <Label> {
+                    margin: {top: 2}
+                    text: ""
+                    draw_text: {
+                        text_style: <TITLE_TEXT>{
+                            font_size: 15,
+                        },
+                        color: #000
+                    }
                 }
             }
 
@@ -75,22 +85,25 @@ live_design! {
 
         room_view = <View> {
             width: Fill, height: Fit
+            align: {x: 0.5, y: 0}
+            spacing: 10,
             flow: Right,
 
             room_avatar = <Avatar> {
-                width: 30.,
-                height: 30.,
+                width: 40.,
+                height: 40.,
 
                 text_view = { text = { draw_text: {
-                    text_style: <TITLE_TEXT>{ font_size: 10.0 }
+                    text_style: <TITLE_TEXT>{ font_size: 13.0 }
                 }}}
             }
 
             room_name = <Label> {
+                margin: {top: 3.5}
                 text: ""
                 draw_text: {
                     text_style: <TITLE_TEXT>{
-                        font_size: 15,
+                        font_size: 18,
                     },
                     color: #000
                 }
@@ -99,9 +112,12 @@ live_design! {
 
         buttons = <View> {
             width: Fill, height: Fit
+            // We'd like to use RightWrap, but it doesn't work with x-centered alignment
+            // flow: RightWrap,
             flow: Right,
-            align: {x: 1.0, y: 0.5}
-            spacing: 20
+            align: {x: 0.5, y: 0.5}
+            margin: {top: 20}
+            spacing: 40
 
             cancel_button = <RobrixIconButton> {
                 align: {x: 0.5, y: 0.5}
@@ -140,6 +156,10 @@ live_design! {
                     color: (COLOR_ACCEPT_GREEN),
                 }
             }
+        }
+
+        filler = <View> {
+            width: Fill, height: 30,
         }
     }
 }
@@ -206,10 +226,10 @@ impl Widget for InviteScreen {
                 inviter_name.set_text(cx, inviter.user_id.as_str());
                 inviter_user_id.set_visible(cx, false);
             }
-            (true, "has invited you to join")
+            (true, "has invited you to join:")
         }
         else {
-            (false, "You have been invited to join")
+            (false, "You have been invited to join:")
         };
         inviter_view.set_visible(cx, is_visible);        
         self.view.label(id!(invite_message)).set_text(cx, invite_text);
