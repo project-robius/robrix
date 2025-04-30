@@ -2,6 +2,7 @@
 //! Supports user mention autocomplete, avatar display, and desktop/mobile layouts
 
 use makepad_widgets::*;
+use crate::home::room_screen::RoomScreenAction;
 
 live_design! {
     use link::theme::*;

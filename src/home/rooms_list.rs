@@ -175,7 +175,7 @@ pub struct RoomsListEntry {
     pub is_selected: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RoomPreviewAvatar {
     Text(String),
     Image(Vec<u8>),

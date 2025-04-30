@@ -426,7 +426,6 @@ impl EditingPane {
         log!("EditingPane show: Opening editing pane for room: {}", room_id);
 
         let edit_text_input = self.mentionable_text_input(id!(editing_content.edit_text_input));
-        edit_text_input.set_can_notify_room(can_notify_room);
 
         match event_tl_item.content() {
             TimelineItemContent::Message(message) => {
@@ -442,11 +441,6 @@ impl EditingPane {
         }
 
         self.info = Some(EditingPaneInfo { event_tl_item, room_id: room_id.clone() });
-
-        // Set room ID on the MentionableTextInput
-        edit_text_input.set_room_id(room_id.clone());
-        // Create room member subscription
-        edit_text_input.create_room_subscription(cx, room_id);
 
         self.visible = true;
         self.button(id!(accept_button)).reset_hover(cx);

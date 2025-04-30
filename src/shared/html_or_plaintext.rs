@@ -14,7 +14,7 @@ live_design! {
     use link::theme::*;
     use link::shaders::*;
     use link::widgets::*;
-    
+
     use crate::shared::styles::*;
     use crate::shared::avatar::Avatar;
 
@@ -180,7 +180,7 @@ struct RobrixHtmlLink {
     #[deref] view: View,
 
     /// The displayable text of the link.
-    /// This should be set automatically by the Html widget 
+    /// This should be set automatically by the Html widget
     /// when it parses and draws an Html `<a>` tag.
     #[live] pub text: ArcStringMut,
     /// The URL of the link.
@@ -401,7 +401,7 @@ impl MatrixLinkPill {
             }
         }
         // Show a text avatar if we couldn't load an image into the avatar.
-        avatar_ref.show_text(cx, None, self.text());
+        avatar_ref.show_text(cx, None, None, self.text());
     }
 
 }
@@ -447,7 +447,7 @@ struct MatrixHtmlSpan {
 ///
 /// The enclosed `reason` string is an optional reason given for why
 /// the text is hidden; if empty, then no reason was given.
-#[derive(Default, Debug)]    
+#[derive(Default, Debug)]
 enum SpoilerDisplay {
     /// There is no spoiler at all.
     #[default]
@@ -533,7 +533,7 @@ impl Widget for MatrixHtmlSpan {
             }
         }
     }
-    
+
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, _walk: Walk) -> DrawStep {
         let Some(tf) = scope.data.get_mut::<TextFlow>() else {
             return DrawStep::done();
@@ -619,7 +619,7 @@ impl Widget for MatrixHtmlSpan {
 
         DrawStep::done()
     }
-    
+
     fn text(&self) -> String {
         self.text.as_ref().to_string()
     }

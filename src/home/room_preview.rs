@@ -322,7 +322,7 @@ impl Widget for RoomPreviewContent {
             }
             match room_info.avatar {
                 RoomPreviewAvatar::Text(ref text) => {
-                    self.view.avatar(id!(avatar)).show_text(cx, None, text);
+                    self.view.avatar(id!(avatar)).show_text(cx, None, None, text);
                 }
                 RoomPreviewAvatar::Image(ref img_bytes) => {
                     let _ = self.view.avatar(id!(avatar)).show_image(

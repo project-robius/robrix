@@ -7,17 +7,16 @@
 //!   3. Enable sorting for the user list to show currently online users.
 //!   4. Optimize performance and add a loading animation for the user list.
 use crate::avatar_cache::*;
-use crate::room::room_member_manager::{RoomMemberSubscriber, RoomMemberSubscription};
 use crate::shared::avatar::AvatarWidgetRefExt;
-use crate::sliding_sync::{MatrixRequest, get_client, submit_async_request};
 use crate::utils;
 
 use makepad_widgets::*;
-use matrix_sdk::room::RoomMember;
 use matrix_sdk::ruma::{OwnedRoomId, OwnedUserId};
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::{Arc, Mutex};
 use unicode_segmentation::UnicodeSegmentation;
+use crate::home::room_screen::RoomScreenProps;
+use crate::sliding_sync::get_client;
+
 
 live_design! {
     use link::theme::*;
@@ -94,6 +93,56 @@ live_design! {
                 color: #666,
                 text_style: {font_size: 12.0}
             }
+        }
+    }
+
+    // Template for the @room mention list item
+    RoomMentionListItem = <View> {
+        width: Fill,
+        height: Fit,
+        padding: {left: 8, right: 8, top: 4, bottom: 4}
+        show_bg: true
+        cursor: Hand
+        draw_bg: {
+            color: #fff,
+            uniform border_radius: 6.0,
+            instance hover: 0.0,
+            instance selected: 0.0,
+
+            fn pixel(self) -> vec4 {
+                let sdf = Sdf2d::viewport(self.pos * self.rect_size);
+                sdf.box(0., 0., self.rect_size.x, self.rect_size.y, self.border_radius);
+
+                if self.selected > 0.0 {
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                } else if self.hover > 0.0 {
+                    sdf.fill(KEYBOARD_FOCUS_OR_COLOR_HOVER)
+                } else {
+                    sdf.fill(self.color)
+                }
+                return sdf.result
+            }
+        }
+        flow: Right
+        spacing: 8.0
+        align: {y: 0.5}
+
+        // Replace Icon with an Avatar to display room avatar
+        room_avatar = <Avatar> {
+            width: 24,
+            height: 24,
+            text_view = { text = { draw_text: {
+                text_style: { font_size: 12.0 }
+            }}}
+        }
+
+        <Label> {
+            height: Fit,
+            draw_text: {
+                color: #000,
+                text_style: {font_size: 14.0}
+            }
+            text: "@room"
         }
     }
 
@@ -196,29 +245,7 @@ live_design! {
 
         // Template for user list items in the mention popup
         user_list_item: <UserListItem> {}
-    }
-}
-
-/// Subscriber adapter for MentionableTextInput
-/// This is used by parent components to subscribe to room member updates
-pub struct MentionableTextInputSubscriber {
-    widget_uid: WidgetUid,
-}
-
-/// Implement RoomMemberSubscriber trait to receive member update notifications
-impl RoomMemberSubscriber for MentionableTextInputSubscriber {
-    fn on_room_members_updated(
-        &mut self, cx: &mut Cx, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
-    ) {
-        // Always send the update - we'll store the data regardless of current room
-        // This enables proper caching of room members for all rooms
-        log!(
-            "MentionableTextInputSubscriber({:?}) received members {} update for room {} in subscriber",
-            self.widget_uid,
-            members.len(),
-            room_id,
-        );
-        cx.action(MentionableTextInputAction::RoomMembersUpdated(room_id.clone(), members));
+        room_mention_list_item: <RoomMentionListItem> {}
     }
 }
 
@@ -228,17 +255,19 @@ impl RoomMemberSubscriber for MentionableTextInputSubscriber {
 // /// from normal `@` characters.
 // const MENTION_START_STRING: &str = "\u{8288}@\u{8288}";
 
-/// Actions emitted or hanlded by the MentionableTextInput widget.
-#[allow(dead_code)]
-#[derive(Clone, Debug, DefaultNone)]
+/// Information about mentions in the text input.
+#[derive(Clone, Debug, Default)]
+pub struct MentionInfo {
+    /// The set of user IDs that were explicitly mentioned by selecting from the list.
+    pub user_ids: BTreeSet<OwnedUserId>,
+    /// Whether the `@room` option was explicitly selected.
+    pub room: bool,
+}
+
+#[derive(Clone, DefaultNone, Debug)]
 pub enum MentionableTextInputAction {
-    /// Room ID has been updated (new)
-    RoomIdChanged(OwnedRoomId),
-    /// Power levels for the room have been updated
+    /// Notifies the MentionableTextInput about updated power levels for the room.
     PowerLevelsUpdated(OwnedRoomId, bool),
-    /// Room members data has been updated
-    RoomMembersUpdated(OwnedRoomId, Arc<Vec<RoomMember>>),
-    /// Default empty action
     None,
 }
 
@@ -249,8 +278,8 @@ pub struct MentionableTextInput {
     #[deref] cmd_text_input: CommandTextInput,
     /// Template for user list items
     #[live] user_list_item: Option<LivePtr>,
-    /// List of available room members for mentions, mapped by room_id
-    #[rust] room_members_map: BTreeMap<OwnedRoomId, Arc<Vec<RoomMember>>>,
+    /// Template for the @room mention list item
+    #[live] room_mention_list_item: Option<LivePtr>,
     /// Position where the @ mention starts
     #[rust] current_mention_start_index: Option<usize>,
     /// The set of users that were mentioned (at one point) in this text input.
@@ -260,14 +289,14 @@ pub struct MentionableTextInput {
     /// this is just a list of users to search the final sent message for
     /// when adding in new mentions.
     #[rust] possible_mentions: BTreeMap<OwnedUserId, String>,
+    /// Indicates if the `@room` option was explicitly selected.
+    #[rust] possible_room_mention: bool,
     /// Indicates if currently in mention search mode
     #[rust] is_searching: bool,
     /// Current room ID
     #[rust] room_id: Option<OwnedRoomId>,
     /// Whether the current user can notify everyone in the room (@room mention)
     #[rust] can_notify_room: bool,
-    /// Current room member subscription
-    #[rust] member_subscription: Option<RoomMemberSubscription>,
 }
 
 
@@ -283,7 +312,7 @@ impl Widget for MentionableTextInput {
 
             if self.cmd_text_input.should_build_items(actions) {
                 let search_text = self.cmd_text_input.search_text().to_lowercase();
-                self.update_user_list(cx, &search_text);
+                self.update_user_list(cx, &search_text, scope);
             }
 
             if let Some(action) =
@@ -299,22 +328,9 @@ impl Widget for MentionableTextInput {
                 if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
                     match action_ref {
                         MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
-                            if let Some(current_room_id) = &self.room_id {
-                                log!("Processing PowerLevelsUpdated for room id {} current_room_id {}", room_id, current_room_id);
-                                if current_room_id == room_id {
-                                    self.set_can_notify_room(*can_notify_room);
-                                }
-                            }
-                        },
-                        MentionableTextInputAction::RoomIdChanged(room_id) => {
-                            self.create_room_subscription(cx, room_id.clone());
-                        },
-                        MentionableTextInputAction::RoomMembersUpdated(room_id, members) => {
-                            if let Some(current_room_id) = &self.room_id {
-                                if current_room_id == room_id {
-                                    self.room_members_map.insert(room_id.clone(), members.clone());
-                                }
-                            }
+                            log!("MentionableTextInput({:?}) received targeted PowerLevelsUpdated for room {}: {}", self.widget_uid(), room_id, can_notify_room);
+                            self.room_id = Some(room_id.clone());
+                            self.can_notify_room = *can_notify_room;
                         },
                         _ => {},
                     }
@@ -331,67 +347,71 @@ impl Widget for MentionableTextInput {
 
 impl MentionableTextInput {
 
-    // Handles user selection from mention popup
-    fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
-        let username = selected.label(id!(user_info.username)).text();
-        let user_id_str = selected.label(id!(user_id)).text();
+    // Handles item selection from mention popup (either user or @room)
+    fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
+        let text_input_ref = self.cmd_text_input.text_input_ref();
+        let current_text = text_input_ref.text();
+        let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
 
         if let Some(start_idx) = self.current_mention_start_index {
-            let text_input_ref = self.cmd_text_input.text_input_ref();
-            let current_text = text_input_ref.text();
-            let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
+            let room_mention_list_item = self.mentionable_text_input(id!(room_mention_list_item));
 
-            // Handle @room special case
-            if user_id_str == "@room" {
-                // For room mentions, we just add the plain "@room" text
-                let mention_to_insert = "@room ";
+            log!("on_user_selected room_mention_list_item widget_uid: {:?}", room_mention_list_item.widget_uid());
 
-                // Use utility function to safely replace text
-                let new_text = utils::safe_replace_by_byte_indices(
-                    &current_text,
-                    start_idx,
-                    head,
-                    mention_to_insert,
-                );
-
-                self.cmd_text_input.set_text(cx, &new_text);
-                // Calculate new cursor position
-                let new_pos = start_idx + mention_to_insert.len();
-                text_input_ref.set_cursor(new_pos, new_pos);
+            // 检查是否是 @room 选项
+            let is_room_mention = if let Some(room_mention_item) = self.room_mention_list_item {
+                let room_mention_widget = WidgetRef::new_from_ptr(cx, Some(room_mention_item));
+                log!("Checking if selected widget is @room. Selected UID: {:?}, Room mention UID: {:?}",
+                     selected.widget_uid(), room_mention_widget.widget_uid());
+                selected.widget_uid() == room_mention_widget.widget_uid()
             } else {
-                // Handle regular user mention
+                false
+            };
+
+            let mention_to_insert = if is_room_mention {
+                // User selected @room
+                log!("User selected @room mention");
+                self.possible_room_mention = true;
+                "@room ".to_string()
+            } else {
+                // User selected a specific user
+                let username = selected.label(id!(user_info.username)).text();
+                let user_id_str = selected.label(id!(user_id)).text();
                 let Ok(user_id): Result<OwnedUserId, _> = user_id_str.try_into() else {
                     return;
                 };
+                self.possible_mentions.insert(user_id.clone(), username.clone());
+                self.possible_room_mention = false; // Selecting a user cancels @room mention
 
-                // For regular mentions, insert the markdown link format
-                let mention_to_insert = format!(
+                // For now, we insert the markdown link to the mentioned user directly
+                // instead of the user's display name because we don't yet have a way
+                // to track the mentioned display name and replace it later.
+                format!(
                     "[{username}]({}) ",
                     user_id.matrix_to_uri(),
-                );
+                )
+            };
 
-                self.possible_mentions.insert(user_id, username);
 
-                // Use utility function to safely replace text
-                let new_text = utils::safe_replace_by_byte_indices(
-                    &current_text,
-                    start_idx,
-                    head,
-                    &mention_to_insert,
-                );
+            // Use utility function to safely replace text
+            let new_text = utils::safe_replace_by_byte_indices(
+                &current_text,
+                start_idx,
+                head,
+                &mention_to_insert,
+            );
 
-                self.cmd_text_input.set_text(cx, &new_text);
-                // Calculate new cursor position
-                let new_pos = start_idx + mention_to_insert.len();
-                text_input_ref.set_cursor(new_pos, new_pos);
-            }
+            self.cmd_text_input.set_text(cx, &new_text);
+            // Calculate new cursor position
+            let new_pos = start_idx + mention_to_insert.len();
+            text_input_ref.set_cursor(new_pos, new_pos);
         }
 
         self.close_mention_popup(cx);
     }
 
     // Core text change handler that manages mention context
-    fn handle_text_change(&mut self, cx: &mut Cx, _scope: &mut Scope, text: String) {
+    fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
         // Currently an inserted mention consists of a markdown link,
         // which is "[USERNAME](matrix_to_uri)", so of course this must be at least 6 characters.
         // (In reality it has to be a lot more, but whatever...)
@@ -415,7 +435,7 @@ impl MentionableTextInput {
             //     .and_then(|id| self.room_members_map.get(id))
             //     .map_or(0, |members| members.len());
 
-            self.update_user_list(cx, &search_text);
+            self.update_user_list(cx, &search_text,scope);
             self.cmd_text_input.view(id!(popup)).set_visible(cx, true);
         } else if self.is_searching {
             self.close_mention_popup(cx);
@@ -423,38 +443,77 @@ impl MentionableTextInput {
     }
 
     // Updates the mention suggestion list based on search
-    fn update_user_list(&mut self, cx: &mut Cx, search_text: &str) {
+    fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
         self.cmd_text_input.clear_items();
+
+        let Some(room_props) = scope.props.get::<RoomScreenProps>() else {
+                log!("MentionableTextInput::update_user_list: RoomScreenProps not found in scope");
+                return; // Cannot update user list without members
+        };
+        let room_members = &room_props.room_members;
 
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
             let mut matched_members = Vec::new();
+            let red_color_vec4 = Some(vec4(1.0, 0.2, 0.2, 1.0));
 
-            // Get current room members from the map
-            let current_members = self.room_id.as_ref()
-                .and_then(|id| self.room_members_map.get(id))
-                .cloned()
-                .unwrap_or_else(|| Arc::new(Vec::new()));
+            // Add @room option if search text matches "@room" or is empty and user has permission
+            log!("Checking @room permission. Can notify: {}, search_text: {}", self.can_notify_room, search_text);
+            if self.can_notify_room && ("@room".contains(&search_text) || search_text.is_empty()) {
+                log!("Adding @room option to mention list");
+                let room_mention_item = match self.room_mention_list_item {
+                    Some(ptr) => WidgetRef::new_from_ptr(cx, Some(ptr)),
+                    None => {
+                        log!("Error: room_mention_list_item pointer is None");
+                        return;
+                    }
+                };
+                let mut room_avatar_shown = false;
 
-            // Fixed condition: Show if search is empty or if search is part of "room"
-            if self.can_notify_room && (search_text.is_empty() || search_text == "r" || search_text == "ro" || search_text == "roo" || search_text == "room") {
-                // Add a special "@room" entry at the top of the list
-                // We use a dummy room member to maintain compatibility with existing code
-                matched_members.push(("@room (Notify everyone in this room)".to_string(), None));
-            } else {
-                log!("NOT showing @room option: can_notify_room={}, search_text='{}'",
-                    self.can_notify_room, search_text);
+                // Set up room avatar
+                let avatar_ref = room_mention_item.avatar(id!(room_avatar));
+
+                // 先尝试获取房间头像
+                if let Some(avatar_data) = self.room_id
+                    .as_ref()
+                    .and_then(|room_id| get_client().and_then(|c| c.get_room(room_id)))
+                    .and_then(|known_room| known_room.avatar_url())
+                    .map(|mxc_uri| mxc_uri.to_owned())
+                    .and_then(|owned_mxc| match get_or_fetch_avatar(cx, owned_mxc) {
+                        AvatarCacheEntry::Loaded(data) => Some(data),
+                        _ => None,
+                    }) {
+                    // 显示房间头像
+                    let result = avatar_ref.show_image(cx, None, |cx, img| {
+                        utils::load_png_or_jpg(&img, cx, &avatar_data)
+                    });
+                    if result.is_ok() {
+                        room_avatar_shown = true;
+                        log!("Successfully showed @room avatar with room avatar image");
+                    } else {
+                        log!("Failed to show @room avatar with room avatar image");
+                    }
+                } else {
+                    log!("No room avatar found for @room avatar from room_id: {:?}", self.room_id);
+                }
+
+                // 如果无法显示房间头像，显示带红色背景的R字母
+                if !room_avatar_shown {
+                    avatar_ref.show_text(cx, red_color_vec4, None, "R");
+                }
+
+
+                self.cmd_text_input.add_item(room_mention_item);
             }
 
-            // Add matching individual members
-            for member in current_members.iter() {
+            for member in room_members.iter() {
                 let display_name = member
                     .display_name()
                     .map(|n| n.to_string())
                     .unwrap_or_else(|| member.user_id().to_string());
 
                 if display_name.to_lowercase().contains(search_text) {
-                    matched_members.push((display_name, Some(member)));
+                    matched_members.push((display_name, member));
                 }
             }
 
@@ -462,7 +521,16 @@ impl MentionableTextInput {
             const MAX_VISIBLE_ITEMS: usize = 15;
             let popup = self.cmd_text_input.view(id!(popup));
 
-            if member_count == 0 {
+            // if member_count == 0 {
+            //     popup.apply_over(cx, live! { height: Fit });
+            //     self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+            //     return;
+            // }
+
+            // Adjust height calculation to include the potential @room item
+            let total_items_in_list = member_count + if "@room".contains(&search_text) { 1 } else { 0 };
+
+            if total_items_in_list == 0 {
                 popup.apply_over(cx, live! { height: Fit });
                 self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
                 return;
@@ -482,26 +550,23 @@ impl MentionableTextInput {
             // Get spacing between header and list
             let estimated_spacing = 4.0;
 
-            if member_count <= MAX_VISIBLE_ITEMS {
+            if total_items_in_list <= MAX_VISIBLE_ITEMS {
                 let single_item_height = if is_desktop { 32.0 } else { 64.0 };
                 let total_height =
-                    (member_count as f64 * single_item_height) + header_height + estimated_spacing;
+                    (total_items_in_list as f64 * single_item_height) + header_height + estimated_spacing;
                 popup.apply_over(cx, live! { height: (total_height) });
             } else {
                 let max_height = if is_desktop { 400.0 } else { 480.0 };
                 popup.apply_over(cx, live! { height: (max_height) });
             }
 
-            for (index, (display_name, member_opt)) in matched_members.into_iter().enumerate() {
+            for (index, (display_name, member)) in matched_members.into_iter().enumerate() {
                 let item = WidgetRef::new_from_ptr(cx, self.user_list_item);
 
                 item.label(id!(user_info.username)).set_text(cx, &display_name);
 
-                // Handle both @room special item and regular user items
-                let user_id_str = match member_opt {
-                    Some(member) => member.user_id().as_str(),
-                    None => "@room", // Special case for room mention
-                };
+                // Use the full user ID string
+                let user_id_str = member.user_id().as_str();
                 item.label(id!(user_id)).set_text(cx, user_id_str);
 
                 item.apply_over(cx, live! {
@@ -533,57 +598,25 @@ impl MentionableTextInput {
                 }
 
                 let avatar = item.avatar(id!(user_info.avatar));
-                match member_opt {
-                    Some(member) => {
-                        if let Some(mxc_uri) = member.avatar_url() {
-                            if let Some(avatar_data) = get_avatar(cx, mxc_uri) {
-                                let _ = avatar.show_image(cx, None, |cx, img| {
-                                    utils::load_png_or_jpg(&img, cx, &avatar_data)
-                                });
-                            } else {
-                                avatar.show_text(cx, None, &display_name);
-                            }
-                        } else {
-                            avatar.show_text(cx, None, &display_name);
-                        }
-                    },
-                    None => {
-                        // Special case for @room mention
-                        let mut room_avatar_shown = false;
-
-                        if let Some(avatar_data) = self.room_id
-                            .as_ref()
-                            .and_then(|room_id| get_client().and_then(|c| c.get_room(room_id)))
-                            .and_then(|known_room| known_room.avatar_url())
-                            .map(|mxc_uri| mxc_uri.to_owned())
-                            .and_then(|owned_mxc| match get_or_fetch_avatar(cx, owned_mxc) {
-                                AvatarCacheEntry::Loaded(data) => Some(data),
-                                _ => None,
-                            }) {
-                            // show room avatar
-                            let _ = avatar.show_image(cx, None, |cx, img| {
-                                utils::load_png_or_jpg(&img, cx, &avatar_data)
-                            });
-                            room_avatar_shown = true;
-                        }
-
-                        // If room avatar couldn't be shown, display the text avatar with red background
-                        if !room_avatar_shown {
-                            avatar.show_text(cx, None, "Room");
-                            // Set the text view's background color to red
-                            avatar.view(id!(text_view)).apply_over(cx, live! {
-                                draw_bg: {
-                                    background_color: #e24d4d
-                                }
-                            });
-                        }
+                if let Some(mxc_uri) = member.avatar_url() {
+                    if let Some(avatar_data) = get_avatar(cx, mxc_uri) {
+                        let _ = avatar.show_image(cx, None, |cx, img| {
+                            utils::load_png_or_jpg(&img, cx, &avatar_data)
+                        });
+                    } else {
+                        avatar.show_text(cx, None, None, &display_name);
                     }
+                } else {
+                    avatar.show_text(cx, None, None, "Room");
                 }
 
                 self.cmd_text_input.add_item(item.clone());
 
-                if index == 0 {
-                    self.cmd_text_input.set_keyboard_focus_index(0);
+                // Set keyboard focus to the first item (either @room or the first user)
+                if index == 0 && !"@room".contains(&search_text) { // If @room was added, it's the first item
+                    self.cmd_text_input.set_keyboard_focus_index(1); // Focus the first user if @room is index 0
+                } else if index == 0 && "@room".contains(&search_text) {
+                    self.cmd_text_input.set_keyboard_focus_index(0); // Focus @room if it's the first item
                 }
             }
 
@@ -608,8 +641,13 @@ impl MentionableTextInput {
         let byte_positions = utils::build_grapheme_byte_positions(text);
 
         // Check if cursor is immediately after @ symbol
+        // Only trigger if @ is preceded by whitespace or beginning of text
         if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
-            return Some(byte_positions[cursor_grapheme_idx - 1]);
+            let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
+                (cursor_grapheme_idx > 1 && text_graphemes[cursor_grapheme_idx - 2].trim().is_empty());
+            if is_preceded_by_whitespace_or_start {
+                return Some(byte_positions[cursor_grapheme_idx - 1]);
+            }
         }
 
         // Find the last @ symbol before the cursor
@@ -669,30 +707,10 @@ impl MentionableTextInput {
     /// Sets the text content
     pub fn set_text(&mut self, cx: &mut Cx, text: &str) {
         self.cmd_text_input.text_input_ref().set_text(cx, text);
+        // When text is set externally (e.g., for editing), clear mention state
+        self.possible_mentions.clear();
+        self.possible_room_mention = false;
         self.redraw(cx);
-    }
-
-    pub fn set_room_id(&mut self, room_id: OwnedRoomId) {
-        // Update current room_id
-        self.room_id = Some(room_id.clone());
-
-        // Send the room ID changed event to widget listeners
-        Cx::post_action(MentionableTextInputAction::RoomIdChanged(room_id));
-    }
-
-    pub fn get_room_id(&self) -> Option<OwnedRoomId> {
-        self.room_id.clone()
-    }
-
-    /// Sets room members for mention suggestions
-    pub fn set_room_members(&mut self, members: Arc<Vec<RoomMember>>) {
-        if let Some(room_id) = &self.room_id {
-            log!("Setting room members for room {}: count={}", room_id, members.len());
-            // Store in the map by room_id
-            self.room_members_map.insert(room_id.clone(), members);
-        } else {
-            log!("Warning: Received room members but no room_id is set");
-        }
     }
 
     /// Sets whether the current user can notify the entire room (@room mention)
@@ -705,31 +723,14 @@ impl MentionableTextInput {
         self.can_notify_room
     }
 
-    /// Creates a room member subscription for the MentionableTextInput
-    /// This function will be used by components that contain a MentionableTextInput
-    pub fn create_room_subscription(&mut self, cx: &mut Cx, room_id: OwnedRoomId) {
-        // Cancel previous subscription if any
-        self.member_subscription = None;
-
-        // Create subscriber
-        let subscriber = Arc::new(Mutex::new(MentionableTextInputSubscriber {
-            widget_uid: self.widget_uid()
-        }));
-
-        log!("Creating room subscription. Widget UID: {:?}", self.widget_uid());
-
-        // Create and save subscription
-        self.member_subscription = Some(RoomMemberSubscription::new(cx, room_id.clone(), subscriber));
-
-        // Request room members data if we don't already have them cached
-        if !self.room_members_map.contains_key(&room_id) {
-            submit_async_request(MatrixRequest::GetRoomMembers {
-                room_id: room_id.clone(),
-                memberships: matrix_sdk::RoomMemberships::JOIN,
-                local_only: false,
-            });
+    /// Returns information about the mentions that were explicitly selected from the list.
+    pub fn get_mention_info(&self) -> MentionInfo {
+        MentionInfo {
+            user_ids: self.possible_mentions.keys().cloned().collect(),
+            room: self.possible_room_mention,
         }
     }
+
 }
 
 impl MentionableTextInputRef {
@@ -743,21 +744,9 @@ impl MentionableTextInputRef {
         }
     }
 
-    /// Sets the room members for this text input
-    pub fn set_room_members(&self, members: Arc<Vec<RoomMember>>) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_room_members(members);
-        }
-    }
-
-    pub fn set_room_id(&self, room_id: OwnedRoomId) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.set_room_id(room_id);
-        }
-    }
-
-    pub fn get_room_id(&self) -> Option<OwnedRoomId> {
-        self.borrow().and_then(|inner| inner.get_room_id())
+    /// Returns information about the mentions that were explicitly selected from the list.
+    pub fn get_mention_info(&self) -> MentionInfo {
+        self.borrow().map_or_else(Default::default, |inner| inner.get_mention_info())
     }
 
     /// Sets whether the current user can notify the entire room (@room mention)
@@ -770,13 +759,6 @@ impl MentionableTextInputRef {
     /// Gets whether the current user can notify the entire room (@room mention)
     pub fn can_notify_room(&self) -> bool {
         self.borrow().is_some_and(|inner| inner.can_notify_room())
-    }
-
-    /// Create a room member subscription for this MentionableTextInput
-    pub fn create_room_subscription(&self, cx: &mut Cx, room_id: OwnedRoomId) {
-        if let Some(mut inner) = self.borrow_mut() {
-            inner.create_room_subscription(cx, room_id);
-        }
     }
 
     /// Returns the list of users mentioned in the given html message content.

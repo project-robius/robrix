@@ -8,7 +8,7 @@ use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
     config::RequestConfig, event_handler::EventHandlerDropGuard, media::MediaRequestParameters, room::{edit::EditedContent, RoomMember}, ruma::{
-        api::client::receipt::create_receipt::v3::ReceiptType, events::{
+        api::client::receipt::create_receipt::v3::ReceiptType, events::{Mentions,
             receipt::ReceiptThread, room::{
                 message::{ForwardThread, RoomMessageEventContent}, power_levels::RoomPowerLevels, MediaSource
             }, FullStateEventContent, MessageLikeEventType, StateEventType
@@ -35,6 +35,7 @@ use crate::{
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
     }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
+use crate::shared::mentionable_text_input::MentionInfo;
 
 #[derive(Parser, Debug, Default)]
 struct Cli {
@@ -302,6 +303,7 @@ pub enum MatrixRequest {
         room_id: OwnedRoomId,
         message: RoomMessageEventContent,
         replied_to: Option<RepliedToInfo>,
+        mention_info: MentionInfo,
     },
     /// Sends a notice to the given room that the current user is or is not typing.
     ///
@@ -860,7 +862,7 @@ async fn async_worker(
                 });
             }
 
-            MatrixRequest::SendMessage { room_id, message, replied_to } => {
+            MatrixRequest::SendMessage { room_id, message, replied_to, mention_info } => {
                 let timeline = {
                     let all_room_info = ALL_ROOM_INFO.lock().unwrap();
                     let Some(room_info) = all_room_info.get(&room_id) else {
@@ -872,9 +874,15 @@ async fn async_worker(
 
                 // Spawn a new async task that will send the actual message.
                 let _send_message_task = Handle::current().spawn(async move {
-                    log!("Sending message to room {room_id}: {message:?}...");
+                    log!("Sending message to room {room_id}: {message:?} mentions: {mention_info:?}...");
+                    // Build the Mentions struct from MentionInfo using the constructor
+                    let mut mentions = Mentions::with_user_ids(mention_info.user_ids);
+                    mentions.room = mention_info.room; // Set the room field
+
+                    let message_with_mentions = message.add_mentions(mentions);
+
                     if let Some(replied_to_info) = replied_to {
-                        match timeline.send_reply(message.into(), replied_to_info, ForwardThread::Yes).await {
+                        match timeline.send_reply(message_with_mentions.into(), replied_to_info, ForwardThread::Yes).await {
                             Ok(_send_handle) => log!("Sent reply message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send reply message to room {room_id}: {_e:?}");
@@ -882,7 +890,7 @@ async fn async_worker(
                             }
                         }
                     } else {
-                        match timeline.send(message.into()).await {
+                        match timeline.send(message_with_mentions.into()).await {
                             Ok(_send_handle) => log!("Sent message to room {room_id}."),
                             Err(_e) => {
                                 error!("Failed to send message to room {room_id}: {_e:?}");
@@ -2220,6 +2228,7 @@ fn spawn_fetch_room_avatar(room: Room) {
     let room_name_str = room.cached_display_name().map(|dn| dn.to_string());
     Handle::current().spawn(async move {
         let avatar = room_avatar(&room, &room_name_str).await;
+
         rooms_list::enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomAvatar {
             room_id,
             avatar,
