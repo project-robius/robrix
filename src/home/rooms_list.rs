@@ -154,9 +154,24 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
     SignalToUI::set_ui_signal();
 }
 
-
+/// Actions emitted by the RoomsList widget.
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
+    /// A new room was selected.
+    Selected(SelectedRoom),
+    /// A new room was joined from an accepted invite,
+    /// meaning that the existing `InviteScreen` should be converted
+    /// to a `RoomScreen` to display now-joined room.
+    InviteAccepted {
+        room_id: OwnedRoomId,
+        room_name: Option<String>,
+    },
+    None,
+}
+
+///
+#[derive(Debug, Clone, DefaultNone)]
+pub enum Room {
     Selected(SelectedRoom),
     None,
 }
@@ -217,6 +232,12 @@ pub struct InvitedRoomInfo {
     pub inviter_info: Option<InviterInfo>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    /// The state of this how this invite is being handled by the client backend
+    /// and what should be shown in the UI.
+    ///
+    /// We maintain this state here instead of in the `InviteScreen`
+    /// because we need the state to persist even if the `InviteScreen` is closed. 
+    pub invite_state: InviteState,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
 }
@@ -228,6 +249,25 @@ pub struct InviterInfo {
     pub display_name: Option<String>,
     pub avatar: Option<Arc<[u8]>>,
 }
+
+/// The state of a pending invite.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InviteState {
+    /// Waiting for the user to accept or decline the invite.
+    #[default]
+    WaitingOnUserInput,
+    /// Waiting for the server to respond to the user's "join room" action.
+    WaitingForJoinResult,
+    /// Waiting for the server to respond to the user's "leave room" action.
+    WaitingForLeaveResult,
+    /// The invite was accepted and the room was successfully joined.
+    /// We're now waiting for our client to receive the joined room from the homeserver.
+    WaitingForJoinedRoom,
+    /// The invite was declined and the room was successfully left.
+    /// This should result in the InviteScreen being closed.
+    RoomLeft,
+}
+
 
 #[derive(Clone, Debug)]
 pub enum RoomPreviewAvatar {
@@ -288,7 +328,7 @@ impl LiveHook for RoomsList {
 
 impl RoomsList {
     /// Handle all pending updates to the list of all rooms.
-    fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
+    fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
         let mut num_updates: usize = 0;
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
             num_updates += 1;
@@ -308,14 +348,28 @@ impl RoomsList {
                 }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();
+                    let room_name = joined_room.room_name.clone();
                     let should_display = (self.display_filter)(&joined_room);
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added joined room {room_id} that already existed");
                     } else {
                         if should_display {
-                            self.displayed_joined_rooms.push(room_id);
+                            self.displayed_joined_rooms.push(room_id.clone());
                         }
+                    }
+                    // If this room was added as a result of accepting an invite, we must:
+                    // 1. Remove the room from the list of invited rooms.
+                    // 2. 
+                    // 3. Emit an action informing other widgets that the InviteScreen
+                    //    displaying the invite to this room should be converted to a
+                    //    RoomScreen displaying the now-joined room.
+                    if let Some(_accepted_invite) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            RoomsListAction::InviteAccepted { room_id, room_name }
+                        );
                     }
                     self.update_status_rooms_count();
                 }
@@ -574,7 +628,7 @@ impl Widget for RoomsList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
-        self.current_active_room = app_state.rooms_panel.selected_room.as_ref()
+        self.current_active_room = app_state.selected_room.as_ref()
             .map(|sel_room| sel_room.room_id().clone())
             .filter(|room_id| self.is_room_displayable(room_id));
 

@@ -57,7 +57,7 @@ impl Widget for MainMobileUI {
         let show_room: bool;
         let show_invite: bool;
 
-        match app_state.rooms_panel.selected_room.as_ref() {
+        match app_state.selected_room.as_ref() {
             Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
                 show_welcome = false;
                 show_room = true;

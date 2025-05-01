@@ -29,7 +29,7 @@ use std::{cmp::{max, min}, collections::{BTreeMap, BTreeSet}, ops::Not, path:: P
 use std::io;
 use crate::{
     app_data_dir, avatar_cache::AvatarUpdate, event_preview::text_preview_of_timeline_item, home::{
-        room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
+        invite_screen::{JoinRoomAction, LeaveRoomAction}, room_screen::TimelineUpdate, rooms_list::{self, enqueue_rooms_list_update, InvitedRoomInfo, InviterInfo, JoinedRoomInfo, RoomPreviewAvatar, RoomsListUpdate}
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
@@ -241,6 +241,14 @@ pub enum MatrixRequest {
     /// Request to fetch profile information for all members of a room.
     /// This can be *very* slow depending on the number of members in the room.
     SyncRoomMemberList {
+        room_id: OwnedRoomId,
+    },
+    /// Request to join the given room.
+    JoinRoom {
+        room_id: OwnedRoomId,
+    },
+    /// Request to leave the given room.
+    LeaveRoom {
         room_id: OwnedRoomId,
     },
     /// Request to get the actual list of members in a room.
@@ -543,6 +551,58 @@ async fn async_worker(
                     log!("Completed sync room members request for room {room_id}.");
                     sender.send(TimelineUpdate::RoomMembersSynced).unwrap();
                     SignalToUI::set_ui_signal();
+                });
+            }
+
+            MatrixRequest::JoinRoom { room_id } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _join_room_task = Handle::current().spawn(async move {
+                    log!("Sending request to join room {room_id}...");
+                    let result_action = if let Some(room) = client.get_room(&room_id) {
+                        match room.join().await {
+                            Ok(()) => {
+                                log!("Successfully joined room {room_id}.");
+                                JoinRoomAction::Joined { room_id }
+                            }
+                            Err(e) => {
+                                error!("Error joining room {room_id}: {e:?}");
+                                JoinRoomAction::Failed { room_id, error: e.to_string() }
+                            }
+                        }
+                    } else {
+                        error!("BUG: client could not get room with ID {room_id}");
+                        JoinRoomAction::Failed {
+                            room_id,
+                            error: String::from("Client couldn't locate room to join it."),
+                        }
+                    };
+                    Cx::post_action(result_action);
+                });
+            }
+
+            MatrixRequest::LeaveRoom { room_id } => {
+                let Some(client) = CLIENT.get() else { continue };
+                let _leave_room_task = Handle::current().spawn(async move {
+                    log!("Sending request to leave room {room_id}...");
+                    let result_action = if let Some(room) = client.get_room(&room_id) {
+                        match room.leave().await {
+                            Ok(()) => {
+                                log!("Successfully left room {room_id}.");
+                                LeaveRoomAction::Left { room_id }
+                            }
+                            Err(e) => {
+                                error!("Error leaving room {room_id}: {e:?}");
+                                LeaveRoomAction::Failed { room_id, error: e.to_string() }
+                            }
+                        }
+                    } else {
+                        error!("BUG: client could not get room with ID {room_id}");
+                        LeaveRoomAction::Failed {
+                            room_id,
+                            error: String::from("Client couldn't locate room to leave it."),
+                        }
+                    };
+                    Cx::post_action(result_action);
                 });
             }
 
@@ -1611,23 +1671,27 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             return Ok(());
         }
         RoomState::Left => {
+            let room_name = room.display_name().await.map(|n| n.to_string()).ok();
+            log!("Received new Left room: {room_name:?} ({room_id})");
             // TODO: add this to the list of left rooms,
             //       which is collapsed by default.
             //       Upon clicking a left room, we can show a splash page
             //       that prompts the user to rejoin the room or forget it.
+
+            // TODO: this may also be called when a user rejects an invite, not sure.
+            //       So we might also need to make a new RoomsListUpdate::RoomLeft variant.
             return Ok(());
         }
         RoomState::Invited => {
             // We must call `display_name()` here to calculate and cache the room's name.
             let room_name = room.display_name().await.map(|n| n.to_string()).ok();
-            let invite_details = room.invite_details().await
-                .map_err(|e| anyhow::anyhow!("Failed to get room invite details: {e:?}"))?;
+            let invite_details = room.invite_details().await.ok();
             let latest = room.latest_event().await.as_ref().map(
                 |ev| get_latest_event_details(ev, &room_id)
             );
             let room_avatar = room_avatar(room, room_name.as_deref()).await;
 
-            let inviter_info = if let Some(inviter) = invite_details.inviter.as_ref() {
+            let inviter_info = if let Some(inviter) = invite_details.and_then(|d| d.inviter) {
                 Some(InviterInfo {
                     user_id: inviter.user_id().to_owned(),
                     display_name: inviter.display_name().map(|n| n.to_string()),
@@ -1650,6 +1714,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
                 canonical_alias: room.canonical_alias(),
                 alt_aliases: room.alt_aliases(),
                 latest,
+                invite_state: Default::default(),
                 is_selected: false,
             }));
             return Ok(());
