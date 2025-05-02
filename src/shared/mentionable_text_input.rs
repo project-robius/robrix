@@ -136,7 +136,7 @@ live_design! {
             }}}
         }
 
-        <Label> {
+        room_mention = <Label> {
             height: Fit,
             draw_text: {
                 color: #000,
@@ -305,14 +305,34 @@ impl Widget for MentionableTextInput {
         self.cmd_text_input.handle_event(cx, event, scope);
 
         if let Event::Actions(actions) = event {
+
+            let text_input_ref = self.cmd_text_input.text_input_ref(); // 获取内部 TextInput 的引用
+            let text_input_uid = text_input_ref.widget_uid();
+            // --- 修改开始 ---
+            // 获取内部 TextInput 的 Area
+            let text_input_area = text_input_ref.area();
+            // 使用 cx 检查这个 Area 是否有键盘焦点
+            let has_focus = cx.has_key_focus(text_input_area);
+            // --- 修改结束 ---
+
+
             if let Some(selected) = self.cmd_text_input.item_selected(actions) {
                 self.on_user_selected(cx, scope, selected);
-                return;
+                // return;
             }
 
             if self.cmd_text_input.should_build_items(actions) {
-                let search_text = self.cmd_text_input.search_text().to_lowercase();
-                self.update_user_list(cx, &search_text, scope);
+                // 只有当这个实例的 TextInput 有焦点时才构建列表
+                if has_focus {
+                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                    // update_user_list 内部已经包含了 Scope room_id 的检查
+                    self.update_user_list(cx, &search_text, scope);
+                } else {
+                    // 如果没有焦点，但收到了构建请求（可能来自之前的状态），确保弹窗是关闭的
+                    if self.cmd_text_input.view(id!(popup)).visible() {
+                        self.close_mention_popup(cx);
+                    }
+                }
             }
 
             if let Some(action) =
@@ -324,17 +344,82 @@ impl Widget for MentionableTextInput {
             }
 
             for action in actions {
+                // 检查是否是 TextInputAction
+                if let Some(widget_action) = action.as_widget_action() {
+                    // 确保 Action 来自我们自己的 TextInput
+                    if widget_action.widget_uid == text_input_uid {
+                        if let TextInputAction::Change(text) = widget_action.cast() {
+                            // 只有当这个实例的 TextInput 有焦点时才处理文本变化
+                            if has_focus {
+                                // handle_text_change 内部会调用 update_user_list，
+                                // update_user_list 内部有 Scope room_id 检查
+                                self.handle_text_change(cx, scope, text);
+                            }
+                            // 找到了对应的 Change Action，可以跳出内层循环
+                            break;
+                        }
+                    }
+                }
+
                 // Check for MentionableTextInputAction actions
                 if let Some(action_ref) = action.downcast_ref::<MentionableTextInputAction>() {
                     match action_ref {
                         MentionableTextInputAction::PowerLevelsUpdated(room_id, can_notify_room) => {
-                            log!("MentionableTextInput({:?}) received targeted PowerLevelsUpdated for room {}: {}", self.widget_uid(), room_id, can_notify_room);
-                            self.room_id = Some(room_id.clone());
-                            self.can_notify_room = *can_notify_room;
+                            // 检查 Scope 中的 room_id 与 action 中的 room_id 是否匹配
+                            let scope_room_id = scope.props.get::<RoomScreenProps>().map(|props| &props.room_id);
+
+                            // 如果 Scope 中有 room_id，并且不匹配 action 中的 room_id，则这个 action 可能是为另一个房间发送的
+                            if let Some(scope_id) = scope_room_id {
+                                if scope_id != room_id {
+                                    log!("MentionableTextInput({:?}) ignoring PowerLevelsUpdated because scope room_id ({}) doesn't match action room_id ({})",
+                                        self.widget_uid(), scope_id, room_id);
+                                    continue; // 跳过这个 action
+                                }
+                            }
+
+                            // 如果 Scope 中没有 room_id，则看组件内部状态是否与 action 匹配
+                            if scope_room_id.is_none() {
+                                if let Some(internal_id) = &self.room_id {
+                                    if internal_id != room_id {
+                                        log!("MentionableTextInput({:?}) ignoring PowerLevelsUpdated because internal room_id ({}) doesn't match action room_id ({})",
+                                            self.widget_uid(), internal_id, room_id);
+                                        continue; // 跳过这个 action
+                                    }
+                                }
+                            }
+
+                            // 通过检查后，可以更新组件状态
+                            log!("MentionableTextInput({:?}) received valid PowerLevelsUpdated for room {}: can_notify={}",
+                                self.widget_uid(), room_id, can_notify_room);
+
+                            // 如果此时内部 room_id 未设置或与 action 不匹配，则更新它
+                            // 注意：这里优先使用 Scope 中的 room_id
+                            if self.room_id.as_ref() != Some(room_id) {
+                                self.room_id = Some(room_id.clone());
+                                log!("MentionableTextInput({:?}) updated internal room_id to {}", self.widget_uid(), room_id);
+                            }
+
+                            // 只有当 can_notify_room 状态实际改变时才更新并可能重绘
+                            if self.can_notify_room != *can_notify_room {
+                                self.can_notify_room = *can_notify_room;
+                                log!("MentionableTextInput({:?}) updated can_notify_room to {}", self.widget_uid(), can_notify_room);
+
+                                // 如果正在搜索，可能需要立即更新列表以显示/隐藏 @room
+                                if self.is_searching && has_focus { // 确保有焦点时才更新列表
+                                    let search_text = self.cmd_text_input.search_text().to_lowercase();
+                                    self.update_user_list(cx, &search_text, scope);
+                                } else {
+                                    self.redraw(cx);
+                                }
+                            }
                         },
                         _ => {},
                     }
                 }
+            }
+
+            if !has_focus && self.cmd_text_input.view(id!(popup)).visible() {
+                    self.close_mention_popup(cx);
             }
         }
     }
@@ -348,44 +433,60 @@ impl Widget for MentionableTextInput {
 impl MentionableTextInput {
 
     // Handles item selection from mention popup (either user or @room)
-    fn on_user_selected(&mut self, cx: &mut Cx, scope: &mut Scope, selected: WidgetRef) {
+    fn on_user_selected(&mut self, cx: &mut Cx, _scope: &mut Scope, selected: WidgetRef) {
         let text_input_ref = self.cmd_text_input.text_input_ref();
         let current_text = text_input_ref.text();
         let head = text_input_ref.borrow().map_or(0, |p| p.get_cursor().head.index);
 
         if let Some(start_idx) = self.current_mention_start_index {
-            let room_mention_list_item = self.mentionable_text_input(id!(room_mention_list_item));
+            // 1. 改进检测 @room 选择的逻辑，不要依赖于 user_id 是否为空
+            // 获取原始的模板指针，用于比较是否是选择的 @room 选项
+            let room_mention_template = self.room_mention_list_item;
 
-            log!("on_user_selected room_mention_list_item widget_uid: {:?}", room_mention_list_item.widget_uid());
+            // 检查当前选中项是否是 @room 项
+            // 直接检查通用的文本标签
+            let mut is_room_mention = false;
 
-            // 检查是否是 @room 选项
-            let is_room_mention = if let Some(room_mention_item) = self.room_mention_list_item {
-                let room_mention_widget = WidgetRef::new_from_ptr(cx, Some(room_mention_item));
-                log!("Checking if selected widget is @room. Selected UID: {:?}, Room mention UID: {:?}",
-                     selected.widget_uid(), room_mention_widget.widget_uid());
-                selected.widget_uid() == room_mention_widget.widget_uid()
+            // 尝试检查文本内容为 @room 的标签
+            let inner_label = selected.label(id!(room_mention)); // 默认标签
+            if inner_label.text() == "@room" {
+                is_room_mention = true;
+            }
+
+            // 如果上面的方法失败，退回到比较 widget_uid 或 user_id 为空的方式
+            let is_room_mention = if !is_room_mention {
+                log!("Falling back to alternative @room detection methods");
+
+                // 方法 2: 看是否能找到 user_id 标签 - 用户项有它，@room 项没有
+                let has_user_id = selected.label(id!(user_id)).text().len() > 0;
+
+                !has_user_id
             } else {
-                false
+                true
             };
 
+            log!("Item selected is_room_mention: {}", is_room_mention);
+
             let mention_to_insert = if is_room_mention {
-                // User selected @room
+                // 用户选择了 @room
                 log!("User selected @room mention");
                 self.possible_room_mention = true;
                 "@room ".to_string()
             } else {
-                // User selected a specific user
+                // 用户选择了特定用户
                 let username = selected.label(id!(user_info.username)).text();
                 let user_id_str = selected.label(id!(user_id)).text();
-                let Ok(user_id): Result<OwnedUserId, _> = user_id_str.try_into() else {
+                let Ok(user_id): Result<OwnedUserId, _> = user_id_str.clone().try_into() else {
+                    log!("Failed to parse user_id: {}", user_id_str);
                     return;
                 };
                 self.possible_mentions.insert(user_id.clone(), username.clone());
-                self.possible_room_mention = false; // Selecting a user cancels @room mention
+                log!("User selected mention: {} ({}))", username, user_id);
+                self.possible_room_mention = false; // 选择用户取消 @room 提及
 
-                // For now, we insert the markdown link to the mentioned user directly
-                // instead of the user's display name because we don't yet have a way
-                // to track the mentioned display name and replace it later.
+                // 目前，我们直接插入用户提及的 markdown 链接
+                // 而不是用户的显示名称，因为我们还没有办法
+                // 追踪提及的显示名称并稍后替换它。
                 format!(
                     "[{username}]({}) ",
                     user_id.matrix_to_uri(),
@@ -444,13 +545,41 @@ impl MentionableTextInput {
 
     // Updates the mention suggestion list based on search
     fn update_user_list(&mut self, cx: &mut Cx, search_text: &str, scope: &mut Scope) {
-        self.cmd_text_input.clear_items();
-
+        // 1. 获取 Props 并检查 Scope 的有效性
         let Some(room_props) = scope.props.get::<RoomScreenProps>() else {
-                log!("MentionableTextInput::update_user_list: RoomScreenProps not found in scope");
-                return; // Cannot update user list without members
+            log!("MentionableTextInput::update_user_list: RoomScreenProps not found in scope. Clearing list.");
+            self.cmd_text_input.clear_items(); // 清空列表，因为没有有效数据源
+            self.cmd_text_input.view(id!(popup)).set_visible(cx, false); // 隐藏弹窗
+            self.redraw(cx);
+            return;
         };
+
+        // 2. 检查 internal room_id 是否已设置 (应该由 PowerLevelsUpdated 设置)
+        if self.room_id.is_none() {
+            // 如果内部 room_id 未设置，从当前 scope 初始化它
+            log!("MentionableTextInput: Initializing internal room_id from scope: {}", room_props.room_id);
+            self.room_id = Some(room_props.room_id.clone());
+        }
+
+        // 3. 核心检查：当前 scope 的 room_id 与组件内部 room_id 是否匹配
+        let internal_room_id = self.room_id.as_ref().unwrap(); // 此时必定存在
+        if internal_room_id != &room_props.room_id {
+            log!("MentionableTextInput Warning: Scope room_id ({}) does not match internal room_id ({}). Updating internal room_id.",
+                    room_props.room_id, internal_room_id);
+
+            // 重要修复：当切换房间时，更新组件的内部 room_id 以匹配当前 scope
+            self.room_id = Some(room_props.room_id.clone());
+
+            // 清空当前列表，准备使用新房间的成员更新
+            self.cmd_text_input.clear_items();
+        }
+
+        // 始终使用当前 scope 中提供的 room_members
+        // 这些成员列表应该来自 TimelineUiState.room_members_map 并且已经是当前房间的正确列表
         let room_members = &room_props.room_members;
+
+        // 清空旧列表项，准备填充新列表
+        self.cmd_text_input.clear_items();
 
         if self.is_searching {
             let is_desktop = cx.display_context.is_desktop();
@@ -473,28 +602,49 @@ impl MentionableTextInput {
                 // Set up room avatar
                 let avatar_ref = room_mention_item.avatar(id!(room_avatar));
 
-                // 先尝试获取房间头像
-                if let Some(avatar_data) = self.room_id
-                    .as_ref()
-                    .and_then(|room_id| get_client().and_then(|c| c.get_room(room_id)))
-                    .and_then(|known_room| known_room.avatar_url())
-                    .map(|mxc_uri| mxc_uri.to_owned())
-                    .and_then(|owned_mxc| match get_or_fetch_avatar(cx, owned_mxc) {
-                        AvatarCacheEntry::Loaded(data) => Some(data),
-                        _ => None,
-                    }) {
-                    // 显示房间头像
-                    let result = avatar_ref.show_image(cx, None, |cx, img| {
-                        utils::load_png_or_jpg(&img, cx, &avatar_data)
-                    });
-                    if result.is_ok() {
-                        room_avatar_shown = true;
-                        log!("Successfully showed @room avatar with room avatar image");
+                // 先尝试从当前房间 Props 中获取房间头像
+                // 使用 self.room_id 而不是 room_props.room_id 来确保获取正确的房间头像
+                // 当切换房间时，self.room_id 已在前面的代码中更新为与 room_props.room_id 一致
+                if let Some(room_id) = self.room_id.as_ref() {
+                    if let Some(client) = get_client() {
+                        if let Some(room) = client.get_room(room_id) {
+                            if let Some(avatar_url) = room.avatar_url() {
+                                log!("Found room avatar URL for @room: {}", avatar_url);
+
+                                match get_or_fetch_avatar(cx, avatar_url.to_owned()) {
+                                    AvatarCacheEntry::Loaded(avatar_data) => {
+                                        // 显示房间头像
+                                        let result = avatar_ref.show_image(cx, None, |cx, img| {
+                                            utils::load_png_or_jpg(&img, cx, &avatar_data)
+                                        });
+                                        if result.is_ok() {
+                                            room_avatar_shown = true;
+                                            log!("Successfully showed @room avatar with room avatar image");
+                                        } else {
+                                            log!("Failed to show @room avatar with room avatar image");
+                                        }
+                                    },
+                                    AvatarCacheEntry::Requested => {
+                                        log!("Room avatar was requested for @room but not loaded yet");
+                                        // 临时显示文字"R"
+                                        avatar_ref.show_text(cx, red_color_vec4, None, "R");
+                                        room_avatar_shown = true;
+                                    },
+                                    AvatarCacheEntry::Failed => {
+                                        log!("Failed to load room avatar for @room");
+                                    }
+                                }
+                            } else {
+                                log!("Room has no avatar URL for @room");
+                            }
+                        } else {
+                            log!("Could not find room for @room avatar with room_id: {}", room_id);
+                        }
                     } else {
-                        log!("Failed to show @room avatar with room avatar image");
+                        log!("Could not get client for @room avatar");
                     }
                 } else {
-                    log!("No room avatar found for @room avatar from room_id: {:?}", self.room_id);
+                    log!("No room_id available for @room avatar");
                 }
 
                 // 如果无法显示房间头像，显示带红色背景的R字母

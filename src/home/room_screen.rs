@@ -1,7 +1,7 @@
 //! A room screen is the UI page that displays a single Room's timeline of events/messages
 //! along with a message input bar at the bottom.
 
-use std::{borrow::Cow, collections::BTreeMap, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
+use std::{borrow::Cow, collections::{BTreeMap, HashMap}, ops::{DerefMut, Range}, sync::{Arc, Mutex}, time::SystemTime};
 
 use bytesize::ByteSize;
 use imbl::Vector;
@@ -944,6 +944,7 @@ impl Drop for RoomScreen {
 /// Child components only need to know the structure of RoomScreenProps,
 /// without understanding the internal details of TimelineUiState.
 pub struct RoomScreenProps {
+    pub room_id: OwnedRoomId,
     pub room_members: Arc<Vec<RoomMember>>,
     // Add other room-related state here if needed
 }
@@ -952,7 +953,7 @@ pub struct RoomScreenProps {
 pub enum RoomScreenAction {
     None,
     /// Room members data has been updated for this room.
-    RoomMembersUpdated(Arc<Vec<RoomMember>>),
+    RoomMembersUpdated(OwnedRoomId, Arc<Vec<RoomMember>>),
 }
 
 /// Subscriber for RoomScreen to receive room member updates
@@ -966,17 +967,14 @@ impl RoomMemberSubscriber for RoomScreenMemberSubscriber {
     fn on_room_members_updated(
         &mut self, room_id: &OwnedRoomId, members: Arc<Vec<RoomMember>>,
     ) {
-        if self.room_id == *room_id {
-            log!(
-                "RoomScreenMemberSubscriber({:?}) received members update for room {}",
-                self.widget_uid,
-                room_id
-            );
-            Cx::post_action(RoomScreenAction::RoomMembersUpdated(members));
-        } else {
-                log!("RoomScreenMemberSubscriber({:?}) ignoring update for different room {} (subscribed to {})",
-                    self.widget_uid, room_id, self.room_id);
-        }
+        // 现在我们总是转发更新，即使是不同的房间，因为我们使用map存储所有房间的成员列表
+        log!(
+            "RoomScreenMemberSubscriber({:?}) received members update for room {}",
+            self.widget_uid,
+            room_id
+        );
+        // 将room_id和members都传递给action处理程序
+        Cx::post_action(RoomScreenAction::RoomMembersUpdated(room_id.clone(), members));
     }
 }
 
@@ -1132,11 +1130,21 @@ impl Widget for RoomScreen {
                 }
 
                 // Handle RoomScreen-specific actions posted back from subscribers tasks
-                if let Some(RoomScreenAction::RoomMembersUpdated(members)) = action.downcast_ref() {
-                    log!("RoomScreen({:?}) received RoomMembersUpdated action with {} members", self.widget_uid(), members.len());
+                if let Some(RoomScreenAction::RoomMembersUpdated(update_room_id, members)) = action.downcast_ref() {
+                    log!("RoomScreen({:?}) received RoomMembersUpdated action for room {} with {} members", 
+                         self.widget_uid(), update_room_id, members.len());
+                    
                     if let Some(tl_state) = self.tl_state.as_mut() {
-                        tl_state.room_members = members.clone();
-                        // self.redraw(cx);
+                        // 总是更新 room_members_map
+                        tl_state.room_members_map.insert(update_room_id.clone(), members.clone());
+                        
+                        // 仅当更新的room_id是当前显示的room_id时才更新room_members
+                        if tl_state.room_id == *update_room_id {
+                            tl_state.room_members = members.clone();
+                            log!("Updated current room_members for room {}", update_room_id);
+                        } else {
+                            log!("Updated room_members_map for room {}, but not current room_members", update_room_id);
+                        }
                     }
                 }
             }
@@ -1280,8 +1288,25 @@ impl Widget for RoomScreen {
         // Create a Scope with RoomScreenProps containing the room members.
         // This scope is needed by child widgets like MentionableTextInput during event handling.
         let room_props = self.tl_state.as_ref()
-            .map(|tl| RoomScreenProps { room_members: tl.room_members.clone() })
-            .unwrap_or_else(|| RoomScreenProps { room_members: Arc::new(Vec::new()) });
+            .map(|tl| {
+                // 优先从 room_members_map 获取成员列表
+                let room_id = tl.room_id.clone();
+                let room_members = tl.room_members_map.get(&room_id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        log!("No members found in map for room {}, using default room_members", room_id);
+                        tl.room_members.clone() // 如果map中没有，使用默认的room_members
+                    });
+                
+                RoomScreenProps {
+                    room_id,
+                    room_members
+                }
+            })
+            .unwrap_or_else(|| RoomScreenProps {
+                room_id: self.room_id.clone().expect("RoomScreen should have a room_id when handling events needing members"),
+                room_members: Arc::new(Vec::new()) 
+            });
         let mut room_scope = Scope::with_props(&room_props);
 
 
@@ -1366,8 +1391,17 @@ impl Widget for RoomScreen {
         };
 
         // Create Scope Props with the current room members
+        let room_id = tl_state.room_id.clone();
+        let room_members = tl_state.room_members_map.get(&room_id)
+            .cloned()
+            .unwrap_or_else(|| {
+                log!("draw_walk: No members found in map for room {}, using default room_members", room_id);
+                tl_state.room_members.clone() // 如果map中没有，使用默认的room_members
+            });
+            
         let room_props = RoomScreenProps {
-            room_members: tl_state.room_members.clone(),
+            room_id,
+            room_members,
         };
         let mut room_scope = Scope::with_props(&room_props);
 
@@ -2412,6 +2446,11 @@ impl RoomScreen {
                 scrolled_past_read_marker: false,
                 latest_own_user_receipt: None,
                 room_members: Arc::new(Vec::new()),
+                room_members_map: {
+                    let mut map = HashMap::new();
+                    map.insert(room_id.clone(), Arc::new(Vec::new()));
+                    map
+                },
             };
             (new_tl_state, true)
         };
@@ -2583,6 +2622,8 @@ impl RoomScreen {
         self.loading_pane(id!(loading_pane)).take_state();
         self.room_name = room_name;
         self.room_id = Some(room_id.clone());
+
+        self.prev_event_room_id = None;
 
         self.show_timeline(cx);
     }
@@ -2911,7 +2952,10 @@ struct TimelineUiState {
     scrolled_past_read_marker: bool,
     latest_own_user_receipt: Option<Receipt>,
     /// The list of members in this room.
-    room_members: Arc<Vec<RoomMember>>
+    /// 暂时保留以向后兼容，最终会被room_members_map替代
+    room_members: Arc<Vec<RoomMember>>,
+    /// 以room_id为键的成员列表映射
+    room_members_map: HashMap<OwnedRoomId, Arc<Vec<RoomMember>>>
 }
 
 #[derive(Default, Debug)]
