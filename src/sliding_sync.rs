@@ -1339,6 +1339,36 @@ fn username_to_full_user_id(
         })
 }
 
+/// Info we store about a room received by the room list service.
+///
+/// This struct is necesssary in order for us to track the previous state
+/// of a room received from the room list service, so that we can
+/// determine if the room has changed state.
+/// We can't just store the `room_list_service::Room` object itself,
+/// because that is a shallow reference to an inner room object within
+/// the room list service
+#[derive(Clone)]
+struct RoomListServiceRoomInfo {
+    room: room_list_service::Room,
+    room_id: OwnedRoomId,
+    room_state: RoomState,
+}
+impl From<&room_list_service::Room> for RoomListServiceRoomInfo {
+    fn from(room: &room_list_service::Room) -> Self {
+        room.clone().into()
+    }
+}
+impl From<room_list_service::Room> for RoomListServiceRoomInfo {
+    fn from(room: room_list_service::Room) -> Self {
+        Self {
+            room_id: room.room_id().to_owned(),
+            room_state: room.state(),
+            room,
+        }
+    }
+}
+
+
 async fn async_main_loop(
     mut login_receiver: Receiver<LoginRequest>,
 ) -> Result<()> {
@@ -1471,9 +1501,8 @@ async fn async_main_loop(
         Box::new(|_room| true),
     );
 
-    const LOG_ROOM_LIST_DIFFS: bool = false;
+    let mut all_known_rooms: Vector<RoomListServiceRoomInfo> = Vector::new();
 
-    let mut all_known_rooms = Vector::new();
     pin_mut!(room_diff_stream);
     while let Some(batch) = room_diff_stream.next().await {
         let mut peekable_diffs = batch.into_iter().peekable();
@@ -1482,10 +1511,10 @@ async fn async_main_loop(
                 VectorDiff::Append { values: new_rooms } => {
                     let _num_new_rooms = new_rooms.len();
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Append {_num_new_rooms}"); }
-                    for new_room in &new_rooms {
-                        add_new_room(new_room, &room_list_service).await?;
+                    for new_room in new_rooms {
+                        add_new_room(&new_room, &room_list_service).await?;
+                        all_known_rooms.push_back(new_room.into());
                     }
-                    all_known_rooms.append(new_rooms);
                 }
                 VectorDiff::Clear => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Clear"); }
@@ -1496,37 +1525,40 @@ async fn async_main_loop(
                 VectorDiff::PushFront { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushFront"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_front(new_room);
+                    all_known_rooms.push_front(new_room.into());
                 }
                 VectorDiff::PushBack { value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PushBack"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.push_back(new_room);
+                    all_known_rooms.push_back(new_room.into());
                 }
                 VectorDiff::PopFront => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopFront"); }
                     if let Some(room) = all_known_rooms.pop_front() {
-                        if LOG_ROOM_LIST_DIFFS { log!("PopFront: removing {}", room.room_id()); }
+                        if LOG_ROOM_LIST_DIFFS { log!("PopFront: removing {}", room.room_id); }
                         remove_room(&room);
                     }
                 }
                 VectorDiff::PopBack => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff PopBack"); }
                     if let Some(room) = all_known_rooms.pop_back() {
-                        if LOG_ROOM_LIST_DIFFS { log!("PopBack: removing {}", room.room_id()); }
+                        if LOG_ROOM_LIST_DIFFS { log!("PopBack: removing {}", room.room_id); }
                         remove_room(&room);
                     }
                 }
                 VectorDiff::Insert { index, value: new_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Insert at {index}"); }
                     add_new_room(&new_room, &room_list_service).await?;
-                    all_known_rooms.insert(index, new_room);
+                    all_known_rooms.insert(index, new_room.into());
                 }
                 VectorDiff::Set { index, value: changed_room } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Set at {index}"); }
-                    let old_room = all_known_rooms.get(index).expect("BUG: Set index out of bounds");
-                    update_room(old_room, &changed_room, &room_list_service).await?;
-                    all_known_rooms.set(index, changed_room);
+                    if let Some(old_room) = all_known_rooms.get(index) {
+                        update_room(old_room, &changed_room, &room_list_service).await?;
+                    } else {
+                        error!("BUG: room list diff: Set index {index} was out of bounds.");
+                    }
+                    all_known_rooms.set(index, changed_room.into());
                 }
                 VectorDiff::Remove { index: remove_index } => {
                     if LOG_ROOM_LIST_DIFFS { log!("room_list: diff Remove at {remove_index}"); }
@@ -1540,19 +1572,19 @@ async fn async_main_loop(
                         // which is way more efficient.
                         let mut next_diff_was_handled = false;
                         if let Some(VectorDiff::Insert { index: insert_index, value: new_room }) = peekable_diffs.peek() {
-                            if room.room_id() == new_room.room_id() {
+                            if &room.room_id == new_room.room_id() {
                                 if LOG_ROOM_LIST_DIFFS {
-                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id());
+                                    log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id);
                                 }
                                 update_room(&room, new_room, &room_list_service).await?;
-                                all_known_rooms.insert(*insert_index, new_room.clone());
+                                all_known_rooms.insert(*insert_index, new_room.clone().into());
                                 next_diff_was_handled = true;
                             }
                         }
                         if next_diff_was_handled {
                             peekable_diffs.next(); // consume the next diff
                         } else {
-                            warning!("UNTESTED SCENARIO: room_list: diff Remove({remove_index}) was NOT followed by an Insert. Removed room: {}", room.room_id());
+                            warning!("UNTESTED SCENARIO: room_list: diff Remove({remove_index}) was NOT followed by an Insert. Removed room: {}", room.room_id);
                             remove_room(&room);
                         }
                     } else {
@@ -1583,7 +1615,7 @@ async fn async_main_loop(
                     for room in &new_rooms {
                         add_new_room(room, &room_list_service).await?;
                     }
-                    all_known_rooms = new_rooms;
+                    all_known_rooms = new_rooms.into_iter().map(|r| r.into()).collect();
                 }
             }
         }
@@ -1595,15 +1627,59 @@ async fn async_main_loop(
 
 /// Invoked when the room list service has received an update that changes an existing room.
 async fn update_room(
-    old_room: &room_list_service::Room,
+    old_room: &RoomListServiceRoomInfo,
     new_room: &room_list_service::Room,
     room_list_service: &RoomListService,
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
-    let mut room_avatar_changed = false;
-    if old_room.room_id() == new_room_id {
+    if &old_room.room_id == &new_room_id {
+        let new_room_name = new_room.display_name().await.map(|n| n.to_string()).ok();
+        let mut room_avatar_changed = false;
+
+        // Handle state transitions for a room.
+        let old_room_state = old_room.room_state;
+        let new_room_state = new_room.state();
+        if old_room_state != new_room_state {
+            if LOG_ROOM_LIST_DIFFS {
+                log!("Room {new_room_name:?} ({new_room_id}) changed from {old_room_state:?} to {new_room_state:?}");
+            }
+            match new_room_state {
+                RoomState::Banned => {
+                    // TODO: handle rooms that this user has been banned from.
+                    log!("Removing Banned room: {new_room_name:?} ({new_room_id})");
+                    remove_room(&new_room.into());
+                    return Ok(());
+                }
+                RoomState::Left => {
+                    log!("Removing Left room: {new_room_name:?} ({new_room_id})");
+                    remove_room(&new_room.into());
+                    // TODO: we could add this to the list of left rooms,
+                    //       which is collapsed by default.
+                    //       Upon clicking a left room, we can show a splash page
+                    //       that prompts the user to rejoin the room or forget it.
+
+                    // TODO: this may also be called when a user rejects an invite, not sure.
+                    //       So we might also need to make a new RoomsListUpdate::RoomLeft variant.
+                    return Ok(());
+                }
+                RoomState::Joined => {
+                    log!("update_room(): adding new Joined room: {new_room_name:?} ({new_room_id})");
+                    return add_new_room(new_room, room_list_service).await;
+                }
+                RoomState::Invited => {
+                    log!("update_room(): adding new Invited room: {new_room_name:?} ({new_room_id})");
+                    return add_new_room(new_room, room_list_service).await;
+                }
+                RoomState::Knocked => {
+                    // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
+                    return Ok(());
+                }
+            }
+        }
+
+
         if let Some(new_latest_event) = new_room.latest_event().await {
-            if let Some(old_latest_event) = old_room.latest_event().await {
+            if let Some(old_latest_event) = old_room.room.latest_event().await {
                 if new_latest_event.timestamp() > old_latest_event.timestamp() {
                     log!("Updating latest event for room {}", new_room_id);
                     room_avatar_changed = update_latest_event(new_room_id.clone(), &new_latest_event, None);
@@ -1611,14 +1687,13 @@ async fn update_room(
             }
         }
 
-        if room_avatar_changed || (old_room.avatar_url() != new_room.avatar_url()) {
+        if room_avatar_changed || (old_room.room.avatar_url() != new_room.avatar_url()) {
             log!("Updating avatar for room {}", new_room_id);
             spawn_fetch_room_avatar(new_room.inner_room().clone());
         }
 
-        if let Ok(new_room_name) = new_room.display_name().await {
-            let new_room_name = new_room_name.to_string();
-            if old_room.cached_display_name().as_ref() != Some(&new_room_name) {
+        if let Some(new_room_name) = new_room_name {
+            if old_room.room.cached_display_name().as_ref() != Some(&new_room_name) {
                 log!("Updating room name for room {} to {}", new_room_id, new_room_name);
                 enqueue_rooms_list_update(RoomsListUpdate::UpdateRoomName {
                     room_id: new_room_id.clone(),
@@ -1644,7 +1719,7 @@ async fn update_room(
     }
     else {
         warning!("UNTESTED SCENARIO: update_room(): removing old room {}, replacing with new room {}",
-            old_room.room_id(), new_room_id,
+            old_room.room_id, new_room_id,
         );
         remove_room(old_room);
         add_new_room(new_room, room_list_service).await
@@ -1653,10 +1728,13 @@ async fn update_room(
 
 
 /// Invoked when the room list service has received an update to remove an existing room.
-fn remove_room(room: &room_list_service::Room) {
-    ALL_JOINED_ROOMS.lock().unwrap().remove(room.room_id());
+fn remove_room(room: &RoomListServiceRoomInfo) {
+    ALL_JOINED_ROOMS.lock().unwrap().remove(&room.room_id);
     enqueue_rooms_list_update(
-        RoomsListUpdate::RemoveRoom(room.room_id().to_owned())
+        RoomsListUpdate::RemoveRoom {
+            room_id: room.room_id.clone(),
+            new_state: room.room_state,
+        }
     );
 }
 
@@ -1664,15 +1742,17 @@ fn remove_room(room: &room_list_service::Room) {
 /// Invoked when the room list service has received an update with a brand new room.
 async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomListService) -> Result<()> {
     let room_id = room.room_id().to_owned();
+    // We must call `display_name()` here to calculate and cache the room's name.
+    let room_name = room.display_name().await.map(|n| n.to_string()).ok();
 
     match room.state() {
         RoomState::Banned => {
+            log!("Got new Banned room: {room_name:?} ({room_id})");
             // TODO: handle rooms that this user has been banned from.
             return Ok(());
         }
         RoomState::Left => {
-            let room_name = room.display_name().await.map(|n| n.to_string()).ok();
-            log!("Received new Left room: {room_name:?} ({room_id})");
+            log!("Got new Left room: {room_name:?} ({room_id})");
             // TODO: add this to the list of left rooms,
             //       which is collapsed by default.
             //       Upon clicking a left room, we can show a splash page
@@ -1683,8 +1763,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
             return Ok(());
         }
         RoomState::Invited => {
-            // We must call `display_name()` here to calculate and cache the room's name.
-            let room_name = room.display_name().await.map(|n| n.to_string()).ok();
             let invite_details = room.invite_details().await.ok();
             let latest = room.latest_event().await.as_ref().map(
                 |ev| get_latest_event_details(ev, &room_id)
@@ -1761,10 +1839,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let latest_event = timeline.latest_event().await;
     let (timeline_update_sender, timeline_update_receiver) = crossbeam_channel::unbounded();
 
-    let room_name = room.display_name().await
-        .map(|n| n.to_string())
-        .ok();
-
     let (request_sender, request_receiver) = watch::channel(Vec::new());
     let timeline_subscriber_handler_task = Handle::current().spawn(timeline_subscriber_handler(
         room.inner_room().clone(),
@@ -1798,7 +1872,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         .unwrap()
         .remove(&room_id);
 
-    log!("Adding new room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
+    log!("Adding new joined room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
     ALL_JOINED_ROOMS.lock().unwrap().insert(
         room_id.clone(),
         JoinedRoomDetails {
@@ -1931,6 +2005,7 @@ pub struct BackwardsPaginateUntilEventRequest {
 }
 
 const LOG_TIMELINE_DIFFS: bool = false;
+const LOG_ROOM_LIST_DIFFS: bool = true;
 
 /// A per-room async task that listens for timeline updates and sends them to the UI thread.
 ///

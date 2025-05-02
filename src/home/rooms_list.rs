@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
+use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
     room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
@@ -132,8 +132,12 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         avatar: RoomPreviewAvatar,
     },
-    /// Remove the given room from the list of all rooms.
-    RemoveRoom(OwnedRoomId),
+    /// Remove the given room from the rooms list
+    RemoveRoom {
+        room_id: OwnedRoomId,
+        /// The new state of the room (which caused its removal).
+        new_state: RoomState,
+    },
     /// Update the tags for the given room.
     Tags {
         room_id: OwnedRoomId,
@@ -360,11 +364,14 @@ impl RoomsList {
                     }
                     // If this room was added as a result of accepting an invite, we must:
                     // 1. Remove the room from the list of invited rooms.
-                    // 2. 
+                    // 2. Update the displayed invited rooms list to remove this room.
                     // 3. Emit an action informing other widgets that the InviteScreen
                     //    displaying the invite to this room should be converted to a
                     //    RoomScreen displaying the now-joined room.
                     if let Some(_accepted_invite) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        self.displayed_invited_rooms.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| self.displayed_invited_rooms.remove(index));
                         cx.widget_action(
                             self.widget_uid(),
                             &scope.path,
@@ -408,7 +415,9 @@ impl RoomsList {
                             }
                             (true, false) => {
                                 // Room was displayed but should no longer be displayed.
-                                self.displayed_joined_rooms.retain(|r| r != &room_id);
+                                self.displayed_joined_rooms.iter()
+                                    .position(|r| r == &room_id)
+                                    .map(|index| self.displayed_joined_rooms.remove(index));
                             }
                             (false, true) => {
                                 // Room was not displayed but should now be displayed.
@@ -419,19 +428,20 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update room name");
                     }
                 }
-                RoomsListUpdate::RemoveRoom(room_id) => {
-                    self.all_joined_rooms
-                        .remove(&room_id)
-                        .and_then(|_removed|
-                            self.displayed_joined_rooms.iter().position(|r| r == &room_id)
-                        )
-                        .map(|index_to_remove| {
-                            // Remove the room from the list of displayed rooms.
-                            self.displayed_joined_rooms.remove(index_to_remove);
-                        })
-                        .unwrap_or_else(|| {
-                            error!("Error: couldn't find room {room_id} to remove room");
-                        });
+                RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
+                    if let Some(_removed) = self.all_joined_rooms.remove(&room_id) {
+                        self.displayed_joined_rooms.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| self.displayed_joined_rooms.remove(index));
+                    }
+                    else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        self.displayed_invited_rooms.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| self.displayed_invited_rooms.remove(index));
+                    }
+                    else {
+                        error!("Error: couldn't find room {room_id} to remove it.");
+                    };
 
                     self.update_status_rooms_count();
 
