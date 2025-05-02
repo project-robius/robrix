@@ -471,8 +471,10 @@ impl RoomsList {
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.tags = new_tags;
+                    } else if let Some(_room) = self.invited_rooms.borrow().get(&room_id) {
+                        log!("Ignoring updated tags update for invited room {room_id}");
                     } else {
-                        error!("Error: couldn't find room {room_id} to update tags");
+                        error!("Error: skipping updated Tags for unknown room {room_id}.");
                     }
                 }
                 RoomsListUpdate::Status { status } => {
