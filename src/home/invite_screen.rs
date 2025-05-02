@@ -7,9 +7,9 @@
 use makepad_widgets::*;
 use matrix_sdk::ruma::OwnedRoomId;
 
-use crate::{shared::avatar::AvatarWidgetRefExt, utils};
+use crate::{shared::{avatar::AvatarWidgetRefExt, popup_list::enqueue_popup_notification}, sliding_sync::{submit_async_request, MatrixRequest}, utils};
 
-use super::rooms_list::{InviterInfo, RoomPreviewAvatar};
+use super::rooms_list::{InviteState, InviterInfo, RoomPreviewAvatar};
 
 
 live_design! {
@@ -90,8 +90,8 @@ live_design! {
             flow: Right,
 
             room_avatar = <Avatar> {
-                width: 40.,
-                height: 40.,
+                width: 40,
+                height: 40,
 
                 text_view = { text = { draw_text: {
                     text_style: <TITLE_TEXT>{ font_size: 13.0 }
@@ -171,11 +171,41 @@ struct InviteScreenInfo {
     pub inviter: Option<InviterInfo>,
 }
 
+/// Actions sent from the backend task as a result of a [`MatrixRequest::JoinRoom`].
+#[derive(Debug)]
+pub enum JoinRoomAction {
+    /// The user has successfully joined the room.
+    Joined {
+        room_id: OwnedRoomId,
+    },
+    /// There was an error attempting to join the room.
+    Failed {
+        room_id: OwnedRoomId,
+        error: matrix_sdk::Error,
+    }
+}
+
+/// Actions sent from the backend task as a result of a [`MatrixRequest::LeaveRoom`].
+#[derive(Clone, Debug)]
+pub enum LeaveRoomAction {
+    /// The user has successfully left the room.
+    Left {
+        room_id: OwnedRoomId,
+    },
+    /// There was an error attempting to leave the room.
+    Failed {
+        room_id: OwnedRoomId,
+        error: String,
+    }
+}
+
+
 /// A view that shows information about a room that the user has been invited to.
 #[derive(Live, LiveHook, Widget)]
 pub struct InviteScreen {
     #[deref] view: View,
 
+    #[rust] invite_state: InviteState,
     #[rust] info: Option<InviteScreenInfo>,
 }
 
@@ -183,9 +213,63 @@ impl Widget for InviteScreen {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
 
-        // TODO: handle button clicks to accept or decline the invite
+        let orig_state = self.invite_state;
 
+        // Handle button clicks to accept or decline the invite
+        if let Event::Actions(actions) = event {
+            let Some(info) = self.info.as_ref() else { return; };
+            if self.view.button(id!(cancel_button)).clicked(actions) {
+                self.invite_state = InviteState::WaitingForLeaveResult;
+                submit_async_request(MatrixRequest::LeaveRoom {
+                    room_id: info.room_id.clone(),
+                });
+            }
+            if self.view.button(id!(accept_button)).clicked(actions) {
+                self.invite_state = InviteState::WaitingForJoinResult;
+                submit_async_request(MatrixRequest::JoinRoom {
+                    room_id: info.room_id.clone(),
+                });
+            }
+
+            for action in actions {
+                match action.downcast_ref() {
+                    Some(JoinRoomAction::Joined { room_id }) if room_id == &info.room_id => {
+                        self.invite_state = InviteState::WaitingForJoinedRoom;
+                        enqueue_popup_notification("Successfully joined room.".into());
+                    }
+                    Some(JoinRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
+                        self.invite_state = InviteState::WaitingOnUserInput;
+                        let msg = match error {
+                            // The below is a stupid hack to workaround `WrongRoomState` being private.
+                            // We get the string representation of the error and then search for the "got" state.
+                            matrix_sdk::Error::WrongRoomState(wrs) if wrs.to_string().contains(", got: Joined") => {
+                                String::from("Failed to join room: it has already been joined.")
+                            }
+                            _ => format!("Failed to join room: {error}"),
+                        };
+                        enqueue_popup_notification(msg);
+                    }
+                    _ => {}
+                }
+                match action.downcast_ref() {
+                    Some(LeaveRoomAction::Left { room_id }) if room_id == &info.room_id => {
+                        self.invite_state = InviteState::RoomLeft;
+                        enqueue_popup_notification("Successfully rejected invite.".into());
+                    }
+                    Some(LeaveRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
+                        self.invite_state = InviteState::WaitingOnUserInput;
+                        enqueue_popup_notification(format!("Failed to reject invite: {error}"));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if self.invite_state != orig_state {
+            self.redraw(cx);
+        }
     }
+
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let Some(info) = self.info.as_ref() else {
@@ -259,6 +343,40 @@ impl Widget for InviteScreen {
         );
 
         // The buttons don't need to be manually populated, as their content is static.
+        let cancel_button = self.view.button(id!(cancel_button));
+        let accept_button = self.view.button(id!(accept_button));
+        match self.invite_state {
+            InviteState::WaitingOnUserInput => {
+                cancel_button.set_enabled(cx, true);
+                accept_button.set_enabled(cx, true);
+                cancel_button.set_text(cx, "Reject Invite");
+                accept_button.set_text(cx, "Join Room");
+            }
+            InviteState::WaitingForJoinResult => {
+                cancel_button.set_enabled(cx, false);
+                accept_button.set_enabled(cx, false);
+                cancel_button.set_text(cx, "Reject Invite");
+                accept_button.set_text(cx, "Joining...");
+            }
+            InviteState::WaitingForLeaveResult => {
+                cancel_button.set_enabled(cx, false);
+                accept_button.set_enabled(cx, false);
+                cancel_button.set_text(cx, "Rejecting...");
+                accept_button.set_text(cx, "Join Room");
+            }
+            InviteState::WaitingForJoinedRoom => {
+                cancel_button.set_enabled(cx, false);
+                accept_button.set_enabled(cx, false);
+                cancel_button.set_text(cx, "Reject Invite");
+                accept_button.set_text(cx, "Joined!");
+            }
+            InviteState::RoomLeft => {
+                cancel_button.set_enabled(cx, false);
+                accept_button.set_enabled(cx, false);
+                cancel_button.set_text(cx, "Rejected!");
+                accept_button.set_text(cx, "Join Room");
+            }
+        }
 
         self.view.draw_walk(cx, scope, walk)
     }
@@ -277,6 +395,7 @@ impl InviteScreen {
                 room_avatar: invite.room_avatar.clone(),
                 inviter: invite.inviter_info.clone(),
             });
+            self.invite_state = invite.invite_state;
             self.redraw(cx);
         }
     }

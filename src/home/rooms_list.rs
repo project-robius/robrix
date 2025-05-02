@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use crossbeam_queue::SegQueue;
 use makepad_widgets::*;
-use matrix_sdk::ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId};
+use matrix_sdk::{ruma::{events::tag::Tags, MilliSecondsSinceUnixEpoch, OwnedRoomAliasId, OwnedRoomId, OwnedUserId}, RoomState};
 use crate::{
     app::{AppState, SelectedRoom},
     room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
@@ -132,8 +132,12 @@ pub enum RoomsListUpdate {
         room_id: OwnedRoomId,
         avatar: RoomPreviewAvatar,
     },
-    /// Remove the given room from the list of all rooms.
-    RemoveRoom(OwnedRoomId),
+    /// Remove the given room from the rooms list
+    RemoveRoom {
+        room_id: OwnedRoomId,
+        /// The new state of the room (which caused its removal).
+        new_state: RoomState,
+    },
     /// Update the tags for the given room.
     Tags {
         room_id: OwnedRoomId,
@@ -154,12 +158,21 @@ pub fn enqueue_rooms_list_update(update: RoomsListUpdate) {
     SignalToUI::set_ui_signal();
 }
 
-
+/// Actions emitted by the RoomsList widget.
 #[derive(Debug, Clone, DefaultNone)]
 pub enum RoomsListAction {
+    /// A new room was selected.
     Selected(SelectedRoom),
+    /// A new room was joined from an accepted invite,
+    /// meaning that the existing `InviteScreen` should be converted
+    /// to a `RoomScreen` to display now-joined room.
+    InviteAccepted {
+        room_id: OwnedRoomId,
+        room_name: Option<String>,
+    },
     None,
 }
+
 
 /// UI-related info about a joined room.
 ///
@@ -217,6 +230,12 @@ pub struct InvitedRoomInfo {
     pub inviter_info: Option<InviterInfo>,
     /// The timestamp and Html text content of the latest message in this room.
     pub latest: Option<(MilliSecondsSinceUnixEpoch, String)>,
+    /// The state of this how this invite is being handled by the client backend
+    /// and what should be shown in the UI.
+    ///
+    /// We maintain this state here instead of in the `InviteScreen`
+    /// because we need the state to persist even if the `InviteScreen` is closed. 
+    pub invite_state: InviteState,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
 }
@@ -228,6 +247,25 @@ pub struct InviterInfo {
     pub display_name: Option<String>,
     pub avatar: Option<Arc<[u8]>>,
 }
+
+/// The state of a pending invite.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InviteState {
+    /// Waiting for the user to accept or decline the invite.
+    #[default]
+    WaitingOnUserInput,
+    /// Waiting for the server to respond to the user's "join room" action.
+    WaitingForJoinResult,
+    /// Waiting for the server to respond to the user's "leave room" action.
+    WaitingForLeaveResult,
+    /// The invite was accepted and the room was successfully joined.
+    /// We're now waiting for our client to receive the joined room from the homeserver.
+    WaitingForJoinedRoom,
+    /// The invite was declined and the room was successfully left.
+    /// This should result in the InviteScreen being closed.
+    RoomLeft,
+}
+
 
 #[derive(Clone, Debug)]
 pub enum RoomPreviewAvatar {
@@ -288,7 +326,7 @@ impl LiveHook for RoomsList {
 
 impl RoomsList {
     /// Handle all pending updates to the list of all rooms.
-    fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, _scope: &mut Scope) {
+    fn handle_rooms_list_updates(&mut self, cx: &mut Cx, _event: &Event, scope: &mut Scope) {
         let mut num_updates: usize = 0;
         while let Some(update) = PENDING_ROOM_UPDATES.pop() {
             num_updates += 1;
@@ -308,14 +346,32 @@ impl RoomsList {
                 }
                 RoomsListUpdate::AddJoinedRoom(joined_room) => {
                     let room_id = joined_room.room_id.clone();
+                    let room_name = joined_room.room_name.clone();
                     let should_display = (self.display_filter)(&joined_room);
                     let _replaced = self.all_joined_rooms.insert(room_id.clone(), joined_room);
                     if let Some(_old_room) = _replaced {
                         error!("BUG: Added joined room {room_id} that already existed");
                     } else {
                         if should_display {
-                            self.displayed_joined_rooms.push(room_id);
+                            self.displayed_joined_rooms.push(room_id.clone());
                         }
+                    }
+                    // If this room was added as a result of accepting an invite, we must:
+                    // 1. Remove the room from the list of invited rooms.
+                    // 2. Update the displayed invited rooms list to remove this room.
+                    // 3. Emit an action informing other widgets that the InviteScreen
+                    //    displaying the invite to this room should be converted to a
+                    //    RoomScreen displaying the now-joined room.
+                    if let Some(_accepted_invite) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        log!("Removed room {room_id} from the list of invited rooms");
+                        self.displayed_invited_rooms.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| self.displayed_invited_rooms.remove(index));
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            RoomsListAction::InviteAccepted { room_id, room_name }
+                        );
                     }
                     self.update_status_rooms_count();
                 }
@@ -354,7 +410,9 @@ impl RoomsList {
                             }
                             (true, false) => {
                                 // Room was displayed but should no longer be displayed.
-                                self.displayed_joined_rooms.retain(|r| r != &room_id);
+                                self.displayed_joined_rooms.iter()
+                                    .position(|r| r == &room_id)
+                                    .map(|index| self.displayed_joined_rooms.remove(index));
                             }
                             (false, true) => {
                                 // Room was not displayed but should now be displayed.
@@ -365,19 +423,20 @@ impl RoomsList {
                         error!("Error: couldn't find room {room_id} to update room name");
                     }
                 }
-                RoomsListUpdate::RemoveRoom(room_id) => {
-                    self.all_joined_rooms
-                        .remove(&room_id)
-                        .and_then(|_removed|
-                            self.displayed_joined_rooms.iter().position(|r| r == &room_id)
-                        )
-                        .map(|index_to_remove| {
-                            // Remove the room from the list of displayed rooms.
-                            self.displayed_joined_rooms.remove(index_to_remove);
-                        })
-                        .unwrap_or_else(|| {
-                            error!("Error: couldn't find room {room_id} to remove room");
-                        });
+                RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
+                    if let Some(_removed) = self.all_joined_rooms.remove(&room_id) {
+                        self.displayed_joined_rooms.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| self.displayed_joined_rooms.remove(index));
+                    }
+                    else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        self.displayed_invited_rooms.iter()
+                            .position(|r| r == &room_id)
+                            .map(|index| self.displayed_invited_rooms.remove(index));
+                    }
+                    else {
+                        error!("Error: couldn't find room {room_id} to remove it.");
+                    };
 
                     self.update_status_rooms_count();
 
@@ -406,8 +465,10 @@ impl RoomsList {
                 RoomsListUpdate::Tags { room_id, new_tags } => {
                     if let Some(room) = self.all_joined_rooms.get_mut(&room_id) {
                         room.tags = new_tags;
+                    } else if let Some(_room) = self.invited_rooms.borrow().get(&room_id) {
+                        log!("Ignoring updated tags update for invited room {room_id}");
                     } else {
-                        error!("Error: couldn't find room {room_id} to update tags");
+                        error!("Error: skipping updated Tags for unknown room {room_id}.");
                     }
                 }
                 RoomsListUpdate::Status { status } => {
@@ -423,18 +484,19 @@ impl RoomsList {
 
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
+        let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
         self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {} of {} total rooms.", self.all_joined_rooms.len(), max_rooms)
+            format!("Loaded {num_rooms} of {max_rooms} total rooms.")
         } else {
-            format!("Loaded {} rooms.", self.all_joined_rooms.len())
+            format!("Loaded {num_rooms} rooms.")
         };
     }
 
     /// Updates the status message to show how many rooms are currently displayed
     /// that match the current search filter.
     fn update_status_matching_rooms(&mut self) {
-        let total = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
-        self.status = match total {
+        let num_rooms = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
+        self.status = match num_rooms {
             0 => "No matching rooms found.".to_string(),
             1 => "Found 1 matching room.".to_string(),
             n => format!("Found {} matching rooms.", n),
@@ -574,7 +636,7 @@ impl Widget for RoomsList {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         let app_state = scope.data.get_mut::<AppState>().unwrap();
         // Update the currently-selected room from the AppState data.
-        self.current_active_room = app_state.rooms_panel.selected_room.as_ref()
+        self.current_active_room = app_state.selected_room.as_ref()
             .map(|sel_room| sel_room.room_id().clone())
             .filter(|room_id| self.is_room_displayable(room_id));
 

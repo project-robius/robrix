@@ -1,7 +1,7 @@
 use makepad_widgets::*;
 
 use crate::{
-    app::{AppState, SelectedRoom}, home::room_screen::RoomScreenWidgetExt
+    app::{AppState, AppStateAction, SelectedRoom}, home::{room_screen::RoomScreenWidgetExt, rooms_list::RoomsListAction}
 };
 
 use super::invite_screen::InviteScreenWidgetExt;
@@ -49,6 +49,26 @@ pub struct MainMobileUI {
 impl Widget for MainMobileUI {
     fn handle_event(&mut self, cx: &mut Cx, event: &Event, scope: &mut Scope) {
         self.view.handle_event(cx, event, scope);
+
+        if let Event::Actions(actions) = event {
+            for action in actions {
+                match action.as_widget_action().cast() {
+                    // This is currently handled in the top-level App.
+                    RoomsListAction::Selected(_selected_room) => {}
+                    // Because the MainMobileUI is drawn based on the AppState only,
+                    // all we need to do is update the AppState here.
+                    RoomsListAction::InviteAccepted { room_id, .. } => {
+                        // Emit an action to update the AppState with the new room.
+                        cx.widget_action(
+                            self.widget_uid(),
+                            &scope.path,
+                            AppStateAction::UpgradedInviteToJoinedRoom(room_id),
+                        );
+                    }
+                    RoomsListAction::None => {}
+                }
+            }
+        }
     }
 
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
@@ -57,7 +77,7 @@ impl Widget for MainMobileUI {
         let show_room: bool;
         let show_invite: bool;
 
-        match app_state.rooms_panel.selected_room.as_ref() {
+        match app_state.selected_room.as_ref() {
             Some(SelectedRoom::JoinedRoom { room_id, room_name }) => {
                 show_welcome = false;
                 show_room = true;

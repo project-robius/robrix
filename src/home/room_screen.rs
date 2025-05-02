@@ -25,7 +25,7 @@ use crate::{
         user_profile_cache,
     }, shared::{
         avatar::AvatarWidgetRefExt, callout_tooltip::TooltipAction, html_or_plaintext::{HtmlOrPlaintextRef, HtmlOrPlaintextWidgetRefExt, RobrixHtmlLinkAction}, jump_to_bottom_button::{JumpToBottomButtonWidgetExt, UnreadMessageCount}, popup_list::enqueue_popup_notification, styles::COLOR_DANGER_RED, text_or_image::{TextOrImageRef, TextOrImageWidgetRefExt}, typing_animation::TypingAnimationWidgetExt
-    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
+    }, sliding_sync::{get_client, submit_async_request, take_timeline_endpoints, BackwardsPaginateUntilEventRequest, MatrixRequest, PaginationDirection, TimelineRequestSender, UserPowerLevels}, utils::{self, room_name_or_id, unix_time_millis_to_datetime, ImageFormat, MEDIA_THUMBNAIL_FORMAT}
 };
 use crate::home::event_reaction_list::ReactionListWidgetRefExt;
 use crate::home::room_read_receipt::AvatarRowWidgetRefExt;
@@ -1506,7 +1506,7 @@ impl RoomScreen {
                     // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
                     //
                     else {
-                        warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                        // warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
                     }
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.
@@ -2427,8 +2427,7 @@ impl RoomScreen {
         self.hide_timeline();
         // Reset the the state of the inner loading pane.
         self.loading_pane(id!(loading_pane)).take_state();
-        self.room_name = room_name.into()
-            .unwrap_or_else(|| format!("Room ID {}", room_id));
+        self.room_name = room_name_or_id(room_name.into(), &room_id);
         self.room_id = Some(room_id.clone());
 
         // Clear any mention input state

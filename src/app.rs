@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use makepad_widgets::*;
-use matrix_sdk::ruma::OwnedRoomId;
+use matrix_sdk::ruma::{OwnedRoomId, RoomId};
 
 use crate::{
-    home::{main_desktop_ui::RoomsPanelAction, new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
+    home::{new_message_context_menu::NewMessageContextMenuWidgetRefExt, room_screen::MessageAction, rooms_list::RoomsListAction}, login::login_screen::LoginAction, shared::{callout_tooltip::{CalloutTooltipOptions, CalloutTooltipWidgetRefExt, TooltipAction}, popup_list::PopupNotificationAction}, utils::room_name_or_id, verification::VerificationAction, verification_modal::{VerificationModalAction, VerificationModalWidgetRefExt}
 };
 
 live_design! {
@@ -229,36 +229,41 @@ impl MatchEvent for App {
                 _ => {}
             }
 
-            match action.as_widget_action().cast() {
+            if let RoomsListAction::Selected(selected_room) = action.as_widget_action().cast() {
                 // A room has been selected, update the app state and navigate to the main content view.
-                RoomsListAction::Selected(selected_room) => {
-                    let display_name = selected_room.room_name().cloned()
-                        .unwrap_or_else(|| format!("Room ID {}", selected_room.room_id()));
-                    self.app_state.rooms_panel.selected_room = Some(selected_room);
-                    // Set the Stack Navigation header to show the name of the newly-selected room.
-                    self.ui
-                        .label(id!(main_content_view.header.content.title_container.title))
-                        .set_text(cx, &display_name);
+                let display_name = room_name_or_id(selected_room.room_name(), selected_room.room_id());
+                self.app_state.selected_room = Some(selected_room);
+                // Set the Stack Navigation header to show the name of the newly-selected room.
+                self.ui
+                    .label(id!(main_content_view.header.content.title_container.title))
+                    .set_text(cx, &display_name);
 
-                    // Navigate to the main content view
-                    cx.widget_action(
-                        self.ui.widget_uid(),
-                        &Scope::default().path,
-                        StackNavigationAction::NavigateTo(live_id!(main_content_view))
-                    );
-                    self.ui.redraw(cx);
-                }
-                RoomsListAction::None => { }
+                // Navigate to the main content view
+                cx.widget_action(
+                    self.ui.widget_uid(),
+                    &Scope::default().path,
+                    StackNavigationAction::NavigateTo(live_id!(main_content_view))
+                );
+                self.ui.redraw(cx);
             }
 
             match action.as_widget_action().cast() {
-                RoomsPanelAction::RoomFocused(selected_room) => {
-                    self.app_state.rooms_panel.selected_room = Some(selected_room.clone());
+                AppStateAction::RoomFocused(selected_room) => {
+                    self.app_state.selected_room = Some(selected_room.clone());
                 }
-                RoomsPanelAction::FocusNone => {
-                    self.app_state.rooms_panel.selected_room = None;
+                AppStateAction::FocusNone => {
+                    self.app_state.selected_room = None;
                 }
-                RoomsPanelAction::None => { }
+                AppStateAction::UpgradedInviteToJoinedRoom(room_id) => {
+                    if let Some(selected_room) = self.app_state.selected_room.as_mut() {
+                        let did_upgrade = selected_room.upgrade_invite_to_joined(&room_id);
+                        // Updating the AppState's selected room and issuing a redraw
+                        // will cause the MainMobileUI to redraw the newly-joined room.
+                        if did_upgrade {
+                            self.ui.redraw(cx);
+                        }
+                    }
+                }
                 _ => {}
             }
 
@@ -317,30 +322,6 @@ impl MatchEvent for App {
             // }
         }
     }
-
-    /*
-    fn handle_shutdown(&mut self, _cx: &mut Cx) {
-        log!("App::handle_shutdown()");
-    }
-    fn handle_foreground(&mut self, _cx: &mut Cx) {
-        log!("App::handle_foreground()");
-    }
-    fn handle_background(&mut self, _cx: &mut Cx) {
-        log!("App::handle_background()");
-    }
-    fn handle_pause(&mut self, _cx: &mut Cx) {
-        log!("App::handle_pause()");
-    }
-    fn handle_resume(&mut self, _cx: &mut Cx) {
-        log!("App::handle_resume()");
-    }
-    fn handle_app_got_focus(&mut self, _cx: &mut Cx) {
-        log!("App::handle_app_got_focus()");
-    }
-    fn handle_app_lost_focus(&mut self, _cx: &mut Cx) {
-        log!("App::handle_app_lost_focus()");
-    }
-    */
 }
 
 impl AppMain for App {
@@ -400,22 +381,33 @@ impl App {
     }
 }
 
+/// State that is shared across different parts of the Robrix app.
 #[derive(Default, Debug)]
 pub struct AppState {
-    pub rooms_panel: RoomsPanelState,
+    /// The currently-selected room, which is highlighted (selected) in the RoomsList
+    /// and considered "active" in the main rooms screen.
+    pub selected_room: Option<SelectedRoom>,
+    /// The saved state of the dock.
+    /// This is cloned from the main desktop UI's dock and saved here
+    /// when transitioning from the desktop view to mobile view,
+    /// and then restored from here back to the main desktop UI's dock
+    /// when transitioning from the mobile view back to the desktop view.
+    pub saved_dock_state: SavedDockState,
+    /// Whether a user is currently logged in to Robrix or not.
     pub logged_in: bool,
     /// The current window geometry.
     pub window_geom: Option<event::WindowGeom>,
 }
 
+/// A saved instance of the state of the main desktop UI's dock.
 #[derive(Default, Debug)]
-pub struct RoomsPanelState {
-    pub selected_room: Option<SelectedRoom>,
-    /// The saved dock state
-    pub dock_state: HashMap<LiveId, DockItem>,
+pub struct SavedDockState {
+    /// All items contained in the dock, keyed by their LiveId.
+    pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
-    /// The order in which the rooms were opened
+    /// The order in which the rooms were opened, in chronological order
+    /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
 }
 
@@ -447,6 +439,26 @@ impl SelectedRoom {
             SelectedRoom::InvitedRoom { room_name, .. } => room_name.as_ref(),
         }
     }
+
+    /// Upgrades this room from an invite to a joined room
+    /// if its `room_id` matches the given `room_id`.
+    ///
+    /// Returns `true` if the room was an `InvitedRoom` with the same `room_id`
+    /// that was successfully upgraded to a `JoinedRoom`;
+    /// otherwise, returns `false`.
+    pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
+        match self {
+            SelectedRoom::InvitedRoom { room_id: id, room_name } if id == room_id => {
+                let name = room_name.take();
+                *self = SelectedRoom::JoinedRoom {
+                    room_id: id.clone(),
+                    room_name: name,
+                };
+                true
+            }
+            _ => false,
+        }
+    }
 }
 impl PartialEq for SelectedRoom {
     fn eq(&self, other: &Self) -> bool {
@@ -454,3 +466,16 @@ impl PartialEq for SelectedRoom {
     }
 }
 impl Eq for SelectedRoom {}
+
+/// Actions sent to the top-level App in order to update its [`AppState`].
+#[derive(Clone, Debug, DefaultNone)]
+pub enum AppStateAction {
+    /// The given room was focused (selected).
+    RoomFocused(SelectedRoom),
+    /// Resets the focus to none, meaning that no room is selected.
+    FocusNone,
+    /// The given room has successfully been upgraded from being displayed
+    /// as an InviteScreen to a RoomScreen.
+    UpgradedInviteToJoinedRoom(OwnedRoomId),
+    None,
+}
