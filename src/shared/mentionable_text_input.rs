@@ -2,10 +2,7 @@
 //! Can be used in any context where user mentions are needed (message input, editing)
 //!
 //! TODO for the future:
-//!   1. Add a header to the user list to display the current number of users in the room.
-//!   2. Implement scrolling functionality for the user list.
-//!   3. Enable sorting for the user list to show currently online users.
-//!   4. Optimize performance and add a loading animation for the user list.
+//!   1. Is it not possible to mention (@) yourself ?
 use crate::avatar_cache::*;
 use crate::shared::avatar::AvatarWidgetRefExt;
 use crate::utils;
@@ -330,6 +327,7 @@ impl Widget for MentionableTextInput {
                 } else {
                     // 如果没有焦点，但收到了构建请求（可能来自之前的状态），确保弹窗是关闭的
                     if self.cmd_text_input.view(id!(popup)).visible() {
+                        log!("close_mention_popup 1");
                         self.close_mention_popup(cx);
                     }
                 }
@@ -339,6 +337,14 @@ impl Widget for MentionableTextInput {
                 actions.find_widget_action(self.cmd_text_input.text_input_ref().widget_uid())
             {
                 if let TextInputAction::Change(text) = action.cast() {
+                    // 首先检查是否有任何提及标记
+                    // 如果没有"["或"]("，可能用户已删除所有提及内容
+                    if !text.contains('[') || !text.contains("](") {
+                        // 清空所有可能的提及
+                        self.possible_mentions.clear();
+                        self.possible_room_mention = false;
+                    }
+
                     self.handle_text_change(cx, scope, text);
                 }
             }
@@ -348,9 +354,52 @@ impl Widget for MentionableTextInput {
                 if let Some(widget_action) = action.as_widget_action() {
                     // 确保 Action 来自我们自己的 TextInput
                     if widget_action.widget_uid == text_input_uid {
+                        // 移除对退格键的特殊检测，改为在文本变化时检测删除操作
+
                         if let TextInputAction::Change(text) = widget_action.cast() {
                             // 只有当这个实例的 TextInput 有焦点时才处理文本变化
                             if has_focus {
+                                // 首先检查是否有任何提及标记被删除
+                                // 如果没有"["或"]("，可能用户已删除所有提及内容
+                                if !text.contains('[') || !text.contains("](") {
+                                    // 清空所有可能的提及
+                                    self.possible_mentions.clear();
+                                    self.possible_room_mention = false;
+                                }
+
+                                // 简化检测逻辑
+                                // 核心问题是在选择非room用户后按退格键删除文本时弹出头部
+                                // 最简单的解决方案是：当发现有 Markdown 链接特征时，总是关闭菜单
+                                // 这样用户在删除链接过程中的任何时候都不会看到菜单
+
+                                // 修改：只在特定情况下关闭菜单
+                                // 不要关闭所有包含链接格式的文本，这会阻止连续@多个用户
+
+                                // 只检查光标前的字符，判断是否正在删除链接
+                                let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
+                                let is_deleting_link = if cursor_pos > 0 && cursor_pos <= text.len() {
+                                    let char_before_cursor = &text[cursor_pos.saturating_sub(1)..cursor_pos];
+                                    // 只有当光标紧跟在右括号或右方括号后面时，才关闭菜单
+                                    char_before_cursor == ")" || char_before_cursor == "]"
+                                } else {
+                                    false
+                                };
+
+                                if is_deleting_link {
+                                    // 仅当光标前是右括号或右方括号时关闭菜单
+                                    if self.is_searching {
+                                        log!("close_mention_popup 2");
+                                        self.close_mention_popup(cx);
+
+                                        // 如果文本中同时还有 @ 符号，只保留链接特征，不触发菜单
+                                        if text.contains('@') {
+                                            // 更新text状态但不显示菜单
+                                            self.cmd_text_input.text_input_ref().set_text(cx, &text);
+                                            break;
+                                        }
+                                    }
+                                }
+
                                 // handle_text_change 内部会调用 update_user_list，
                                 // update_user_list 内部有 Scope room_id 检查
                                 self.handle_text_change(cx, scope, text);
@@ -419,6 +468,7 @@ impl Widget for MentionableTextInput {
             }
 
             if !has_focus && self.cmd_text_input.view(id!(popup)).visible() {
+                    log!("close_mention_popup 3");
                     self.close_mention_popup(cx);
             }
         }
@@ -508,21 +558,164 @@ impl MentionableTextInput {
             text_input_ref.set_cursor(new_pos, new_pos);
         }
 
+        // 关闭弹窗并强制重置搜索状态
+        self.is_searching = false;  // 确保搜索状态被重置
+        self.current_mention_start_index = None;  // 确保清除当前触发位置
+        log!("close_mention_popup 4");
         self.close_mention_popup(cx);
     }
 
     // Core text change handler that manages mention context
     fn handle_text_change(&mut self, cx: &mut Cx, scope: &mut Scope, text: String) {
+        // 检查文本是否为空或只有空格，此时应清除所有状态并确保不显示菜单
+        let trimmed_text = text.trim();
+        if trimmed_text.is_empty() {
+            self.possible_mentions.clear();
+            self.possible_room_mention = false;
+            if self.is_searching {
+                log!("close_mention_popup 5");
+                self.close_mention_popup(cx);
+            }
+            return;
+        }
+
+        // 检查文本是否非常短，可能是用户删除了所有内容
         // Currently an inserted mention consists of a markdown link,
         // which is "[USERNAME](matrix_to_uri)", so of course this must be at least 6 characters.
-        // (In reality it has to be a lot more, but whatever...)
-        if text.trim().len() < 6 {
+        if trimmed_text.len() < 6 {
             self.possible_mentions.clear();
+
+            // 特殊处理：如果文本短，且当前在搜索状态，有以下几种情况需关闭菜单
+            if self.is_searching {
+                // 1. 不包含@符号
+                if !trimmed_text.contains('@') {
+                    log!("close_mention_popup 6");
+                    self.close_mention_popup(cx);
+                    return;
+                }
+            }
         }
 
         let cursor_pos = self.cmd_text_input.text_input_ref().borrow().map_or(0, |p| p.get_cursor().head.index);
 
+        // 1. 检查是否有已插入的mention链接
+        // 扫描文本看是否有markdown链接格式 [username](matrix:...)
+        let has_markdown_link = text.contains("[") && text.contains("](") && text.contains(")");
+
+        // 2. 检查是否正在删除链接或在链接内部编辑
+        // 使用改进后的链接检测函数
+        if self.is_cursor_within_markdown_link(&text, cursor_pos) {
+            if self.is_searching {
+                log!("close_mention_popup 7 - cursor within markdown link");
+                self.close_mention_popup(cx);
+            }
+            return;
+        }
+
+        // 3. 检查光标前后字符，如果在删除链接后，也需要关闭菜单
+        let is_deleting_link = if cursor_pos > 0 && cursor_pos <= text.len() {
+            let char_before_cursor = &text[cursor_pos.saturating_sub(1)..cursor_pos];
+            char_before_cursor == ")" || char_before_cursor == "]"
+        } else {
+            false
+        };
+
+        if is_deleting_link {
+            if self.is_searching {
+                log!("close_mention_popup 8 - deleting link");
+                self.close_mention_popup(cx);
+            }
+            return;
+        }
+
+        // 检查光标是否正在 @room 中间，只有在这种情况下才阻止菜单显示
+        // 这允许用户在 @room 之后继续 @ 其他用户
+        if text.contains("@room") {
+            for room_pos in text.match_indices("@room").map(|(i, _)| i) {
+                // 检查光标是否在 @room 内部或在其结尾
+                let end_pos = room_pos + 5; // "@room" 的长度是 5
+
+                // 只有当光标在 @room 内部时才关闭菜单
+                // 如果光标在 @room 后面，则允许继续 @ 其他用户
+                if cursor_pos > room_pos && cursor_pos <= end_pos {
+                    if self.is_searching {
+                        log!("close_mention_popup 9 - cursor inside @room");
+                        self.close_mention_popup(cx);
+                    }
+                    return;
+                }
+            }
+        }
+
+        // 4. 关键改进: 如果文本中已经包含markdown链接，并且用户正在输入新的@，
+        // 我们需要确认这个新的@不是已插入链接的一部分
+        if has_markdown_link && text.contains('@') {
+            // 找出所有markdown链接的范围
+            let mut link_ranges = Vec::new();
+            let mut open_bracket_pos = None;
+            let mut close_bracket_pos = None;
+
+            for (i, c) in text.chars().enumerate() {
+                match c {
+                    '[' => {
+                        open_bracket_pos = Some(i);
+                    },
+                    ']' => {
+                        close_bracket_pos = Some(i);
+                        if let (Some(open), Some(close)) = (open_bracket_pos, close_bracket_pos) {
+                            // 检查后面是否跟着 '('
+                            if close + 1 < text.len() && &text[close+1..close+2] == "(" {
+                                // 找结束的 ')'
+                                for j in close+2..text.len() {
+                                    if &text[j..j+1] == ")" {
+                                        link_ranges.push((open, j+1));
+                                        break;
+                                    }
+                                }
+                            }
+                            // 重置状态，继续查找下一个链接
+                            open_bracket_pos = None;
+                            close_bracket_pos = None;
+                        }
+                    },
+                    _ => {}
+                }
+            }
+
+            // 检查当前光标是否在任何链接范围内
+            let in_any_link = link_ranges.iter().any(|(start, end)|
+                cursor_pos >= *start && cursor_pos <= *end
+            );
+
+            if in_any_link {
+                // 如果光标在链接内，关闭弹窗
+                if self.is_searching {
+                    log!("close_mention_popup 10 - cursor inside a link");
+                    self.close_mention_popup(cx);
+                }
+                return;
+            }
+        }
+
+        // 查找触发@菜单的位置
         if let Some(trigger_pos) = self.find_mention_trigger_position(&text, cursor_pos) {
+            // 只需确保@前面是空格或者是在文本开始，这样连续@多人也能正常工作
+            let is_valid_mention = if trigger_pos > 0 {
+                let pre_char = &text[trigger_pos-1..trigger_pos];
+                // 有效的@符号：在文本开头，或者前面是空格
+                pre_char == " " || trigger_pos == 0
+            } else {
+                true
+            };
+
+            if !is_valid_mention {
+                if self.is_searching {
+                    log!("close_mention_popup 11");
+                    self.close_mention_popup(cx);
+                }
+                return;
+            }
+
             self.current_mention_start_index = Some(trigger_pos);
             self.is_searching = true;
 
@@ -532,13 +725,15 @@ impl MentionableTextInput {
                 cursor_pos
             ).to_lowercase();
 
-            // let current_members_count = self.room_id.as_ref()
-            //     .and_then(|id| self.room_members_map.get(id))
-            //     .map_or(0, |members| members.len());
+            // 确保头部视图是可见的，防止在连续@时头部消失
+            let popup = self.cmd_text_input.view(id!(popup));
+            let header_view = self.cmd_text_input.view(id!(popup.header_view));
+            header_view.set_visible(cx, true);
 
-            self.update_user_list(cx, &search_text,scope);
-            self.cmd_text_input.view(id!(popup)).set_visible(cx, true);
+            self.update_user_list(cx, &search_text, scope);
+            popup.set_visible(cx, true);
         } else if self.is_searching {
+            log!("close_mention_popup 12");
             self.close_mention_popup(cx);
         }
     }
@@ -681,8 +876,12 @@ impl MentionableTextInput {
             let total_items_in_list = member_count + if "@room".contains(&search_text) { 1 } else { 0 };
 
             if total_items_in_list == 0 {
+                // 如果没有匹配项，只需隐藏整个弹窗并清除搜索状态
                 popup.apply_over(cx, live! { height: Fit });
                 self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+                // 清除搜索状态
+                self.is_searching = false;
+                self.current_mention_start_index = None;
                 return;
             }
 
@@ -790,12 +989,133 @@ impl MentionableTextInput {
         // Build byte position mapping to facilitate conversion back to byte positions
         let byte_positions = utils::build_grapheme_byte_positions(text);
 
+        // 首先检查文本中的markdown链接范围
+        let mut link_ranges = Vec::new();
+        let mut open_bracket_pos = None;
+        let mut close_bracket_pos = None;
+
+        for (i, c) in text.chars().enumerate() {
+            match c {
+                '[' => {
+                    open_bracket_pos = Some(i);
+                },
+                ']' => {
+                    close_bracket_pos = Some(i);
+                    if let (Some(open), Some(close)) = (open_bracket_pos, close_bracket_pos) {
+                        // 检查后面是否跟着 '('
+                        if close + 1 < text.len() && &text[close+1..close+2] == "(" {
+                            // 找结束的 ')'
+                            for j in close+2..text.len() {
+                                if &text[j..j+1] == ")" {
+                                    link_ranges.push((open, j+1));
+                                    break;
+                                }
+                            }
+                        }
+                        // 重置状态，继续查找下一个链接
+                        open_bracket_pos = None;
+                        close_bracket_pos = None;
+                    }
+                },
+                _ => {}
+            }
+        }
+
+        // 检查当前光标或@符号是否在任何链接范围内
+        let cursor_in_any_link = link_ranges.iter().any(|(start, end)|
+            cursor_pos >= *start && cursor_pos <= *end
+        );
+
+        // 如果光标在链接内，不触发菜单
+        if cursor_in_any_link {
+            return None;
+        }
+
+        // 检查光标前面的@符号是否在链接内
+        if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
+            let at_byte_pos = byte_positions[cursor_grapheme_idx - 1];
+            let at_in_any_link = link_ranges.iter().any(|(start, end)|
+                at_byte_pos >= *start && at_byte_pos <= *end
+            );
+
+            if at_in_any_link {
+                return None;
+            }
+        }
+
+        // 检查是否在 markdown 链接内部 - 使用更强健的检测函数
+        if self.is_cursor_within_markdown_link(text, cursor_pos) {
+            return None;
+        }
+
+        // 检查光标是否在"@room"附近，如果是则不应触发mention菜单
+        // 这里也需要处理"@room "的情况（带空格）
+        if cursor_grapheme_idx >= 5 {
+            // 检查是否刚好是"@room"
+            let possible_room_mention = text_graphemes[cursor_grapheme_idx-5..cursor_grapheme_idx].join("");
+            if possible_room_mention == "@room" {
+                return None;
+            }
+
+            // 检查是否是"@room "加空格的情况
+            if cursor_grapheme_idx >= 6 {
+                let possible_room_with_space = text_graphemes[cursor_grapheme_idx-6..cursor_grapheme_idx-1].join("");
+                let last_char = text_graphemes[cursor_grapheme_idx-1];
+                if possible_room_with_space == "@room" && last_char.trim().is_empty() {
+                    return None;
+                }
+            }
+        }
+
+        // 特殊处理：只有在用户正在删除@room时才不显示菜单
+        // 允许用户在@room后继续@其他用户
+        let before_cursor = text_graphemes[..cursor_grapheme_idx].join("");
+        // 检查是否只有@room文本且没有其他内容
+        if before_cursor.trim() == "@room" {
+            return None;
+        }
+
+        // 检查光标是否在@room后面的空格处，也表示可能在删除@room
+        if cursor_grapheme_idx > 5 {
+            let last_five = text_graphemes[cursor_grapheme_idx-5..cursor_grapheme_idx].join("");
+            let is_at_room_space = last_five == "@room" &&
+                                    cursor_grapheme_idx < text_graphemes.len() &&
+                                    text_graphemes[cursor_grapheme_idx].trim().is_empty();
+            if is_at_room_space {
+                return None;
+            }
+        }
+
+        // 检查光标前一个字符是否为]或)，表示用户正在删除链接
+        if cursor_pos > 0 && cursor_pos <= text.len() {
+            let char_before_cursor = &text[cursor_pos.saturating_sub(1)..cursor_pos];
+            if char_before_cursor == ")" || char_before_cursor == "]" {
+                return None;
+            }
+        }
+
         // Check if cursor is immediately after @ symbol
         // Only trigger if @ is preceded by whitespace or beginning of text
         if cursor_grapheme_idx > 0 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
             let is_preceded_by_whitespace_or_start = cursor_grapheme_idx == 1 ||
                 (cursor_grapheme_idx > 1 && text_graphemes[cursor_grapheme_idx - 2].trim().is_empty());
             if is_preceded_by_whitespace_or_start {
+                return Some(byte_positions[cursor_grapheme_idx - 1]);
+            }
+        }
+
+        // 特殊情况：以下情况应该返回触发位置
+        // 1. 如果文本只有一个@符号，且光标在@符号后
+        if text_graphemes.len() == 1 && text_graphemes[0] == "@" && cursor_grapheme_idx == 1 {
+            return Some(byte_positions[0]);
+        }
+
+        // 检测连续@多人的场景
+        // 如果@前面是空格，这可能是连续@多人
+        if cursor_grapheme_idx > 1 && text_graphemes[cursor_grapheme_idx - 1] == "@" {
+            let prev_char = text_graphemes[cursor_grapheme_idx - 2];
+            if prev_char.trim().is_empty() {
+                // 如果@前面是空格，这可能是连续@多人
                 return Some(byte_positions[cursor_grapheme_idx - 1]);
             }
         }
@@ -814,11 +1134,60 @@ impl MentionableTextInput {
 
             // Validate the mention format
             if self.is_valid_mention_text(mention_text) {
-                return Some(byte_positions[at_idx]);
+                // 额外的检查：确保这个@不在任何链接范围内
+                let at_byte_pos = byte_positions[at_idx];
+                let at_in_any_link = link_ranges.iter().any(|(start, end)|
+                    at_byte_pos >= *start && at_byte_pos <= *end
+                );
+
+                if !at_in_any_link {
+                    return Some(byte_positions[at_idx]);
+                }
             }
         }
 
         None
+    }
+
+    // 检查光标是否在 markdown 链接内部 - 改进版本
+    fn is_cursor_within_markdown_link(&self, text: &str, cursor_pos: usize) -> bool {
+        // 首先检查简单的情况：光标前是)或]，表示刚删除链接
+        if cursor_pos > 0 && cursor_pos <= text.len() {
+            let char_before_cursor = &text[cursor_pos.saturating_sub(1)..cursor_pos];
+            if char_before_cursor == ")" || char_before_cursor == "]" {
+                return true;
+            }
+        }
+
+        // 检查是否处于完整的markdown链接内部
+        // 向前寻找可能的开头 "["，向后寻找可能的结尾 ")"
+        // 先向前找最近的 "[" 位置
+        let mut open_bracket_pos = None;
+        for i in (0..cursor_pos).rev() {
+            if i < text.len() && &text[i..i+1] == "[" {
+                open_bracket_pos = Some(i);
+                break;
+            }
+        }
+
+        // 再向后找最近的 ")" 位置
+        let mut close_paren_pos = None;
+        for i in cursor_pos..text.len() {
+            if &text[i..i+1] == ")" {
+                close_paren_pos = Some(i);
+                break;
+            }
+        }
+
+        // 如果找到了可能的 "[" 和 ")"，检查中间是否含有 "]("，表示完整的链接格式
+        if let (Some(open_pos), Some(close_pos)) = (open_bracket_pos, close_paren_pos) {
+            if open_pos < close_pos {
+                let link_text = &text[open_pos..close_pos+1];
+                return link_text.contains("](");
+            }
+        }
+
+        false
     }
 
     // Add helper method to extract validation logic
@@ -835,6 +1204,20 @@ impl MentionableTextInput {
             }
         }
 
+        // 检查文本中是否包含链接特征的字符
+        // 如果包含以下任一字符，可能是在编辑/删除一个链接，而不是创建新的提及
+        let text_to_check = graphemes.join("");
+        if text_to_check.contains('(') || text_to_check.contains(')') ||
+           text_to_check.contains('[') || text_to_check.contains(']') {
+            return false;
+        }
+
+        // 不要完全禁止含有"room"的文本触发菜单，这会阻止在@room后继续@其他用户
+        // 只在精确匹配"@room"或"@room "时才阻止触发
+        if text_to_check == "room" || text_to_check == "room " {
+            return false;
+        }
+
         // Check if it contains newline characters
         !graphemes.iter().any(|g| g.contains('\n'))
     }
@@ -844,7 +1227,26 @@ impl MentionableTextInput {
         self.current_mention_start_index = None;
         self.is_searching = false;
 
-        self.cmd_text_input.view(id!(popup)).set_visible(cx, false);
+        // 清除列表项，避免再次显示弹窗时保留旧内容
+        self.cmd_text_input.clear_items();
+
+        // 获取弹窗和头部视图引用
+        let popup = self.cmd_text_input.view(id!(popup));
+        let header_view = self.cmd_text_input.view(id!(popup.header_view));
+
+        // 强制隐藏头部视图 - 在处理删除操作时这是必要的
+        // 当退格删除提及时，我们完全不希望显示头部
+        header_view.set_visible(cx, false);
+
+        // 隐藏整个弹窗
+        popup.set_visible(cx, false);
+
+        // 重置弹窗高度
+        popup.apply_over(cx, live! { height: Fit });
+
+        // 确保下次新触发时，头部视图会被重新设置为可见
+        // 这将在 handle_text_change 中的 update_user_list 调用之前执行
+
         self.cmd_text_input.request_text_input_focus();
         self.redraw(cx);
     }
