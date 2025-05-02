@@ -1574,7 +1574,7 @@ async fn async_main_loop(
                         // which is way more efficient.
                         let mut next_diff_was_handled = false;
                         if let Some(VectorDiff::Insert { index: insert_index, value: new_room }) = peekable_diffs.peek() {
-                            if &room.room_id == new_room.room_id() {
+                            if room.room_id == new_room.room_id() {
                                 if LOG_ROOM_LIST_DIFFS {
                                     log!("Optimizing Remove({remove_index}) + Insert({insert_index}) into Set (update) for room {}", room.room_id);
                                 }
