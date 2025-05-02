@@ -484,18 +484,19 @@ impl RoomsList {
 
     /// Updates the status message to show how many rooms have been loaded.
     fn update_status_rooms_count(&mut self) {
+        let num_rooms = self.all_joined_rooms.len() + self.invited_rooms.borrow().len();
         self.status = if let Some(max_rooms) = self.max_known_rooms {
-            format!("Loaded {} of {} total rooms.", self.all_joined_rooms.len(), max_rooms)
+            format!("Loaded {num_rooms} of {max_rooms} total rooms.")
         } else {
-            format!("Loaded {} rooms.", self.all_joined_rooms.len())
+            format!("Loaded {num_rooms} rooms.")
         };
     }
 
     /// Updates the status message to show how many rooms are currently displayed
     /// that match the current search filter.
     fn update_status_matching_rooms(&mut self) {
-        let total = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
-        self.status = match total {
+        let num_rooms = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
+        self.status = match num_rooms {
             0 => "No matching rooms found.".to_string(),
             1 => "Found 1 matching room.".to_string(),
             n => format!("Found {} matching rooms.", n),

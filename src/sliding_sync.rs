@@ -2010,8 +2010,10 @@ pub struct BackwardsPaginateUntilEventRequest {
     pub current_tl_len: usize,
 }
 
+/// Whether to enable verbose logging of all timeline diff updates.
 const LOG_TIMELINE_DIFFS: bool = false;
-const LOG_ROOM_LIST_DIFFS: bool = true;
+/// Whether to enable verbose logging of all room list service diff updates.
+const LOG_ROOM_LIST_DIFFS: bool = false;
 
 /// A per-room async task that listens for timeline updates and sends them to the UI thread.
 ///
