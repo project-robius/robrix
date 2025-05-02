@@ -406,7 +406,8 @@ pub struct SavedDockState {
     pub dock_items: HashMap<LiveId, DockItem>,
     /// The rooms that are currently open, keyed by the LiveId of their tab.
     pub open_rooms: HashMap<LiveId, SelectedRoom>,
-    /// The order in which the rooms were opened.
+    /// The order in which the rooms were opened, in chronological order
+    /// from first opened (at the beginning) to last opened (at the end).
     pub room_order: Vec<SelectedRoom>,
 }
 
@@ -447,7 +448,7 @@ impl SelectedRoom {
     /// otherwise, returns `false`.
     pub fn upgrade_invite_to_joined(&mut self, room_id: &RoomId) -> bool {
         match self {
-            SelectedRoom::InvitedRoom { room_id: id, room_name } if id == &room_id => {
+            SelectedRoom::InvitedRoom { room_id: id, room_name } if id == room_id => {
                 let name = room_name.take();
                 *self = SelectedRoom::JoinedRoom {
                     room_id: id.clone(),

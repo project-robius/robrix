@@ -1343,7 +1343,7 @@ fn username_to_full_user_id(
 
 /// Info we store about a room received by the room list service.
 ///
-/// This struct is necesssary in order for us to track the previous state
+/// This struct is necessary in order for us to track the previous state
 /// of a room received from the room list service, so that we can
 /// determine if the room has changed state.
 /// We can't just store the `room_list_service::Room` object itself,
@@ -1634,7 +1634,7 @@ async fn update_room(
     room_list_service: &RoomListService,
 ) -> Result<()> {
     let new_room_id = new_room.room_id().to_owned();
-    if &old_room.room_id == &new_room_id {
+    if old_room.room_id == new_room_id {
         let new_room_name = new_room.display_name().await.map(|n| n.to_string()).ok();
         let mut room_avatar_changed = false;
 

@@ -173,12 +173,6 @@ pub enum RoomsListAction {
     None,
 }
 
-///
-#[derive(Debug, Clone, DefaultNone)]
-pub enum Room {
-    Selected(SelectedRoom),
-    None,
-}
 
 /// UI-related info about a joined room.
 ///

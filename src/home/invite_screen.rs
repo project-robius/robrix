@@ -245,7 +245,7 @@ impl Widget for InviteScreen {
                             matrix_sdk::Error::WrongRoomState(wrs) if wrs.to_string().contains(", got: Joined") => {
                                 String::from("Failed to join room: it has already been joined.")
                             }
-                            _ => String::from(format!("Failed to join room: {error}")),
+                            _ => format!("Failed to join room: {error}"),
                         };
                         enqueue_popup_notification(msg);
                     }
@@ -395,7 +395,7 @@ impl InviteScreen {
                 room_avatar: invite.room_avatar.clone(),
                 inviter: invite.inviter_info.clone(),
             });
-            self.invite_state = invite.invite_state.clone();
+            self.invite_state = invite.invite_state;
             self.redraw(cx);
         }
     }

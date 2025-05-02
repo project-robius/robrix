@@ -67,7 +67,8 @@ pub struct MainDesktopUI {
     #[rust]
     tab_to_close: Option<LiveId>,
 
-    /// The order in which the rooms were opened
+    /// The order in which the rooms were opened, in chronological order
+    /// from first opened (at the beginning) to last opened (at the end).
     #[rust]
     room_order: Vec<SelectedRoom>,
 
