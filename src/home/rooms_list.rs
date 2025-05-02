@@ -369,6 +369,7 @@ impl RoomsList {
                     //    displaying the invite to this room should be converted to a
                     //    RoomScreen displaying the now-joined room.
                     if let Some(_accepted_invite) = self.invited_rooms.borrow_mut().remove(&room_id) {
+                        log!("Removed room {room_id} from the list of invited rooms");
                         self.displayed_invited_rooms.iter()
                             .position(|r| r == &room_id)
                             .map(|index| self.displayed_invited_rooms.remove(index));

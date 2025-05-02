@@ -1506,7 +1506,7 @@ impl RoomScreen {
                     // TODO: after an (un)ignore user event, all timelines are cleared. Handle that here.
                     //
                     else {
-                        warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
+                        // warning!("!!! Couldn't find new event with matching ID for ANY event currently visible in the portal list");
                     }
 
                     // If new items were appended to the end of the timeline, show an unread messages badge on the jump to bottom button.

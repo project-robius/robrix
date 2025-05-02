@@ -429,8 +429,8 @@ async fn async_worker(
             }
             MatrixRequest::PaginateRoomTimeline { room_id, num_events, direction } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("Skipping pagination request for not-yet-known room {room_id}");
                         continue;
                     };
@@ -478,8 +478,8 @@ async fn async_worker(
 
             MatrixRequest::EditMessage { room_id, timeline_event_item_id: timeline_event_id, edited_content } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         error!("BUG: room info not found for edit request, room {room_id}");
                         continue;
                     };
@@ -504,8 +504,8 @@ async fn async_worker(
 
             MatrixRequest::FetchDetailsForEvent { room_id, event_id } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         error!("BUG: room info not found for fetch details for event request {room_id}");
                         continue;
                     };
@@ -535,8 +535,8 @@ async fn async_worker(
 
             MatrixRequest::SyncRoomMemberList { room_id } => {
                 let (timeline, sender) = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         error!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
@@ -566,14 +566,16 @@ async fn async_worker(
                             }
                             Err(e) => {
                                 error!("Error joining room {room_id}: {e:?}");
-                                JoinRoomAction::Failed { room_id, error: e.to_string() }
+                                JoinRoomAction::Failed { room_id, error: e }
                             }
                         }
                     } else {
                         error!("BUG: client could not get room with ID {room_id}");
                         JoinRoomAction::Failed {
                             room_id,
-                            error: String::from("Client couldn't locate room to join it."),
+                            error: matrix_sdk::Error::UnknownError(
+                                String::from("Client couldn't locate room to join it.").into()
+                            ),
                         }
                     };
                     Cx::post_action(result_action);
@@ -608,8 +610,8 @@ async fn async_worker(
 
             MatrixRequest::GetRoomMembers { room_id, memberships, local_only } => {
                 let (timeline, sender) = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for get room members request {room_id}");
                         continue;
                     };
@@ -708,8 +710,8 @@ async fn async_worker(
             }
             MatrixRequest::GetNumberUnreadMessages { room_id } => {
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("Skipping get number of unread messages request for not-yet-known room {room_id}");
                         continue;
                     };
@@ -797,8 +799,8 @@ async fn async_worker(
 
             MatrixRequest::SubscribeToTypingNotices { room_id, subscribe } => {
                 let (room, timeline_update_sender, mut typing_notice_receiver) = {
-                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to typing notices request, room {room_id}");
                         continue;
                     };
@@ -853,8 +855,8 @@ async fn async_worker(
                     continue;
                 }
                 let (timeline, sender) = {
-                    let mut all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get_mut(&room_id) else {
+                    let mut all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get_mut(&room_id) else {
                         log!("BUG: room info not found for subscribe to own user read receipts changed request, room {room_id}");
                         continue;
                     };
@@ -922,8 +924,8 @@ async fn async_worker(
 
             MatrixRequest::SendMessage { room_id, message, replied_to } => {
                 let timeline = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for send message request {room_id}");
                         continue;
                     };
@@ -956,8 +958,8 @@ async fn async_worker(
 
             MatrixRequest::ReadReceipt { room_id, event_id } => {
                 let timeline = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found when sending read receipt, room {room_id}, {event_id}");
                         continue;
                     };
@@ -979,8 +981,8 @@ async fn async_worker(
 
             MatrixRequest::FullyReadReceipt { room_id, event_id, .. } => {
                 let timeline = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found when sending fully read receipt, room {room_id}, {event_id}");
                         continue;
                     };
@@ -1004,8 +1006,8 @@ async fn async_worker(
 
             MatrixRequest::GetRoomPowerLevels { room_id } => {
                 let (timeline, sender) = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for fetch members request {room_id}");
                         continue;
                     };
@@ -1034,8 +1036,8 @@ async fn async_worker(
             },
             MatrixRequest::ToggleReaction { room_id, timeline_event_id, reaction } => {
                 let timeline = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for send toggle reaction {room_id}");
                         continue;
                     };
@@ -1055,8 +1057,8 @@ async fn async_worker(
             },
             MatrixRequest::RedactMessage { room_id, timeline_event_id, reason } => {
                 let timeline = {
-                    let all_room_info = ALL_JOINED_ROOMS.lock().unwrap();
-                    let Some(room_info) = all_room_info.get(&room_id) else {
+                    let all_joined_rooms = ALL_JOINED_ROOMS.lock().unwrap();
+                    let Some(room_info) = all_joined_rooms.get(&room_id) else {
                         log!("BUG: room info not found for redact message {room_id}");
                         continue;
                     };
@@ -1608,7 +1610,7 @@ async fn async_main_loop(
                     while let Some(room) = all_known_rooms.pop_back() {
                         remove_room(&room);
                     }
-                    // ALL_ROOM_INFO should already be empty due to successive calls to `remove_room()`,
+                    // ALL_JOINED_ROOMS should already be empty due to successive calls to `remove_room()`,
                     // so this is just a sanity check.
                     ALL_JOINED_ROOMS.lock().unwrap().clear();
                     enqueue_rooms_list_update(RoomsListUpdate::ClearRooms);
@@ -1746,6 +1748,10 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
     let room_name = room.display_name().await.map(|n| n.to_string()).ok();
 
     match room.state() {
+        RoomState::Knocked => {
+            // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
+            return Ok(());
+        }
         RoomState::Banned => {
             log!("Got new Banned room: {room_name:?} ({room_id})");
             // TODO: handle rooms that this user has been banned from.
@@ -1795,10 +1801,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
                 invite_state: Default::default(),
                 is_selected: false,
             }));
-            return Ok(());
-        }
-        RoomState::Knocked => {
-            // TODO: handle Knocked rooms (e.g., can you re-knock? or cancel a prior knock?)
             return Ok(());
         }
         RoomState::Joined => { } // Fall through to adding the joined room below.
@@ -1851,8 +1853,29 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         |ev| get_latest_event_details(ev, &room_id)
     );
 
+    let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
+        .unwrap()
+        .remove(&room_id);
+
+    log!("Adding new joined room {room_id}. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
+    ALL_JOINED_ROOMS.lock().unwrap().insert(
+        room_id.clone(),
+        JoinedRoomDetails {
+            room_id: room_id.clone(),
+            timeline,
+            timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
+            timeline_update_sender,
+            timeline_subscriber_handler_task,
+            typing_notice_subscriber: None,
+            replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
+        },
+    );
+
+    // We need to add the room to the `ALL_JOINED_ROOMS` list before we can
+    // send the `AddJoinedRoom` update to the UI, because the UI might immediately
+    // issue a `MatrixRequest` that relies on that room being in `ALL_JOINED_ROOMS`.
     rooms_list::enqueue_rooms_list_update(RoomsListUpdate::AddJoinedRoom(JoinedRoomInfo {
-        room_id: room_id.clone(),
+        room_id,
         latest,
         tags: room.tags().await.ok().flatten().unwrap_or_default(),
         num_unread_messages: room.num_unread_messages(),
@@ -1868,23 +1891,6 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
 
     spawn_fetch_room_avatar(room.inner_room().clone());
 
-    let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
-        .unwrap()
-        .remove(&room_id);
-
-    log!("Adding new joined room {room_id} to ALL_ROOM_INFO. Replaces tombstoned room: {tombstoned_room_replaced_by_this_room:?}");
-    ALL_JOINED_ROOMS.lock().unwrap().insert(
-        room_id.clone(),
-        JoinedRoomDetails {
-            room_id,
-            timeline,
-            timeline_singleton_endpoints: Some((timeline_update_receiver, request_sender)),
-            timeline_update_sender,
-            timeline_subscriber_handler_task,
-            typing_notice_subscriber: None,
-            replaces_tombstoned_room: tombstoned_room_replaced_by_this_room,
-        },
-    );
     Ok(())
 }
 

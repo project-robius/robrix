@@ -172,7 +172,7 @@ struct InviteScreenInfo {
 }
 
 /// Actions sent from the backend task as a result of a [`MatrixRequest::JoinRoom`].
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum JoinRoomAction {
     /// The user has successfully joined the room.
     Joined {
@@ -181,7 +181,7 @@ pub enum JoinRoomAction {
     /// There was an error attempting to join the room.
     Failed {
         room_id: OwnedRoomId,
-        error: String,
+        error: matrix_sdk::Error,
     }
 }
 
@@ -239,7 +239,15 @@ impl Widget for InviteScreen {
                     }
                     Some(JoinRoomAction::Failed { room_id, error }) if room_id == &info.room_id => {
                         self.invite_state = InviteState::WaitingOnUserInput;
-                        enqueue_popup_notification(format!("Failed to join room: {error}"));
+                        let msg = match error {
+                            // The below is a stupid hack to workaround `WrongRoomState` being private.
+                            // We get the string representation of the error and then search for the "got" state.
+                            matrix_sdk::Error::WrongRoomState(wrs) if wrs.to_string().contains(", got: Joined") => {
+                                String::from("Failed to join room: it has already been joined.")
+                            }
+                            _ => String::from(format!("Failed to join room: {error}")),
+                        };
+                        enqueue_popup_notification(msg);
                     }
                     _ => {}
                 }
