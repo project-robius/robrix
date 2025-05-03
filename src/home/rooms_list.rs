@@ -6,11 +6,10 @@ use crate::{
     app::{AppState, SelectedRoom},
     room::room_display_filter::{FilterableRoom, RoomDisplayFilter, RoomDisplayFilterBuilder, RoomFilterCriteria, SortFn},
     shared::{collapsible_header::{CollapsibleHeaderAction, CollapsibleHeaderWidgetRefExt, HeaderCategory},
-    jump_to_bottom_button::UnreadMessageCount},
+    jump_to_bottom_button::UnreadMessageCount, room_filter_input_bar::RoomFilterAction},
     sliding_sync::{submit_async_request, MatrixRequest, PaginationDirection},
 };
-
-use super::{room_preview::RoomPreviewAction, rooms_sidebar::RoomsViewAction};
+use super::room_preview::RoomPreviewAction;
 
 /// Whether to pre-paginate visible rooms at least once in order to
 /// be able to display the latest message in the room preview,
@@ -625,8 +624,8 @@ impl Widget for RoomsList {
 
         if let Event::Actions(actions) = event {
             for action in actions {
-                if let RoomsViewAction::Search(search_text) = action.as_widget_action().cast() {
-                    self.update_displayed_rooms(cx, &search_text);
+                if let RoomFilterAction::Changed(keywords) = action.as_widget_action().cast() {
+                    self.update_displayed_rooms(cx, &keywords);
                 }
             }
         }
