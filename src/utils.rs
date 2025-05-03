@@ -1,10 +1,9 @@
 use std::{borrow::Cow, time::SystemTime};
 
-use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 use chrono::{DateTime, Duration, Local, TimeZone};
-use makepad_widgets::{error, image_cache::ImageError, Cx, DVec2, Event, ImageRef};
-use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId}};
+use makepad_widgets::{error, image_cache::ImageError, Cx, Event, ImageRef};
+use matrix_sdk::{media::{MediaFormat, MediaThumbnailSettings}, ruma::{api::client::media::get_content_thumbnail::v3::Method, MilliSecondsSinceUnixEpoch, OwnedRoomId, RoomId}};
 use matrix_sdk_ui::timeline::{EventTimelineItem, TimelineDetails};
 
 use crate::sliding_sync::{submit_async_request, MatrixRequest};
@@ -96,6 +95,17 @@ pub fn load_png_or_jpg(img: &ImageRef, cx: &mut Cx, data: &[u8]) -> Result<(), I
 pub fn unix_time_millis_to_datetime(millis: &MilliSecondsSinceUnixEpoch) -> Option<DateTime<Local>> {
     let millis: i64 = millis.get().into();
     Local.timestamp_millis_opt(millis).single()
+}
+
+/// Returns a string representation of the room name or ID.
+pub fn room_name_or_id(
+    room_name: Option<impl Into<String>>,
+    room_id: impl AsRef<RoomId>,
+) -> String {
+    room_name.map_or_else(
+        || format!("Room ID {}", room_id.as_ref()),
+        |name| name.into(),
+    )
 }
 
 /// Formats a given Unix timestamp in milliseconds into a relative human-readable date.
@@ -828,31 +838,5 @@ mod tests_ends_with_href {
     #[test]
     fn test_ends_with_href38() {
         assert!(!ends_with_href(" hrf= "));
-    }
-}
-
-/// Wrapper for DVec2 for serialization and deserialization
-#[derive(Clone, Copy, Default, Debug, PartialEq)]
-pub struct DVec2Wrapper(pub DVec2);
-// Implement Serialize
-impl Serialize for DVec2Wrapper {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        // Serialize as a tuple of two f64 values
-        (self.0.x, self.0.y).serialize(serializer)
-    }
-}
-
-// Implement Deserialize
-impl<'de> Deserialize<'de> for DVec2Wrapper {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        // Deserialize from a tuple of two f64 values
-        let (x, y) = <(f64, f64)>::deserialize(deserializer)?;
-        Ok(DVec2Wrapper(DVec2 { x, y }))
     }
 }

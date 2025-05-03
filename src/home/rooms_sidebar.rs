@@ -30,7 +30,7 @@ live_design! {
             }
         }
         <Label> {
-            text: "Rooms"
+            text: "All Rooms"
             draw_text: {
                 color: #x0
                 text_style: <TITLE_TEXT>{}
@@ -38,7 +38,7 @@ live_design! {
         }
         search_bar = <SearchBar> {
             input = {
-                empty_message: "Search rooms..."
+                empty_message: "Filter rooms..."
             }
         }
         <CachedWidget> {

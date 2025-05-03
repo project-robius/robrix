@@ -1,8 +1,8 @@
 //! Handles app persistence by saving and restoring client session data to/from the filesystem.
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 use anyhow::{anyhow, bail};
 use makepad_widgets::{
-    log, makepad_micro_serde::{DeRon, SerRon}, Cx, DockItem, LiveId
+    log, makepad_micro_serde::{DeRon, SerRon}, Cx
 };
 use matrix_sdk::{
     authentication::matrix::MatrixSession,
@@ -13,7 +13,7 @@ use matrix_sdk::{
 use serde::{Deserialize, Serialize};
 use tokio::{fs, io::{self, AsyncReadExt}};
 
-use crate::{app::{RoomsPanelState, WindowGeomState}, app_data_dir, login::login_screen::LoginAction};
+use crate::{app::{SavedDockState, SelectedRoom, WindowGeomState}, app_data_dir, login::login_screen::LoginAction};
 
 /// The data needed to re-build a client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,8 +65,6 @@ pub fn session_file_path(user_id: &UserId) -> PathBuf {
 const LATEST_USER_ID_FILE_NAME: &str = "latest_user_id.txt";
 
 const LATEST_DOCK_STATE_FILE_NAME: &str = "latest_dock_state.ron";
-
-const ROOMS_PANEL_STATE_FILE_NAME: &str = "rooms_panel_state.json";
 
 const WINDOW_GEOM_STATE_FILE_NAME: &str = "window_geom_state.json";
 
@@ -195,20 +193,20 @@ pub async fn save_session(
 
 /// Save the current display state of the room panel to persistent storage.
 pub fn save_room_panel(
-    rooms_panel_state: RoomsPanelState,
+    rooms_panel_state: SavedDockState,
     user_id: OwnedUserId,
 ) -> anyhow::Result<()> {
     std::fs::write(
         persistent_state_dir(&user_id).join(LATEST_DOCK_STATE_FILE_NAME),
-        rooms_panel_state.dock_state.serialize_ron(),
+        rooms_panel_state.serialize_ron(),
     )?;
     for (tab_id, room) in &rooms_panel_state.open_rooms {
-        assert!(rooms_panel_state.dock_state.contains_key(&LiveId(*tab_id)), "Open room id: {} not found in dock state", &room.room_id);
+        match room {
+            SelectedRoom::JoinedRoom { room_id, .. } | SelectedRoom::InvitedRoom { room_id, .. } => { 
+                assert!(rooms_panel_state.dock_items.contains_key(&tab_id), "Open room id: {} not found in dock state", room_id);
+            }
+        }
     }
-    std::fs::write(
-        persistent_state_dir(&user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
-        serde_json::to_string(&rooms_panel_state)?,
-    )?;
     Ok(())
 }
 
@@ -221,35 +219,23 @@ pub fn save_window_state(window_geom_state: WindowGeomState) -> anyhow::Result<(
     Ok(())
 }
 /// Loads the rooms panel's state from persistent storage.
-pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<RoomsPanelState> {
+pub async fn load_rooms_panel_state(user_id: &UserId) -> anyhow::Result<SavedDockState> {
     let mut file = match tokio::fs::File::open(
         persistent_state_dir(user_id).join(LATEST_DOCK_STATE_FILE_NAME),
     )
     .await
     {
         Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(SavedDockState::default()),
         Err(e) => return Err(e.into()),
     };
     // Read the file contents into a String
     let mut contents = String::with_capacity(file.metadata().await?.len() as usize);
     file.read_to_string(&mut contents).await?;
-    let dock_state: HashMap<LiveId, DockItem> =
-        HashMap::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
-    let mut file = match tokio::fs::File::open(
-        persistent_state_dir(user_id).join(ROOMS_PANEL_STATE_FILE_NAME),
-    )
-    .await
-    {
-        Ok(file) => file,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(RoomsPanelState::default()),
-        Err(e) => return Err(e.into()),
-    };
-    let mut contents = Vec::with_capacity(file.metadata().await?.len() as usize);
-    file.read_to_end(&mut contents).await?;
-    let mut rooms_panel_state: RoomsPanelState = serde_json::from_slice(&contents)?;
-    rooms_panel_state.dock_state = dock_state;
-    Ok(rooms_panel_state)
+    let dock_state: SavedDockState =
+    SavedDockState::deserialize_ron(&contents).map_err(|er| anyhow::Error::msg(er.msg))?;
+  
+    Ok(dock_state)
 }
 
 /// Loads the window geometry's state from persistent storage.
