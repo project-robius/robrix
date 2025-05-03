@@ -33,11 +33,7 @@ live_design! {
                 width: Fill, height: Fill
 
                 <CachedWidget> {
-                    <RoomFilterInputBar> {
-                        input = {
-                            empty_message: "Filter rooms..."
-                        }
-                    }
+                    <RoomFilterInputBar> { }
                 }
                 <MainDesktopUI> {}
             }

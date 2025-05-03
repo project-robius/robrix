@@ -67,11 +67,7 @@ live_design! {
                 }
             }
             <CachedWidget> {
-                <RoomFilterInputBar> {
-                    input = {
-                        empty_message: "Filter rooms..."
-                    }
-                }
+                <RoomFilterInputBar> { }
             }
             <CachedWidget> {
                 rooms_list = <RoomsList> {}
