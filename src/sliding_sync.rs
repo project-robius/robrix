@@ -1488,8 +1488,8 @@ async fn async_main_loop(
         .await?;
 
     // Attempt to load the previously-saved rooms panel state.
+    // Include this after re-login. 
     handle_load_rooms_panel_state(logged_in_user_id.to_owned());
-
     handle_sync_service_state_subscriber(sync_service.state());
     sync_service.start().await;
     let room_list_service = sync_service.room_list_service();

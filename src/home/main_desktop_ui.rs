@@ -399,20 +399,6 @@ impl WidgetMatchEvent for MainDesktopUI {
     }
 }
 
-/// Actions sent to/from the rooms panel that affect the RoomsList
-/// or one of the RoomScreen widgets.
-#[derive(Clone, DefaultNone, Debug)]
-pub enum RoomsPanelAction {
-    None,
-    /// Notifies that a room was focused.
-    RoomFocused(SelectedRoom),
-    /// Resets the focus to none, meaning that no room has focus.
-    FocusNone,
-    /// Save the dock state from the dock to the AppState.
-    DockSave,
-    /// Load the room panel state from the AppState to the dock.
-    DockLoad,
-}
 /// Actions sent to the MainDesktopUI widget for saving/restoring its dock state.
 #[derive(Clone, Debug, DefaultNone)]
 pub enum MainDesktopUiAction {
