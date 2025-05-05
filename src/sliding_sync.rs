@@ -1853,6 +1853,11 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         |ev| get_latest_event_details(ev, &room_id)
     );
 
+
+    //Judge whether the given room is direct or not here.
+    let is_direct = room.is_direct().await.unwrap_or(false);
+
+
     let tombstoned_room_replaced_by_this_room = TOMBSTONED_ROOMS.lock()
         .unwrap()
         .remove(&room_id);
@@ -1887,6 +1892,7 @@ async fn add_new_room(room: &room_list_service::Room, room_list_service: &RoomLi
         alt_aliases: room.alt_aliases(),
         has_been_paginated: false,
         is_selected: false,
+        is_direct,
     }));
 
     spawn_fetch_room_avatar(room.inner_room().clone());
