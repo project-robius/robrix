@@ -253,8 +253,9 @@ impl Widget for RoomPreview {
     fn draw_walk(&mut self, cx: &mut Cx2d, scope: &mut Scope, walk: Walk) -> DrawStep {
         if let Some(room_info) = scope.props.get::<JoinedRoomInfo>() {
             self.room_id = Some(room_info.room_id.clone());
-        } else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
-            self.room_id = Some(room_info.room.room_id().to_owned());
+        }
+        else if let Some(room_info) = scope.props.get::<InvitedRoomInfo>() {
+            self.room_id = Some(room_info.room_id.clone());
         }
 
         self.view.draw_walk(cx, scope, walk)
@@ -311,14 +312,8 @@ impl RoomPreviewContent {
     pub fn draw_invited_room(&mut self, cx: &mut Cx, room_info: &InvitedRoomInfo) {
         self.view.label(id!(room_name)).set_text(
             cx,
-            room_info
-                .room
-                .cached_display_name()
-                .map_or_else(
-                    || String::from("Invite to unnamed room"),
-                    |name| name.to_string(),
-                )
-                .as_str(),
+            room_info.room_name.as_deref()
+                .unwrap_or("Invite to unnamed room"),
         );
         // Hide the timestamp field, and use the latest message field to show the inviter.
         self.view.label(id!(timestamp)).set_text(cx, "");

@@ -10,7 +10,7 @@ live_design! {
 
     WELCOME_TEXT_COLOR: #x4
 
-    pub WelcomeScreen = <View> {
+    pub WelcomeScreen = <ScrollYView> {
         width: Fill, height: Fill
         align: {x: 0.0, y: 0.5}
         welcome_message = <RoundedView> {
