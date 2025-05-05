@@ -235,7 +235,7 @@ pub struct InvitedRoomInfo {
     /// and what should be shown in the UI.
     ///
     /// We maintain this state here instead of in the `InviteScreen`
-    /// because we need the state to persist even if the `InviteScreen` is closed. 
+    /// because we need the state to persist even if the `InviteScreen` is closed.
     pub invite_state: InviteState,
     /// Whether this room is currently selected in the UI.
     pub is_selected: bool,
@@ -364,9 +364,9 @@ impl RoomsList {
                     } else {
                         if should_display {
                             if is_direct {
-                                self.displayed_direct_messages.push(room_id);
+                                self.displayed_direct_messages.push(room_id.clone());
                             } else {
-                                self.displayed_rooms.push(room_id);
+                                self.displayed_rooms.push(room_id.clone());
                             }
                         }
                     }
@@ -424,9 +424,12 @@ impl RoomsList {
                             }
                             (true, false) => {
                                 // Room was displayed but should no longer be displayed.
-                                self.displayed_joined_rooms.iter()
+                                self.displayed_rooms.iter()
                                     .position(|r| r == &room_id)
-                                    .map(|index| self.displayed_joined_rooms.remove(index));
+                                    .map(|index| self.displayed_rooms.remove(index));
+                                self.displayed_direct_messages.iter()
+                                    .position(|r| r == &room_id)
+                                    .map(|index| self.displayed_direct_messages.remove(index));
                             }
                             (false, true) => {
                                 // Room was not displayed but should now be displayed.
@@ -439,9 +442,9 @@ impl RoomsList {
                 }
                 RoomsListUpdate::RemoveRoom { room_id, new_state: _ } => {
                     if let Some(_removed) = self.all_joined_rooms.remove(&room_id) {
-                        self.displayed_joined_rooms.iter()
+                        self.displayed_rooms.iter()
                             .position(|r| r == &room_id)
-                            .map(|index| self.displayed_joined_rooms.remove(index));
+                            .map(|index| self.displayed_rooms.remove(index));
                     }
                     else if let Some(_removed) = self.invited_rooms.borrow_mut().remove(&room_id) {
                         self.displayed_invited_rooms.iter()
@@ -464,7 +467,7 @@ impl RoomsList {
                 }
                 RoomsListUpdate::ClearRooms => {
                     self.all_joined_rooms.clear();
-                    self.displayed_joined_rooms.clear();
+                    self.displayed_rooms.clear();
                     self.invited_rooms.borrow_mut().clear();
                     self.displayed_invited_rooms.clear();
                     self.update_status_rooms_count();
@@ -509,7 +512,7 @@ impl RoomsList {
     /// Updates the status message to show how many rooms are currently displayed
     /// that match the current search filter.
     fn update_status_matching_rooms(&mut self) {
-        let num_rooms = self.displayed_invited_rooms.len() + self.displayed_joined_rooms.len();
+        let num_rooms = self.displayed_invited_rooms.len() + self.displayed_rooms.len();
         self.status = match num_rooms {
             0 => "No matching rooms found.".to_string(),
             1 => "Found 1 matching room.".to_string(),
@@ -532,17 +535,19 @@ impl RoomsList {
             // Reset the displayed rooms list to show all rooms.
             self.display_filter = RoomDisplayFilter::default();
 
-            self.displayed_invited_rooms = self.invited_rooms.keys().cloned().collect();
+            self.displayed_invited_rooms = self.invited_rooms.borrow().keys().cloned().collect();
 
-            self.displayed_rooms = self.all_joined_rooms.iter()
-                .filter(|(_id, info)|{!info.is_direct})
-                .map(|(id, _info)| id.clone())
-                .collect();
+            self.displayed_rooms.clear();
+            self.displayed_direct_messages.clear();
 
-            self.displayed_direct_messages = self.all_joined_rooms.iter()
-                .filter(|(_id, info)|{info.is_direct})
-                .map(|(id, _info)| id.clone())
-                .collect();
+            self.all_joined_rooms.iter().for_each(|(id, info)| {
+                if info.is_direct {
+                    self.displayed_direct_messages.push(id.clone());
+                }
+                else {
+                    self.displayed_rooms.push(id.clone());
+                }
+            });
             self.update_status_rooms_count();
             portal_list.set_first_id_and_scroll(0, 0.0);
             self.redraw(cx);
@@ -585,8 +590,14 @@ impl RoomsList {
         }
 
         // Update the displayed rooms list and redraw it.
-        self.displayed_rooms = generate_displayed_rooms(&self.all_joined_rooms, &self.display_filter, sort_fn.as_deref());
-        self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms, &self.display_filter, sort_fn.as_deref());
+        let generated_displayed_rooms = generate_displayed_rooms(
+            &self.all_joined_rooms,
+            &self.display_filter,
+            sort_fn.as_deref(),
+        );
+        self.displayed_direct_messages = generated_displayed_rooms.clone();
+        self.displayed_rooms = generated_displayed_rooms;
+        self.displayed_invited_rooms = generate_displayed_rooms(&self.invited_rooms.borrow(), &self.display_filter, sort_fn.as_deref());
 
         self.update_status_matching_rooms();
         portal_list.set_first_id_and_scroll(0, 0.0);
