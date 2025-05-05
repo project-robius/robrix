@@ -5,6 +5,7 @@ pub mod home_screen;
 pub mod invite_screen;
 pub mod light_themed_dock;  
 pub mod loading_pane;
+pub mod location_preview;
 pub mod main_desktop_ui;
 pub mod main_mobile_ui;
 pub mod room_preview;
@@ -20,6 +21,7 @@ pub mod new_message_context_menu;
 pub fn live_design(cx: &mut Cx) {
     home_screen::live_design(cx);
     loading_pane::live_design(cx);
+    location_preview::live_design(cx);
     rooms_list::live_design(cx);
     room_preview::live_design(cx);
     editing_pane::live_design(cx);
