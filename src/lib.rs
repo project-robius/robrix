@@ -19,7 +19,7 @@ pub mod shared;
 /// Generating text previews of timeline events/messages.
 mod event_preview;
 mod room;
-
+mod search_structure;
 
 // Matrix stuff
 pub mod sliding_sync;

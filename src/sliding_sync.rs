@@ -3,7 +3,7 @@ use bitflags::bitflags;
 use clap::Parser;
 use eyeball::Subscriber;
 use eyeball_im::VectorDiff;
-use futures_util::{pin_mut, FutureExt, StreamExt, TryFutureExt};
+use futures_util::{pin_mut, StreamExt};
 use imbl::Vector;
 use makepad_widgets::{error, log, warning, Cx, SignalToUI};
 use matrix_sdk::{
@@ -16,7 +16,7 @@ use matrix_sdk::{
     }, sliding_sync::VersionBuilder, Client, ClientBuildError, Error, OwnedServerName, Room, RoomMemberships
 };
 use matrix_sdk_ui::{
-    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventItemOrigin, EventTimelineItem, MembershipChange, RepliedToInfo, RoomExt, TimelineEventItemId, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem}, RoomListService, Timeline
+    room_list_service::{self, RoomListLoadingState}, sync_service::{self, SyncService}, timeline::{AnyOtherFullStateEventContent, EventItemOrigin, EventTimelineItem, MembershipChange, RepliedToInfo, RoomExt, TimelineEventItemId, TimelineFocus, TimelineItem, TimelineItemContent, TimelineItemKind, VirtualTimelineItem}, RoomListService, Timeline
 };
 use robius_open::Uri;
 use tokio::{
@@ -34,7 +34,7 @@ use crate::{
     }, login::login_screen::LoginAction, media_cache::{MediaCacheEntry, MediaCacheEntryRef}, persistent_state::{self, ClientSessionPersisted}, profile::{
         user_profile::{AvatarState, UserProfile},
         user_profile_cache::{enqueue_user_profile_update, UserProfileUpdate},
-    }, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
+    }, search_structure::{EventType, ProcessedSearchResult, SearchStructure}, shared::{html_or_plaintext::MatrixLinkPillState, jump_to_bottom_button::UnreadMessageCount, popup_list::enqueue_popup_notification}, utils::{self, AVATAR_THUMBNAIL_FORMAT}, verification::add_verification_event_handlers_and_sync_client
 };
 
 #[derive(Parser, Debug, Default)]
@@ -383,6 +383,13 @@ pub enum MatrixRequest {
         /// Text in the search bar.
         search_term: String,
         backward_pagination_batch: Option<String>,
+    },
+    SearchFindMoreTimelines {
+        /// The room to search for message.
+        room_id: OwnedRoomId,
+        not_found: Vec<(usize, OwnedEventId)>,
+        count: u32,
+        highlights: Vec<String>,
     }
 }
 
@@ -1054,80 +1061,7 @@ async fn async_worker(
                 include_all_rooms, 
                 backward_pagination_batch, 
             } => {
-                async fn any_timeline_to_timeline(any_timeline_event: Option<&Raw<AnyTimelineEvent>>, any_timeline_event_target: Option<&Raw<AnyTimelineEvent>>, current_items: &Vector<Arc<TimelineItem>>, to_read: i32, room: &room_list_service::Room) -> Vector<Arc<TimelineItem>> {
-                    let mut merged_timeline = Vector::new();
-                    let Some(target) = any_timeline_event_target.and_then(|e| e.deserialize().ok()).map(|f|f.event_id().to_owned()) else { 
-                        println!("target.. {:?}",any_timeline_event_target );
-                        return Vector::new() 
-                    };
-                    if let Some(before_target) = any_timeline_event.and_then(|e| e.deserialize().ok()).map(|f|f.event_id().to_owned()) {
-                        let mut to_read = to_read;
-                        let mut start = false;
-                        
-                        for current_item in current_items {
-                            if !start{
-
-                                if let Some(event_id) = current_item.as_event().and_then(|f| {
-                                    
-                                    f.event_id().map(|f|f.to_owned())}) {
-                                    if event_id == before_target || event_id == target {
-                                        merged_timeline.push_back(current_item.clone());
-                                        start = true;
-                                    } else {
-                                        if let Some(v)= current_item.as_event().and_then(|f|f.latest_json().and_then(|f|f.deserialize().ok())) {
-                                            
-                                            match v {
-                                                AnySyncTimelineEvent::MessageLike(m) => {
-                                                    m.original_content()
-                                                        .and_then(|f|{
-                                                            println!("relates: {:?}",f.relation());
-                                                            
-                                                            f.relation()})
-                                                        .and_then(|f|{
-                                                            match f {
-                                                                Relation::Replacement(r) => Some(r.event_id),
-                                                                _ => None
-                                                            }
-                                                        })
-                                                        .map(|f| {
-                                                            if f == before_target || f == target  {
-                                                                println!("found relates");
-                                                                merged_timeline.push_back(current_item.clone());
-                                                                to_read -= 1;
-                                                               
-                                                            } 
-                                                        });
-                                                }
-                                                AnySyncTimelineEvent::State(s) => {
-                                                    
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            } else if to_read > 0 {
-                                merged_timeline.push_back(current_item.clone());
-                                to_read -= 1;
-                            } else {
-                                break
-                            }
-                        }
-                    } else {
-                        println!("before {:?}",any_timeline_event );
-                    }
-                    if merged_timeline.is_empty() {
-                        
-                        println!("target..focus {:?}",target );
-                        match room.timeline_builder().with_focus(matrix_sdk_ui::timeline::TimelineFocus::Event { target: target, num_context_events: 2 }).build().await {
-                            Ok(timeline) => {
-                                
-                                merged_timeline = timeline.items().await;
-                            }
-                            Err(e) => println!("error: {e}"),
-                        }
-                    }
-                    merged_timeline
-                }
+                
                 abort_core_task(CoreTask::Search).await;
                 let client = CLIENT.get().unwrap();
                 let mut all_room_info = ALL_ROOM_INFO.lock().unwrap();
@@ -1135,8 +1069,6 @@ async fn async_worker(
                     log!("Skipping Search request for not-yet-known room {room_id}");
                     continue;
                 };
-                let current_timeline = room_info.timeline.clone();
-                let room = room_info.room.clone();
                 let sender = room_info.timeline_update_sender.clone();
                 let mut search_categories = Categories::new();
                 let mut room_filter = RoomEventFilter::empty();
@@ -1156,160 +1088,42 @@ async fn async_worker(
                 let forward_pagination_batch_token = backward_pagination_batch.clone();
                 req.next_batch = backward_pagination_batch;
                 let handle = Handle::current().spawn(async move {
-                    sender.send(TimelineUpdate::PaginationRunning(PaginationDirection::Backwards)).unwrap();
-                    SignalToUI::set_ui_signal();
                     match client.send(req).await {
                         Ok(response) => {
-                            sender.send(TimelineUpdate::PaginationIdle {
-                                fully_paginated: true,
-                                direction: PaginationDirection::Backwards,
-                            }).unwrap();
+                            
                             let backward_pagination_batch = response.search_categories.room_events.next_batch.clone();
                             let count =  response.search_categories.room_events.count.and_then(|f| f.to_string().parse::<u32>().ok()).unwrap_or(0);
                             let highlights = response.search_categories.room_events.highlights.clone();
-                            let mut merged_timeline = Vector::new();
-                            //let mut event_id_loaded = Vec::new();
-                            
-                            
-                            let results = response.search_categories.room_events.results;
-                            let current_items = current_timeline.items().await;
-                            println!("results len{:?}",results.len());
-                            println!("current_timeline {:?}",current_timeline);
-                            
-                            for result in results.iter().rev() {
-                                let Some(b) = result.result.as_ref().and_then(|e| e.deserialize().ok()).map(|f|f.event_id().to_owned()) else { continue };
-
-                                if !result.context.events_before.is_empty() {
-                                    let timeline_items = any_timeline_to_timeline(result.context.events_before.get(0), result.result.as_ref(), & current_items, 2, &room).await;
-                                    if timeline_items.is_empty() {
-                                        println!("timeline_items is empty: {:?} ", b);
-                                    }
-                                    for t in timeline_items.iter() {
-                                        if let Some(t_e) = t.as_event().and_then(|f|f.event_id()) {
-                                            if t_e == b {
-                                                println!("found event: {t_e}");
-                                            }
-                                        }
-                                    }
-                                    merged_timeline.extend(timeline_items);
-                                } else {
-                                    println!("result.context.events_before is empty: {:?} ", b);
-                                    let timeline_items = any_timeline_to_timeline(result.result.as_ref(), result.result.as_ref(), & current_items, 1, &room).await;
-                                    println!("timeline_items z size: {:?} ", timeline_items.len());
-                                    println!("timeline_items : {:?} ", timeline_items);
-                                    for t in timeline_items.iter() {
-                                        if let Some(t_e) = t.as_event().and_then(|f|f.event_id()) {
-                                            if t_e == b {
-                                                println!("foundz event: {t_e}");
-                                            }
-                                        }
+                            let mut processed_search_result_list = vec![];
+                            for result in response.search_categories.room_events.results {
+                                if let Some(event) = result.result {
+                                    if let Ok(e) = event.deserialize() {
+                                        let owned_event_id = e.event_id().to_owned();
+                                        let mut processed_search_result = ProcessedSearchResult {
+                                            event: owned_event_id.clone(),
+                                            context_before: None,
+                                            context_after: None,
+                                        };
+                                        result.context.events_before.iter().for_each(|f| {
+                                            f.deserialize().map(|e| {
+                                                processed_search_result.context_before = Some(e.event_id().to_owned());
+                                            });
+                                        });
+                                        result.context.events_after.iter().for_each(|f| {
+                                            f.deserialize().map(|e| {
+                                                processed_search_result.context_after = Some(e.event_id().to_owned());
+                                            });
+                                        });
+                                        processed_search_result_list.push(processed_search_result);
                                     }
                                 }
-                               
                             }
-  
-                            // for result in response.search_categories.room_events.results.iter().rev() {
-                            //     if let Some(target) = result.result.as_ref().and_then(|e| e.deserialize().ok()).map(|f|f.event_id().to_owned()) {
-                            //         if event_id_loaded.contains(&target) {
-                            //             continue;
-                            //         }
-                                    
-                            //         if let Ok(timeline) = room.timeline_builder().with_focus(matrix_sdk_ui::timeline::TimelineFocus::Event { target, num_context_events: 2 }).with_date_divider_mode(matrix_sdk_ui::timeline::DateDividerMode::Daily).build().await {
-                            //             let t = timeline.items().await;
-                            //             //println!("t size {:?}", t.len());
-                            //             for b in t.iter().rev() {
-                                            
-                            //                 println!("b: {:?}",b.as_event().and_then(|f|f.event_id()));
-                            //                 if let Some(event_id) = &b.as_event().and_then(|f| {
-                            //                     // merged_timeline.push_back(Arc::new(TimelineItem::from(VirtualTimelineItem::DateDivider(f.timestamp()))));
-                            //                     f.event_id().map(|f|f.to_owned())}) {
-                            //                     event_id_loaded.push(event_id.clone());
-                            //                 }
-                            //                 //merged_timeline.push_back(b.clone());
-                            //             }
-                            //             merged_timeline.extend(t);
-                            //         }
-                            //     }
-                            // }
-                            merged_timeline.sort_by(|a, b| {
-                                let a_timestamp = match a.kind() {
-                                    TimelineItemKind::Event(e) => Some(e.timestamp()),
-                                    TimelineItemKind::Virtual(v) => match v {
-                                        VirtualTimelineItem::DateDivider(t) => Some(*t),
-                                        _ => None
-                                    }
-                                };
-                                let b_timestamp = match b.kind() {
-                                    TimelineItemKind::Event(e) => Some(e.timestamp()),
-                                    TimelineItemKind::Virtual(v) => match v {
-                                        VirtualTimelineItem::DateDivider(t) => Some(*t),
-                                        _ => None
-                                    }
-                                };
-                               a_timestamp.cmp(&b_timestamp)
-                                //println!("a: {:?} b: {:?} a - b: {}", a, b, a.unwrap_or(0) - b.unwrap_or(0));
-                            });
-                            // let mut merged_timeline = Vector::new();
-                            // let mut our_events_indexes: Vec<usize> = Vec::new();
-                            // let results = response.search_categories.room_events.results;
-                            // for (i, result) in results.iter().enumerate().rev() {
-                            //     if let Some(target) = result.result.as_ref().and_then(|e| e.deserialize().ok()).map(|f|f.event_id().to_owned()) {
-                            //         if let Ok(timeline) = room.timeline_builder().with_focus(matrix_sdk_ui::timeline::TimelineFocus::Event { target, num_context_events: 2 }).build().await {
-                            //             // Merging successive search results
-                            //             room.timeline_builder().
-                            //             let current_timeline = timeline.items().await;
-                            //             let next_timeline = if i > 0 {
-                            //                 let target = results.get(i - 1).and_then(|e| e.result.as_ref().and_then(|e| e.deserialize().ok())).map(|f|f.event_id().to_owned());
-                            //                 if let Some(target) = target {
-                            //                     let t = room.timeline_builder().with_focus(
-                            //                         matrix_sdk_ui::timeline::TimelineFocus::Event { target, num_context_events: 2 }
-                            //                     ).build().await;
-                            //                     if let Ok(t) = t {
-                            //                         t.items().await
-                            //                     } else {
-                            //                         Vector::new()
-                            //                     }
-                            //                 } else {
-                            //                     Vector::new()
-                            //                 }
-                            //             } else {
-                            //                 Vector::new()
-                            //             };
-                            //             let our_event_index = 1;
-
-                            //             if i > 0 && current_timeline.last().map(|e| e.as_event().and_then(|f|f.event_id())) == next_timeline.front().map(|e| e.as_event().and_then(|f|f.event_id())) {
-                            //                 if merged_timeline.is_empty() {
-                            //                     let start = if merged_timeline.is_empty() { 0 } else { 1 };
-                            //                     for j in start..current_timeline.len() {
-                            //                         merged_timeline.push_back(current_timeline[j].clone());
-                            //                     }
-                            //                     our_events_indexes.push(our_event_index);
-                            //                 }
-
-                            //                 for j in 1..next_timeline.len() {
-                            //                     merged_timeline.push_back(next_timeline[j].clone());
-                            //                 }
-
-                            //                 if let Some(last_idx) = our_events_indexes.last() {
-                            //                     our_events_indexes.push(
-                            //                         last_idx + our_event_index + 1
-                            //                     );
-                            //                 }
-
-                            //                 continue;
-                            //             }
-                            //         }
-                            //     }
-                            // }
-                            //let search_timeline_events = convert_result_categories_to_search_item(response.search_categories);
+                            
+                        
                             if let Err(e) = sender.send(
-                                TimelineUpdate::SearchNewItems {
-                                    new_items: merged_timeline,
-                                    forward_pagination_batch_token,
-                                    backward_pagination_batch_token: backward_pagination_batch,
-                                    highlights,
-                                    count
-                                }) {
+                                TimelineUpdate::SearchBeforeProcessed { search_structure: SearchStructure { events: processed_search_result_list, highlighted_strings: highlights.clone(), next_batch_token: backward_pagination_batch },
+                                count,
+                                highlights }) {
                                 error!("Failed to search message in {room_id}; error: {e:?}");
                                 enqueue_popup_notification(format!("Failed to search message. Error: {e}"));
                             }
@@ -1323,6 +1137,44 @@ async fn async_worker(
                     }
                 });
                 register_core_task(CoreTask::Search, handle.abort_handle());
+            }
+            MatrixRequest::SearchFindMoreTimelines { not_found, room_id, count, highlights } => {
+                let all_room_info = ALL_ROOM_INFO.lock().unwrap();
+                let Some(room_info) = all_room_info.get(&room_id) else {
+                    log!("BUG: room info not found for redact message {room_id}");
+                    continue;
+                };
+                let room = room_info.room.clone();
+                let sender = room_info.timeline_update_sender.clone();
+                let handle = Handle::current().spawn(async move {
+                    let mut merged_timelines = vec![];
+                    for (index, item_event_id) in not_found {
+                        if let Ok(timeline) = room.timeline_builder().with_focus(TimelineFocus::Event { target: item_event_id.clone(), num_context_events: 2 }).build().await {
+                            let timelines = timeline.items().await;
+                            let mut timelines_with_types = Vector::new();
+                            for timeline_item in timelines {
+                                if let Some(event) = timeline_item.as_event() {
+                                    if event.event_id() == Some(&item_event_id) {
+                                        timelines_with_types.push_back(EventType::Main(timeline_item.clone()));
+                                    } else {
+                                        timelines_with_types.push_back(EventType::Context(timeline_item.clone()));
+                                    }
+                                }
+                            }
+                            merged_timelines.push((index, timelines_with_types));
+                        }
+                    }
+                    if let Err(e) = sender.send(
+                        TimelineUpdate::SearchAfterProcessed {
+                            timelines_to_be_merged: merged_timelines,
+                            count,
+                            highlights
+                        }) {
+                        error!("Failed to manage search result after processed in {room_id}; error: {e:?}");
+                        enqueue_popup_notification(format!("Failed to manage search result after processed. Error: {e}"));
+                    }
+                });
+                
             }
         }
     }
